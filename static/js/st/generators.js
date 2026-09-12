@@ -14,8 +14,7 @@ export function generatorDefaultSettings(generator, staff) {
 
   let defaultValue = input => {
     if ("default" in input) {
-      // a function default is evaluated each time (eg. restoring browser storage)
-      return typeof input.default == "function" ? input.default() : input.default
+      return input.default
     }
 
     switch (input.type) {
@@ -39,7 +38,30 @@ export function generatorDefaultSettings(generator, staff) {
     out[input.name] = defaultValue(input)
   }
 
+  if (generator.storageKey) {
+    Object.assign(out, fixGeneratorSettings(generator, loadGeneratorSettings(generator.storageKey)))
+  }
+
   return out
+}
+
+// generators with a storageKey keep their last settings in browser storage so
+// a reload restores them (eg. the sheet music section being drilled)
+export function loadGeneratorSettings(storageKey) {
+  try {
+    let stored = JSON.parse(window.localStorage.getItem(storageKey))
+    return stored && typeof stored == "object" ? stored : {}
+  } catch (e) {
+    return {}
+  }
+}
+
+export function storeGeneratorSettings(storageKey, settings) {
+  try {
+    window.localStorage.setItem(storageKey, JSON.stringify(settings))
+  } catch (e) {
+    // storage unavailable (private mode, quota); the settings still live in state
+  }
 }
 
 // strip any values that don't make sense
@@ -78,6 +100,12 @@ export function fixGeneratorSettings(generator, settings) {
         }
         case "bool": {
           if (typeof currentValue != "boolean") {
+            currentValue = null
+          }
+          break
+        }
+        case "text": {
+          if (typeof currentValue != "string") {
             currentValue = null
           }
           break
@@ -667,24 +695,17 @@ export class IntervalGenerator extends Generator {
 
 
 // Plays back a fixed list of columns in order, wrapping around to the start
-// so a section of a song loops as sight reading flashcards
+// so a section of a song loops as sight reading flashcards. An empty section
+// yields empty columns, which the staff renders as nothing to play.
 export class SheetMusicGenerator {
-  // shown when the section has no notes so the staff always has something
-  // to render instead of crashing on an empty buffer
-  static placeholderColumn = ["C5"]
-
   constructor(columns=[]) {
     this.columns = columns
     this.position = 0
   }
 
-  isEmpty() {
-    return this.columns.length == 0
-  }
-
   nextNote() {
-    if (this.isEmpty()) {
-      return [...SheetMusicGenerator.placeholderColumn]
+    if (!this.columns.length) {
+      return []
     }
 
     let column = this.columns[this.position % this.columns.length]

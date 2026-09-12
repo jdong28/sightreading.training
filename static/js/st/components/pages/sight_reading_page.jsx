@@ -195,8 +195,14 @@ export default class SightReadingPage extends React.Component {
   checkRelease() {
     switch (this.state.currentGenerator.mode) {
       case "notes": {
-        let missed = this.state.notes.currentColumn()
-          .filter((n) => !this.state.heldNotes[n]);
+        let column = this.state.notes.currentColumn()
+
+        if (column.length == 0) {
+          this.setState({heldNotes: {}, touchedNotes: {}})
+          break
+        }
+
+        let missed = column.filter((n) => !this.state.heldNotes[n]);
 
         gaEvent("sight_reading", "note", "miss");
         this.state.stats.missNotes(missed);
@@ -435,7 +441,10 @@ export default class SightReadingPage extends React.Component {
           this.setOffset(value)
         },
         onLoop: function() {
-          this.state.stats.missNotes(this.state.notes.currentColumn());
+          let column = this.state.notes.currentColumn()
+          if (column.length) {
+            this.state.stats.missNotes(column);
+          }
           let notes = this.state.notes.clone()
           notes.shift();
           notes.pushRandom();

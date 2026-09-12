@@ -130,26 +130,15 @@ export function filterColumnsToRange(columns, min, max) {
   return [out, dropped]
 }
 
-// Parses song notation, caching the last result since the settings panel and
-// the generator both need the same song. Returns {song} or {error}.
-let lastParse = null
-
+// Parses song notation. Returns {song} or {error}.
 export function parseSongText(text) {
-  if (lastParse && lastParse.text === text) {
-    return lastParse.result
-  }
-
-  let result
   if (!text || !text.trim()) {
-    result = {song: null, error: null}
-  } else {
-    try {
-      result = {song: SongParser.load(text), error: null}
-    } catch (e) {
-      result = {song: null, error: e.message || String(e)}
-    }
+    return {song: null, error: null}
   }
 
-  lastParse = {text, result}
-  return result
+  try {
+    return {song: SongParser.load(text), error: null}
+  } catch (e) {
+    return {song: null, error: e.message || String(e)}
+  }
 }

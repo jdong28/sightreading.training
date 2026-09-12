@@ -6,7 +6,11 @@ import {
   parseSongText
 } from "st/song_sections"
 
-import {SheetMusicGenerator} from "st/generators"
+import {
+  SheetMusicGenerator, generatorDefaultSettings, storeGeneratorSettings
+} from "st/generators"
+import {sheetMusicSection, SHEET_MUSIC_STORAGE_KEY} from "st/data"
+import NoteList from "st/note_list"
 
 describe("song sections", function() {
   // two measures of 4/4, two tracks
@@ -16,6 +20,8 @@ describe("song sections", function() {
     t0 m1 d5 f5 a5 d6
     t1 m1 d3.4
   `
+
+  const staff = {name: "grand", range: ["C3", "C7"]}
 
   it("groups notes with equal onsets into one ascending column", function() {
     let song = SongNoteList.newSong([
@@ -160,11 +166,89 @@ describe("song sections", function() {
       ])
     })
 
-    it("does not throw on an empty section", function() {
+    it("emits empty columns for an empty section", function() {
       let g = new SheetMusicGenerator([])
-      expect(g.isEmpty()).toBe(true)
-      expect(g.nextNote()).toEqual(SheetMusicGenerator.placeholderColumn)
-      expect(g.nextNote()).toEqual(SheetMusicGenerator.placeholderColumn)
+      expect(g.nextNote()).toEqual([])
+      expect(g.nextNote()).toEqual([])
+
+      // an empty column is never matched by a played note
+      let notes = new NoteList([], {generator: g})
+      notes.fillBuffer(3)
+      expect(notes.length).toEqual(3)
+      expect(notes.currentColumn()).toEqual([])
+      expect(notes.matchesHead(["C5"])).toBe(false)
+      expect(notes.inHead("C5")).toBe(false)
+    })
+  })
+
+  describe("sheet music section", function() {
+    it("drills the named track", function() {
+      let {columns, status} = sheetMusicSection(staff, {
+        song: twoHands, startMeasure: 1, endMeasure: 2, track: "track t1",
+      })
+
+      expect(columns).toEqual([["C3"], ["G3"], ["D3"]])
+      expect(status).toContain("Song has 2 measures")
+      expect(status).toContain("section has 3 columns")
+    })
+
+    it("falls back to all tracks when the song has no such track", function() {
+      let oneHand = "c5 e5 g5 c6"
+
+      let {columns} = sheetMusicSection(staff, {
+        song: oneHand, startMeasure: 1, endMeasure: 1, track: "track t1",
+      })
+
+      expect(columns).toEqual([["C5"], ["E5"], ["G5"], ["C6"]])
+    })
+
+    it("reports an empty section", function() {
+      let {columns, status} = sheetMusicSection(staff, {
+        song: twoHands, startMeasure: 5, endMeasure: 6, track: "all",
+      })
+
+      expect(columns).toEqual([])
+      expect(status).toContain("section has no notes")
+    })
+  })
+
+  describe("stored deck", function() {
+    const generator = {
+      name: "stored",
+      storageKey: SHEET_MUSIC_STORAGE_KEY,
+      inputs: [
+        {name: "song", type: "text", default: ""},
+        {name: "startMeasure", type: "number", default: 1, min: 1, max: 9999},
+        {name: "endMeasure", type: "number", default: 4, min: 1, max: 9999},
+        {name: "track", type: "select", default: "all", values: () => []},
+      ],
+    }
+
+    afterEach(function() {
+      window.localStorage.removeItem(SHEET_MUSIC_STORAGE_KEY)
+    })
+
+    it("restores the whole section configuration", function() {
+      storeGeneratorSettings(SHEET_MUSIC_STORAGE_KEY, {
+        song: twoHands, startMeasure: 2, endMeasure: 2, track: "track t1",
+      })
+
+      expect(generatorDefaultSettings(generator, staff)).toEqual({
+        song: twoHands, startMeasure: 2, endMeasure: 2, track: "track t1",
+      })
+    })
+
+    it("ignores stored values of the wrong shape", function() {
+      window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+        song: 12, startMeasure: "2", endMeasure: 99999,
+      }))
+
+      expect(generatorDefaultSettings(generator, staff)).toEqual({
+        song: "", startMeasure: 1, endMeasure: 9999, track: "all",
+      })
+
+      window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, "not json")
+      expect(generatorDefaultSettings(generator, staff).song).toEqual("")
     })
   })
 })

@@ -3,7 +3,9 @@ import classNames from "classnames"
 import Slider from "st/components/slider"
 import Select from "st/components/select"
 import {trigger} from "st/events"
-import {generatorDefaultSettings, fixGeneratorSettings} from "st/generators"
+import {
+  generatorDefaultSettings, fixGeneratorSettings, storeGeneratorSettings
+} from "st/generators"
 import styles from "st/components/settings_panel.module.css"
 
 import {KeySignature, ChromaticKeySignature, noteName, parseNote} from "st/music"
@@ -314,11 +316,16 @@ export class GeneratorSettings extends React.PureComponent {
   }
 
   updateInputValue(input, value) {
-    if (input.onChange) {
-      input.onChange(value)
+    let generator = this.props.generator
+
+    if (generator.storageKey) {
+      storeGeneratorSettings(generator.storageKey, {
+        ...this.cachedSettings,
+        [input.name]: value
+      })
     }
 
-    this.props.setGenerator(this.props.generator, {
+    this.props.setGenerator(generator, {
       ...this.props.currentSettings,
       [input.name]: value
     })
@@ -349,20 +356,34 @@ export class GeneratorSettings extends React.PureComponent {
       options={options} />
   }
 
+  // the raw text is kept while it does not parse (eg. emptied to retype) and
+  // the clamped number is committed as soon as it does
   renderNumber(input, idx) {
+    let drafts = this.state.drafts || {}
+    let draft = drafts[input.name]
     let currentValue = this.cachedSettings[input.name]
+
+    let setDraft = text => this.setState({
+      drafts: {...drafts, [input.name]: text}
+    })
 
     return <input
       type="number"
       className={styles.number_input}
       min={input.min}
       max={input.max}
-      value={currentValue == null ? "" : currentValue}
+      value={draft != null ? draft : (currentValue == null ? "" : currentValue)}
+      onBlur={() => setDraft(null)}
       onChange={e => {
-        let value = parseInt(e.target.value, 10)
-        if (isNaN(value)) { return }
+        let text = e.target.value
+        let value = parseInt(text, 10)
+        if (isNaN(value)) {
+          setDraft(text)
+          return
+        }
         if (input.min != null) { value = Math.max(input.min, value) }
         if (input.max != null) { value = Math.min(input.max, value) }
+        setDraft(null)
         this.updateInputValue(input, value)
       }} />
   }

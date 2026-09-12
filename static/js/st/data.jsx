@@ -32,31 +32,17 @@ let noteRangeInput = {
   max: 100,
 }
 
-// browser storage for the last pasted sheet music song, so a reload in
-// frontend-only mode (no server side song library) keeps the song
-export const SHEET_MUSIC_STORAGE_KEY = "st:sheet_music_song"
-
-export function loadStoredSong() {
-  try {
-    return window.localStorage.getItem(SHEET_MUSIC_STORAGE_KEY) || ""
-  } catch (e) {
-    return ""
-  }
-}
-
-export function storeSong(text) {
-  try {
-    if (text) {
-      window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, text)
-    } else {
-      window.localStorage.removeItem(SHEET_MUSIC_STORAGE_KEY)
-    }
-  } catch (e) {
-    // storage unavailable (private mode, quota); the song still lives in state
-  }
-}
+// browser storage for the sheet music section being drilled (song text,
+// measure range, track) so a reload in frontend-only mode (no server side
+// song library) restores it
+export const SHEET_MUSIC_STORAGE_KEY = "st:sheet_music_deck"
 
 const ALL_TRACKS = "all"
+
+// track option names use the notation's own 0-based track index (t0, t1...)
+function sheetMusicTrackName(idx) {
+  return `track t${idx}`
+}
 
 // select options for the track filter, computed from the pasted song
 function sheetMusicTrackOptions(settings) {
@@ -66,7 +52,7 @@ function sheetMusicTrackOptions(settings) {
   if (song && song.tracks) {
     song.tracks.forEach((track, idx) => {
       if (track && track.length) {
-        options.push({name: `track ${idx + 1}`, value: idx})
+        options.push({name: sheetMusicTrackName(idx)})
       }
     })
   }
@@ -74,9 +60,15 @@ function sheetMusicTrackOptions(settings) {
   return options
 }
 
-function sheetMusicTrackIndex(trackName) {
-  let m = String(trackName || "").match(/^track (\d+)$/)
-  return m ? +m[1] - 1 : null
+// track index named by the setting, or null for all tracks when the setting
+// does not name a track of this song (eg. it was chosen for a previous song)
+function sheetMusicTrackIndex(song, trackName) {
+  let m = /^track t(\d+)$/.exec(trackName || "")
+  if (!m) { return null }
+
+  let idx = +m[1]
+  let track = song.tracks && song.tracks[idx]
+  return track && track.length ? idx : null
 }
 
 // columns for the current sheet music settings on the given staff, plus a
@@ -95,7 +87,7 @@ export function sheetMusicSection(staff, settings) {
   let columns = extractSectionColumns(song, {
     startMeasure: settings.startMeasure,
     endMeasure: settings.endMeasure,
-    track: sheetMusicTrackIndex(settings.track),
+    track: sheetMusicTrackIndex(song, settings.track),
   })
 
   // Notes outside the staff's range are filtered out (not clamped) so the
@@ -377,14 +369,14 @@ export const GENERATORS = [
   {
     name: "sheet music",
     mode: "notes",
+    storageKey: SHEET_MUSIC_STORAGE_KEY,
     inputs: [
       {
         name: "song",
         label: "song notation",
         type: "text",
         library: true, // offer play along library songs when logged in
-        default: loadStoredSong,
-        onChange: storeSong,
+        default: "",
         hint: "Paste song notation (the play along format). Notes at the same beat become one column.",
       },
       {
