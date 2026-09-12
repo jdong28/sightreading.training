@@ -47,7 +47,8 @@ export default class Keyboard extends React.PureComponent {
         return
       }
 
-      if (event.target.matches("input")) {
+      // typing into settings inputs (eg. pasted song notation) is not playing
+      if (event.target.matches("input, textarea")) {
         return
       }
 

@@ -5,8 +5,12 @@ import {MajorScale, parseNote, noteName} from "st/music"
 
 import {
   RandomNotes, SweepRangeNotes, MiniSteps, TriadNotes, SevenOpenNotes,
-  ProgressionGenerator, PositionGenerator, IntervalGenerator
+  ProgressionGenerator, PositionGenerator, IntervalGenerator, SheetMusicGenerator
 } from "st/generators"
+
+import {
+  extractSectionColumns, filterColumnsToRange, parseSongText, countMeasures
+} from "st/song_sections"
 
 import {ChordGenerator, MultiKeyChordGenerator} from "st/chord_generators"
 import {GStaff, FStaff, GrandStaff, ChordStaff} from "st/components/staves"
@@ -26,6 +30,93 @@ let noteRangeInput = {
   // default: [0, 99], // default is set automatically
   min: 0,
   max: 100,
+}
+
+// browser storage for the last pasted sheet music song, so a reload in
+// frontend-only mode (no server side song library) keeps the song
+export const SHEET_MUSIC_STORAGE_KEY = "st:sheet_music_song"
+
+export function loadStoredSong() {
+  try {
+    return window.localStorage.getItem(SHEET_MUSIC_STORAGE_KEY) || ""
+  } catch (e) {
+    return ""
+  }
+}
+
+export function storeSong(text) {
+  try {
+    if (text) {
+      window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, text)
+    } else {
+      window.localStorage.removeItem(SHEET_MUSIC_STORAGE_KEY)
+    }
+  } catch (e) {
+    // storage unavailable (private mode, quota); the song still lives in state
+  }
+}
+
+const ALL_TRACKS = "all"
+
+// select options for the track filter, computed from the pasted song
+function sheetMusicTrackOptions(settings) {
+  let options = [{name: ALL_TRACKS}]
+  let {song} = parseSongText(settings.song)
+
+  if (song && song.tracks) {
+    song.tracks.forEach((track, idx) => {
+      if (track && track.length) {
+        options.push({name: `track ${idx + 1}`, value: idx})
+      }
+    })
+  }
+
+  return options
+}
+
+function sheetMusicTrackIndex(trackName) {
+  let m = String(trackName || "").match(/^track (\d+)$/)
+  return m ? +m[1] - 1 : null
+}
+
+// columns for the current sheet music settings on the given staff, plus a
+// human readable status line for the settings panel
+export function sheetMusicSection(staff, settings) {
+  let {song, error} = parseSongText(settings.song)
+
+  if (error) {
+    return {columns: [], status: `Could not parse song: ${error}`}
+  }
+
+  if (!song) {
+    return {columns: [], status: "Paste song notation above to build a section"}
+  }
+
+  let columns = extractSectionColumns(song, {
+    startMeasure: settings.startMeasure,
+    endMeasure: settings.endMeasure,
+    track: sheetMusicTrackIndex(settings.track),
+  })
+
+  // Notes outside the staff's range are filtered out (not clamped) so the
+  // drill only shows what the staff and on screen keyboard can present; the
+  // status reports how many were skipped.
+  let [visible, dropped] = filterColumnsToRange(columns, staff.range[0], staff.range[1])
+
+  let measures = countMeasures(song)
+  let parts = [`Song has ${measures} measure${measures == 1 ? "" : "s"}`]
+
+  if (visible.length) {
+    parts.push(`section has ${visible.length} column${visible.length == 1 ? "" : "s"}`)
+  } else {
+    parts.push("section has no notes")
+  }
+
+  if (dropped) {
+    parts.push(`${dropped} note${dropped == 1 ? "" : "s"} outside the ${staff.name} staff range skipped`)
+  }
+
+  return {columns: visible, status: parts.join(", ")}
 }
 
 function staffRange(staff, noteRange) {
@@ -281,6 +372,51 @@ export const GENERATORS = [
         .getLooseRange(...staffRange(staff, options.noteRange))
 
       return new IntervalGenerator(notes, options)
+    }
+  },
+  {
+    name: "sheet music",
+    mode: "notes",
+    inputs: [
+      {
+        name: "song",
+        label: "song notation",
+        type: "text",
+        library: true, // offer play along library songs when logged in
+        default: loadStoredSong,
+        onChange: storeSong,
+        hint: "Paste song notation (the play along format). Notes at the same beat become one column.",
+      },
+      {
+        name: "startMeasure",
+        label: "start measure",
+        type: "number",
+        default: 1,
+        min: 1,
+        max: 9999,
+      },
+      {
+        name: "endMeasure",
+        label: "end measure",
+        type: "number",
+        default: 4,
+        min: 1,
+        max: 9999,
+      },
+      {
+        name: "track",
+        type: "select",
+        default: ALL_TRACKS,
+        values: sheetMusicTrackOptions,
+      },
+    ],
+    // shown under the inputs in the settings panel
+    status: function(staff, settings) {
+      return sheetMusicSection(staff, settings).status
+    },
+    create: function(staff, keySignature, settings) {
+      let {columns} = sheetMusicSection(staff, settings)
+      return new SheetMusicGenerator(columns)
     }
   },
   {

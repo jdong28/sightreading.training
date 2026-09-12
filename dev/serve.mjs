@@ -19,12 +19,16 @@ if (generated.length) {
 }
 
 // bundle to dev/out rather than static/ so the tup-managed main.js on a
-// full checkout is never overwritten by the frontend-only workflow
+// full checkout is never overwritten by the frontend-only workflow. The
+// jasmine specs are bundled too and run at /dev/specs.html
 const ctx = await esbuild.context({
-  entryPoints: ["static/js/st/main.jsx"],
+  entryPoints: [
+    {in: "static/js/st/main.jsx", out: "main"},
+    {in: "static/js/specs.js", out: "specs"},
+  ],
   bundle: true,
   sourcemap: true,
-  outfile: "dev/out/main.js",
+  outdir: "dev/out",
   nodePaths: ["static/js"],
   external: ["/static/fonts/*"],
   define: {ST_FRONTEND_ONLY: "true"},
@@ -40,3 +44,4 @@ const {port} = await ctx.serve({
 })
 
 console.log(`\nSight Reading Trainer (frontend only): http://localhost:${port}/`)
+console.log(`Jasmine specs: http://localhost:${port}/dev/specs.html`)

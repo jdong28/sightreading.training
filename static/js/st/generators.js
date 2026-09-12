@@ -14,7 +14,8 @@ export function generatorDefaultSettings(generator, staff) {
 
   let defaultValue = input => {
     if ("default" in input) {
-      return input.default
+      // a function default is evaluated each time (eg. restoring browser storage)
+      return typeof input.default == "function" ? input.default() : input.default
     }
 
     switch (input.type) {
@@ -54,12 +55,16 @@ export function fixGeneratorSettings(generator, settings) {
     if (currentValue != null) {
       switch (input.type) {
         case "select": {
-          let found = input.values.filter(v => v.name == currentValue)
-          if (!found) {
-            currentValue = null
+          // dynamic option lists are validated at render time
+          if (typeof input.values != "function") {
+            let found = input.values.find(v => v.name == currentValue)
+            if (!found) {
+              currentValue = null
+            }
           }
           break
         }
+        case "number":
         case "range": {
           if (typeof currentValue == "number") {
             currentValue = Math.min(
@@ -660,3 +665,30 @@ export class IntervalGenerator extends Generator {
   }
 }
 
+
+// Plays back a fixed list of columns in order, wrapping around to the start
+// so a section of a song loops as sight reading flashcards
+export class SheetMusicGenerator {
+  // shown when the section has no notes so the staff always has something
+  // to render instead of crashing on an empty buffer
+  static placeholderColumn = ["C5"]
+
+  constructor(columns=[]) {
+    this.columns = columns
+    this.position = 0
+  }
+
+  isEmpty() {
+    return this.columns.length == 0
+  }
+
+  nextNote() {
+    if (this.isEmpty()) {
+      return [...SheetMusicGenerator.placeholderColumn]
+    }
+
+    let column = this.columns[this.position % this.columns.length]
+    this.position += 1
+    return [...column]
+  }
+}
