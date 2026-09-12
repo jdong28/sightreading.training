@@ -29,12 +29,12 @@ export default class MelodyRecognitionExercise extends React.Component {
     {
       interval: "m2",
       direction: "asc",
-      song: "m2_asc",
+      song: "min2_asc",
       title: "Jaws"
     }, {
       interval: "m2",
       direction: "desc",
-      song: "m2_desc",
+      song: "min2_desc",
       title: "Joy To The World"
     }, {
       interval: "M2",
@@ -49,12 +49,12 @@ export default class MelodyRecognitionExercise extends React.Component {
     }, {
       interval: "m3",
       direction: "asc",
-      song: "m3_asc",
+      song: "min3_asc",
       title: "Greensleves",
     }, {
       interval: "m3",
       direction: "desc",
-      song: "m3_desc",
+      song: "min3_desc",
       title: "Hey Jude",
     }, {
       interval: "M3",
@@ -94,7 +94,7 @@ export default class MelodyRecognitionExercise extends React.Component {
     }, {
       interval: "m6",
       direction: "asc",
-      song: "m6_asc",
+      song: "min6_asc",
       title: "Entertainer",
     }, {
       interval: "M6",
@@ -104,7 +104,7 @@ export default class MelodyRecognitionExercise extends React.Component {
     }, {
       interval: "m7",
       direction: "asc",
-      song: "m7_asc",
+      song: "min7_asc",
       title: "Star Trek",
     }, {
       interval: "M7",
