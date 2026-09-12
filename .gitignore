@@ -7,3 +7,4 @@ dev/out/
 *.tar.gz
 *.lua
 nginx.conf.compiled
+firstmate/
