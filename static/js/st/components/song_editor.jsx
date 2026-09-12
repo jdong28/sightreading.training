@@ -12,6 +12,8 @@ import styles from "st/components/song_editor.module.css"
 
 import { KeySignature } from "st/music"
 import {readConfig, writeConfig} from "st/config"
+import {parseMusicXML, MusicXMLError, COMPRESSED_MESSAGE} from "st/musicxml"
+import {serializeSong} from "st/song_serializer"
 
 const DeleteSongForm = React.memo(function DeleteSongForm(props) {
   const navigate = useNavigate()
@@ -92,6 +94,8 @@ export default class SongEditor extends React.Component {
       code: e => this.updateCode(e.target.value)
     }
 
+    this.importFile = this.importFile.bind(this)
+
     let initial = song
     if (!song) {
       initial = readConfig("wip:newSong")
@@ -157,6 +161,64 @@ export default class SongEditor extends React.Component {
       })
       writeConfig("wip:newSong", undefined)
     }
+  }
+
+  // Loads a MusicXML file into the player. When the imported rhythm can be
+  // written in the editor's notation the generated code replaces the editor
+  // contents so the song can be saved; otherwise the song is only played.
+  importFile(e) {
+    let file = e.target.files && e.target.files[0]
+    if (!file) {
+      return
+    }
+
+    // let the same file be picked again
+    e.target.value = ""
+
+    this.setState({importError: null, importNotice: null})
+
+    if (file.name.match(/\.mxl$/i)) {
+      this.setState({importError: COMPRESSED_MESSAGE})
+      return
+    }
+
+    file.text().then(text => {
+      let song
+      try {
+        song = parseMusicXML(text)
+      } catch (err) {
+        let message = err instanceof MusicXMLError ? err.message : `Failed to import: ${err.message}`
+        this.setState({importError: message})
+        return
+      }
+
+      let code = null
+      try {
+        code = serializeSong(song)
+      } catch (err) {
+        code = null
+      }
+
+      if (this.props.onImportSong) {
+        this.props.onImportSong(song, code == null ? this.state.code : code)
+      }
+
+      if (code != null) {
+        this.updateCode(code)
+      } else {
+        this.setState({
+          importNotice: "This piece uses rhythms the editor's notation can't express, so it can be played but not saved."
+        })
+      }
+
+      if (!this.state.title && song.metadata && song.metadata.title) {
+        let update = {title: song.metadata.title}
+        this.setState(update)
+        this.updateWip(update)
+      }
+    }, err => {
+      this.setState({importError: `Failed to read file: ${err.message}`})
+    })
   }
 
   updateWip(update) {
@@ -253,6 +315,20 @@ export default class SongEditor extends React.Component {
 
       <div className={styles.song_editor_tools}>
         {errors}
+        <div className={styles.import_row}>
+          <label>
+            <div className={styles.import_label}>Import MusicXML</div>
+            <input
+              type="file"
+              accept=".xml,.musicxml,.mxl,application/vnd.recordare.musicxml+xml,application/xml,text/xml"
+              disabled={this.state.loading}
+              onChange={this.importFile} />
+          </label>
+          {this.state.importError ?
+            <div className={styles.import_error}>{this.state.importError}</div> : null}
+          {this.state.importNotice ?
+            <div className={styles.import_notice}>{this.state.importNotice}</div> : null}
+        </div>
         {this.textInput("Title", "title", {
           required: true
         })}

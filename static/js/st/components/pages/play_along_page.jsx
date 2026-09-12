@@ -213,9 +213,29 @@ export class PlayAlongPage extends React.Component {
     }
   }
 
+  // load a song converted from a file (see SongEditor.importFile). code is
+  // the editor contents that go with it: while the code is unchanged the
+  // imported model stays in use, editing the code replaces it
+  importSong(song, code) {
+    this.setState({
+      importedSong: {song, code},
+      currentSongCode: code,
+    })
+    this.setSong(song)
+  }
+
   // re-render the song with new autochords
   refreshSong() {
     let code = this.state.currentSongCode
+
+    let imported = this.state.importedSong
+    if (imported && imported.code == code) {
+      if (this.state.song != imported.song) {
+        this.setSong(imported.song)
+      }
+      return
+    }
+
     try {
       let song = SongParser.load(code, this.songParserParams())
       this.setSong(song)
@@ -695,6 +715,7 @@ export class PlayAlongPage extends React.Component {
       songNotes={this.state.song}
       song={this.state.songModel}
       code={this.state.currentSongCode}
+      onImportSong={(song, code) => this.importSong(song, code)}
       onCode={code => this.setState({
         currentSongCode: code
       }) } />

@@ -6,6 +6,12 @@ This file is the project's committed home for project-intrinsic agent knowledge:
 - Lint JS with `make lint_js` (some pre-existing quote and unreachable-code errors exist in untouched files).
 - Staff mode generators live in the `GENERATORS` registry in `static/js/st/data.jsx`; the settings panel renders their declarative `inputs` (`static/js/st/components/sight_reading/settings_panel.jsx`).
 
+## Sharp edges
+
+- Note names use the app's own octave numbering: middle C is `"C5"` (`parseNote("C5") == MIDDLE_C_PITCH` in `static/js/st/music.js`), one octave above MIDI/scientific numbering. Converters from external formats must add one to the octave.
+- Song beats are quarter notes everywhere (`beatsPerMeasure` for 6/8 is 3). `static/js/st/song_parser.js` is the reference for how notation becomes the `MultiTrackSong` model.
+- On macOS the checkout shows six `static/music/interval_melodies/*.lml` files as modified because of a case-insensitive filename collision; leave them alone.
+
 ## Maintaining this file
 
 Keep this file for knowledge useful to almost every future agent session in this project.

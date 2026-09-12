@@ -1,0 +1,575 @@
+import {parseMusicXML, MusicXMLError, COMPRESSED_MESSAGE} from "st/musicxml"
+import {SongNote} from "st/song_note_list"
+
+// [note, start, duration] tuples of a note list, in document order
+let tuples = notes => [...notes].map(n => [n.note, n.start, n.duration])
+
+// wraps measure xml into a single part partwise score
+let partwise = (measures, opts={}) => `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE score-partwise PUBLIC "-//Recordare//DTD MusicXML 4.0 Partwise//EN" "http://www.musicxml.org/dtds/partwise.dtd">
+<score-partwise version="4.0">
+  ${opts.head || ""}
+  <part-list>
+    <score-part id="P1"><part-name>${opts.partName || "Piano"}</part-name></score-part>
+  </part-list>
+  <part id="P1">
+    ${measures}
+  </part>
+</score-partwise>`
+
+let attributes = ({divisions=1, fifths=0, beats=4, beatType=4, staves, clefs=[]}) => `
+<attributes>
+  <divisions>${divisions}</divisions>
+  <key><fifths>${fifths}</fifths></key>
+  <time><beats>${beats}</beats><beat-type>${beatType}</beat-type></time>
+  ${staves ? `<staves>${staves}</staves>` : ""}
+  ${clefs.map(([number, sign, line]) =>
+    `<clef number="${number}"><sign>${sign}</sign><line>${line}</line></clef>`).join("")}
+</attributes>`
+
+let note = (step, octave, duration, extra="", alter=null) => `
+<note>
+  <pitch><step>${step}</step>${alter != null ? `<alter>${alter}</alter>` : ""}<octave>${octave}</octave></pitch>
+  <duration>${duration}</duration>
+  ${extra}
+</note>`
+
+let rest = (duration, extra="") => `<note><rest/><duration>${duration}</duration>${extra}</note>`
+
+describe("musicxml", function() {
+  it("converts a two measure piano piece with both staves", function() {
+    // treble: C4 D4 E4 F4 | G4 (whole)
+    // bass:   C3 (half) G3 (half) | C3 (whole)
+    let xml = partwise(`
+      <measure number="1">
+        ${attributes({divisions: 2, staves: 2, clefs: [[1, "G", 2], [2, "F", 4]]})}
+        ${note("C", 4, 2, "<voice>1</voice><staff>1</staff>")}
+        ${note("D", 4, 2, "<voice>1</voice><staff>1</staff>")}
+        ${note("E", 4, 2, "<voice>1</voice><staff>1</staff>")}
+        ${note("F", 4, 2, "<voice>1</voice><staff>1</staff>")}
+        <backup><duration>8</duration></backup>
+        ${note("C", 3, 4, "<voice>2</voice><staff>2</staff>")}
+        ${note("G", 3, 4, "<voice>2</voice><staff>2</staff>")}
+      </measure>
+      <measure number="2">
+        ${note("G", 4, 8, "<voice>1</voice><staff>1</staff>")}
+        <backup><duration>8</duration></backup>
+        ${note("C", 3, 8, "<voice>2</voice><staff>2</staff>")}
+      </measure>
+    `)
+
+    let song = parseMusicXML(xml)
+
+    expect(song.metadata.keySignature).toEqual(0)
+    expect(song.metadata.beatsPerMeasure).toEqual(4)
+    expect(song.metadata.measureStarts).toEqual([0, 4])
+
+    expect(song.tracks.length).toEqual(2)
+
+    expect(song.tracks[0].trackName).toEqual("Piano (staff 1)")
+    expect(song.tracks[0].cleffs).toEqual([[0, "g"]])
+    expect(song.tracks[0].fittingStaff()).toEqual("treble")
+    expect(tuples(song.tracks[0])).toEqual([
+      ["C5", 0, 1],
+      ["D5", 1, 1],
+      ["E5", 2, 1],
+      ["F5", 3, 1],
+      ["G5", 4, 4],
+    ])
+
+    expect(song.tracks[1].trackName).toEqual("Piano (staff 2)")
+    expect(song.tracks[1].cleffs).toEqual([[0, "f"]])
+    expect(song.tracks[1].fittingStaff()).toEqual("bass")
+    expect(tuples(song.tracks[1])).toEqual([
+      ["C4", 0, 2],
+      ["G4", 2, 2],
+      ["C4", 4, 4],
+    ])
+
+    // all notes are also in the song itself
+    expect(song.length).toEqual(8)
+    expect(song[0]).toEqual(jasmine.any(SongNote))
+    expect(song.getStopInBeats()).toEqual(8)
+  })
+
+  it("groups chord notes at the same start", function() {
+    let xml = partwise(`
+      <measure number="1">
+        ${attributes({divisions: 1})}
+        ${note("C", 4, 2)}
+        ${note("E", 4, 2, "<chord/>")}
+        ${note("G", 4, 2, "<chord/>")}
+        ${note("A", 4, 2)}
+      </measure>
+    `)
+
+    let song = parseMusicXML(xml)
+    expect(tuples(song.tracks[0])).toEqual([
+      ["C5", 0, 2],
+      ["E5", 0, 2],
+      ["G5", 0, 2],
+      ["A5", 2, 2],
+    ])
+  })
+
+  it("merges a tie across a barline into one note", function() {
+    let xml = partwise(`
+      <measure number="1">
+        ${attributes({divisions: 1})}
+        ${note("C", 4, 2)}
+        ${note("D", 4, 2, '<tie type="start"/><notations><tied type="start"/></notations>')}
+      </measure>
+      <measure number="2">
+        ${note("D", 4, 1, '<tie type="stop"/><notations><tied type="stop"/></notations>')}
+        ${note("E", 4, 3)}
+      </measure>
+    `)
+
+    let song = parseMusicXML(xml)
+    expect(tuples(song.tracks[0])).toEqual([
+      ["C5", 0, 2],
+      ["D5", 2, 3],
+      ["E5", 5, 3],
+    ])
+  })
+
+  it("chains a tie through a middle note that both stops and starts", function() {
+    let xml = partwise(`
+      <measure number="1">
+        ${attributes({divisions: 1})}
+        ${note("C", 4, 4, '<tie type="start"/>')}
+      </measure>
+      <measure number="2">
+        ${note("C", 4, 4, '<tie type="stop"/><tie type="start"/>')}
+      </measure>
+      <measure number="3">
+        ${note("C", 4, 2, '<tie type="stop"/>')}
+        ${note("D", 4, 2)}
+      </measure>
+    `)
+
+    let song = parseMusicXML(xml)
+    expect(tuples(song.tracks[0])).toEqual([
+      ["C5", 0, 10],
+      ["D5", 10, 2],
+    ])
+  })
+
+  it("treats a tie stop without a matching start as a normal note", function() {
+    let xml = partwise(`
+      <measure number="1">
+        ${attributes({divisions: 1})}
+        ${note("C", 4, 2, '<tie type="stop"/>')}
+        ${note("D", 4, 2)}
+      </measure>
+    `)
+
+    expect(tuples(parseMusicXML(xml).tracks[0])).toEqual([
+      ["C5", 0, 2],
+      ["D5", 2, 2],
+    ])
+  })
+
+  it("uses the dotted duration from <duration>", function() {
+    // dotted quarter + eighth + half
+    let xml = partwise(`
+      <measure number="1">
+        ${attributes({divisions: 2})}
+        ${note("C", 4, 3, "<type>quarter</type><dot/>")}
+        ${note("D", 4, 1, "<type>eighth</type>")}
+        ${note("E", 4, 4, "<type>half</type>")}
+      </measure>
+    `)
+
+    expect(tuples(parseMusicXML(xml).tracks[0])).toEqual([
+      ["C5", 0, 1.5],
+      ["D5", 1.5, 0.5],
+      ["E5", 2, 2],
+    ])
+  })
+
+  it("uses the tuplet-adjusted duration from <duration>", function() {
+    // eighth note triplet over one beat, then a quarter
+    let triplet = "<type>eighth</type><time-modification><actual-notes>3</actual-notes><normal-notes>2</normal-notes></time-modification>"
+    let xml = partwise(`
+      <measure number="1">
+        ${attributes({divisions: 12})}
+        ${note("C", 4, 4, triplet)}
+        ${note("D", 4, 4, triplet)}
+        ${note("E", 4, 4, triplet)}
+        ${note("F", 4, 12, "<type>quarter</type>")}
+      </measure>
+    `)
+
+    let notes = tuples(parseMusicXML(xml).tracks[0])
+    expect(notes.map(n => n[0])).toEqual(["C5", "D5", "E5", "F5"])
+
+    expect(notes[0][1]).toBeCloseTo(0, 10)
+    expect(notes[1][1]).toBeCloseTo(1/3, 10)
+    expect(notes[2][1]).toBeCloseTo(2/3, 10)
+    expect(notes[3][1]).toBeCloseTo(1, 10)
+
+    expect(notes[0][2]).toBeCloseTo(1/3, 10)
+    expect(notes[1][2]).toBeCloseTo(1/3, 10)
+    expect(notes[2][2]).toBeCloseTo(1/3, 10)
+    expect(notes[3][2]).toBeCloseTo(1, 10)
+  })
+
+  it("reads a key signature with sharps and spells notes from <alter>", function() {
+    // D major: F# and C# come from alter, not from the key
+    let xml = partwise(`
+      <measure number="1">
+        ${attributes({divisions: 1, fifths: 2})}
+        ${note("D", 4, 1)}
+        ${note("F", 4, 1, "", 1)}
+        ${note("C", 5, 1, "", 1)}
+        ${note("C", 5, 1, "<accidental>natural</accidental>", 0)}
+      </measure>
+    `)
+
+    let song = parseMusicXML(xml)
+    expect(song.metadata.keySignature).toEqual(2)
+    expect(tuples(song.tracks[0])).toEqual([
+      ["D5", 0, 1],
+      ["F#5", 1, 1],
+      ["C#6", 2, 1],
+      ["C6", 3, 1],
+    ])
+  })
+
+  it("reads a key signature with flats", function() {
+    // Eb major
+    let xml = partwise(`
+      <measure number="1">
+        ${attributes({divisions: 1, fifths: -3})}
+        ${note("E", 4, 1, "", -1)}
+        ${note("B", 3, 1, "", -1)}
+        ${note("A", 3, 1, "", -1)}
+        ${note("G", 4, 1)}
+      </measure>
+    `)
+
+    let song = parseMusicXML(xml)
+    expect(song.metadata.keySignature).toEqual(-3)
+    expect(tuples(song.tracks[0])).toEqual([
+      ["Eb5", 0, 1],
+      ["Bb4", 1, 1],
+      ["Ab4", 2, 1],
+      ["G5", 3, 1],
+    ])
+  })
+
+  it("spells double accidentals enharmonically", function() {
+    let xml = partwise(`
+      <measure number="1">
+        ${attributes({divisions: 1})}
+        ${note("F", 4, 1, "", 2)}
+        ${note("B", 4, 1, "", -2)}
+      </measure>
+    `)
+
+    expect(tuples(parseMusicXML(xml).tracks[0])).toEqual([
+      ["G5", 0, 1],
+      ["A5", 1, 1],
+    ])
+  })
+
+  it("maps key signatures the app can't show to their enharmonic key", function() {
+    let xml = fifths => partwise(`
+      <measure number="1">
+        ${attributes({divisions: 1, fifths})}
+        ${note("C", 4, 4)}
+      </measure>
+    `)
+
+    expect(parseMusicXML(xml(6)).metadata.keySignature).toEqual(-6)
+    expect(parseMusicXML(xml(7)).metadata.keySignature).toEqual(-5)
+    expect(parseMusicXML(xml(-7)).metadata.keySignature).toEqual(5)
+    expect(parseMusicXML(xml(5)).metadata.keySignature).toEqual(5)
+    expect(parseMusicXML(xml(-6)).metadata.keySignature).toEqual(-6)
+  })
+
+  it("converts a 3/4 piece", function() {
+    let xml = partwise(`
+      <measure number="1">
+        ${attributes({divisions: 1, beats: 3, beatType: 4})}
+        ${note("C", 4, 1)}
+        ${note("D", 4, 1)}
+        ${note("E", 4, 1)}
+      </measure>
+      <measure number="2">
+        ${note("F", 4, 3)}
+      </measure>
+    `)
+
+    let song = parseMusicXML(xml)
+    expect(song.metadata.beatsPerMeasure).toEqual(3)
+    expect(song.metadata.measureStarts).toEqual([0, 3])
+    expect(tuples(song.tracks[0])).toEqual([
+      ["C5", 0, 1],
+      ["D5", 1, 1],
+      ["E5", 2, 1],
+      ["F5", 3, 3],
+    ])
+  })
+
+  it("counts 6/8 in quarter note beats", function() {
+    let xml = partwise(`
+      <measure number="1">
+        ${attributes({divisions: 2, beats: 6, beatType: 8})}
+        ${note("C", 4, 1)}
+        ${note("D", 4, 1)}
+        ${note("E", 4, 1)}
+        ${note("F", 4, 3)}
+      </measure>
+      <measure number="2">
+        ${note("G", 4, 6)}
+      </measure>
+    `)
+
+    let song = parseMusicXML(xml)
+    expect(song.metadata.beatsPerMeasure).toEqual(3)
+    expect(song.metadata.measureStarts).toEqual([0, 3])
+    expect(tuples(song.tracks[0])).toEqual([
+      ["C5", 0, 0.5],
+      ["D5", 0.5, 0.5],
+      ["E5", 1, 0.5],
+      ["F5", 1.5, 1.5],
+      ["G5", 3, 3],
+    ])
+  })
+
+  it("advances past rests without emitting notes", function() {
+    let xml = partwise(`
+      <measure number="1">
+        ${attributes({divisions: 2})}
+        ${note("C", 4, 2)}
+        ${rest(2)}
+        ${note("E", 4, 1)}
+        ${rest(1)}
+        ${note("G", 4, 2)}
+      </measure>
+      <measure number="2">
+        ${rest(8, '<rest measure="yes"/>')}
+      </measure>
+      <measure number="3">
+        ${note("C", 5, 8)}
+      </measure>
+    `)
+
+    let song = parseMusicXML(xml)
+    expect(song.metadata.measureStarts).toEqual([0, 4, 8])
+    expect(tuples(song.tracks[0])).toEqual([
+      ["C5", 0, 1],
+      ["E5", 2, 0.5],
+      ["G5", 3, 1],
+      ["C6", 8, 4],
+    ])
+  })
+
+  it("positions voices with backup and forward", function() {
+    // voice 1: C4 D4 E4 F4 (quarters)
+    // voice 2 (same staff): rest a beat, then G3 half, then forward an eighth, A3 eighth
+    let xml = partwise(`
+      <measure number="1">
+        ${attributes({divisions: 2})}
+        ${note("C", 4, 2, "<voice>1</voice>")}
+        ${note("D", 4, 2, "<voice>1</voice>")}
+        ${note("E", 4, 2, "<voice>1</voice>")}
+        ${note("F", 4, 2, "<voice>1</voice>")}
+        <backup><duration>6</duration></backup>
+        ${note("G", 3, 4, "<voice>2</voice>")}
+        <forward><duration>1</duration></forward>
+        ${note("A", 3, 1, "<voice>2</voice>")}
+      </measure>
+    `)
+
+    let song = parseMusicXML(xml)
+    expect(song.tracks.length).toEqual(1)
+    expect(tuples(song.tracks[0])).toEqual([
+      ["C5", 0, 1],
+      ["D5", 1, 1],
+      ["E5", 2, 1],
+      ["F5", 3, 1],
+      ["G4", 1, 2],
+      ["A4", 3.5, 0.5],
+    ])
+  })
+
+  it("skips grace notes", function() {
+    let xml = partwise(`
+      <measure number="1">
+        ${attributes({divisions: 1})}
+        <note><grace/><pitch><step>B</step><octave>3</octave></pitch></note>
+        ${note("C", 4, 2)}
+        ${note("D", 4, 2)}
+      </measure>
+    `)
+
+    expect(tuples(parseMusicXML(xml).tracks[0])).toEqual([
+      ["C5", 0, 2],
+      ["D5", 2, 2],
+    ])
+  })
+
+  it("records measure starts through pickup measures and time signature changes", function() {
+    let xml = partwise(`
+      <measure number="0" implicit="yes">
+        ${attributes({divisions: 1, beats: 4, beatType: 4})}
+        ${note("G", 3, 1)}
+      </measure>
+      <measure number="1">
+        ${note("C", 4, 4)}
+      </measure>
+      <measure number="2">
+        <attributes><time><beats>3</beats><beat-type>4</beat-type></time></attributes>
+        ${note("D", 4, 3)}
+      </measure>
+      <measure number="3">
+        ${note("E", 4, 3)}
+      </measure>
+    `)
+
+    let song = parseMusicXML(xml)
+    expect(song.metadata.beatsPerMeasure).toEqual(4)
+    expect(song.metadata.measureStarts).toEqual([0, 1, 5, 8])
+    expect(tuples(song.tracks[0])).toEqual([
+      ["G4", 0, 1],
+      ["C5", 1, 4],
+      ["D5", 5, 3],
+      ["E5", 8, 3],
+    ])
+  })
+
+  it("keeps parts aligned by measure and gives each its own track", function() {
+    let xml = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <part-list>
+    <score-part id="P1"><part-name>Flute</part-name></score-part>
+    <score-part id="P2"><part-name>Cello</part-name></score-part>
+  </part-list>
+  <part id="P1">
+    <measure number="1">
+      ${attributes({divisions: 1, clefs: [[1, "G", 2]]})}
+      ${note("C", 5, 4)}
+    </measure>
+    <measure number="2">
+      ${note("D", 5, 4)}
+    </measure>
+  </part>
+  <part id="P2">
+    <measure number="1">
+      ${attributes({divisions: 4, clefs: [[1, "F", 4]]})}
+      ${note("C", 3, 16)}
+    </measure>
+    <measure number="2">
+      ${note("G", 2, 8)}
+      ${note("G", 2, 8)}
+    </measure>
+  </part>
+</score-partwise>`
+
+    let song = parseMusicXML(xml)
+    expect(song.tracks.length).toEqual(2)
+    expect(song.tracks[0].trackName).toEqual("Flute")
+    expect(song.tracks[0].cleffs).toEqual([[0, "g"]])
+    expect(tuples(song.tracks[0])).toEqual([
+      ["C6", 0, 4],
+      ["D6", 4, 4],
+    ])
+
+    expect(song.tracks[1].trackName).toEqual("Cello")
+    expect(song.tracks[1].cleffs).toEqual([[0, "f"]])
+    expect(tuples(song.tracks[1])).toEqual([
+      ["C4", 0, 4],
+      ["G3", 4, 2],
+      ["G3", 6, 2],
+    ])
+  })
+
+  it("records clef changes at their position", function() {
+    let xml = partwise(`
+      <measure number="1">
+        ${attributes({divisions: 1, clefs: [[1, "F", 4]]})}
+        ${note("C", 3, 2)}
+        <attributes><clef><sign>G</sign><line>2</line></clef></attributes>
+        ${note("C", 5, 2)}
+      </measure>
+    `)
+
+    let song = parseMusicXML(xml)
+    expect(song.tracks[0].cleffs).toEqual([[0, "f"], [2, "g"]])
+  })
+
+  it("converts a timewise score", function() {
+    let xml = `<?xml version="1.0" encoding="UTF-8"?>
+<score-timewise version="4.0">
+  <part-list>
+    <score-part id="P1"><part-name>Piano</part-name></score-part>
+  </part-list>
+  <measure number="1">
+    <part id="P1">
+      ${attributes({divisions: 1, staves: 2, clefs: [[1, "G", 2], [2, "F", 4]]})}
+      ${note("C", 4, 4, "<staff>1</staff>")}
+      <backup><duration>4</duration></backup>
+      ${note("C", 3, 4, "<staff>2</staff>")}
+    </part>
+  </measure>
+  <measure number="2">
+    <part id="P1">
+      ${note("D", 4, 4, "<staff>1</staff>")}
+      <backup><duration>4</duration></backup>
+      ${note("D", 3, 4, "<staff>2</staff>")}
+    </part>
+  </measure>
+</score-timewise>`
+
+    let song = parseMusicXML(xml)
+    expect(song.metadata.measureStarts).toEqual([0, 4])
+    expect(tuples(song.tracks[0])).toEqual([
+      ["C5", 0, 4],
+      ["D5", 4, 4],
+    ])
+    expect(tuples(song.tracks[1])).toEqual([
+      ["C4", 0, 4],
+      ["D4", 4, 4],
+    ])
+  })
+
+  it("reads the title from the work or movement title", function() {
+    let xml = partwise(`
+      <measure number="1">
+        ${attributes({divisions: 1})}
+        ${note("C", 4, 4)}
+      </measure>
+    `, {head: "<work><work-title>Minuet in G</work-title></work>"})
+
+    expect(parseMusicXML(xml).metadata.title).toEqual("Minuet in G")
+  })
+
+  it("leaves out staves that have no notes", function() {
+    let xml = partwise(`
+      <measure number="1">
+        ${attributes({divisions: 1, staves: 2, clefs: [[1, "G", 2], [2, "F", 4]]})}
+        ${note("C", 4, 4, "<staff>1</staff>")}
+        <backup><duration>4</duration></backup>
+        ${rest(4, "<staff>2</staff>")}
+      </measure>
+    `)
+
+    let song = parseMusicXML(xml)
+    expect(song.tracks.length).toEqual(1)
+    expect(tuples(song.tracks[0])).toEqual([["C5", 0, 4]])
+  })
+
+  it("refuses compressed .mxl content", function() {
+    let zip = "PK    not really a zip"
+    expect(() => parseMusicXML(zip)).toThrowError(MusicXMLError, COMPRESSED_MESSAGE)
+  })
+
+  it("rejects malformed xml and non-score documents", function() {
+    expect(() => parseMusicXML("<score-partwise><part>")).toThrowError(MusicXMLError)
+    expect(() => parseMusicXML("<html><body>hi</body></html>")).toThrowError(MusicXMLError, /Not a MusicXML score/)
+    expect(() => parseMusicXML("")).toThrowError(MusicXMLError)
+  })
+})
