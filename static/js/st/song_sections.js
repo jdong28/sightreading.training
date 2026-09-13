@@ -130,6 +130,10 @@ export function filterColumnsToRange(columns, min, max) {
   return [out, dropped]
 }
 
+class NoAutoChords {
+  addChords() {}
+}
+
 // Parses song notation. Returns {song} or {error}.
 export function parseSongText(text) {
   if (!text || !text.trim()) {
@@ -137,7 +141,7 @@ export function parseSongText(text) {
   }
 
   try {
-    return {song: SongParser.load(text), error: null}
+    return {song: SongParser.load(text, {autoChords: NoAutoChords}), error: null}
   } catch (e) {
     return {song: null, error: e.message || String(e)}
   }

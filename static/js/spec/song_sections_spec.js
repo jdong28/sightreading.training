@@ -203,6 +203,15 @@ describe("song sections", function() {
       expect(columns).toEqual([["C5"], ["E5"], ["G5"], ["C6"]])
     })
 
+    it("ignores accompaniment generated for chord macros", function() {
+      let {columns} = sheetMusicSection(staff, {
+        song: "t0 m0 c5 e5 g5 c6 $C", startMeasure: 1, endMeasure: 1, track: "all",
+      })
+
+      expect(columns).toEqual([["C5"], ["E5"], ["G5"], ["C6"]])
+      expect(parseSongText("t0 m0 c5 e5 g5 c6 $C").song.tracks.length).toEqual(1)
+    })
+
     it("reports an empty section", function() {
       let {columns, status} = sheetMusicSection(staff, {
         song: twoHands, startMeasure: 5, endMeasure: 6, track: "all",
