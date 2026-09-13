@@ -7,7 +7,8 @@ import {
 } from "st/song_sections"
 
 import {
-  SheetMusicGenerator, generatorDefaultSettings, storeGeneratorSettings
+  SheetMusicGenerator, generatorDefaultSettings, storeGeneratorSettings,
+  storeCurrentGenerator, currentGeneratorFor, CURRENT_GENERATOR_STORAGE_KEY
 } from "st/generators"
 import {sheetMusicSection, SHEET_MUSIC_STORAGE_KEY} from "st/data"
 import NoteList from "st/note_list"
@@ -249,6 +250,33 @@ describe("song sections", function() {
 
       window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, "not json")
       expect(generatorDefaultSettings(generator, staff).song).toEqual("")
+    })
+  })
+
+  describe("stored generator", function() {
+    const random = {name: "random", mode: "notes"}
+    const sheetMusic = {name: "sheet music", mode: "notes"}
+    const chords = {name: "random", mode: "chords"}
+    const generators = [random, sheetMusic, chords]
+
+    afterEach(function() {
+      window.localStorage.removeItem(CURRENT_GENERATOR_STORAGE_KEY)
+    })
+
+    it("restores the chosen generator for the staff mode", function() {
+      expect(currentGeneratorFor(generators, "notes")).toBe(random)
+
+      storeCurrentGenerator(sheetMusic)
+      expect(currentGeneratorFor(generators, "notes")).toBe(sheetMusic)
+      expect(currentGeneratorFor(generators, "chords")).toBe(chords)
+    })
+
+    it("falls back when the stored generator is unknown or malformed", function() {
+      window.localStorage.setItem(CURRENT_GENERATOR_STORAGE_KEY, JSON.stringify({name: "gone"}))
+      expect(currentGeneratorFor(generators, "notes")).toBe(random)
+
+      window.localStorage.setItem(CURRENT_GENERATOR_STORAGE_KEY, "not json")
+      expect(currentGeneratorFor(generators, "notes")).toBe(random)
     })
   })
 })

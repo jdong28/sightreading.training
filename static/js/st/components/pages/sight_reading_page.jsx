@@ -18,7 +18,7 @@ import {GeneratorSettings, SettingsPanel} from "st/components/sight_reading/sett
 import {setTitle, gaEvent, csrfToken} from "st/globals"
 import {dispatch, trigger} from "st/events"
 import {NOTE_EVENTS} from "st/midi"
-import {generatorDefaultSettings} from "st/generators"
+import {generatorDefaultSettings, storeCurrentGenerator, currentGeneratorFor} from "st/generators"
 
 import * as React from "react"
 import classNames from "classnames"
@@ -461,6 +461,14 @@ export default class SightReadingPage extends React.Component {
     })
   }
 
+  setGenerator(generator, settings) {
+    storeCurrentGenerator(generator)
+    this.setState({
+      currentGenerator: generator,
+      currentGeneratorSettings: settings,
+    })
+  }
+
   setStaff(staff, callback) {
     if (this.state.currentStaff == staff) {
       return
@@ -473,8 +481,7 @@ export default class SightReadingPage extends React.Component {
 
     // if the current generator is not compatible with new staff change it
     if (!this.state.currentGenerator || (this.state.currentGenerator.mode != staff.mode)) {
-      let newGenerator = GENERATORS.find(g => staff.mode == g.mode)
-      update.currentGenerator = newGenerator
+      update.currentGenerator = currentGeneratorFor(GENERATORS, staff.mode)
       update.currentGeneratorSettings = {}
     }
 
@@ -580,10 +587,7 @@ export default class SightReadingPage extends React.Component {
         currentStaff={this.state.currentStaff}
         currentKey={this.state.keySignature}
 
-        setGenerator={this._setGenerator ||= (g, settings) => this.setState({
-          currentGenerator: g,
-          currentGeneratorSettings: settings,
-        })}
+        setGenerator={this._setGenerator ||= this.setGenerator.bind(this)}
 
         setKeySignature={this._setKeySignature ||= this.setKeySignature.bind(this)}
         setStaff={this._setStaff ||= this.setStaff.bind(this)}

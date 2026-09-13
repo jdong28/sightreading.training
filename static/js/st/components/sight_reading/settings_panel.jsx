@@ -431,17 +431,15 @@ export class GeneratorSettings extends React.PureComponent {
   }
 
   loadSongLibrary() {
-    this.setState({loadingLibrary: true})
-
     let request = new XMLHttpRequest()
     request.open("GET", "/songs.json")
     request.onload = () => {
       try {
         let res = JSON.parse(request.responseText)
         let songs = (res.my_songs || []).concat(res.songs || [])
-        this.setState({loadingLibrary: false, librarySongs: songs})
+        this.setState({librarySongs: songs})
       } catch (e) {
-        this.setState({loadingLibrary: false, librarySongs: []})
+        this.setState({librarySongs: []})
       }
     }
     request.send()
