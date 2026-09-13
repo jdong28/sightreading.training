@@ -260,10 +260,17 @@ export default class SightReadingPage extends React.Component {
   checkPress() {
     switch (this.state.currentGenerator.mode) {
       case "notes": {
+        // presses batched into one render (eg. a chord's note-ons in one MIDI
+        // packet) all see the same head, only the first one may advance it
+        if (this.advancedNotes == this.state.notes) {
+          return false
+        }
+
         let touched = Object.keys(this.state.touchedNotes);
         if (this.state.notes.matchesHead(touched, this.state.anyOctave)) {
           gaEvent("sight_reading", "note", "hit");
 
+          this.advancedNotes = this.state.notes
           let notes = this.state.notes.clone()
           notes.shift();
           notes.pushRandom();
