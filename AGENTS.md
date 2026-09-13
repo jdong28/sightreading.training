@@ -10,7 +10,6 @@ This file is the project's committed home for project-intrinsic agent knowledge:
 
 - Note names use the app's own octave numbering: middle C is `"C5"` (`parseNote("C5") == MIDDLE_C_PITCH` in `static/js/st/music.js`), one octave above MIDI/scientific numbering. Converters from external formats must add one to the octave.
 - Song beats are quarter notes everywhere (`beatsPerMeasure` for 6/8 is 3). `static/js/st/song_parser.js` is the reference for how notation becomes the `MultiTrackSong` model.
-- On macOS the checkout shows six `static/music/interval_melodies/*.lml` files as modified because of a case-insensitive filename collision; leave them alone.
 
 ## Maintaining this file
 

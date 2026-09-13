@@ -1,6 +1,28 @@
 
 import {parseNote, noteName, MIDDLE_C_PITCH} from "st/music"
 
+// Beat positions of a song's measure starts, continuing until one is at or
+// past stop. Imported scores list their measure starts in
+// metadata.measureStarts since pickups and meter changes make measures
+// uneven; later measures repeat the last listed measure's length. Other songs
+// have a measure every beatsPerMeasure beats.
+export function measureStartsUntil(metadata, stop) {
+  let beatsPerMeasure = (metadata && metadata.beatsPerMeasure) || 4
+  let listed = metadata && metadata.measureStarts
+  let starts = listed && listed.length ? [...listed] : [0]
+
+  let step = beatsPerMeasure
+  if (starts.length > 1 && starts[starts.length - 1] > starts[starts.length - 2]) {
+    step = starts[starts.length - 1] - starts[starts.length - 2]
+  }
+
+  while (starts[starts.length - 1] < stop) {
+    starts.push(starts[starts.length - 1] + step)
+  }
+
+  return starts
+}
+
 export class SongNoteTimer {
   constructor(opts={}) {
     this.bpm = opts.bpm || 60
@@ -219,7 +241,7 @@ export class SongNoteList extends Array {
   }
 
   fittingStaff() {
-    if (this.cleffs && this.cleffs.length == 1) {
+    if (this.cleffs && this.cleffs.length) {
       let firstNote = this[0]
       // it is at the start
       if (!firstNote || firstNote.getStart() >= this.cleffs[0][0]) {

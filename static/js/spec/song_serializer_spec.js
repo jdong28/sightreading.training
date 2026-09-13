@@ -110,6 +110,52 @@ describe("song serializer", function() {
     expect(parsed.tracks[1].fittingStaff()).toEqual("bass")
   })
 
+  it("keeps a left hand staff that switches to treble mid-piece", function() {
+    let xml = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes>
+        <divisions>1</divisions>
+        <time><beats>4</beats><beat-type>4</beat-type></time>
+        <staves>2</staves>
+        <clef number="1"><sign>G</sign><line>2</line></clef>
+        <clef number="2"><sign>F</sign><line>4</line></clef>
+      </attributes>
+      <note><pitch><step>E</step><octave>5</octave></pitch><duration>4</duration><staff>1</staff></note>
+      <backup><duration>4</duration></backup>
+      <note><pitch><step>C</step><octave>3</octave></pitch><duration>4</duration><staff>2</staff></note>
+    </measure>
+    <measure number="2">
+      <note><pitch><step>E</step><octave>5</octave></pitch><duration>4</duration><staff>1</staff></note>
+      <backup><duration>4</duration></backup>
+      <note><pitch><step>G</step><octave>2</octave></pitch><duration>4</duration><staff>2</staff></note>
+    </measure>
+    <measure number="3">
+      <attributes><clef number="2"><sign>G</sign><line>2</line></clef></attributes>
+      <note><pitch><step>E</step><octave>5</octave></pitch><duration>4</duration><staff>1</staff></note>
+      <backup><duration>4</duration></backup>
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>2</duration><staff>2</staff></note>
+      <note><pitch><step>E</step><octave>4</octave></pitch><duration>2</duration><staff>2</staff></note>
+    </measure>
+  </part>
+</score-partwise>`
+
+    let song = parseMusicXML(xml)
+    expect(song.tracks[1].cleffs).toEqual([[0, "f"], [8, "g"]])
+    expect(song.tracks[1].fittingStaff()).toEqual("bass")
+
+    let {code, parsed} = roundTrip(song)
+    expect(code).toContain("t1 m0 /f")
+    expect(parsed.tracks[1].cleffs.length).toEqual(2)
+    expect(parsed.tracks[1].cleffs[0]).toEqual([0, "f"])
+    expect(parsed.tracks[1].cleffs[1][0]).toBeCloseTo(8, 6)
+    expect(parsed.tracks[1].cleffs[1][1]).toEqual("g")
+    expect(parsed.tracks[1].fittingStaff()).toEqual("bass")
+    expect(parsed.tracks[0].fittingStaff()).toEqual("treble")
+  })
+
   it("round trips triplets and sixteenths at 1/12 beat resolution", function() {
     let song = buildSong([[
       ["C5", 0, 1/3],

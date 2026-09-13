@@ -164,7 +164,9 @@ export function serializeSong(song) {
     song.tracks : [song]
 
   let allNotes = [].concat(...tracks.map(track => [...(track || [])]))
-  let unitsPerBeat = resolutionFor(allNotes)
+  let clefTimings = [].concat(...tracks.map(track =>
+    ((track && track.cleffs) || []).map(([start]) => ({start, duration: 0}))))
+  let unitsPerBeat = resolutionFor([...allNotes, ...clefTimings])
 
   // cursor unit is beatsPerNote * timeScale, so timeScale = 1 / (unitsPerBeat * beatsPerNote)
   // which is 1 / (3 * 2^halvings), written as one "tt" and that many "dt"
@@ -183,10 +185,18 @@ export function serializeSong(song) {
       return
     }
 
-    // rewind to the song start before the clef so it is recorded at beat 0
+    // rewind to the song start before the clefs so they are recorded at
+    // their position: at beat 0 in the header, later ones after the block
+    // by resting up to them
     let header = [`t${idx}`, "m0"]
-    if (track.cleffs && track.cleffs.length) {
-      header.push(`/${track.cleffs[0][1]}`)
+    let clefChanges = []
+    for (let [start, sign] of track.cleffs || []) {
+      let units = Math.round(start * unitsPerBeat)
+      if (units > 0) {
+        clefChanges.push(`m0 r${units} /${sign}`)
+      } else {
+        header.push(`/${sign}`)
+      }
     }
 
     lines.push("")
@@ -198,6 +208,7 @@ export function serializeSong(song) {
     })
 
     lines.push("}")
+    lines.push(...clefChanges)
   })
 
   return lines.join("\n") + "\n"

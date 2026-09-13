@@ -12,8 +12,8 @@ import styles from "st/components/song_editor.module.css"
 
 import { KeySignature } from "st/music"
 import {readConfig, writeConfig} from "st/config"
-import {parseMusicXML, MusicXMLError, COMPRESSED_MESSAGE} from "st/musicxml"
-import {serializeSong} from "st/song_serializer"
+import {parseMusicXML, MusicXMLError} from "st/musicxml"
+import {serializeSong, SerializeError} from "st/song_serializer"
 
 const DeleteSongForm = React.memo(function DeleteSongForm(props) {
   const navigate = useNavigate()
@@ -126,9 +126,9 @@ export default class SongEditor extends React.Component {
   }
 
   updateCode(code, callback) {
-    let update = { code }
+    let update = { code, importNotice: null }
     this.setState(update, callback)
-    this.updateWip(update)
+    this.updateWip({ code })
 
     if (this.props.onCode) {
       this.props.onCode(code)
@@ -136,11 +136,15 @@ export default class SongEditor extends React.Component {
   }
 
   beforeSubmit() {
-    if (this.props.songNotes) {
-      this.notesCountInputRef.current.value = this.props.songNotes.length
-      let duration = Math.max(...this.props.songNotes.map((n) => n.getStop()))
-      this.beatsLengthInputRef.current.value = duration
+    let songNotes = null
+    try {
+      songNotes = SongParser.load(this.state.code)
+    } catch (e) {
+      songNotes = null
     }
+
+    this.notesCountInputRef.current.value = songNotes ? songNotes.length : ""
+    this.beatsLengthInputRef.current.value = songNotes ? songNotes.getStopInBeats() : ""
 
     this.setState({
       errors: null,
@@ -177,12 +181,7 @@ export default class SongEditor extends React.Component {
 
     this.setState({importError: null, importNotice: null})
 
-    if (file.name.match(/\.mxl$/i)) {
-      this.setState({importError: COMPRESSED_MESSAGE})
-      return
-    }
-
-    file.text().then(text => {
+    return file.text().then(text => {
       let song
       try {
         song = parseMusicXML(text)
@@ -196,7 +195,10 @@ export default class SongEditor extends React.Component {
       try {
         code = serializeSong(song)
       } catch (err) {
-        code = null
+        if (!(err instanceof SerializeError)) {
+          this.setState({importError: `Failed to import: ${err.message}`})
+          return
+        }
       }
 
       if (this.props.onImportSong) {
@@ -207,7 +209,7 @@ export default class SongEditor extends React.Component {
         this.updateCode(code)
       } else {
         this.setState({
-          importNotice: "This piece uses rhythms the editor's notation can't express, so it can be played but not saved."
+          importNotice: "This piece uses rhythms the editor's notation can't express, so it can be played but not saved. Saving is disabled until you edit the notation."
         })
       }
 
@@ -255,12 +257,14 @@ export default class SongEditor extends React.Component {
         type="button" className="outline">More...</button>
     }
 
+    let saveDisabled = !!this.state.importNotice
+
     if (this.state.song && !this.state.song.allowed_to_edit) {
-      saveButton = <button>Save copy</button>
+      saveButton = <button disabled={saveDisabled}>Save copy</button>
     } else if (this.state.song) {
-      saveButton = <button>Save</button>
+      saveButton = <button disabled={saveDisabled}>Save</button>
     } else {
-      saveButton = <button>Save new song</button>
+      saveButton = <button disabled={saveDisabled}>Save new song</button>
     }
 
     let originalSongIdInput

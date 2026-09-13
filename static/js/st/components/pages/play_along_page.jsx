@@ -15,6 +15,7 @@ import SongEditor from "st/components/song_editor"
 
 import SongParser from "st/song_parser"
 import SongTimer from "st/song_timer"
+import {measureStartsUntil} from "st/song_note_list"
 import {KeySignature, noteName, parseNote} from "st/music"
 import {MidiInput} from "st/midi"
 
@@ -444,7 +445,12 @@ export class PlayAlongPage extends React.Component {
       if ("currentBeat" in this) {
         if (Math.floor(this.currentBeat * mm) < Math.floor(beat * mm)) {
           let m = Math.floor(beat * mm)
-          if (m % beatsMeasure == 0) {
+          let metadata = this.state.song && this.state.song.metadata
+          let downbeat = metadata && metadata.measureStarts ?
+            measureStartsUntil(metadata, m / mm).some(start => Math.abs(start - m / mm) < 1e-6) :
+            m % beatsMeasure == 0
+
+          if (downbeat) {
             this.state.metronome.tick()
           } else {
             this.state.metronome.tock()

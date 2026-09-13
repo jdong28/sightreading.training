@@ -1,5 +1,5 @@
 import {parseMusicXML, MusicXMLError, COMPRESSED_MESSAGE} from "st/musicxml"
-import {SongNote} from "st/song_note_list"
+import {SongNote, measureStartsUntil} from "st/song_note_list"
 
 // [note, start, duration] tuples of a note list, in document order
 let tuples = notes => [...notes].map(n => [n.note, n.start, n.duration])
@@ -439,6 +439,29 @@ describe("musicxml", function() {
       ["D5", 5, 3],
       ["E5", 8, 3],
     ])
+  })
+
+  it("places measures of a pickup piece at the score's measure starts", function() {
+    let xml = partwise(`
+      <measure number="0" implicit="yes">
+        ${attributes({divisions: 1, beats: 3, beatType: 4})}
+        ${note("G", 4, 1)}
+      </measure>
+      <measure number="1">
+        ${note("C", 5, 3)}
+      </measure>
+      <measure number="2">
+        ${note("E", 5, 2)}
+      </measure>
+    `)
+
+    let song = parseMusicXML(xml)
+    expect(song.metadata.measureStarts).toEqual([0, 1, 4])
+    expect(measureStartsUntil(song.metadata, song.getStopInBeats())).toEqual([0, 1, 4, 7])
+    expect(measureStartsUntil(song.metadata, 12)).toEqual([0, 1, 4, 7, 10, 13])
+
+    expect(measureStartsUntil({beatsPerMeasure: 3}, song.getStopInBeats())).toEqual([0, 3, 6])
+    expect(measureStartsUntil({}, 0)).toEqual([0])
   })
 
   it("keeps parts aligned by measure and gives each its own track", function() {

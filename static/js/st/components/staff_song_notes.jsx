@@ -9,7 +9,7 @@ import * as types from "prop-types"
 
 import LedgerLines from "st/components/staff/ledger_lines"
 import BarNotes from "st/components/staff/bar_notes"
-import {SongNoteList} from "st/song_note_list"
+import {SongNoteList, measureStartsUntil} from "st/song_note_list"
 import styles from "st/components/staff.module.css"
 
 class MeasureLines extends React.PureComponent {
@@ -30,32 +30,29 @@ class MeasureLines extends React.PureComponent {
 
   render() {
     const props = this.props
-    let beatsPerMeasure = 4
-
-    if (props.metadata) {
-      beatsPerMeasure = props.metadata.beatsPerMeasure || beatsPerMeasure
-    }
-
-    let stop = props.notes.getStopInBeats()
-    let measures = Math.ceil(stop / beatsPerMeasure)
+    let starts = measureStartsUntil(props.metadata, props.notes.getStopInBeats())
 
     let lines = []
 
     let pixelsPerBeat = props.pixelsPerBeat
-    let measureLeft = Math.max(0, Math.floor(this.props.renderLeft / beatsPerMeasure))
-    let measureRight = Math.min(measures, Math.ceil(this.props.renderRight / beatsPerMeasure))
-
     let offsetLeft = this.props.offsetLeft
 
-    for (let m = measureLeft; m <= measureRight; m++) {
-      let fromLeft = m * beatsPerMeasure * pixelsPerBeat
+    starts.forEach((start, m) => {
+      let next = m + 1 < starts.length ? starts[m + 1] : Infinity
+      let prev = m > 0 ? starts[m - 1] : -Infinity
+
+      if (next < props.renderLeft || prev > props.renderRight) {
+        return
+      }
+
+      let fromLeft = start * pixelsPerBeat
 
       lines.push(<div
         style={{ left: `${offsetLeft + fromLeft - 2}px`}}
         data-label={m + 1}
         key={`measure-${m}`}
         className={styles.measure_line}></div>)
-    }
+    })
 
     return lines
   }

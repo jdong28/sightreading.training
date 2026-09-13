@@ -264,7 +264,6 @@ function walkPart(measures, partName) {
             duration: duration / divisions,
             name,
             staff,
-            voice: childText(el, "voice") || "1",
             tieStart: ties.has("start"),
             tieStop: ties.has("stop"),
           })
