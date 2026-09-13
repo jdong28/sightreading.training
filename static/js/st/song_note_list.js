@@ -3,13 +3,18 @@ import {parseNote, noteName, MIDDLE_C_PITCH} from "st/music"
 
 // Beat positions of a song's measure starts, continuing until one is at or
 // past stop. Imported scores list their measure starts in
-// metadata.measureStarts since pickups and meter changes make measures
-// uneven; later measures repeat the last listed measure's length. Other songs
-// have a measure every beatsPerMeasure beats.
+// metadata.measureStarts, and where the last measure ends in
+// metadata.measuresEnd, since pickups and meter changes make measures uneven;
+// later measures repeat the last measure's length. Other songs have a measure
+// every beatsPerMeasure beats.
 export function measureStartsUntil(metadata, stop) {
   let beatsPerMeasure = (metadata && metadata.beatsPerMeasure) || 4
   let listed = metadata && metadata.measureStarts
   let starts = listed && listed.length ? [...listed] : [0]
+
+  if (listed && metadata.measuresEnd > starts[starts.length - 1]) {
+    starts.push(metadata.measuresEnd)
+  }
 
   let step = beatsPerMeasure
   if (starts.length > 1 && starts[starts.length - 1] > starts[starts.length - 2]) {
@@ -21,6 +26,16 @@ export function measureStartsUntil(metadata, stop) {
   }
 
   return starts
+}
+
+// Whether metronome click number click, at clicksPerBeat clicks per beat,
+// is the first click at or after one of the song's listed measure starts
+export function clickStartsMeasure(metadata, click, clicksPerBeat) {
+  let beat = click / clicksPerBeat
+  let previousBeat = (click - 1) / clicksPerBeat
+
+  return measureStartsUntil(metadata, beat).some(start =>
+    start > previousBeat + 1e-6 && start <= beat + 1e-6)
 }
 
 export class SongNoteTimer {

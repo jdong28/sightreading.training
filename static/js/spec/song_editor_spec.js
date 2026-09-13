@@ -62,6 +62,13 @@ describe("song editor", function() {
     expect(editor.notesCountInputRef.current.value).toEqual("2")
     expect(editor.beatsLengthInputRef.current.value).toEqual("2")
 
+    await importText(editor, "broken.musicxml", "<score-partwise>")
+    await nextRender()
+
+    expect(editor.state.importError).toBeTruthy()
+    expect(editor.state.importNotice).toBeTruthy()
+    expect(saveButton().disabled).toBe(true)
+
     flushSync(() => editor.updateCode("c5 d5 e5"))
     expect(editor.state.importNotice).toBe(null)
     expect(saveButton().disabled).toBe(false)

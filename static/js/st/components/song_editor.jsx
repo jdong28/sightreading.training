@@ -179,7 +179,7 @@ export default class SongEditor extends React.Component {
     // let the same file be picked again
     e.target.value = ""
 
-    this.setState({importError: null, importNotice: null})
+    this.setState({importError: null})
 
     return file.text().then(text => {
       let song

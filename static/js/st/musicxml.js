@@ -386,6 +386,7 @@ export function parseMusicXML(text) {
       (parts.map(p => p.fifths).find(f => f != null) || 0),
     beatsPerMeasure,
     measureStarts,
+    measuresEnd: start,
   }
 
   let title = scoreTitle(root)

@@ -1,5 +1,5 @@
 import {parseMusicXML, MusicXMLError, COMPRESSED_MESSAGE} from "st/musicxml"
-import {SongNote, measureStartsUntil} from "st/song_note_list"
+import {SongNote, measureStartsUntil, clickStartsMeasure} from "st/song_note_list"
 
 // [note, start, duration] tuples of a note list, in document order
 let tuples = notes => [...notes].map(n => [n.note, n.start, n.duration])
@@ -457,11 +457,39 @@ describe("musicxml", function() {
 
     let song = parseMusicXML(xml)
     expect(song.metadata.measureStarts).toEqual([0, 1, 4])
-    expect(measureStartsUntil(song.metadata, song.getStopInBeats())).toEqual([0, 1, 4, 7])
-    expect(measureStartsUntil(song.metadata, 12)).toEqual([0, 1, 4, 7, 10, 13])
+    expect(song.metadata.measuresEnd).toEqual(6)
+    expect(measureStartsUntil(song.metadata, song.getStopInBeats())).toEqual([0, 1, 4, 6])
+    expect(measureStartsUntil(song.metadata, 9)).toEqual([0, 1, 4, 6, 8, 10])
 
     expect(measureStartsUntil({beatsPerMeasure: 3}, song.getStopInBeats())).toEqual([0, 3, 6])
     expect(measureStartsUntil({}, 0)).toEqual([0])
+  })
+
+  it("accents the first metronome click of each measure after an eighth note pickup", function() {
+    let xml = partwise(`
+      <measure number="0" implicit="yes">
+        ${attributes({divisions: 2, beats: 4, beatType: 4})}
+        ${note("G", 4, 1)}
+      </measure>
+      <measure number="1">
+        ${note("C", 5, 8)}
+      </measure>
+      <measure number="2">
+        ${note("E", 5, 8)}
+      </measure>
+    `)
+
+    let song = parseMusicXML(xml)
+    expect(song.metadata.measureStarts).toEqual([0, 0.5, 4.5])
+
+    let accented = (clicks, clicksPerBeat) => clicks
+      .filter(click => clickStartsMeasure(song.metadata, click, clicksPerBeat))
+
+    let beats = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    expect(accented(beats, 1)).toEqual([0, 1, 5, 9])
+
+    let halfBeats = [...Array(21).keys()]
+    expect(accented(halfBeats, 2)).toEqual([0, 1, 9, 17])
   })
 
   it("keeps parts aligned by measure and gives each its own track", function() {
