@@ -404,30 +404,41 @@ export class GeneratorSettings extends React.PureComponent {
   }
 
   // pick a song from the play along library to fill the text input, see
-  // componentDidMount for when the library is loaded
+  // componentDidMount for when the library is loaded. The public list is the
+  // library's first page only (its newest songs)
   renderSongLibrary(input) {
-    let songs = this.state.librarySongs || []
-    if (!songs.length) { return }
+    let library = this.state.songLibrary
+    if (!library) { return }
 
-    let options = [{name: "Load from library…", value: ""}].concat(
-      songs.map(song => ({name: song.title, value: String(song.id)}))
-    )
+    let groups = [
+      ["your songs", library.mySongs],
+      ["recent public songs", library.publicSongs],
+    ]
 
-    return <Select
-      className={styles.select_component}
-      value=""
-      options={options}
-      onChange={songId => {
-        if (!songId) { return }
-        let request = new XMLHttpRequest()
-        request.open("GET", `/songs/${songId}.lml`)
-        request.onload = () => {
-          if (request.status == 200) {
-            this.updateInputValue(input, request.responseText)
+    return groups.map(([label, songs]) => {
+      if (!songs.length) { return }
+
+      let options = [{name: `Load from ${label}…`, value: ""}].concat(
+        songs.map(song => ({name: song.title, value: String(song.id)}))
+      )
+
+      return <Select
+        key={label}
+        className={styles.select_component}
+        value=""
+        options={options}
+        onChange={songId => {
+          if (!songId) { return }
+          let request = new XMLHttpRequest()
+          request.open("GET", `/songs/${songId}.lml`)
+          request.onload = () => {
+            if (request.status == 200) {
+              this.updateInputValue(input, request.responseText)
+            }
           }
-        }
-        request.send()
-      }} />
+          request.send()
+        }} />
+    })
   }
 
   loadSongLibrary() {
@@ -436,10 +447,12 @@ export class GeneratorSettings extends React.PureComponent {
     request.onload = () => {
       try {
         let res = JSON.parse(request.responseText)
-        let songs = (res.my_songs || []).concat(res.songs || [])
-        this.setState({librarySongs: songs})
+        this.setState({songLibrary: {
+          mySongs: res.my_songs || [],
+          publicSongs: res.songs || [],
+        }})
       } catch (e) {
-        this.setState({librarySongs: []})
+        this.setState({songLibrary: null})
       }
     }
     request.send()

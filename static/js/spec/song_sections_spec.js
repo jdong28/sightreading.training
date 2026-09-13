@@ -8,9 +8,9 @@ import {
 
 import {
   SheetMusicGenerator, generatorDefaultSettings, storeGeneratorSettings,
-  storeCurrentGenerator, currentGeneratorFor, CURRENT_GENERATOR_STORAGE_KEY
+  storeCurrentDrill, currentStaffFor, currentGeneratorFor, DRILL_STORAGE_KEY
 } from "st/generators"
-import {sheetMusicSection, SHEET_MUSIC_STORAGE_KEY} from "st/data"
+import {sheetMusicSection} from "st/data"
 import NoteList from "st/note_list"
 
 describe("song sections", function() {
@@ -214,9 +214,12 @@ describe("song sections", function() {
   })
 
   describe("stored deck", function() {
+    // a spec-only key so running the specs never touches the real deck
+    const storageKey = "st:spec_deck"
+
     const generator = {
       name: "stored",
-      storageKey: SHEET_MUSIC_STORAGE_KEY,
+      storageKey,
       inputs: [
         {name: "song", type: "text", default: ""},
         {name: "startMeasure", type: "number", default: 1, min: 1, max: 9999},
@@ -226,11 +229,11 @@ describe("song sections", function() {
     }
 
     afterEach(function() {
-      window.localStorage.removeItem(SHEET_MUSIC_STORAGE_KEY)
+      window.localStorage.removeItem(storageKey)
     })
 
     it("restores the whole section configuration", function() {
-      storeGeneratorSettings(SHEET_MUSIC_STORAGE_KEY, {
+      storeGeneratorSettings(storageKey, {
         song: twoHands, startMeasure: 2, endMeasure: 2, track: "track t1",
       })
 
@@ -240,7 +243,7 @@ describe("song sections", function() {
     })
 
     it("ignores stored values of the wrong shape", function() {
-      window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+      window.localStorage.setItem(storageKey, JSON.stringify({
         song: 12, startMeasure: "2", endMeasure: 99999,
       }))
 
@@ -248,34 +251,55 @@ describe("song sections", function() {
         song: "", startMeasure: 1, endMeasure: 9999, track: "all",
       })
 
-      window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, "not json")
+      window.localStorage.setItem(storageKey, "not json")
       expect(generatorDefaultSettings(generator, staff).song).toEqual("")
     })
   })
 
-  describe("stored generator", function() {
+  describe("stored drill", function() {
+    const treble = {name: "treble", mode: "notes"}
+    const grand = {name: "grand", mode: "notes"}
+    const staves = [treble, grand]
+
     const random = {name: "random", mode: "notes"}
     const sheetMusic = {name: "sheet music", mode: "notes"}
     const chords = {name: "random", mode: "chords"}
     const generators = [random, sheetMusic, chords]
 
-    afterEach(function() {
-      window.localStorage.removeItem(CURRENT_GENERATOR_STORAGE_KEY)
+    // the drill key is shared with the app on this origin, so put back
+    // whatever the user was drilling once the specs are done
+    let saved
+    beforeEach(function() {
+      saved = window.localStorage.getItem(DRILL_STORAGE_KEY)
+      window.localStorage.removeItem(DRILL_STORAGE_KEY)
     })
 
-    it("restores the chosen generator for the staff mode", function() {
+    afterEach(function() {
+      if (saved == null) {
+        window.localStorage.removeItem(DRILL_STORAGE_KEY)
+      } else {
+        window.localStorage.setItem(DRILL_STORAGE_KEY, saved)
+      }
+    })
+
+    it("restores the chosen staff and generator", function() {
+      expect(currentStaffFor(staves)).toBe(treble)
       expect(currentGeneratorFor(generators, "notes")).toBe(random)
 
-      storeCurrentGenerator(sheetMusic)
+      storeCurrentDrill({staff: "grand"})
+      storeCurrentDrill({generator: "sheet music"})
+      expect(currentStaffFor(staves)).toBe(grand)
       expect(currentGeneratorFor(generators, "notes")).toBe(sheetMusic)
       expect(currentGeneratorFor(generators, "chords")).toBe(chords)
     })
 
-    it("falls back when the stored generator is unknown or malformed", function() {
-      window.localStorage.setItem(CURRENT_GENERATOR_STORAGE_KEY, JSON.stringify({name: "gone"}))
+    it("falls back when the stored drill is unknown or malformed", function() {
+      window.localStorage.setItem(DRILL_STORAGE_KEY, JSON.stringify({staff: "gone", generator: "gone"}))
+      expect(currentStaffFor(staves)).toBe(treble)
       expect(currentGeneratorFor(generators, "notes")).toBe(random)
 
-      window.localStorage.setItem(CURRENT_GENERATOR_STORAGE_KEY, "not json")
+      window.localStorage.setItem(DRILL_STORAGE_KEY, "not json")
+      expect(currentStaffFor(staves)).toBe(treble)
       expect(currentGeneratorFor(generators, "notes")).toBe(random)
     })
   })

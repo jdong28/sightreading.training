@@ -64,18 +64,27 @@ export function storeGeneratorSettings(storageKey, settings) {
   }
 }
 
-// the generator picked in the settings panel is kept in browser storage so a
-// reload lands back on it (eg. the sheet music deck being drilled)
-export const CURRENT_GENERATOR_STORAGE_KEY = "st:generator"
+// the staff and generator picked in the settings panel are kept in browser
+// storage so a reload lands back on the same drill (eg. the sheet music deck)
+export const DRILL_STORAGE_KEY = "st:drill"
 
-export function storeCurrentGenerator(generator) {
-  storeGeneratorSettings(CURRENT_GENERATOR_STORAGE_KEY, {name: generator.name})
+export function storeCurrentDrill(update) {
+  storeGeneratorSettings(DRILL_STORAGE_KEY, {
+    ...loadGeneratorSettings(DRILL_STORAGE_KEY),
+    ...update,
+  })
+}
+
+// the stored staff, or the first one
+export function currentStaffFor(staves) {
+  let {staff} = loadGeneratorSettings(DRILL_STORAGE_KEY)
+  return staves.find(s => s.name == staff) || staves[0]
 }
 
 // the stored generator for the staff mode, or the first one of that mode
 export function currentGeneratorFor(generators, mode) {
-  let {name} = loadGeneratorSettings(CURRENT_GENERATOR_STORAGE_KEY)
-  return generators.find(g => g.mode == mode && g.name == name) ||
+  let {generator} = loadGeneratorSettings(DRILL_STORAGE_KEY)
+  return generators.find(g => g.mode == mode && g.name == generator) ||
     generators.find(g => g.mode == mode)
 }
 

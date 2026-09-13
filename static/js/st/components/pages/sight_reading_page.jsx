@@ -18,7 +18,7 @@ import {GeneratorSettings, SettingsPanel} from "st/components/sight_reading/sett
 import {setTitle, gaEvent, csrfToken} from "st/globals"
 import {dispatch, trigger} from "st/events"
 import {NOTE_EVENTS} from "st/midi"
-import {generatorDefaultSettings, storeCurrentGenerator, currentGeneratorFor} from "st/generators"
+import {generatorDefaultSettings, storeCurrentDrill, currentStaffFor, currentGeneratorFor} from "st/generators"
 
 import * as React from "react"
 import classNames from "classnames"
@@ -91,7 +91,7 @@ export default class SightReadingPage extends React.Component {
   componentDidMount() {
     setTitle()
 
-    this.setStaff(STAVES[0], () => {
+    this.setStaff(currentStaffFor(STAVES), () => {
       this.enterWaitMode()
     })
 
@@ -462,7 +462,7 @@ export default class SightReadingPage extends React.Component {
   }
 
   setGenerator(generator, settings) {
-    storeCurrentGenerator(generator)
+    storeCurrentDrill({generator: generator.name})
     this.setState({
       currentGenerator: generator,
       currentGeneratorSettings: settings,
@@ -473,6 +473,8 @@ export default class SightReadingPage extends React.Component {
     if (this.state.currentStaff == staff) {
       return
     }
+
+    storeCurrentDrill({staff: staff.name})
 
     let update = {
       currentStaff: staff,
