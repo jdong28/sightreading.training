@@ -27,6 +27,9 @@ watches for changes, and reloads the page automatically. Backend-only features
 (login, stats, the play-along song library) will not function in this mode;
 everything else works, including MIDI input and output.
 
+The jasmine specs (`static/js/specs.js`) are bundled by the same dev server;
+open <http://localhost:3000/dev/specs.html> to run them in the browser.
+
 The full site build (backend + minified production assets) uses the
 [tup](https://gittup.org/tup/) build system, see the Tupfiles in the repo.
 

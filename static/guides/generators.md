@@ -25,6 +25,7 @@ The available generator types:
 *   **Sevens** — Chooses a random [seventh chord](https://en.wikipedia.org/wiki/Seventh_chord) with open voicing (this one sounds the most pleasant)
 *   **Progression** — Chooses a random chord from a popular progression within the key signature
 *   **Position** — Generates notes in a way that encourages you to use all of your fingers. See below for more information
+*   **Sheet music** — Drills a section of a song you provide, one column of notes at a time. See below for more information
 
 ## The smoothness parameter
 
@@ -45,3 +46,12 @@ The following parameters are available for the **Random** generator:
 ### The Position Generator
 
 The **Position Generator** is designed to have you utilize all of your fingers while sight reading. You'll be given notes in sets of 5, the first note will contain a fingering. All subsequent notes should be played without moving your hand, and with using each of your fingers.
+
+### The Sheet Music Generator
+
+The **Sheet Music** generator turns a section of a song into flash cards for repeated sight reading and memorization. Paste song notation in the play along format, or pick a song from the play along library when logged in, then choose:
+
+*   **Start measure** and **end measure** — The section to drill, counting the first measure as 1
+*   **Track** — Limit the section to one track of the song (for example one hand), or use all tracks
+
+Notes that start on the same beat are shown together as one column, and the section loops once you reach its end. Rhythm is ignored. Notes outside the range of the chosen staff are skipped, and the settings panel reports how many. Generated accompaniment from chord symbols is not included. The song, section, track, staff and generator are saved in your browser, so reloading the page returns to the same drill.

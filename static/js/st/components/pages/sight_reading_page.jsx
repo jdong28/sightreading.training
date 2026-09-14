@@ -18,7 +18,7 @@ import {GeneratorSettings, SettingsPanel} from "st/components/sight_reading/sett
 import {setTitle, gaEvent, csrfToken} from "st/globals"
 import {dispatch, trigger} from "st/events"
 import {NOTE_EVENTS} from "st/midi"
-import {generatorDefaultSettings} from "st/generators"
+import {generatorDefaultSettings, storeCurrentDrill, currentStaffFor, currentGeneratorFor} from "st/generators"
 
 import * as React from "react"
 import classNames from "classnames"
@@ -91,7 +91,7 @@ export default class SightReadingPage extends React.Component {
   componentDidMount() {
     setTitle()
 
-    this.setStaff(STAVES[0], () => {
+    this.setStaff(currentStaffFor(STAVES), () => {
       this.enterWaitMode()
     })
 
@@ -195,8 +195,14 @@ export default class SightReadingPage extends React.Component {
   checkRelease() {
     switch (this.state.currentGenerator.mode) {
       case "notes": {
-        let missed = this.state.notes.currentColumn()
-          .filter((n) => !this.state.heldNotes[n]);
+        let column = this.state.notes.currentColumn()
+
+        if (column.length == 0) {
+          this.setState({heldNotes: {}, touchedNotes: {}})
+          break
+        }
+
+        let missed = column.filter((n) => !this.state.heldNotes[n]);
 
         gaEvent("sight_reading", "note", "miss");
         this.state.stats.missNotes(missed);
@@ -254,10 +260,17 @@ export default class SightReadingPage extends React.Component {
   checkPress() {
     switch (this.state.currentGenerator.mode) {
       case "notes": {
+        // presses batched into one render (eg. a chord's note-ons in one MIDI
+        // packet) all see the same head, only the first one may advance it
+        if (this.advancedNotes == this.state.notes) {
+          return false
+        }
+
         let touched = Object.keys(this.state.touchedNotes);
         if (this.state.notes.matchesHead(touched, this.state.anyOctave)) {
           gaEvent("sight_reading", "note", "hit");
 
+          this.advancedNotes = this.state.notes
           let notes = this.state.notes.clone()
           notes.shift();
           notes.pushRandom();
@@ -435,7 +448,10 @@ export default class SightReadingPage extends React.Component {
           this.setOffset(value)
         },
         onLoop: function() {
-          this.state.stats.missNotes(this.state.notes.currentColumn());
+          let column = this.state.notes.currentColumn()
+          if (column.length) {
+            this.state.stats.missNotes(column);
+          }
           let notes = this.state.notes.clone()
           notes.shift();
           notes.pushRandom();
@@ -452,10 +468,20 @@ export default class SightReadingPage extends React.Component {
     })
   }
 
+  setGenerator(generator, settings) {
+    storeCurrentDrill({generator: generator.name})
+    this.setState({
+      currentGenerator: generator,
+      currentGeneratorSettings: settings,
+    })
+  }
+
   setStaff(staff, callback) {
     if (this.state.currentStaff == staff) {
       return
     }
+
+    storeCurrentDrill({staff: staff.name})
 
     let update = {
       currentStaff: staff,
@@ -464,8 +490,7 @@ export default class SightReadingPage extends React.Component {
 
     // if the current generator is not compatible with new staff change it
     if (!this.state.currentGenerator || (this.state.currentGenerator.mode != staff.mode)) {
-      let newGenerator = GENERATORS.find(g => staff.mode == g.mode)
-      update.currentGenerator = newGenerator
+      update.currentGenerator = currentGeneratorFor(GENERATORS, staff.mode)
       update.currentGeneratorSettings = {}
     }
 
@@ -571,10 +596,7 @@ export default class SightReadingPage extends React.Component {
         currentStaff={this.state.currentStaff}
         currentKey={this.state.keySignature}
 
-        setGenerator={this._setGenerator ||= (g, settings) => this.setState({
-          currentGenerator: g,
-          currentGeneratorSettings: settings,
-        })}
+        setGenerator={this._setGenerator ||= this.setGenerator.bind(this)}
 
         setKeySignature={this._setKeySignature ||= this.setKeySignature.bind(this)}
         setStaff={this._setStaff ||= this.setStaff.bind(this)}

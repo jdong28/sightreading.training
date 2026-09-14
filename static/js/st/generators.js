@@ -38,7 +38,54 @@ export function generatorDefaultSettings(generator, staff) {
     out[input.name] = defaultValue(input)
   }
 
+  if (generator.storageKey) {
+    Object.assign(out, fixGeneratorSettings(generator, loadGeneratorSettings(generator.storageKey)))
+  }
+
   return out
+}
+
+// generators with a storageKey keep their last settings in browser storage so
+// a reload restores them (eg. the sheet music section being drilled)
+export function loadGeneratorSettings(storageKey) {
+  try {
+    let stored = JSON.parse(window.localStorage.getItem(storageKey))
+    return stored && typeof stored == "object" ? stored : {}
+  } catch (e) {
+    return {}
+  }
+}
+
+export function storeGeneratorSettings(storageKey, settings) {
+  try {
+    window.localStorage.setItem(storageKey, JSON.stringify(settings))
+  } catch (e) {
+    // storage unavailable (private mode, quota); the settings still live in state
+  }
+}
+
+// the staff and generator picked in the settings panel are kept in browser
+// storage so a reload lands back on the same drill (eg. the sheet music deck)
+export const DRILL_STORAGE_KEY = "st:drill"
+
+export function storeCurrentDrill(update) {
+  storeGeneratorSettings(DRILL_STORAGE_KEY, {
+    ...loadGeneratorSettings(DRILL_STORAGE_KEY),
+    ...update,
+  })
+}
+
+// the stored staff, or the first one
+export function currentStaffFor(staves) {
+  let {staff} = loadGeneratorSettings(DRILL_STORAGE_KEY)
+  return staves.find(s => s.name == staff) || staves[0]
+}
+
+// the stored generator for the staff mode, or the first one of that mode
+export function currentGeneratorFor(generators, mode) {
+  let {generator} = loadGeneratorSettings(DRILL_STORAGE_KEY)
+  return generators.find(g => g.mode == mode && g.name == generator) ||
+    generators.find(g => g.mode == mode)
 }
 
 // strip any values that don't make sense
@@ -54,12 +101,16 @@ export function fixGeneratorSettings(generator, settings) {
     if (currentValue != null) {
       switch (input.type) {
         case "select": {
-          let found = input.values.filter(v => v.name == currentValue)
-          if (!found) {
-            currentValue = null
+          // dynamic option lists are validated at render time
+          if (typeof input.values != "function") {
+            let found = input.values.find(v => v.name == currentValue)
+            if (!found) {
+              currentValue = null
+            }
           }
           break
         }
+        case "number":
         case "range": {
           if (typeof currentValue == "number") {
             currentValue = Math.min(
@@ -73,6 +124,12 @@ export function fixGeneratorSettings(generator, settings) {
         }
         case "bool": {
           if (typeof currentValue != "boolean") {
+            currentValue = null
+          }
+          break
+        }
+        case "text": {
+          if (typeof currentValue != "string") {
             currentValue = null
           }
           break
@@ -660,3 +717,23 @@ export class IntervalGenerator extends Generator {
   }
 }
 
+
+// Plays back a fixed list of columns in order, wrapping around to the start
+// so a section of a song loops as sight reading flashcards. An empty section
+// yields empty columns, which the staff renders as nothing to play.
+export class SheetMusicGenerator {
+  constructor(columns=[]) {
+    this.columns = columns
+    this.position = 0
+  }
+
+  nextNote() {
+    if (!this.columns.length) {
+      return []
+    }
+
+    let column = this.columns[this.position % this.columns.length]
+    this.position += 1
+    return [...column]
+  }
+}
