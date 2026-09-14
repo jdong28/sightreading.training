@@ -230,11 +230,15 @@ export class PlayAlongPage extends React.Component {
     let code = this.state.currentSongCode
 
     let imported = this.state.importedSong
-    if (imported && imported.code == code) {
-      if (this.state.song != imported.song) {
-        this.setSong(imported.song)
+    if (imported) {
+      if (imported.code == code) {
+        if (this.state.song != imported.song) {
+          this.setSong(imported.song)
+        }
+        return
       }
-      return
+
+      this.setState({importedSong: null})
     }
 
     try {
