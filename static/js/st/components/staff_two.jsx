@@ -944,21 +944,17 @@ export class StaffTwo extends React.PureComponent {
     g.addTo(this.stavesGroup)
   }
 
-  // this will return a fresh copy of the asset that can be mutated. Returns
-  // null (rather than throwing) if the asset's hidden DOM node hasn't
-  // attached its ref yet -- e.g. reached on a first paint before that
-  // commit -- since the caller retries once assetsReady() is true
+  // this will return a fresh copy of the asset that can be mutated
   getAsset(name) {
     const startTime = performance.now()
 
     this.assetCache ||= {}
 
     if (!this.assetCache[name]) {
-      const ref = this.assets[name]
-      const domNode = ref && ref.current
+      const domNode = this.assets[name].current
 
       if (!domNode) {
-        return null
+        throw new Error("Failed to find asset by name: " + name)
       }
 
       const loaded = this.state.two.interpret(domNode, false, false)
@@ -971,12 +967,10 @@ export class StaffTwo extends React.PureComponent {
     return asset
   }
 
-  // names of every asset rendered in the hidden assets tree below; used to
-  // decide whether it's safe to build the staves yet
-  static ASSET_NAMES = ["gclef", "fclef", "cclef", "brace", "flat", "sharp", "natural", "wholeNote", "quarterNote"]
-
+  // true once every asset ref assigned in render has attached its DOM node
   assetsReady() {
-    return StaffTwo.ASSET_NAMES.every(name => this.assets[name] && this.assets[name].current)
+    const refs = Object.values(this.assets)
+    return refs.length > 0 && refs.every(ref => ref.current)
   }
 
   // NOTE: flushChanges is set by the prop watchers in the rendered contents of

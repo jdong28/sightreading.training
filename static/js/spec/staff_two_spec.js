@@ -415,7 +415,7 @@ describe("staff two mount/unmount race", function() {
     flushSync(() => root.unmount())
   })
 
-  it("does not throw when getAsset runs before its asset ref has attached", function() {
+  it("waits for asset refs to attach before rendering the staves", function() {
     const root = createRoot(container)
 
     let instance
@@ -428,12 +428,41 @@ describe("staff two mount/unmount race", function() {
       }))
     })
 
-    // simulate a first paint that reaches getAsset before the hidden asset
-    // elements have committed and attached their refs (this.assets[name].current)
-    instance.assets = {gclef: {current: null}}
+    // swap in a fresh, unattached ref so the next render mounts a staff that
+    // needs it before React commits and attaches it
+    instance.assets.fclef = React.createRef()
     instance.assetCache = {}
 
-    expect(() => instance.getAsset("gclef")).not.toThrow()
+    expect(() => flushSync(() => {
+      root.render(React.createElement(StaffTwo, {
+        ref: inst => { instance = inst },
+        type: "bass",
+        keySignature: new KeySignature(0),
+        notes: new NoteList([["C5"]])
+      }))
+    })).not.toThrow()
+    expect(instance.assets.fclef.current).toBeTruthy()
+    expect(instance.bassStaffRef.current).toBeTruthy()
+
+    flushSync(() => root.unmount())
+  })
+
+  it("throws a clear error when an asset is genuinely missing", function() {
+    const root = createRoot(container)
+
+    let instance
+    flushSync(() => {
+      root.render(React.createElement(StaffTwo, {
+        ref: inst => { instance = inst },
+        type: "treble",
+        keySignature: new KeySignature(0)
+      }))
+    })
+
+    instance.assets.gclef = {current: null}
+    instance.assetCache = {}
+
+    expect(() => instance.getAsset("gclef")).toThrowError("Failed to find asset by name: gclef")
 
     flushSync(() => root.unmount())
   })
