@@ -447,6 +447,26 @@ describe("local store", function() {
       })
     })
 
+    it("stores a session together with its section practice in one write", async function() {
+      let store = await open()
+      await store.recordSectionPractice({pieceId: "a", startMeasure: 1, endMeasure: 4, hits: 2, misses: 1, at: 1000})
+
+      spyOn(store.backend, "write").and.callThrough()
+      let practice = {pieceId: "a", startMeasure: 1, endMeasure: 4, hits: 5, misses: 0, at: 2000}
+      await store.putSession({id: "s", startedAt: Date.now()}, {sectionPractice: practice})
+
+      // leaving the page runs no later write, so nothing may wait on another
+      expect(store.backend.write).toHaveBeenCalledTimes(1)
+      expect(store.recentSessions().map(s => s.id)).toEqual(["s"])
+      expect(store.sectionStats("a")[0].hits).toEqual(7)
+
+      let reopened = await open({keep: true})
+      expect(reopened.recentSessions().map(s => s.id)).toEqual(["s"])
+      expect(reopened.sectionStats("a")).toEqual([
+        {pieceId: "a", startMeasure: 1, endMeasure: 4, hits: 7, misses: 1, attempts: 2, lastPracticed: 2000},
+      ])
+    })
+
     it("refuses a session without an id or start", async function() {
       let store = await open()
       await expectAsync(store.putSession({startedAt: 5})).toBeRejected()

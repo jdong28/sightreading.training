@@ -600,6 +600,15 @@ export default class SightReadingPage extends React.Component {
   // section. Called when the section, generator or stats change and when the
   // session is recorded, so every note counts once
   flushSectionPractice() {
+    let practice = this.takeSectionPractice()
+    if (!practice) { return }
+
+    getAppStore().recordSectionPractice(practice)
+      .catch(err => console.warn("Couldn't save the section stats", err))
+  }
+
+  // The practice on the drilled section since the last flush, if any
+  takeSectionPractice() {
     let mark = this.sectionMark
     let stats = this.state.stats
 
@@ -610,23 +619,22 @@ export default class SightReadingPage extends React.Component {
       misses: stats.misses,
     }
 
-    if (!mark || !mark.section) { return }
+    if (!mark || !mark.section) { return null }
 
     let hits = mark.stats.hits - mark.hits
     let misses = mark.stats.misses - mark.misses
-    if (!hits && !misses) { return }
+    if (!hits && !misses) { return null }
 
     let {pieceId, startMeasure, endMeasure} = mark.section
-    getAppStore().recordSectionPractice({
-      pieceId, startMeasure, endMeasure, hits, misses,
-      at: mark.stats.endedAt,
-    }).catch(err => console.warn("Couldn't save the section stats", err))
+    return {pieceId, startMeasure, endMeasure, hits, misses, at: mark.stats.endedAt}
   }
 
   // Writes the current session to the local store, replacing what an earlier
-  // call wrote for it. Nothing is written before a note is played
+  // call wrote for it, together with the section practice in one write that
+  // starts right away, as the page may be going away. Nothing is written
+  // before a note is played
   recordSession() {
-    this.flushSectionPractice()
+    let sectionPractice = this.takeSectionPractice()
 
     let settings = this.currentSettings()
     let section = this.currentPieceSection()
@@ -640,9 +648,15 @@ export default class SightReadingPage extends React.Component {
       settings,
     })
 
-    if (!session) { return }
+    if (!session) {
+      if (sectionPractice) {
+        getAppStore().recordSectionPractice(sectionPractice)
+          .catch(err => console.warn("Couldn't save the section stats", err))
+      }
+      return
+    }
 
-    getAppStore().putSession(session)
+    getAppStore().putSession(session, {sectionPractice})
       .catch(err => console.warn("Couldn't save the practice session", err))
   }
 

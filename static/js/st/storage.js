@@ -172,6 +172,12 @@ class IndexedDBBackend {
       tx.objectStore(op.store).delete(op.delete) :
       tx.objectStore(op.store).put(op.put))
 
+    // commit now rather than when control returns to the event loop, which
+    // never happens for a write started as the page is left or reloaded
+    if (tx.commit) {
+      tx.commit()
+    }
+
     await Promise.all([...requests, tx.done])
   }
 
@@ -533,52 +539,71 @@ export class LocalStore {
    * @param {number} [practice.at] when it was practiced, defaults to now
    * @returns {Promise<SectionStatsRecord>}
    */
-  recordSectionPractice({pieceId, startMeasure, endMeasure, hits, misses, at=Date.now()}) {
+  recordSectionPractice(practice) {
     return this.mutate(async () => {
-      let section = {pieceId, startMeasure, endMeasure}
-      let current = this.cache.sectionStats.find(stats => sameSection(stats, section)) ||
-        {...section, hits: 0, misses: 0, attempts: 0, lastPracticed: 0}
-
-      let record = {
-        ...current,
-        hits: current.hits + hits,
-        misses: current.misses + misses,
-        attempts: current.attempts + 1,
-        lastPracticed: Math.max(current.lastPracticed, at),
-      }
-
-      if (!validSectionStats(record)) {
-        throw new Error("Not a valid section practice")
-      }
-
+      let record = this.sectionPracticeRecord(practice)
       await this.backend.write([{store: "sectionStats", put: record}])
-
-      this.cache = {
-        ...this.cache,
-        sectionStats: [...this.cache.sectionStats.filter(stats => !sameSection(stats, record)), record],
-      }
-
+      this.cacheSectionStats(record)
       return record
     })
   }
 
+  // the stats of the practiced section with the practice added
+  sectionPracticeRecord({pieceId, startMeasure, endMeasure, hits, misses, at=Date.now()}) {
+    let section = {pieceId, startMeasure, endMeasure}
+    let current = this.cache.sectionStats.find(stats => sameSection(stats, section)) ||
+      {...section, hits: 0, misses: 0, attempts: 0, lastPracticed: 0}
+
+    let record = {
+      ...current,
+      hits: current.hits + hits,
+      misses: current.misses + misses,
+      attempts: current.attempts + 1,
+      lastPracticed: Math.max(current.lastPracticed, at),
+    }
+
+    if (!validSectionStats(record)) {
+      throw new Error("Not a valid section practice")
+    }
+
+    return record
+  }
+
+  cacheSectionStats(record) {
+    this.cache = {
+      ...this.cache,
+      sectionStats: [...this.cache.sectionStats.filter(stats => !sameSection(stats, record)), record],
+    }
+  }
+
   /**
    * Adds or replaces (by id) a session, so a session in progress can be
-   * written again as it grows.
+   * written again as it grows. The section practice given with it is added
+   * in the same transaction, so both are stored when the page is left.
    * @param {SessionRecord} session
+   * @param {Object} [opts]
+   * @param {Object} [opts.sectionPractice] as for recordSectionPractice
    * @returns {Promise<SessionRecord>}
    */
-  putSession(session) {
+  putSession(session, {sectionPractice}={}) {
     return this.mutate(async () => {
       if (!validSession(session)) {
         throw new Error("Not a valid session")
       }
 
-      await this.backend.write([{store: "sessions", put: session}])
+      let stats = sectionPractice && this.sectionPracticeRecord(sectionPractice)
+      await this.backend.write([
+        {store: "sessions", put: session},
+        ...(stats ? [{store: "sectionStats", put: stats}] : []),
+      ])
 
       this.cache = {
         ...this.cache,
         sessions: [...this.cache.sessions.filter(s => s.id != session.id), session].sort(byStart),
+      }
+
+      if (stats) {
+        this.cacheSectionStats(stats)
       }
 
       return session
