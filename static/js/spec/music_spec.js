@@ -105,6 +105,18 @@ describe("scales", function() {
     ]);
   });
 
+  // regression: getRange() used to spell notes from the raw pitch alone, so
+  // scale degrees that are enharmonically a "natural" note (eg. Cb == B,
+  // E# == F, B# == C) came out under the wrong letter instead of the one
+  // that keeps each letter name used exactly once in the scale.
+  it("gets notes in C# MajorScale", function() {
+    let scale = new MajorScale("C#");
+    // C♯, D♯, E♯, F♯, G♯, A♯, B♯
+    expect(scale.getRange(5)).toEqual([
+      "C#5", "D#5", "E#5", "F#5", "G#5", "A#5", "B#5", "C#6"
+    ]);
+  });
+
   it("gets notes in F MajorScale", function() {
     let scale = new MajorScale("F");
     // TODO: should be Bb5

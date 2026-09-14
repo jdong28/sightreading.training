@@ -58,6 +58,26 @@ export function noteName(pitch, sharpen=true) {
   return `${name}${octave}`;
 }
 
+const LETTERS = ["C", "D", "E", "F", "G", "A", "B"]
+
+// names a note using a specific letter rather than inferring the letter from
+// the pitch, choosing whatever accidental reaches the target pitch. Needed
+// for diatonic (7-letter) scales, which must use each letter name exactly
+// once: eg. Gb major is Gb Ab Bb Cb Db Eb F, but noteName() picks the
+// enharmonic spelling from the raw pitch alone and would say B instead of Cb.
+// rootOctave/rootLetterIndex describe degree 0 (the scale root); degree is
+// the (possibly negative) number of letter-steps from the root.
+function letterNoteName(pitch, rootOctave, rootLetterIndex, degree) {
+  let letterIndex = rootLetterIndex + degree
+  let letter = LETTERS[((letterIndex % 7) + 7) % 7]
+  let octave = rootOctave + Math.floor(letterIndex / 7)
+
+  let accidental = pitch - (OFFSETS[letter] + octave * OCTAVE_SIZE)
+  let accidentalStr = accidental > 0 ? "#".repeat(accidental) : "b".repeat(-accidental)
+
+  return `${letter}${accidentalStr}${octave}`;
+}
+
 
 function parseNoteAccidentals(note) {
   let [, letter, accidental] = note.match(/^([A-G])(#|b)?/);
@@ -412,6 +432,14 @@ export class Scale {
     let isFlat = this.isFlat()
     let range = new NoteList
 
+    // diatonic (7-step) scales use each letter name exactly once per
+    // octave, so their notes are spelled by letter+accidental rather than
+    // picked from the raw pitch; chords and the chromatic scale keep the
+    // pitch-based spelling since their steps don't map one-to-one to letters
+    let diatonic = this.steps.length == 7 && !this.chromatic
+    let rootLetterIndex = LETTERS.indexOf(this.root[0])
+    let degree = 0
+
     let k = 0;
 
     while (offset < 0) {
@@ -421,15 +449,21 @@ export class Scale {
       }
 
       current -= this.steps[k % this.steps.length]
+      degree--
       offset++
     }
 
     for (let i = 0; i < count + offset; i++) {
       if (i >= offset) {
-        range.push(noteName(current, this.chromatic || !isFlat))
+        if (diatonic) {
+          range.push(letterNoteName(current, octave, rootLetterIndex, degree))
+        } else {
+          range.push(noteName(current, this.chromatic || !isFlat))
+        }
       }
 
       current += this.steps[k++ % this.steps.length]
+      degree++
     }
 
     return range;

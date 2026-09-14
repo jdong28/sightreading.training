@@ -834,29 +834,6 @@ export class StaffTwo extends React.PureComponent {
     }
 
     throw new Error("Unhandled staff type in renderStaves")
-
-    // add the brace. Note the bace sits in negative coordinates so we aren't changing origin of staves
-    // TODO: make work as a component
-    if (this.props.type == "grand") {
-      const braceMargin = CLEF_GAP / 2
-      const brace = this.getAsset("brace")
-      const {width: braceWidth, height: braceHeight} = brace.getBoundingClientRect()
-
-      const staffHeight = LINE_DY * 4 + LINE_HEIGHT
-
-      let targetHeight = STAFF_INNER_HEIGHT + (this.staves.length - 1)  * MIN_STAFF_DY
-
-      brace.translation.set(-braceWidth - braceMargin, 0)
-      brace.scale = new Two.Vector(1, targetHeight / braceHeight)
-
-      marginX = braceWidth + braceMargin
-      this.stavesGroup.add(brace)
-    }
-
-    this.stavesGroup.translation.set(marginX, -STAFF_HEIGHT_OFFSET)
-    this.stavesGroup.addTo(this.renderGroup)
-
-    console.log("Refresh staves", performance.now() - startTime)
   }
 
   // calculate positions of all rendered notes

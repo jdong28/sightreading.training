@@ -29,8 +29,11 @@
   "scripts": {
     "dev": "node dev/serve.mjs",
     "build_assets": "node dev/build_assets.mjs",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node dev/run_specs.mjs"
   },
   "author": "leaf corcoran",
-  "license": "UNLICENSED"
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "puppeteer": "25.11.0"
+  }
 }

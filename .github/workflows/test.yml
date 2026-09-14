@@ -18,3 +18,32 @@ jobs:
     - name: test
       run: |
         docker run sightreading-test
+
+  node:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@master
+
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 22
+        cache: "npm"
+
+    - name: npm install
+      run: npm install
+
+    - name: cache puppeteer chromium
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/puppeteer
+        key: puppeteer-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+    - name: lint
+      run: make lint_js
+
+    - name: build assets
+      run: npm run build_assets
+
+    - name: specs
+      run: npm test

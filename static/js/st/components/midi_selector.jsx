@@ -21,27 +21,27 @@ export default class MidiSelector extends React.PureComponent {
   handleKeyDown = (event, index) => {
     const { midiOptions } = this.props
 
-    if (event.key === 'ArrowDown') {
+    if (event.key === "ArrowDown") {
       event.preventDefault()
       const nextIndex = (index + 1) % midiOptions.length
       const nextButton = event.currentTarget.parentElement.children[nextIndex]
       if (nextButton) {
         nextButton.focus()
       }
-    } else if (event.key === 'ArrowUp') {
+    } else if (event.key === "ArrowUp") {
       event.preventDefault()
       const prevIndex = (index - 1 + midiOptions.length) % midiOptions.length
       const prevButton = event.currentTarget.parentElement.children[prevIndex]
       if (prevButton) {
         prevButton.focus()
       }
-    } else if (event.key === 'Home') {
+    } else if (event.key === "Home") {
       event.preventDefault()
       const firstButton = event.currentTarget.parentElement.children[0]
       if (firstButton) {
         firstButton.focus()
       }
-    } else if (event.key === 'End') {
+    } else if (event.key === "End") {
       event.preventDefault()
       const lastButton = event.currentTarget.parentElement.children[midiOptions.length - 1]
       if (lastButton) {
