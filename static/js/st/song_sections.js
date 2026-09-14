@@ -186,13 +186,18 @@ function openingClef(track) {
 // {treble: [trackIdx...], bass: [trackIdx...]}. A track goes by the clef it
 // opens with; a track without a treble or bass clef goes by track order,
 // the first track with notes to the treble staff and the rest to the bass.
+// When the clefs put every track on one staff (eg. both staves of a piano
+// part opening in treble clef), all tracks go by track order.
 export function staffTracks(song) {
   let out = {treble: [], bass: []}
-  let position = 0
+  let byOrder = {treble: [], bass: []}
 
   let tracks = song.tracks || []
   tracks.forEach((track, idx) => {
     if (!track || !track.length) { return }
+
+    let orderStaff = byOrder.treble.length ? "bass" : "treble"
+    byOrder[orderStaff].push(idx)
 
     let clef = openingClef(track)
     if (clef == "g") {
@@ -200,11 +205,13 @@ export function staffTracks(song) {
     } else if (clef == "f") {
       out.bass.push(idx)
     } else {
-      out[position == 0 ? "treble" : "bass"].push(idx)
+      out[orderStaff].push(idx)
     }
-
-    position += 1
   })
+
+  if (byOrder.bass.length && (!out.treble.length || !out.bass.length)) {
+    return byOrder
+  }
 
   return out
 }

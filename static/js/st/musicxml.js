@@ -344,6 +344,10 @@ function measureNumbersFor(measureEls, measureCount) {
 
   for (let i = 0; i < measureCount; i++) {
     let el = measureEls[i]
+    if (el && el.localName == "part") {
+      el = el.parentElement
+    }
+
     let implicit = el && (el.getAttribute("implicit") == "yes" ||
       (i == 0 && (el.getAttribute("number") || "").trim() == "0"))
 

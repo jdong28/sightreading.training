@@ -163,6 +163,26 @@ describe("sheet music deck", function() {
       expect(extractSectionColumns(song, {startMeasure: 3, endMeasure: 4})).toEqual([])
     })
 
+    it("numbers a timewise score's pickup measure 0", function() {
+      let xml = `<?xml version="1.0" encoding="UTF-8"?>
+        <score-timewise version="4.0">
+          <part-list><score-part id="P1"><part-name>Flute</part-name></score-part></part-list>
+          <measure number="0" implicit="yes">
+            <part id="P1">
+              <attributes><divisions>1</divisions><time><beats>3</beats><beat-type>4</beat-type></time></attributes>
+              ${noteXML("D", 5, 1, 1)}
+            </part>
+          </measure>
+          <measure number="1"><part id="P1">${noteXML("G", 4, 3, 1)}</part></measure>
+          <measure number="2"><part id="P1">${noteXML("C", 5, 3, 1)}</part></measure>
+        </score-timewise>`
+
+      let song = parseMusicXML(xml)
+      expect(song.metadata.measureStarts).toEqual([0, 1, 4])
+      expect(song.metadata.measureNumbers).toEqual([0, 1, 2])
+      expect(extractSectionColumns(song, {startMeasure: 1, endMeasure: 1})).toEqual([["G5"]])
+    })
+
     it("keeps a split bar's number and follows meter changes", function() {
       let xml = `<?xml version="1.0" encoding="UTF-8"?>
         <score-partwise version="4.0">
@@ -224,6 +244,20 @@ describe("sheet music deck", function() {
 
       let {columns} = pieceSection(grand, {startMeasure: 1, endMeasure: 1, hand: LEFT_HAND}, song)
       expect(columns).toEqual([["G5"], ["A5"], ["B5"]])
+    })
+
+    it("falls back to track order when both staves open in the same clef", function() {
+      // the lower staff opens in treble clef, switching to bass clef later
+      let song = parseMusicXML(pickupScore({clefs: [["G", 2], ["G", 2]]}))
+      expect(staffTracks(song)).toEqual({treble: [0], bass: [1]})
+      expect(sheetMusicStaffFor(song)).toEqual("grand")
+
+      let {columns, status} = pieceSection(grand, {startMeasure: 1, endMeasure: 1, hand: LEFT_HAND}, song)
+      expect(columns).toEqual([["G4"]])
+      expect(status).not.toContain("no bass staff")
+
+      let upperBass = parseMusicXML(pickupScore({clefs: [["F", 4], ["F", 4]]}))
+      expect(staffTracks(upperBass)).toEqual({treble: [0], bass: [1]})
     })
 
     it("falls back to track order without clefs", function() {

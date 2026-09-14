@@ -506,8 +506,9 @@ export class GeneratorSettings extends React.PureComponent {
     this.updateSettings(settings)
 
     // eg. the grand staff for a piece with both hands, so neither is skipped
+    let singleStaff = ["treble", "bass"].includes(this.props.currentStaff.name)
     let staffObj = staff && (this.props.staves || []).find(s => s.name == staff)
-    if (staffObj && this.props.setStaff && this.props.currentStaff != staffObj) {
+    if (singleStaff && staffObj && this.props.setStaff && this.props.currentStaff != staffObj) {
       this.props.setStaff(staffObj)
     }
   }
