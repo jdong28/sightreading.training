@@ -13,7 +13,8 @@ import staffStyles from "st/components/staff.module.css"
 import sharedStyles from "st/components/shared.module.css"
 
 import {KeySignature, noteName, parseNote} from "st/music"
-import {STAVES, GENERATORS} from "st/data"
+import {STAVES, GENERATORS, sheetMusicPiece} from "st/data"
+import {getAppStore} from "st/storage"
 import {GeneratorSettings, SettingsPanel} from "st/components/sight_reading/settings_panel"
 import {setTitle, gaEvent, csrfToken} from "st/globals"
 import {dispatch, trigger} from "st/events"
@@ -44,6 +45,7 @@ export default class SightReadingPage extends React.Component {
     this.pressNote = this.pressNote.bind(this)
     this.releaseNote = this.releaseNote.bind(this)
     this.onFullscreenChange = this.onFullscreenChange.bind(this)
+    this.onPageHide = () => this.recordSession()
 
     this.keyMap = {
       " ": e => this.skipCurrentNote(),
@@ -86,6 +88,14 @@ export default class SightReadingPage extends React.Component {
     {
       this.refreshNoteList()
     }
+
+    if (prevState.currentStaff != this.state.currentStaff ||
+        prevState.currentGenerator != this.state.currentGenerator ||
+        prevState.currentGeneratorSettings != this.state.currentGeneratorSettings ||
+        prevState.stats != this.state.stats)
+    {
+      this.flushSectionPractice()
+    }
   }
 
   componentDidMount() {
@@ -124,10 +134,14 @@ export default class SightReadingPage extends React.Component {
     })
 
     document.addEventListener("webkitfullscreenchange", this.onFullscreenChange)
+    // closing the tab doesn't unmount the page
+    window.addEventListener("pagehide", this.onPageHide)
   }
 
   componentWillUnmount() {
     document.removeEventListener("webkitfullscreenchange", this.onFullscreenChange)
+    window.removeEventListener("pagehide", this.onPageHide)
+    this.recordSession()
 
     if (this.nosleep && this.state.fullscreen) {
       this.nosleep.disable()
@@ -539,10 +553,95 @@ export default class SightReadingPage extends React.Component {
     this.refs.workspace.style.height = "auto";
   }
 
+  // the generator settings in effect, defaults included
+  currentSettings() {
+    let generator = this.state.currentGenerator
+    if (!generator) { return {} }
+
+    return {
+      ...generatorDefaultSettings(generator, this.state.currentStaff),
+      ...this.state.currentGeneratorSettings,
+    }
+  }
+
+  // the imported piece section the sheet music generator drills, if any
+  currentPieceSection() {
+    if (this.state.currentGenerator?.name != "sheet music") {
+      return null
+    }
+
+    let settings = this.currentSettings()
+    let piece = sheetMusicPiece(settings)
+    if (!piece) {
+      return null
+    }
+
+    return {
+      pieceId: piece.id,
+      pieceTitle: piece.title,
+      startMeasure: settings.startMeasure,
+      endMeasure: settings.endMeasure,
+    }
+  }
+
+  // Adds the notes played on the piece section drilled since the last flush
+  // to its stats in the local store, then starts counting for the current
+  // section. Called when the section, generator or stats change and when the
+  // session is recorded, so every note counts once
+  flushSectionPractice() {
+    let mark = this.sectionMark
+    let stats = this.state.stats
+
+    this.sectionMark = {
+      section: this.currentPieceSection(),
+      stats,
+      hits: stats.hits,
+      misses: stats.misses,
+    }
+
+    if (!mark || !mark.section) { return }
+
+    let hits = mark.stats.hits - mark.hits
+    let misses = mark.stats.misses - mark.misses
+    if (!hits && !misses) { return }
+
+    let {pieceId, startMeasure, endMeasure} = mark.section
+    getAppStore().recordSectionPractice({
+      pieceId, startMeasure, endMeasure, hits, misses,
+      at: mark.stats.endedAt,
+    }).catch(err => console.warn("Couldn't save the section stats", err))
+  }
+
+  // Writes the current session to the local store, replacing what an earlier
+  // call wrote for it. Nothing is written before a note is played
+  recordSession() {
+    this.flushSectionPractice()
+
+    let settings = this.currentSettings()
+    let section = this.currentPieceSection()
+    if (section) {
+      settings = {...settings, pieceTitle: section.pieceTitle}
+    }
+
+    let session = this.state.stats.sessionRecord({
+      staff: this.state.currentStaff?.name,
+      generator: this.state.currentGenerator?.name,
+      settings,
+    })
+
+    if (!session) { return }
+
+    getAppStore().putSession(session)
+      .catch(err => console.warn("Couldn't save the practice session", err))
+  }
+
   openStatsLightbox() {
     trigger(this, "showLightbox",
       <StatsLightbox
-        resetStats={() => this.setState({stats: new NoteStats()})}
+        resetStats={() => {
+          this.recordSession()
+          this.setState({stats: new NoteStats()})
+        }}
         stats={this.state.stats} />)
   }
 

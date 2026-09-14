@@ -1,5 +1,6 @@
 import App from "st/components/app"
 import {ENABLE_SERVICE_WORKER} from "st/globals"
+import {initStorage} from "st/storage"
 
 import * as React from "react"
 
@@ -21,7 +22,14 @@ export function getSession() {
 export function init(session) {
   currentSession = session || {}
 
-  getRoot().render(<App />)
+  // pages read the local store synchronously, so it's ready before they
+  // render. initStorage falls back to memory rather than rejecting
+  initStorage().catch(err => {
+    console.error("Couldn't initialize the local store", err)
+  }).then(() => {
+    getRoot().render(<App />)
+  })
+
   installServiceWorker(session.cacheBuster)
 }
 

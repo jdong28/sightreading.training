@@ -1,20 +1,23 @@
 // The sheet music deck: MusicXML pieces imported into the sheet music
-// generator, kept in browser storage so a piece is picked from the deck
-// instead of imported again.
+// generator, kept in the browser's library (the pieces store of st/storage)
+// so a piece is picked from the deck instead of imported again.
 //
 // Pieces are stored as a compact JSON form of the parsed song model (never
-// the MusicXML text), all under one versioned storage key. The deck is
-// bounded by MAX_PIECES, and a failed write (usually the storage quota)
-// leaves the stored deck untouched and returns a message for the UI.
+// the MusicXML text). Reads are synchronous over the store's cache; adding and
+// removing pieces is async, and a failed write (usually the storage quota)
+// leaves the deck untouched and resolves to a message for the UI.
 
 import {MultiTrackSong, SongNote} from "st/song_note_list"
 import {
   parseMusicXML, MusicXMLError, isCompressedMusicXML, COMPRESSED_MESSAGE
 } from "st/musicxml"
+import {getAppStore, LEGACY_DECK_KEY, LibraryFormatError} from "st/storage"
 
-export const DECK_STORAGE_KEY = "st:sheet_music_pieces:v1"
+// where the deck was kept before the local store, see migrateLegacyDeck in
+// st/storage
+export const DECK_STORAGE_KEY = LEGACY_DECK_KEY
 
-export const MAX_PIECES = 20
+export const MAX_PIECES = 300
 
 const SONG_FORMAT = 1
 
@@ -96,50 +99,17 @@ export function songFromJSON(data) {
   return song
 }
 
-function defaultStorage() {
-  try {
-    return window.localStorage
-  } catch (e) {
-    return null // storage blocked
+let decks = new WeakMap()
+
+// {pieces: [{id, title, song, importedAt}]} in import order, the same object
+// while the pieces are unchanged since the settings panel reads the deck on
+// every render
+export function loadDeck(store=getAppStore()) {
+  let pieces = store.pieces()
+  if (!decks.has(pieces)) {
+    decks.set(pieces, {pieces})
   }
-}
-
-function validPiece(piece) {
-  return piece && typeof piece == "object" &&
-    typeof piece.id == "string" && typeof piece.title == "string" &&
-    piece.song && typeof piece.song == "object"
-}
-
-// the last parsed deck, reused while the stored text is unchanged since the
-// settings panel reads the deck on every render
-let cached = {storage: null, raw: null, deck: null}
-
-// {pieces: [{id, title, song}]}, empty when nothing valid is stored
-export function loadDeck(storage=defaultStorage()) {
-  let raw = null
-  try {
-    raw = storage ? storage.getItem(DECK_STORAGE_KEY) : null
-  } catch (e) {
-    raw = null
-  }
-
-  if (cached.deck && cached.storage === storage && cached.raw === raw) {
-    return cached.deck
-  }
-
-  let pieces = []
-  try {
-    let stored = JSON.parse(raw)
-    if (stored && Array.isArray(stored.pieces)) {
-      pieces = stored.pieces.filter(validPiece)
-    }
-  } catch (e) {
-    pieces = []
-  }
-
-  let deck = {pieces}
-  cached = {storage, raw, deck}
-  return deck
+  return decks.get(pieces)
 }
 
 function isQuotaError(e) {
@@ -147,27 +117,19 @@ function isQuotaError(e) {
     e.name == "NS_ERROR_DOM_QUOTA_REACHED" || e.code == 22 || e.code == 1014)
 }
 
-// writes the deck, returns {error} with a message for the UI on failure
-export function saveDeck(deck, storage=defaultStorage()) {
-  if (!storage) {
-    return {error: "Browser storage is unavailable, so the deck can't be saved."}
+// a message for the UI about a failed write to the store
+export function storageErrorMessage(e) {
+  if (isQuotaError(e)) {
+    return "Browser storage is full. Remove a piece from the deck and try again."
   }
-
-  try {
-    storage.setItem(DECK_STORAGE_KEY, JSON.stringify({pieces: deck.pieces}))
-  } catch (e) {
-    if (isQuotaError(e)) {
-      return {error: "Browser storage is full. Remove a piece from the deck and try again."}
-    }
-    return {error: `Couldn't save the deck to browser storage: ${e.message || e}`}
-  }
-
-  return {}
+  return `Couldn't save to browser storage: ${(e && e.message) || e}`
 }
 
-export function findPiece(id, storage=defaultStorage()) {
+const NOT_PERSISTENT_WARNING = "Browser storage is unavailable, so the deck is kept only until the page closes."
+
+export function findPiece(id, store=getAppStore()) {
   if (!id) { return null }
-  return loadDeck(storage).pieces.find(piece => piece.id == id) || null
+  return store.piece(id)
 }
 
 let songCache = new WeakMap()
@@ -193,49 +155,53 @@ function newPieceId() {
   return `p${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
 }
 
-// Adds a song to the deck. Returns {piece} or {error}. Adding the same
-// title and notes again returns the stored piece instead of a duplicate.
-export function addPiece(title, song, storage=defaultStorage()) {
-  let deck = loadDeck(storage)
+// Adds a song to the deck. Resolves to {piece} or {error}, with a warning
+// when the deck won't outlive the page. Adding the same title and notes
+// again resolves to the stored piece instead of a duplicate.
+export async function addPiece(title, song, store=getAppStore(), {fileName}={}) {
+  await store.init()
+
+  let deck = loadDeck(store)
   let songData = songToJSON(song)
   let songText = JSON.stringify(songData)
+  let warning = store.persistent ? {} : {warning: NOT_PERSISTENT_WARNING}
 
   let existing = deck.pieces.find(piece =>
     piece.title == title && JSON.stringify(piece.song) == songText)
 
   if (existing) {
-    return {piece: existing}
+    return {piece: existing, ...warning}
   }
 
   if (deck.pieces.length >= MAX_PIECES) {
     return {error: `The deck is full (${MAX_PIECES} pieces). Remove a piece before importing another.`}
   }
 
-  let piece = {id: newPieceId(), title, song: songData}
-  let result = saveDeck({pieces: [...deck.pieces, piece]}, storage)
-
-  if (result.error) {
-    return {error: `"${title}" wasn't added to the deck. ${result.error}`}
+  let record = {id: newPieceId(), title, song: songData, importedAt: Date.now()}
+  if (fileName) {
+    record.fileName = fileName
   }
 
-  return {piece}
-}
-
-// Returns {} or {error}
-export function removePiece(id, storage=defaultStorage()) {
-  let deck = loadDeck(storage)
-  let pieces = deck.pieces.filter(piece => piece.id != id)
-
-  if (pieces.length == deck.pieces.length) {
-    return {}
+  try {
+    return {piece: await store.putPiece(record), ...warning}
+  } catch (e) {
+    return {error: `"${title}" wasn't added to the deck. ${storageErrorMessage(e)}`}
   }
-
-  return saveDeck({pieces}, storage)
 }
 
-// Imports an uncompressed MusicXML file into the deck. Returns {piece} or
-// {error} with a message for the UI.
-export function importMusicXMLPiece(fileName, text, storage=defaultStorage()) {
+// Resolves to {} or {error}
+export async function removePiece(id, store=getAppStore()) {
+  try {
+    await store.deletePiece(id)
+  } catch (e) {
+    return {error: `Couldn't remove the piece. ${storageErrorMessage(e)}`}
+  }
+  return {}
+}
+
+// Imports an uncompressed MusicXML file into the deck. Resolves to {piece}
+// or {error} with a message for the UI.
+export async function importMusicXMLPiece(fileName, text, store=getAppStore()) {
   if (/\.mxl$/i.test(fileName || "") || isCompressedMusicXML(text)) {
     return {error: COMPRESSED_MESSAGE}
   }
@@ -259,5 +225,68 @@ export function importMusicXMLPiece(fileName, text, storage=defaultStorage()) {
     (fileName || "").replace(/\.(musicxml|xml)$/i, "").replace(/_+/g, " ").trim() ||
     "Untitled piece"
 
-  return addPiece(title, song, storage)
+  return addPiece(title, song, store, {fileName})
+}
+
+// The library file for the store's pieces and section stats. Resolves to
+// {fileName, text} or {error}
+export async function exportLibraryFile(store=getAppStore()) {
+  try {
+    let data = await store.exportLibrary()
+    let date = data.exportedAt.slice(0, 10)
+    return {
+      fileName: `sightreading-library-${date}.json`,
+      text: JSON.stringify(data),
+      pieces: data.pieces.length,
+    }
+  } catch (e) {
+    return {error: `Couldn't export the library: ${(e && e.message) || e}`}
+  }
+}
+
+const plural = (n, word) => `${n} ${word}${n == 1 ? "" : "s"}`
+
+// Merges a library file (see exportLibraryFile) into the store. Resolves to
+// {message} describing what was added, or {error}
+export async function importLibraryFile(text, store=getAppStore()) {
+  let data
+  try {
+    data = JSON.parse(text)
+  } catch (e) {
+    return {error: "The file isn't an exported sight reading library."}
+  }
+
+  let report
+  try {
+    report = await store.importLibrary(data, {maxPieces: MAX_PIECES})
+  } catch (e) {
+    if (e instanceof LibraryFormatError) {
+      return {error: e.message}
+    }
+    return {error: `The library wasn't imported. ${storageErrorMessage(e)}`}
+  }
+
+  let sections = report.addedSections + report.updatedSections
+  let parts = [
+    `Added ${plural(report.addedPieces, "piece")}` +
+      (sections ? ` and stats for ${plural(sections, "section")}` : ""),
+  ]
+
+  if (report.existingPieces) {
+    parts.push(`${plural(report.existingPieces, "piece")} already in the library`)
+  }
+
+  if (report.fullPieces) {
+    parts.push(`${plural(report.fullPieces, "piece")} left out, the deck is full (${MAX_PIECES} pieces)`)
+  }
+
+  if (report.invalidPieces) {
+    parts.push(`${plural(report.invalidPieces, "unreadable piece")} skipped`)
+  }
+
+  let result = {message: parts.join("; "), report}
+  if (!store.persistent) {
+    result.warning = NOT_PERSISTENT_WARNING
+  }
+  return result
 }

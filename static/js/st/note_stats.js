@@ -1,15 +1,36 @@
 
 import {csrfToken} from "st/globals"
 
+// generator settings worth keeping with a session: numbers, booleans, short
+// strings and short lists of those, leaving out eg. pasted song notation
+export function settingsSummary(settings) {
+  let scalar = value => ["number", "boolean"].includes(typeof value) ||
+    (typeof value == "string" && value.length <= 80)
+
+  let summary = {}
+  for (let [key, value] of Object.entries(settings || {})) {
+    if (scalar(value) || (Array.isArray(value) && value.length <= 16 && value.every(scalar))) {
+      summary[key] = value
+    }
+  }
+  return summary
+}
+
 export default class NoteStats {
   static TIMER_SIZE = 30*1000
 
   constructor(currentUser, opts={}) {
     this.currentUser = currentUser
+    this.id = `s${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
     this.noteHitStats = {}
     this.streak = 0
+    this.bestStreak = 0
     this.hits = 0
     this.misses = 0
+
+    // times of the first and last note played
+    this.startedAt = undefined
+    this.endedAt = undefined
 
     this.lastHitTime = undefined
     this.averageHitTime = 0
@@ -79,8 +100,10 @@ export default class NoteStats {
     }
 
     this.lastHitTime = now
+    this.markActivity(now)
 
     this.streak += 1;
+    this.bestStreak = Math.max(this.bestStreak, this.streak)
     this.hits += 1;
     this.buffer.hits += 1;
     this.flushLater()
@@ -92,11 +115,46 @@ export default class NoteStats {
     }
 
     this.startTimer()
+    this.markActivity(+new Date)
 
     this.streak = 0;
     this.misses += 1;
     this.buffer.misses += 1;
     this.flushLater()
+  }
+
+  markActivity(time) {
+    if (this.startedAt == null) {
+      this.startedAt = time
+    }
+    this.endedAt = time
+  }
+
+  // The session record for the local store (see putSession in st/storage),
+  // or null before any note is played. The record keeps this object's id, so
+  // writing it again as the session grows replaces the earlier one
+  sessionRecord({staff, generator, settings}={}) {
+    if (!this.hits && !this.misses) {
+      return null
+    }
+
+    let notes = {}
+    for (let [note, stats] of Object.entries(this.noteHitStats)) {
+      notes[note] = {hits: stats.hits || 0, misses: stats.misses || 0}
+    }
+
+    return {
+      id: this.id,
+      startedAt: this.startedAt,
+      endedAt: this.endedAt,
+      staff: staff || null,
+      generator: generator || null,
+      settings: settingsSummary(settings),
+      notesRead: this.hits,
+      misses: this.misses,
+      bestStreak: this.bestStreak,
+      notes,
+    }
   }
 
   incrementNote(note, val) {
