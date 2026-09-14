@@ -9,8 +9,13 @@ import {
 } from "st/generators"
 
 import {
-  extractSectionColumns, filterColumnsToRange, parseSongText, countMeasures
+  extractSectionColumns, filterColumnsToRange, parseSongText, countMeasures,
+  measureNumberRange, staffTracks
 } from "st/song_sections"
+
+import {
+  loadDeck, findPiece, pieceSong, removePiece, importMusicXMLPiece
+} from "st/sheet_music_deck"
 
 import {ChordGenerator, MultiKeyChordGenerator} from "st/chord_generators"
 import {GStaff, FStaff, GrandStaff, ChordStaff} from "st/components/staves"
@@ -32,12 +37,17 @@ let noteRangeInput = {
   max: 100,
 }
 
-// browser storage for the sheet music section being drilled (song text,
-// measure range, track) so a reload in frontend-only mode (no server side
-// song library) restores it
+// browser storage for the sheet music section being drilled (piece or song
+// text, measure range, hand or track) so a reload in frontend-only mode (no
+// server side song library) restores it. Imported pieces themselves live in
+// the deck, see st/sheet_music_deck
 export const SHEET_MUSIC_STORAGE_KEY = "st:sheet_music_deck"
 
 const ALL_TRACKS = "all"
+
+export const BOTH_HANDS = "both hands"
+export const RIGHT_HAND = "right hand (treble staff)"
+export const LEFT_HAND = "left hand (bass staff)"
 
 // track option names use the notation's own 0-based track index (t0, t1...)
 function sheetMusicTrackName(idx) {
@@ -71,9 +81,100 @@ function sheetMusicTrackIndex(song, trackName) {
   return track && track.length ? idx : null
 }
 
+// the imported piece the settings drill, or null for the pasted notation
+// (also when the chosen piece has been removed from the deck)
+export function sheetMusicPiece(settings) {
+  let piece = findPiece(settings.piece)
+  return piece && pieceSong(piece) ? piece : null
+}
+
+function plural(count, word) {
+  return `${count} ${word}${count == 1 ? "" : "s"}`
+}
+
+// describes the measures of a song, eg. "measures 0–32 (0 is the pickup)"
+export function measuresDescription(song) {
+  let [first, last] = measureNumberRange(song)
+  if (last < first) {
+    return "no measures"
+  }
+
+  if (first == 0) {
+    return `measures 0–${last} (0 is the pickup)`
+  }
+
+  return `measures ${first}–${last}`
+}
+
+// the track indices to drill for a hand setting
+function handTracks(song, hand) {
+  let staves = staffTracks(song)
+
+  switch (hand) {
+    case RIGHT_HAND:
+      return staves.treble
+    case LEFT_HAND:
+      return staves.bass
+    default:
+      return null // all tracks
+  }
+}
+
+// filters the section's columns to the staff and describes the result
+function sectionResult(staff, columns, parts, opts={}) {
+  // Notes outside the staff's range are filtered out (not clamped) so the
+  // drill only shows what the staff and on screen keyboard can present; the
+  // status reports how many were skipped.
+  let [visible, dropped] = filterColumnsToRange(columns, staff.range[0], staff.range[1])
+
+  if (visible.length) {
+    parts.push(`section has ${plural(visible.length, "column")}`)
+  } else {
+    parts.push("section has no notes")
+  }
+
+  if (dropped) {
+    let skipped = `${plural(dropped, "note")} outside the ${staff.name} staff range skipped`
+    if (opts.suggestGrand && staff.name != "grand") {
+      skipped += "; pick the grand staff to drill both hands"
+    }
+    parts.push(skipped)
+  }
+
+  return {columns: visible, status: parts.join(", ")}
+}
+
+// columns for an imported piece, see sheetMusicSection
+export function pieceSection(staff, settings, song) {
+  let tracks = handTracks(song, settings.hand)
+  let columns = extractSectionColumns(song, {
+    startMeasure: settings.startMeasure,
+    endMeasure: settings.endMeasure,
+    track: tracks,
+  })
+
+  let parts = [`Score has ${measuresDescription(song)}`]
+
+  if (tracks && !tracks.length) {
+    parts.push(`the score has no ${settings.hand == LEFT_HAND ? "bass" : "treble"} staff`)
+  }
+
+  let staves = staffTracks(song)
+  let twoStaves = staves.treble.length > 0 && staves.bass.length > 0
+
+  return sectionResult(staff, columns, parts, {
+    suggestGrand: twoStaves && !tracks,
+  })
+}
+
 // columns for the current sheet music settings on the given staff, plus a
 // human readable status line for the settings panel
 export function sheetMusicSection(staff, settings) {
+  let piece = sheetMusicPiece(settings)
+  if (piece) {
+    return pieceSection(staff, settings, pieceSong(piece))
+  }
+
   let {song, error} = parseSongText(settings.song)
 
   if (error) {
@@ -81,7 +182,7 @@ export function sheetMusicSection(staff, settings) {
   }
 
   if (!song) {
-    return {columns: [], status: "Paste song notation above to build a section"}
+    return {columns: [], status: "Import a MusicXML piece or paste song notation above to build a section"}
   }
 
   let columns = extractSectionColumns(song, {
@@ -90,25 +191,24 @@ export function sheetMusicSection(staff, settings) {
     track: sheetMusicTrackIndex(song, settings.track),
   })
 
-  // Notes outside the staff's range are filtered out (not clamped) so the
-  // drill only shows what the staff and on screen keyboard can present; the
-  // status reports how many were skipped.
-  let [visible, dropped] = filterColumnsToRange(columns, staff.range[0], staff.range[1])
+  return sectionResult(staff, columns, [`Song has ${plural(countMeasures(song), "measure")}`])
+}
 
-  let measures = countMeasures(song)
-  let parts = [`Song has ${measures} measure${measures == 1 ? "" : "s"}`]
+// settings for drilling a newly picked piece: the opening measures of the
+// score, both hands
+export function sheetMusicPieceSettings(settings, song) {
+  let [first, last] = measureNumberRange(song)
+  let startMeasure = last >= 1 ? Math.max(first, 1) : first
+  let endMeasure = Math.max(startMeasure, Math.min(startMeasure + 3, last))
 
-  if (visible.length) {
-    parts.push(`section has ${visible.length} column${visible.length == 1 ? "" : "s"}`)
-  } else {
-    parts.push("section has no notes")
-  }
+  return {...settings, startMeasure, endMeasure, hand: BOTH_HANDS}
+}
 
-  if (dropped) {
-    parts.push(`${dropped} note${dropped == 1 ? "" : "s"} outside the ${staff.name} staff range skipped`)
-  }
-
-  return {columns: visible, status: parts.join(", ")}
+// the grand staff for a piece with both a treble and a bass staff, which a
+// single staff can't show without skipping one hand; null otherwise
+export function sheetMusicStaffFor(song) {
+  let staves = staffTracks(song)
+  return staves.treble.length && staves.bass.length ? "grand" : null
 }
 
 function staffRange(staff, noteRange) {
@@ -372,19 +472,43 @@ export const GENERATORS = [
     storageKey: SHEET_MUSIC_STORAGE_KEY,
     inputs: [
       {
+        name: "piece",
+        type: "deck",
+        default: "",
+        emptyLabel: "Pasted song notation",
+        pieces: () => loadDeck().pieces,
+        importFile: (fileName, text) => importMusicXMLPiece(fileName, text),
+        removePiece: id => removePiece(id),
+        // settings and staff for drilling a piece that was just picked
+        pick: (settings, id) => {
+          let piece = findPiece(id)
+          let song = piece && pieceSong(piece)
+          if (!song) {
+            return {settings: {...settings, piece: ""}, staff: null}
+          }
+
+          return {
+            settings: sheetMusicPieceSettings({...settings, piece: id}, song),
+            staff: sheetMusicStaffFor(song),
+          }
+        },
+        hint: "Import an uncompressed MusicXML file (.musicxml or .xml). Imported pieces stay in this browser's deck.",
+      },
+      {
         name: "song",
         label: "song notation",
         type: "text",
         library: true, // offer play along library songs when logged in
         default: "",
         hint: "Paste song notation (the play along format). Notes at the same beat become one column.",
+        visible: settings => !sheetMusicPiece(settings),
       },
       {
         name: "startMeasure",
         label: "start measure",
         type: "number",
         default: 1,
-        min: 1,
+        min: 0,
         max: 9999,
       },
       {
@@ -392,14 +516,30 @@ export const GENERATORS = [
         label: "end measure",
         type: "number",
         default: 4,
-        min: 1,
+        min: 0,
         max: 9999,
+        hint: settings => {
+          let piece = sheetMusicPiece(settings)
+          return piece ? `The score has ${measuresDescription(pieceSong(piece))}` : null
+        },
       },
       {
         name: "track",
         type: "select",
         default: ALL_TRACKS,
         values: sheetMusicTrackOptions,
+        visible: settings => !sheetMusicPiece(settings),
+      },
+      {
+        name: "hand",
+        type: "select",
+        default: BOTH_HANDS,
+        values: [
+          {name: BOTH_HANDS},
+          {name: RIGHT_HAND},
+          {name: LEFT_HAND},
+        ],
+        visible: settings => !!sheetMusicPiece(settings),
       },
     ],
     // shown under the inputs in the settings panel

@@ -132,6 +132,55 @@
             color: #666;
         }
 
+        .input_notice, .input_error {
+            font-size: 12px;
+        }
+
+        .input_notice {
+            color: #444;
+        }
+
+        .input_error {
+            color: #b00020;
+        }
+
+        .deck_input {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .deck_row {
+            display: flex;
+            gap: 5px;
+            align-items: center;
+
+            .select_component {
+                flex: 1;
+                min-width: 0;
+                /* long file name titles wrap rather than cover the button */
+                overflow-wrap: anywhere;
+            }
+
+            button {
+                flex: none;
+            }
+        }
+
+        .file_input {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            font-size: 12px;
+            font-weight: bold;
+            color: #666;
+
+            input {
+                font-size: 12px;
+                max-width: 100%;
+            }
+        }
+
         .note_range_row {
             display: flex;
             margin-top: 5px;

@@ -25,7 +25,7 @@ The available generator types:
 *   **Sevens** — Chooses a random [seventh chord](https://en.wikipedia.org/wiki/Seventh_chord) with open voicing (this one sounds the most pleasant)
 *   **Progression** — Chooses a random chord from a popular progression within the key signature
 *   **Position** — Generates notes in a way that encourages you to use all of your fingers. See below for more information
-*   **Sheet music** — Drills a section of a song you provide, one column of notes at a time. See below for more information
+*   **Sheet music** — Drills a section of a MusicXML piece or song you provide, one column of notes at a time. See below for more information
 
 ## The smoothness parameter
 
@@ -49,9 +49,15 @@ The **Position Generator** is designed to have you utilize all of your fingers w
 
 ### The Sheet Music Generator
 
-The **Sheet Music** generator turns a section of a song into flash cards for repeated sight reading and memorization. Paste song notation in the play along format, or pick a song from the play along library when logged in, then choose:
+The **Sheet Music** generator turns a section of a piece into flash cards for repeated sight reading and memorization.
 
-*   **Start measure** and **end measure** — The section to drill, counting the first measure as 1
-*   **Track** — Limit the section to one track of the song (for example one hand), or use all tracks
+Use **Import MusicXML** to load an uncompressed MusicXML file (`.musicxml` or `.xml`). Imported pieces are kept in your browser as a deck, so next time you pick the piece from the list instead of importing it again; **Remove** deletes the picked piece from the deck. For a piece, choose:
 
-Notes that start on the same beat are shown together as one column, and the section loops once you reach its end. Rhythm is ignored. Notes outside the range of the chosen staff are skipped, and the settings panel reports how many. Generated accompaniment from chord symbols is not included. The song, section, track, staff and generator are saved in your browser, so reloading the page returns to the same drill.
+*   **Start measure** and **end measure** — The section to drill, using the bar numbers printed on the score (a pickup measure is 0)
+*   **Hand** — Both hands, the right hand (treble staff) or the left hand (bass staff)
+
+Picking or importing a piece with both a treble and a bass staff while a single staff is selected switches to the grand staff, so neither hand is skipped.
+
+Alternatively, pick **Pasted song notation** and paste song notation in the play along format, or pick a song from the play along library when logged in. Measures of pasted notation count from 1, and **Track** limits the section to one track of the song, or uses all tracks.
+
+Notes that start on the same beat are shown together as one column, and the section loops once you reach its end. Rhythm is ignored. Notes outside the range of the chosen staff are skipped, and the settings panel reports how many. Generated accompaniment from chord symbols is not included. The piece or song, section, hand or track, staff and generator are saved in your browser, so reloading the page returns to the same drill.

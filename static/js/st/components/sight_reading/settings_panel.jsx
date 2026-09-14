@@ -190,6 +190,8 @@ export class SettingsPanel extends React.PureComponent {
         currentKey={this.props.currentKey}
         currentStaff={this.props.currentStaff}
         currentSettings={this.props.currentGeneratorSettings}
+        staves={this.props.staves}
+        setStaff={this.props.setStaff}
         setGenerator={this.props.setGenerator} />
     </div>
   }
@@ -224,6 +226,8 @@ export class GeneratorSettings extends React.PureComponent {
     setGenerator: types.func.isRequired,
     currentKey: types.object.isRequired,
     currentStaff: types.object.isRequired,
+    staves: types.array,
+    setStaff: types.func,
   }
 
   constructor(props) {
@@ -257,6 +261,12 @@ export class GeneratorSettings extends React.PureComponent {
 
     return <div className={styles.generator_inputs}>{
       inputs.map((input, idx) => {
+        // inputs can depend on the other settings, eg. the sheet music track
+        // picker is only for pasted notation
+        if (input.visible && !input.visible(this.cachedSettings)) {
+          return
+        }
+
         let fn
         switch (input.type) {
           case "select":
@@ -283,6 +293,9 @@ export class GeneratorSettings extends React.PureComponent {
           case "number":
             fn = this.renderNumber
             break
+          case "deck":
+            fn = this.renderDeck
+            break
           default:
             console.error(`No input renderer for ${input.type}`)
             return
@@ -290,7 +303,7 @@ export class GeneratorSettings extends React.PureComponent {
 
         // multi control inputs are not wrapped in a label so clicking the
         // label text does not focus an arbitrary control
-        let el = input.type == "toggles" || input.type == "text" ? "div" : "label"
+        let el = ["toggles", "text", "deck"].includes(input.type) ? "div" : "label"
 
         let inside = React.createElement(el, null, ...[
           <div className={styles.input_label}>{input.label || input.name}</div>,
@@ -316,18 +329,22 @@ export class GeneratorSettings extends React.PureComponent {
   }
 
   updateInputValue(input, value) {
+    this.updateSettings({[input.name]: value})
+  }
+
+  updateSettings(update) {
     let generator = this.props.generator
 
     if (generator.storageKey) {
       storeGeneratorSettings(generator.storageKey, {
         ...this.cachedSettings,
-        [input.name]: value
+        ...update
       })
     }
 
     this.props.setGenerator(generator, {
       ...this.props.currentSettings,
-      [input.name]: value
+      ...update
     })
   }
 
@@ -367,7 +384,10 @@ export class GeneratorSettings extends React.PureComponent {
       drafts: {...drafts, [input.name]: text}
     })
 
-    return <input
+    let hint = typeof input.hint == "function" ?
+      input.hint(this.cachedSettings) : input.hint
+
+    let numberInput = <input
       type="number"
       className={styles.number_input}
       min={input.min}
@@ -386,6 +406,111 @@ export class GeneratorSettings extends React.PureComponent {
         setDraft(null)
         this.updateInputValue(input, value)
       }} />
+
+    if (!hint) {
+      return numberInput
+    }
+
+    return <>
+      {numberInput}
+      <div className={styles.input_hint}>{hint}</div>
+    </>
+  }
+
+  // A picker of the pieces imported into a deck (see st/sheet_music_deck),
+  // with a MusicXML file import and removal of the picked piece. Picking an
+  // empty value leaves the deck, eg. for the sheet music generator's pasted
+  // notation. The input provides the deck through pieces, importFile,
+  // removePiece and pick functions.
+  renderDeck(input, idx) {
+    let pieces = input.pieces()
+    let currentValue = this.cachedSettings[input.name] || ""
+
+    if (!pieces.some(piece => piece.id == currentValue)) {
+      currentValue = ""
+    }
+
+    let options = [{name: input.emptyLabel || "None", value: ""}].concat(
+      pieces.map(piece => ({name: piece.title, value: piece.id}))
+    )
+
+    let message = this.state.deckMessage
+
+    return <div className={styles.deck_input}>
+      <div className={styles.deck_row}>
+        <Select
+          className={styles.select_component}
+          value={currentValue}
+          options={options}
+          onChange={id => {
+            this.setState({deckMessage: null})
+            this.pickPiece(input, id)
+          }} />
+        {currentValue ?
+          <button
+            type="button"
+            onClick={() => {
+              let piece = pieces.find(piece => piece.id == currentValue)
+              let result = input.removePiece(currentValue)
+              if (result.error) {
+                this.setState({deckMessage: {error: true, text: result.error}})
+                return
+              }
+              this.setState({deckMessage: {text: `Removed "${piece.title}" from the deck`}})
+              this.pickPiece(input, "")
+            }}>Remove</button> : null}
+      </div>
+      <label className={styles.file_input}>
+        <span>Import MusicXML</span>
+        <input
+          type="file"
+          accept=".musicxml,.xml,.mxl,application/vnd.recordare.musicxml+xml,application/xml,text/xml"
+          onChange={e => this.importPiece(input, e)} />
+      </label>
+      {message ?
+        <div className={message.error ? styles.input_error : styles.input_notice}>{message.text}</div> : null}
+      {input.hint ? <div className={styles.input_hint}>{input.hint}</div> : null}
+    </div>
+  }
+
+  importPiece(input, e) {
+    let file = e.target.files && e.target.files[0]
+    if (!file) { return }
+
+    // let the same file be picked again
+    e.target.value = ""
+
+    this.setState({deckMessage: {text: `Importing ${file.name}…`}})
+
+    return file.text().then(text => {
+      let result = input.importFile(file.name, text)
+      if (result.error) {
+        this.setState({deckMessage: {error: true, text: result.error}})
+        return
+      }
+
+      this.setState({deckMessage: {text: `"${result.piece.title}" is in the deck`}})
+      this.pickPiece(input, result.piece.id)
+    }, err => {
+      this.setState({deckMessage: {error: true, text: `Couldn't read ${file.name}: ${err.message || err}`}})
+    })
+  }
+
+  pickPiece(input, id) {
+    if (!id) {
+      this.updateSettings({[input.name]: ""})
+      return
+    }
+
+    let {settings, staff} = input.pick(this.cachedSettings, id)
+    this.updateSettings(settings)
+
+    // eg. the grand staff for a piece with both hands, so neither is skipped
+    let singleStaff = ["treble", "bass"].includes(this.props.currentStaff.name)
+    let staffObj = staff && (this.props.staves || []).find(s => s.name == staff)
+    if (singleStaff && staffObj && this.props.setStaff && this.props.currentStaff != staffObj) {
+      this.props.setStaff(staffObj)
+    }
   }
 
   renderText(input, idx) {

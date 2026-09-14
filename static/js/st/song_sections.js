@@ -17,12 +17,48 @@ function beatsPerMeasure(song) {
   return bpm > 0 ? bpm : DEFAULT_BEATS_PER_MEASURE
 }
 
-// beat range [start, end) covered by the inclusive 1-based measure range.
-// Prefers explicit measure start beats when the song provides them (a later
-// import task may set metadata.measureStarts), otherwise measures are
-// uniform and sized by metadata.beatsPerMeasure.
+// the score's bar number for each entry of metadata.measureStarts (imported
+// MusicXML sets both, see parseMusicXML), or null to number measures from 1
+function measureNumbers(song) {
+  let starts = song.metadata && song.metadata.measureStarts
+  let numbers = song.metadata && song.metadata.measureNumbers
+
+  if (Array.isArray(starts) && Array.isArray(numbers) &&
+      starts.length && numbers.length == starts.length) {
+    return numbers
+  }
+
+  return null
+}
+
+// [first, last] measure numbers of the song. Scores that open with a pickup
+// start at measure 0, like the numbers printed on the score.
+export function measureNumberRange(song) {
+  let numbers = measureNumbers(song)
+  if (numbers) {
+    return [numbers[0], numbers[numbers.length - 1]]
+  }
+
+  return [1, countMeasures(song)]
+}
+
+// beat range [start, end) covered by the inclusive measure range. Measures
+// are numbered by the score's bar numbers when the song has them, otherwise
+// from 1. Prefers explicit measure start beats when the song provides them
+// (metadata.measureStarts, set by the MusicXML import), otherwise measures
+// are uniform and sized by metadata.beatsPerMeasure.
 export function measureBeatRange(song, startMeasure, endMeasure) {
   let starts = song.metadata && song.metadata.measureStarts
+  let numbers = measureNumbers(song)
+
+  if (numbers) {
+    let startIdx = numbers.findIndex(n => n >= startMeasure)
+    let endIdx = numbers.findIndex(n => n > endMeasure)
+    return [
+      startIdx < 0 ? Infinity : starts[startIdx],
+      endIdx < 0 ? Infinity : starts[endIdx],
+    ]
+  }
 
   if (Array.isArray(starts) && starts.length) {
     let startBeat = startMeasure - 1 < starts.length ?
@@ -80,11 +116,14 @@ function groupByOnset(notes) {
 }
 
 // song: MultiTrackSong (or any SongNoteList)
-// opts.startMeasure, opts.endMeasure: 1-based inclusive measure range
-// opts.track: track index to keep, or null/undefined for all tracks
+// opts.startMeasure, opts.endMeasure: inclusive measure range, numbered as
+// in measureBeatRange
+// opts.track: track index, or array of track indices, to keep, or
+// null/undefined for all tracks
 // returns array of columns, each an ascending array of note names
 export function extractSectionColumns(song, opts={}) {
-  let startMeasure = Math.max(1, Math.floor(opts.startMeasure || 1))
+  let [firstMeasure] = measureNumberRange(song)
+  let startMeasure = Math.max(firstMeasure, Math.floor(opts.startMeasure == null ? firstMeasure : opts.startMeasure) || 0)
   let endMeasure = Math.floor(opts.endMeasure == null ? Infinity : opts.endMeasure)
 
   if (endMeasure < startMeasure) {
@@ -92,7 +131,9 @@ export function extractSectionColumns(song, opts={}) {
   }
 
   let notes = song
-  if (opts.track != null && opts.track !== "") {
+  if (Array.isArray(opts.track)) {
+    notes = opts.track.flatMap(idx => [...((song.tracks && song.tracks[idx]) || [])])
+  } else if (opts.track != null && opts.track !== "") {
     notes = (song.tracks && song.tracks[opts.track]) || []
   }
 
@@ -128,6 +169,51 @@ export function filterColumnsToRange(columns, min, max) {
   }
 
   return [out, dropped]
+}
+
+// the clef sign ("g", "f", "c") a track opens with, or null without clefs
+function openingClef(track) {
+  let clefs = track && track.cleffs
+  if (!Array.isArray(clefs) || !clefs.length) {
+    return null
+  }
+
+  let [, sign] = clefs.reduce((first, clef) => clef[0] < first[0] ? clef : first)
+  return sign
+}
+
+// Splits the song's tracks into the staves of a grand staff:
+// {treble: [trackIdx...], bass: [trackIdx...]}. A track goes by the clef it
+// opens with; a track without a treble or bass clef goes by track order,
+// the first track with notes to the treble staff and the rest to the bass.
+// When the clefs put every track on one staff (eg. both staves of a piano
+// part opening in treble clef), all tracks go by track order.
+export function staffTracks(song) {
+  let out = {treble: [], bass: []}
+  let byOrder = {treble: [], bass: []}
+
+  let tracks = song.tracks || []
+  tracks.forEach((track, idx) => {
+    if (!track || !track.length) { return }
+
+    let orderStaff = byOrder.treble.length ? "bass" : "treble"
+    byOrder[orderStaff].push(idx)
+
+    let clef = openingClef(track)
+    if (clef == "g") {
+      out.treble.push(idx)
+    } else if (clef == "f") {
+      out.bass.push(idx)
+    } else {
+      out[orderStaff].push(idx)
+    }
+  })
+
+  if (byOrder.bass.length && (!out.treble.length || !out.bass.length)) {
+    return byOrder
+  }
+
+  return out
 }
 
 class NoAutoChords {
