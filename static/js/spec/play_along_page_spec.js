@@ -36,19 +36,31 @@ describe("play along page", function() {
     page.editCode("c5 d5")
 
     let imported = parseMusicXML(quintupletXML)
-    page.importSong(imported, "c5 d5")
+    page.importSong(imported, "c5 d5", false)
     expect(page.state.song).toBe(imported)
+    expect(page.importUnsaveable()).toBe(true)
 
     page.refreshSong()
     expect(page.state.song).toBe(imported)
+    expect(page.importUnsaveable()).toBe(true)
 
     page.editCode("c5 d5 ")
+    expect(page.importUnsaveable()).toBe(false)
     expect(page.state.song).not.toBe(imported)
     expect(page.state.song.length).toEqual(2)
 
     page.editCode("c5 d5")
     expect(page.state.song).not.toBe(imported)
     expect(page.state.importedSong).toBe(null)
+    expect(page.importUnsaveable()).toBe(false)
     expect(page.state.song.length).toEqual(2)
+  })
+
+  it("doesn't block saving an import the code expresses", function() {
+    let page = songPage()
+    let imported = parseMusicXML(quintupletXML)
+    page.importSong(imported, "c5 d5 e5 f5 g5", true)
+    expect(page.state.song).toBe(imported)
+    expect(page.importUnsaveable()).toBe(false)
   })
 })

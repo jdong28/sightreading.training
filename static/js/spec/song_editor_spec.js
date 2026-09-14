@@ -3,6 +3,7 @@ import {flushSync} from "react-dom"
 
 import {getRoot} from "spec/helpers"
 import SongEditor from "st/components/song_editor"
+import styles from "st/components/song_editor.module.css"
 import {COMPRESSED_MESSAGE} from "st/musicxml"
 
 // five quintuplet sixteenths, which the notation can't express
@@ -41,12 +42,14 @@ let nextRender = () => new Promise(resolve => window.setTimeout(resolve, 0))
 let saveButton = () => [...document.querySelectorAll("#react_root button")]
   .find(button => button.textContent == "Save")
 
+let importNotice = () => document.querySelector(`#react_root .${styles.import_notice}`)
+
 describe("song editor", function() {
-  it("blocks saving an import the notation can't express until the code is edited", async function() {
+  it("reports an import the notation can't express without replacing the code", async function() {
     let imported = []
     let editor = renderEditor({
       code: "c5 d5",
-      onImportSong: (song, code) => imported.push([song, code]),
+      onImportSong: (...args) => imported.push(args),
     })
 
     await importText(editor, "quintuplets.musicxml", quintupletXML)
@@ -55,8 +58,8 @@ describe("song editor", function() {
     expect(imported.length).toEqual(1)
     expect(imported[0][0].length).toEqual(5)
     expect(imported[0][1]).toEqual("c5 d5")
-    expect(editor.state.importNotice).toBeTruthy()
-    expect(saveButton().disabled).toBe(true)
+    expect(imported[0][2]).toBe(false)
+    expect(editor.state.code).toEqual("c5 d5")
 
     editor.beforeSubmit()
     expect(editor.notesCountInputRef.current.value).toEqual("2")
@@ -66,16 +69,21 @@ describe("song editor", function() {
     await nextRender()
 
     expect(editor.state.importError).toBeTruthy()
-    expect(editor.state.importNotice).toBeTruthy()
+    expect(imported.length).toEqual(1)
+  })
+
+  it("blocks saving while the page reports an unsaveable import, across remounts", function() {
+    renderEditor({code: "c5 d5", importUnsaveable: true})
     expect(saveButton().disabled).toBe(true)
+    expect(importNotice()).toBeTruthy()
 
-    flushSync(() => editor.updateCode("c5 d5 e5"))
-    expect(editor.state.importNotice).toBe(null)
+    renderEditor({code: "c5 d5", importUnsaveable: true})
+    expect(saveButton().disabled).toBe(true)
+    expect(importNotice()).toBeTruthy()
+
+    renderEditor({code: "c5 d5 e5", importUnsaveable: false})
     expect(saveButton().disabled).toBe(false)
-
-    editor.beforeSubmit()
-    expect(editor.notesCountInputRef.current.value).toEqual("3")
-    expect(editor.beatsLengthInputRef.current.value).toEqual("3")
+    expect(importNotice()).toBe(null)
   })
 
   it("reports compressed files from their content", async function() {

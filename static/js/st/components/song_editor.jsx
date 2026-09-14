@@ -126,8 +126,7 @@ export default class SongEditor extends React.Component {
   }
 
   updateCode(code, callback) {
-    let update = { code, importNotice: null }
-    this.setState(update, callback)
+    this.setState({ code }, callback)
     this.updateWip({ code })
 
     if (this.props.onCode) {
@@ -202,15 +201,11 @@ export default class SongEditor extends React.Component {
       }
 
       if (this.props.onImportSong) {
-        this.props.onImportSong(song, code == null ? this.state.code : code)
+        this.props.onImportSong(song, code == null ? this.state.code : code, code != null)
       }
 
       if (code != null) {
         this.updateCode(code)
-      } else {
-        this.setState({
-          importNotice: "This piece uses rhythms the editor's notation can't express, so it can be played but not saved. Saving is disabled until you edit the notation."
-        })
       }
 
       if (!this.state.title && song.metadata && song.metadata.title) {
@@ -257,7 +252,7 @@ export default class SongEditor extends React.Component {
         type="button" className="outline">More...</button>
     }
 
-    let saveDisabled = !!this.state.importNotice
+    let saveDisabled = !!this.props.importUnsaveable
 
     if (this.state.song && !this.state.song.allowed_to_edit) {
       saveButton = <button disabled={saveDisabled}>Save copy</button>
@@ -330,8 +325,8 @@ export default class SongEditor extends React.Component {
           </label>
           {this.state.importError ?
             <div className={styles.import_error}>{this.state.importError}</div> : null}
-          {this.state.importNotice ?
-            <div className={styles.import_notice}>{this.state.importNotice}</div> : null}
+          {this.props.importUnsaveable ?
+            <div className={styles.import_notice}>This piece uses rhythms the editor's notation can't express, so it can be played but not saved. Saving is disabled until you edit the notation.</div> : null}
         </div>
         {this.textInput("Title", "title", {
           required: true
