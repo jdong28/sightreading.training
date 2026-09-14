@@ -633,18 +633,29 @@ export class StaffTwo extends React.PureComponent {
   }
 
   componentWillUnmount() {
+    // guards setup that resolves after unmount (e.g. mount and unmount in
+    // the same tick, before componentDidMount has assigned state.two)
+    this._unmounted = true
+
     if (this.resizeObserver) {
       this.resizeObserver.disconnect()
       delete this.resizeObserver
     }
 
-    // clean up the the two.js instance
-    this.state.two.unbind("update")
-    this.state.two.pause()
-    this.containerRef.current.removeChild(this.state.two.renderer.domElement)
+    // clean up the two.js instance, if setup got far enough to create one
+    const {two} = this.state
+    if (two) {
+      two.unbind("update")
+      two.pause()
+      if (this.containerRef.current && two.renderer.domElement.parentNode === this.containerRef.current) {
+        this.containerRef.current.removeChild(two.renderer.domElement)
+      }
+    }
   }
 
   updateWidth(width, force=false) {
+    if (this._unmounted) return
+
     const {two} = this.state
     if (!two) return
 
@@ -693,6 +704,16 @@ export class StaffTwo extends React.PureComponent {
       // type: Two.Types.canvas
     }).appendTo(this.containerRef.current)
 
+    if (this._unmounted) {
+      // unmounted before this setup finished; undo what was just built
+      // instead of leaving a dangling Two.js instance/canvas behind
+      two.pause()
+      if (this.containerRef.current && two.renderer.domElement.parentNode === this.containerRef.current) {
+        this.containerRef.current.removeChild(two.renderer.domElement)
+      }
+      return
+    }
+
     // call updaters when any animations are active
     two.bind("update", (...args) => {
       for (let updater of this.updaters) {
@@ -704,12 +725,17 @@ export class StaffTwo extends React.PureComponent {
     this.renderGroup = two.makeGroup()
     this.renderGroup.scale = 0.5
 
-    // this.refreshStaves()
-    // this.refreshNotes()
-    // this.scaleToFit()
-    
     two.update()
-    this.setState({ two })
+    this.setState({ two }, () => {
+      if (this._unmounted) return
+
+      // the watchers rendered below only flush on a later prop *change*
+      // (React.memo bails when props are referentially equal), so force one
+      // flush here to paint notes/type/keySignature already present on this
+      // very first render, without requiring a subsequent prop change
+      this.flushChanges = true
+      this.flush()
+    })
   }
 
   // this is a quick hack for development: we should really be using the note
@@ -765,6 +791,13 @@ export class StaffTwo extends React.PureComponent {
   renderStaves() {
     if (!this.state.two) {
       // canvas isn't ready yet
+      return
+    }
+
+    if (!this.assetsReady()) {
+      // asset refs may not be attached yet on a very first paint; wait for
+      // them instead of throwing, and retry (via flush()) once they are
+      this._pendingAssetsRetry = true
       return
     }
 
@@ -911,17 +944,21 @@ export class StaffTwo extends React.PureComponent {
     g.addTo(this.stavesGroup)
   }
 
-  // this will return a fresh copy of the asset that can be mutated
+  // this will return a fresh copy of the asset that can be mutated. Returns
+  // null (rather than throwing) if the asset's hidden DOM node hasn't
+  // attached its ref yet -- e.g. reached on a first paint before that
+  // commit -- since the caller retries once assetsReady() is true
   getAsset(name) {
     const startTime = performance.now()
 
     this.assetCache ||= {}
 
     if (!this.assetCache[name]) {
-      const domNode = this.assets[name].current
+      const ref = this.assets[name]
+      const domNode = ref && ref.current
 
       if (!domNode) {
-        throw new Error("Failed to find asset by name: " + name)
+        return null
       }
 
       const loaded = this.state.two.interpret(domNode, false, false)
@@ -934,11 +971,33 @@ export class StaffTwo extends React.PureComponent {
     return asset
   }
 
+  // names of every asset rendered in the hidden assets tree below; used to
+  // decide whether it's safe to build the staves yet
+  static ASSET_NAMES = ["gclef", "fclef", "cclef", "brace", "flat", "sharp", "natural", "wholeNote", "quarterNote"]
+
+  assetsReady() {
+    return StaffTwo.ASSET_NAMES.every(name => this.assets[name] && this.assets[name].current)
+  }
+
   // NOTE: flushChanges is set by the prop watchers in the rendered contents of
   // this widget. componentDidUpdate is called after all children have
   // rendered, so we can use it to apply the updates to the scene graph to the
   // output
   componentDidUpdate(prevProps, prevState) {
+    this.flush()
+  }
+
+  flush() {
+    if (this._unmounted) return
+
+    if (this._pendingAssetsRetry && this.assetsReady()) {
+      // a previous render skipped building the staves because the asset
+      // refs weren't attached yet; now that they are, try again
+      this._pendingAssetsRetry = false
+      this.forceUpdate()
+      return
+    }
+
     if (this.flushChanges) {
       console.log("flushing changes...")
       this.flushChanges = false
