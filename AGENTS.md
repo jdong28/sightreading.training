@@ -9,6 +9,7 @@ This file is the project's committed home for project-intrinsic agent knowledge:
 ## Sharp edges
 
 - Note names use the app's own octave numbering: middle C is `"C5"` (`parseNote("C5") == MIDDLE_C_PITCH` in `static/js/st/music.js`), one octave above MIDI/scientific numbering. Converters from external formats must add one to the octave.
+- Measures of imported MusicXML use the score's printed bar numbers (`metadata.measureNumbers`; a leading pickup is measure 0), while notation-text songs number from 1; go through `measureBeatRange`/`measureNumberRange` in `static/js/st/song_sections.js` rather than indexing `measureStarts`.
 - Song beats are quarter notes everywhere (`beatsPerMeasure` for 6/8 is 3). `static/js/st/song_parser.js` is the reference for how notation becomes the `MultiTrackSong` model.
 
 ## Maintaining this file

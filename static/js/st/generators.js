@@ -128,6 +128,7 @@ export function fixGeneratorSettings(generator, settings) {
           }
           break
         }
+        case "deck":
         case "text": {
           if (typeof currentValue != "string") {
             currentValue = null

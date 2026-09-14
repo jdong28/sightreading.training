@@ -334,6 +334,29 @@ function scoreTitle(root) {
   return childText(root, "movement-title")
 }
 
+// The bar numbers printed on the score, by measure index. Notation software
+// doesn't count implicit measures: a leading pickup is measure 0 and the
+// second half of a bar split around a repeat keeps the number of the first.
+// Some exporters mark a pickup only by numbering it 0.
+function measureNumbersFor(measureEls, measureCount) {
+  let numbers = []
+  let number = 0
+
+  for (let i = 0; i < measureCount; i++) {
+    let el = measureEls[i]
+    let implicit = el && (el.getAttribute("implicit") == "yes" ||
+      (i == 0 && (el.getAttribute("number") || "").trim() == "0"))
+
+    if (!implicit) {
+      number += 1
+    }
+
+    numbers.push(number)
+  }
+
+  return numbers
+}
+
 // Converts MusicXML text into a MultiTrackSong. Throws MusicXMLError on
 // input that can't be converted.
 export function parseMusicXML(text) {
@@ -352,7 +375,8 @@ export function parseMusicXML(text) {
     throw new MusicXMLError("The file isn't well-formed XML")
   }
 
-  let parts = collectParts(root).map(p => walkPart(p.measures, p.name))
+  let rawParts = collectParts(root)
+  let parts = rawParts.map(p => walkPart(p.measures, p.name))
 
   if (!parts.length) {
     throw new MusicXMLError("The score has no parts")
@@ -386,6 +410,7 @@ export function parseMusicXML(text) {
       (parts.map(p => p.fifths).find(f => f != null) || 0),
     beatsPerMeasure,
     measureStarts,
+    measureNumbers: measureNumbersFor(rawParts[0].measures, measureCount),
     measuresEnd: start,
   }
 
