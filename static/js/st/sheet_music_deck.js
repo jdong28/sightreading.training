@@ -232,7 +232,7 @@ export async function importMusicXMLPiece(fileName, text, store=getAppStore()) {
   return addPiece(title, song, store, {fileName})
 }
 
-// The library file for the store's pieces and section stats. Resolves to
+// The library file for the store's pieces, section stats and sessions. Resolves to
 // {fileName, text} or {error}
 export async function exportLibraryFile(store=getAppStore()) {
   try {
@@ -271,9 +271,16 @@ export async function importLibraryFile(text, store=getAppStore()) {
   }
 
   let sections = report.addedSections + report.updatedSections
+  let added = [plural(report.addedPieces, "piece")]
+  if (sections) {
+    added.push(`stats for ${plural(sections, "section")}`)
+  }
+  if (report.addedSessions) {
+    added.push(plural(report.addedSessions, "practice session"))
+  }
+
   let parts = [
-    `Added ${plural(report.addedPieces, "piece")}` +
-      (sections ? ` and stats for ${plural(sections, "section")}` : ""),
+    `Added ${added.slice(0, -1).join(", ")}${added.length > 1 ? " and " : ""}${added[added.length - 1]}`,
   ]
 
   if (report.existingPieces) {

@@ -224,6 +224,8 @@ describe("local store", function() {
       await store.putPiece({...pieceData("a", "First", 1000), fileName: "first.musicxml"})
       await store.putPiece(pieceData("b", "Second", 2000, ["E5"]))
       await store.recordSectionPractice(section("a", 1, 4, {at: 1500}))
+      await store.putSession({id: "recent", startedAt: Date.now() - DAY, notesRead: 12})
+      await store.putSession({id: "old", startedAt: Date.now() - (RECENT_SESSION_DAYS + 1) * DAY, notesRead: 7})
 
       let file = await exportLibraryFile(store)
       expect(file.fileName).toMatch(/^sightreading-library-\d{4}-\d\d-\d\d\.json$/)
@@ -232,21 +234,28 @@ describe("local store", function() {
       expect(data.format).toEqual(LIBRARY_FORMAT)
       expect(data.version).toEqual(LIBRARY_VERSION)
       expect(data.pieces.length).toEqual(2)
+      // every session, not only the recent ones in the cache
+      expect(data.sessions.map(s => s.id)).toEqual(["old", "recent"])
 
       await store.close()
       let other = await open()
       let result = await importLibraryFile(file.text, other)
       expect(result.error).toBeUndefined()
-      expect(result.message).toEqual("Added 2 pieces and stats for 1 section")
+      expect(result.message).toEqual("Added 2 pieces, stats for 1 section and 2 practice sessions")
+      expect(other.recentSessions().map(s => s.id)).toEqual(["recent"])
 
       let reopened = await open({keep: true})
       expect(reopened.pieces()).toEqual(data.pieces)
       expect(reopened.sectionStats()).toEqual(data.sectionStats)
+      expect(reopened.recentSessions()).toEqual([data.sessions[1]])
 
       // importing again adds nothing
       let again = await importLibraryFile(file.text, reopened)
       expect(again.message).toEqual("Added 0 pieces; 2 pieces already in the library")
+      expect(again.report.addedSessions).toEqual(0)
+      expect(again.report.existingSessions).toEqual(2)
       expect(reopened.pieces().length).toEqual(2)
+      expect((await reopened.exportLibrary()).sessions.length).toEqual(2)
     })
 
     it("merges by id and content without duplicating", async function() {
@@ -272,10 +281,17 @@ describe("local store", function() {
           section("c", 2, 3),
           section("unknown", 1, 1),
         ],
+        sessions: [
+          {id: "s1", startedAt: 1000, notesRead: 5},
+          {id: "s1", startedAt: 1000, notesRead: 6}, // repeated in the file
+          {id: "s2"}, // no start, skipped
+        ],
       }
 
       let result = await importLibraryFile(JSON.stringify(library), store)
-      expect(result.message).toEqual("Added 1 piece and stats for 2 sections; 2 pieces already in the library; 1 unreadable piece skipped")
+      expect(result.message).toEqual("Added 1 piece, stats for 2 sections and 1 practice session; 2 pieces already in the library; 1 unreadable piece skipped")
+      expect(result.report.addedSessions).toEqual(1)
+      expect((await store.exportLibrary()).sessions).toEqual([{id: "s1", startedAt: 1000, notesRead: 5}])
 
       expect(store.pieces().map(piece => [piece.id, piece.title])).toEqual([
         ["a", "First"], ["local", "Same notes"], ["c", "New"],
@@ -338,6 +354,7 @@ describe("local store", function() {
         id: stats.id,
         startedAt: jasmine.any(Number),
         endedAt: jasmine.any(Number),
+        activeSeconds: jasmine.any(Number),
         staff: "treble",
         generator: "sheet music",
         // long pasted notation is left out
@@ -364,6 +381,70 @@ describe("local store", function() {
       expect(reopened.recentSessions().length).toEqual(1)
       expect(reopened.recentSessions()[0].notesRead).toEqual(4)
       expect(reopened.recentSessions()[0].notes.E).toEqual({hits: 1, misses: 0})
+    })
+
+    describe("timing", function() {
+      beforeEach(function() {
+        jasmine.clock().install()
+        jasmine.clock().mockDate(new Date(2026, 8, 14, 9))
+      })
+
+      afterEach(function() {
+        jasmine.clock().uninstall()
+      })
+
+      it("counts active time from the gaps between notes, leaving out pauses", function() {
+        let stats = new NoteStats()
+        stats.hitNotes(["C5"])
+        jasmine.clock().tick(4000)
+        stats.missNotes(["D5"])
+        jasmine.clock().tick(6000)
+        stats.hitNotes(["D5"])
+
+        // a pause of a few minutes isn't practice
+        jasmine.clock().tick(3 * 60 * 1000)
+        stats.hitNotes(["E5"])
+        jasmine.clock().tick(2000)
+        stats.hitNotes(["F5"])
+
+        let record = stats.sessionRecord()
+        expect(record.activeSeconds).toEqual(12)
+        expect(record.endedAt - record.startedAt).toEqual(3 * 60 * 1000 + 12000)
+      })
+
+      it("starts a new session on the first note after a long pause", function() {
+        let ended = []
+        let stats = new NoteStats(null, {
+          onSessionEnd: s => ended.push(s.sessionRecord({staff: "treble"})),
+        })
+
+        stats.hitNotes(["C5"])
+        jasmine.clock().tick(5000)
+        stats.hitNotes(["D5"])
+        let firstId = stats.id
+
+        jasmine.clock().tick(NoteStats.SESSION_GAP - 1)
+        stats.missNotes(["E5"])
+        expect(ended).toEqual([])
+
+        jasmine.clock().tick(NoteStats.SESSION_GAP)
+        stats.hitNotes(["G5"])
+
+        expect(ended.length).toEqual(1)
+        expect(ended[0].id).toEqual(firstId)
+        expect(ended[0].notesRead).toEqual(2)
+        expect(ended[0].misses).toEqual(1)
+        expect(ended[0].endedAt).toEqual(ended[0].startedAt + 5000 + NoteStats.SESSION_GAP - 1)
+
+        let next = stats.sessionRecord()
+        expect(next.id).not.toEqual(firstId)
+        expect(next.startedAt).toEqual(next.endedAt)
+        expect(next.activeSeconds).toEqual(0)
+        expect(next.notesRead).toEqual(1)
+        expect(next.misses).toEqual(0)
+        expect(next.bestStreak).toEqual(1)
+        expect(next.notes).toEqual({G: {hits: 1, misses: 0}})
+      })
     })
 
     it("refuses a session without an id or start", async function() {

@@ -46,12 +46,15 @@ export default class SightReadingPage extends React.Component {
     this.releaseNote = this.releaseNote.bind(this)
     this.onFullscreenChange = this.onFullscreenChange.bind(this)
     this.onPageHide = () => this.recordSession()
+    this.onSessionEnd = () => {
+      this.recordSession()
+      // the stats start counting the next session from zero
+      this.sectionMark = {...this.sectionMark, hits: 0, misses: 0}
+    }
 
     this.keyMap = {
       " ": e => this.skipCurrentNote(),
     }
-
-    const session = getSession()
 
     this.state = {
       newRenderer: props.useStaffTwo || false,
@@ -73,7 +76,7 @@ export default class SightReadingPage extends React.Component {
       keyboardOpen: true,
       settingsOpen: false,
       scale: window.innerWidth < 1000 ? 0.8 : 1,
-      stats: new NoteStats(session.currentUser),
+      stats: this.newStats(),
       keySignature: new KeySignature(0),
     }
   }
@@ -484,10 +487,17 @@ export default class SightReadingPage extends React.Component {
 
   setGenerator(generator, settings) {
     storeCurrentDrill({generator: generator.name})
-    this.setState({
+
+    let update = {
       currentGenerator: generator,
       currentGeneratorSettings: settings,
-    })
+    }
+
+    if (generator != this.state.currentGenerator) {
+      update.stats = this.closeSession()
+    }
+
+    this.setState(update)
   }
 
   setStaff(staff, callback) {
@@ -499,7 +509,8 @@ export default class SightReadingPage extends React.Component {
 
     let update = {
       currentStaff: staff,
-      notes: null
+      notes: null,
+      stats: this.closeSession(),
     }
 
     // if the current generator is not compatible with new staff change it
@@ -635,13 +646,21 @@ export default class SightReadingPage extends React.Component {
       .catch(err => console.warn("Couldn't save the practice session", err))
   }
 
+  newStats() {
+    return new NoteStats(getSession().currentUser, {onSessionEnd: this.onSessionEnd})
+  }
+
+  // Records the session played on the current staff and generator, returning
+  // the stats for the next one
+  closeSession() {
+    this.recordSession()
+    return this.newStats()
+  }
+
   openStatsLightbox() {
     trigger(this, "showLightbox",
       <StatsLightbox
-        resetStats={() => {
-          this.recordSession()
-          this.setState({stats: new NoteStats()})
-        }}
+        resetStats={() => this.setState({stats: this.closeSession()})}
         stats={this.state.stats} />)
   }
 

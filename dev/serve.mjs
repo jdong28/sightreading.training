@@ -2,7 +2,7 @@
 // backend required. Backend features (login, stats, play-along song library)
 // will 404; everything else works.
 //
-//   npm run dev              (PORT=3001 npm run dev for another port)
+//   npm run dev
 
 import {join, dirname} from "path"
 import {fileURLToPath} from "url"
@@ -40,7 +40,7 @@ await ctx.watch()
 const {port} = await ctx.serve({
   servedir: ".",
   fallback: "dev/index.html",
-  port: Number(process.env.PORT) || 3000,
+  port: 3000,
 })
 
 console.log(`\nSight Reading Trainer (frontend only): http://localhost:${port}/`)

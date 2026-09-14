@@ -19,8 +19,20 @@ export function settingsSummary(settings) {
 export default class NoteStats {
   static TIMER_SIZE = 30*1000
 
+  // a note played this long after the one before ends the session and starts
+  // a new one
+  static SESSION_GAP = 30*60*1000
+
+  // opts.onSessionEnd(stats) is called before a note played after a pause of
+  // SESSION_GAP starts a new session in these stats
   constructor(currentUser, opts={}) {
     this.currentUser = currentUser
+    this.onSessionEnd = opts.onSessionEnd
+    this.startSession()
+    this.resetBuffer()
+  }
+
+  startSession() {
     this.id = `s${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
     this.noteHitStats = {}
     this.streak = 0
@@ -32,10 +44,22 @@ export default class NoteStats {
     this.startedAt = undefined
     this.endedAt = undefined
 
+    // milliseconds between notes, leaving out gaps of TIMER_SIZE or more
+    this.activeTime = 0
+
     this.lastHitTime = undefined
     this.averageHitTime = 0
+  }
 
-    this.resetBuffer()
+  endSessionAfterPause(time) {
+    if (this.endedAt == null || time - this.endedAt < NoteStats.SESSION_GAP) {
+      return
+    }
+
+    if (this.onSessionEnd) {
+      this.onSessionEnd(this)
+    }
+    this.startSession()
   }
 
   resetBuffer() {
@@ -79,11 +103,12 @@ export default class NoteStats {
 
 
   hitNotes(notes) {
+    let now = +new Date;
+    this.endSessionAfterPause(now)
+
     for (let note of notes) {
       this.incrementNote(note, 1);
     }
-
-    let now = +new Date;
 
     this.startTimer()
 
@@ -110,12 +135,15 @@ export default class NoteStats {
   }
 
   missNotes(notes) {
+    let now = +new Date
+    this.endSessionAfterPause(now)
+
     for (let note of notes) {
       this.incrementNote(note, -1);
     }
 
     this.startTimer()
-    this.markActivity(+new Date)
+    this.markActivity(now)
 
     this.streak = 0;
     this.misses += 1;
@@ -126,6 +154,8 @@ export default class NoteStats {
   markActivity(time) {
     if (this.startedAt == null) {
       this.startedAt = time
+    } else if (time - this.endedAt < NoteStats.TIMER_SIZE) {
+      this.activeTime += time - this.endedAt
     }
     this.endedAt = time
   }
@@ -147,6 +177,7 @@ export default class NoteStats {
       id: this.id,
       startedAt: this.startedAt,
       endedAt: this.endedAt,
+      activeSeconds: Math.round(this.activeTime / 1000),
       staff: staff || null,
       generator: generator || null,
       settings: settingsSummary(settings),

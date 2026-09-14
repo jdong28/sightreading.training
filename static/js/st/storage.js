@@ -81,6 +81,7 @@ const STORES = {
  * @property {string} id
  * @property {number} startedAt the first note played
  * @property {number} endedAt the last note played
+ * @property {number} activeSeconds time between notes, leaving out pauses
  * @property {string} staff
  * @property {string} generator
  * @property {Object} settings summary of the generator settings
@@ -97,11 +98,13 @@ const STORES = {
  * @property {string} exportedAt
  * @property {PieceRecord[]} pieces
  * @property {SectionStatsRecord[]} sectionStats
+ * @property {SessionRecord[]} sessions
  */
 
 /**
  * What importLibrary did. Pieces already in the library (by id, or by the
- * same title and notes) count as existing and aren't added again.
+ * same title and notes) count as existing and aren't added again, as do
+ * sessions with an id already in the library.
  * @typedef {Object} LibraryImportReport
  * @property {number} addedPieces
  * @property {number} existingPieces
@@ -109,6 +112,8 @@ const STORES = {
  * @property {number} fullPieces pieces left out because the library is full
  * @property {number} addedSections
  * @property {number} updatedSections section stats replaced by more recent ones
+ * @property {number} addedSessions
+ * @property {number} existingSessions
  */
 
 function upgradeSchema(db, oldVersion) {
@@ -295,6 +300,11 @@ export function validPiece(piece) {
   return !!piece && typeof piece == "object" &&
     typeof piece.id == "string" && piece.id != "" && typeof piece.title == "string" &&
     !!piece.song && typeof piece.song == "object"
+}
+
+function validSession(session) {
+  return !!session && typeof session == "object" &&
+    typeof session.id == "string" && typeof session.startedAt == "number"
 }
 
 function validSectionStats(stats) {
@@ -560,7 +570,7 @@ export class LocalStore {
    */
   putSession(session) {
     return this.mutate(async () => {
-      if (!session || typeof session.id != "string" || typeof session.startedAt != "number") {
+      if (!validSession(session)) {
         throw new Error("Not a valid session")
       }
 
@@ -576,7 +586,7 @@ export class LocalStore {
   }
 
   /**
-   * The pieces and section stats, for a library file.
+   * The pieces, section stats and every session, for a library file.
    * @returns {Promise<LibraryExport>}
    */
   exportLibrary() {
@@ -586,13 +596,15 @@ export class LocalStore {
       exportedAt: new Date().toISOString(),
       pieces: this.cache.pieces,
       sectionStats: this.cache.sectionStats,
+      sessions: (await this.backend.getAll("sessions")).sort(byStart),
     }))
   }
 
   /**
    * Merges an exported library into this one in a single write. Section stats
    * follow their piece (also when it matched a stored piece of another id)
-   * and replace stored stats only when practiced more recently.
+   * and replace stored stats only when practiced more recently. Sessions are
+   * added unless one of the same id is stored.
    * @param {LibraryExport} data
    * @param {Object} [opts]
    * @param {number} [opts.maxPieces] the most pieces the library holds
@@ -610,7 +622,7 @@ export class LocalStore {
 
       let report = {
         addedPieces: 0, existingPieces: 0, invalidPieces: 0, fullPieces: 0,
-        addedSections: 0, updatedSections: 0,
+        addedSections: 0, updatedSections: 0, addedSessions: 0, existingSessions: 0,
       }
 
       let pieces = [...this.cache.pieces]
@@ -679,12 +691,35 @@ export class LocalStore {
         ops.push({store: "sectionStats", put: record})
       }
 
+      let sessionIds = new Set((await this.backend.getAll("sessions")).map(session => session.id))
+      let recentSessions = [...this.cache.sessions]
+      let recentSince = now - RECENT_SESSION_DAYS * DAY
+
+      for (let session of Array.isArray(data.sessions) ? data.sessions : []) {
+        if (!validSession(session)) {
+          continue
+        }
+
+        if (sessionIds.has(session.id)) {
+          report.existingSessions += 1
+          continue
+        }
+
+        sessionIds.add(session.id)
+        ops.push({store: "sessions", put: session})
+        report.addedSessions += 1
+
+        if (session.startedAt >= recentSince) {
+          recentSessions.push(session)
+        }
+      }
+
       await this.backend.write(ops)
 
       this.cache = {
-        ...this.cache,
         pieces: pieces.sort(byImportOrder),
         sectionStats,
+        sessions: recentSessions.sort(byStart),
       }
 
       return report
