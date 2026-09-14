@@ -15,6 +15,7 @@ import SongEditor from "st/components/song_editor"
 
 import SongParser from "st/song_parser"
 import SongTimer from "st/song_timer"
+import {clickStartsMeasure} from "st/song_note_list"
 import {KeySignature, noteName, parseNote} from "st/music"
 import {MidiInput} from "st/midi"
 
@@ -213,9 +214,39 @@ export class PlayAlongPage extends React.Component {
     }
   }
 
+  // load a song converted from a file (see SongEditor.importFile). code is
+  // the editor contents that go with it: while the code is unchanged the
+  // imported model stays in use, editing the code replaces it. saveable is
+  // false when the code doesn't express the imported song
+  importSong(song, code, saveable) {
+    this.setState({
+      importedSong: {song, code, saveable},
+      currentSongCode: code,
+    })
+    this.setSong(song)
+  }
+
+  importUnsaveable() {
+    let imported = this.state.importedSong
+    return !!imported && !imported.saveable && imported.code == this.state.currentSongCode
+  }
+
   // re-render the song with new autochords
   refreshSong() {
     let code = this.state.currentSongCode
+
+    let imported = this.state.importedSong
+    if (imported) {
+      if (imported.code == code) {
+        if (this.state.song != imported.song) {
+          this.setSong(imported.song)
+        }
+        return
+      }
+
+      this.setState({importedSong: null})
+    }
+
     try {
       let song = SongParser.load(code, this.songParserParams())
       this.setSong(song)
@@ -424,7 +455,12 @@ export class PlayAlongPage extends React.Component {
       if ("currentBeat" in this) {
         if (Math.floor(this.currentBeat * mm) < Math.floor(beat * mm)) {
           let m = Math.floor(beat * mm)
-          if (m % beatsMeasure == 0) {
+          let metadata = this.state.song && this.state.song.metadata
+          let downbeat = metadata && metadata.measureStarts ?
+            clickStartsMeasure(metadata, m, mm) :
+            m % beatsMeasure == 0
+
+          if (downbeat) {
             this.state.metronome.tick()
           } else {
             this.state.metronome.tock()
@@ -695,6 +731,8 @@ export class PlayAlongPage extends React.Component {
       songNotes={this.state.song}
       song={this.state.songModel}
       code={this.state.currentSongCode}
+      importUnsaveable={this.importUnsaveable()}
+      onImportSong={(song, code, saveable) => this.importSong(song, code, saveable)}
       onCode={code => this.setState({
         currentSongCode: code
       }) } />
