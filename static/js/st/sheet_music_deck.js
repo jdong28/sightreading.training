@@ -177,7 +177,11 @@ export async function addPiece(title, song, store=getAppStore(), {fileName}={}) 
     return {error: `The deck is full (${MAX_PIECES} pieces). Remove a piece before importing another.`}
   }
 
-  let record = {id: newPieceId(), title, song: songData, importedAt: Date.now()}
+  // strictly after the last piece, so pieces imported within a millisecond
+  // keep their order
+  let last = deck.pieces[deck.pieces.length - 1]
+  let importedAt = Math.max(Date.now(), last ? last.importedAt + 1 : 0)
+  let record = {id: newPieceId(), title, song: songData, importedAt}
   if (fileName) {
     record.fileName = fileName
   }

@@ -322,6 +322,15 @@ describe("sheet music deck", function() {
       expect(loadDeck(store).pieces.map(p => p.title)).toEqual(["Waltz in A"])
     })
 
+    it("keeps the import order of pieces imported within a millisecond", async function() {
+      spyOn(Date, "now").and.returnValue(1000)
+      let song = parseMusicXML(pickupScore())
+      for (let title of ["C", "A", "B", "D"]) {
+        await addPiece(title, song, store)
+      }
+      expect(loadDeck(store).pieces.map(p => p.title)).toEqual(["C", "A", "B", "D"])
+    })
+
     it("keeps the deck object while the pieces are unchanged", async function() {
       let deck = loadDeck(store)
       expect(loadDeck(store)).toBe(deck)

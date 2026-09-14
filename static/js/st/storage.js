@@ -638,7 +638,8 @@ export class LocalStore {
           continue
         }
 
-        let record = pieceRecord(piece, now)
+        // pieces without an import time keep the file's order
+        let record = pieceRecord(piece, now + report.addedPieces)
         pieces.push(record)
         byId.set(record.id, record)
         byContent.set(pieceContent(record), record)
