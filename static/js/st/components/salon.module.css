@@ -219,10 +219,6 @@ blockquote.pull_quote {
     border: 0;
     text-align: center;
 
-    &::before {
-        content: none;
-    }
-
     .fleuron {
         display: block;
         color: var(--salon-gilt);

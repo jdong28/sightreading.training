@@ -1,6 +1,5 @@
 import * as React from "react"
 import classNames from "classnames"
-import {Navigate} from "react-router-dom"
 import {setTitle} from "st/globals"
 
 import pageContainerStyles from "../page_container.module.css"
@@ -143,20 +142,15 @@ export default class StatsPage extends React.Component {
       ]
     }
 
-    return <div>
-      <h2>Daily stats</h2>
-      <Line data={data} options={options} width={600} height={300} />
-    </div>
+    return <Line data={data} options={options} width={600} height={300} />
   }
 
   render() {
-    if (!getSession().currentUser) {
-      return <Navigate to="/" replace />
-    }
-
     let inside
 
-    if (this.state.stats) {
+    if (!getSession().currentUser) {
+      inside = <p>Practice history will appear here once the progress screen lands.</p>
+    } else if (this.state.stats) {
       inside = this.renderStats()
     } else if (this.state.error_message) {
       inside = this.state.error_message
@@ -164,6 +158,9 @@ export default class StatsPage extends React.Component {
       inside = "Loading stats"
     }
 
-    return <div className={classNames(styles.stats_page, pageContainerStyles.page_container)}>{inside}</div>
+    return <div className={classNames(styles.stats_page, pageContainerStyles.page_container)}>
+      <h2>Daily stats</h2>
+      {inside}
+    </div>
   }
 }

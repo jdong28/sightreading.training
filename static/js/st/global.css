@@ -129,11 +129,12 @@ button, .button {
 }
 
 /* primary pill */
-.big_button, .primary {
+.big_button {
     color: var(--salon-paper);
     background: var(--salon-oxblood);
     border: 1px solid var(--salon-oxblood);
     border-radius: 999px;
+    padding: 13px 26px;
     box-shadow: 0 2px 6px -1px rgba(36,31,24,.3);
 
     &:is(button, .button) {
@@ -152,31 +153,14 @@ button, .button {
     }
 }
 
-.big_button {
-    padding: 13px 26px;
-}
-
 blockquote {
     margin: 1em 0;
-    padding: 0;
-    background: transparent;
-    border: 0;
-    text-align: center;
-    font-family: var(--font-display);
-    font-size: 15.5px;
-    font-style: italic;
-    line-height: 1.5;
+    padding: 1em;
+    background: var(--salon-paper-warm);
+    border: 1px solid var(--salon-rule-light);
+    border-radius: 0;
+    text-align: left;
     color: var(--salon-ink-soft);
-
-    &::before {
-        content: "❖";
-        display: block;
-        font-family: var(--font-ui);
-        font-style: normal;
-        font-size: 13px;
-        color: var(--salon-gilt);
-        margin-bottom: 10px;
-    }
 
     > p {
         margin: 0;
