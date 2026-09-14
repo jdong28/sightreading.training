@@ -2,10 +2,11 @@
 
 This file is the project's committed home for project-intrinsic agent knowledge: build, test, release, architecture, and sharp-edge notes that should travel with the code.
 
-- Frontend-only workflow: `npm run dev` (see `dev/serve.mjs`, README "Frontend development"). The production build uses tup (`static/Tupfile`). `npm run dev` writes generated, untracked files (`static/js/st/song_parser_peg.js`, `static/js/st/staff_assets.jsx`, `static/guides/*.json`); never commit them.
+- Frontend-only workflow: `npm run dev` (`PORT=<n>` picks a private port; see `dev/serve.mjs`, README "Frontend development"). The production build uses tup (`static/Tupfile`). `npm run dev` writes generated, untracked files (`static/js/st/song_parser_peg.js`, `static/js/st/staff_assets.jsx`, `static/guides/*.json`); never commit them.
 - `npm test` (`dev/run_specs.mjs`) runs the Jasmine specs bundled at `/dev/specs.html` headlessly via puppeteer and exits non-zero on any failure; CI's `node` job in `.github/workflows/test.yml` runs `make lint_js`, `npm run build_assets`, then `npm test` alongside the existing Docker Lua job.
 - Lint JS with `make lint_js` (some pre-existing quote and unreachable-code errors exist in untouched files).
 - Browser data (imported pieces, per-section stats, practice sessions) lives in the IndexedDB local store `static/js/st/storage.js`; `initStorage()` runs in `static/js/st/app.jsx` before the app renders. Reads are synchronous over its cache (generators and settings inputs read on every render); mutations are async and write the database before the cache. Specs use `openTestStore` from `static/js/spec/helpers.js`, never the real database.
+- The UI follows the "Salon de Chopin" design spec in `docs/design/salon-de-chopin.md`: use the `--salon-*` and `--font-display` tokens in `static/js/st/global.css` and the primitives in `static/js/st/components/salon.jsx` rather than raw values. The header is fixed; offset content with `var(--header-height)`, never a hard-coded height.
 - Staff mode generators live in the `GENERATORS` registry in `static/js/st/data.jsx`; the settings panel renders their declarative `inputs` (`static/js/st/components/sight_reading/settings_panel.jsx`).
 
 ## Sharp edges

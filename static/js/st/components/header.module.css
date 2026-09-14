@@ -1,194 +1,249 @@
 .header {
     box-sizing: border-box;
-    padding: 0 20px;
-    height: 50px;
-    background: white;
+    padding: 18px 34px 0;
+    height: var(--header-height);
     position: fixed;
     top: 0;
     left: 0;
     right: 0;
     z-index: calc(var(--upper-layer-z-index) - 1);
-    gap: 20px;
-
     width: 100%;
 
-    display: flex;
-    align-items: center;
+    /* same wallpaper as body so scrolled content doesn't show through */
+    background-color: var(--salon-ground);
+    background-image: var(--salon-wallpaper-image);
+    background-size: var(--salon-wallpaper-size);
+    background-attachment: fixed;
 
-    .user_links {
-        flex: 1;
+    color: var(--salon-ink);
+    font-family: var(--font-ui);
+
+    @media (max-width: 600px) {
+        padding-left: 16px;
+        padding-right: 16px;
+    }
+
+    .top_row {
+        box-sizing: border-box;
+        height: 46px;
+        padding-bottom: 14px;
         display: flex;
         align-items: center;
-        gap: 20px;
-        color: #666;
+        gap: 18px;
+    }
 
-        > a, > .right_section {
+    .wordmark {
+        display: flex;
+        align-items: center;
+        gap: 11px;
+        flex: none;
+        color: var(--salon-ink);
+        text-decoration: none;
+
+        &:hover {
+            color: var(--salon-ink);
+        }
+    }
+
+    .wordmark_glyph {
+        color: var(--salon-gilt);
+        font-size: 13px;
+    }
+
+    .wordmark_text {
+        font-family: var(--font-display);
+        font-size: 27px;
+        font-weight: 400;
+        line-height: 32px;
+        letter-spacing: -.005em;
+        white-space: nowrap;
+    }
+
+    .wordmark_italic {
+        font-style: italic;
+    }
+
+    .instrument_status {
+        margin-left: auto;
+        min-width: 0;
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        padding: 4px 0;
+        background: transparent;
+        border: 0;
+        border-radius: 0;
+        box-shadow: none;
+        color: var(--salon-ink-muted);
+        font-family: var(--font-ui);
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: .18em;
+        text-transform: uppercase;
+        line-height: 16px;
+        cursor: pointer;
+
+        &:hover {
+            color: var(--salon-ink);
+        }
+
+        &:focus-visible {
+            outline: 2px solid rgba(125, 44, 44, 0.3);
+            outline-offset: 2px;
+            box-shadow: none;
+        }
+    }
+
+    .instrument_dot {
+        display: block;
+        flex: none;
+        box-sizing: border-box;
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        border: 1px solid var(--salon-gilt);
+        background: transparent;
+
+        &.connected {
+            border-color: var(--salon-oxblood);
+            background: var(--salon-oxblood);
+        }
+    }
+
+    .instrument_name {
+        min-width: 0;
+        max-width: 240px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .nav {
+        box-sizing: border-box;
+        height: 44px;
+        border-top: var(--salon-double-rule);
+        border-bottom: 1px solid var(--salon-rule);
+        padding: 12px 0;
+    }
+
+    .nav_links {
+        display: flex;
+        align-items: center;
+        gap: 28px;
+        height: 16px;
+
+        > a {
             white-space: nowrap;
+        }
+    }
+
+    a:is(.nav_links > a, .navigation_menu a) {
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: .2em;
+        line-height: 16px;
+        text-transform: uppercase;
+        text-decoration: none;
+        color: var(--salon-nav-ink);
+
+        &:hover {
+            color: var(--salon-oxblood-dark);
+        }
+
+        &:global(.active) {
+            color: var(--salon-oxblood);
         }
     }
 
     .menu_toggle {
         position: relative;
-        button {
-            background: transparent;
-            padding: 6px 8px;
-            color: #666;
-            font-size: 14px;
-            cursor: pointer;
 
-            > svg {
-                fill: #333;
-                margin-left: 3px;
-                display: inline-block;
-                vertical-align: 1px;
+        > button {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 0;
+            background: transparent;
+            border: 0;
+            border-radius: 0;
+            box-shadow: none;
+            color: var(--salon-nav-ink);
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: .2em;
+            line-height: 16px;
+            text-transform: uppercase;
+
+            &:hover {
+                color: var(--salon-oxblood-dark);
             }
         }
-        .menu_shroud {
-            position: fixed;
-            top: 0;
-            right: 0;
-            bottom: 0;
-            left: 0;
-            background: rgba(255, 255, 255, 0.8);
-            z-index: 1;
-        }
 
-        .navigation_menu {
-            z-index: 2;
+        .menu_glyph {
+            color: var(--salon-gilt);
         }
     }
 
+    /* a modal dialog, pinned under the nav row in place of the centred lightbox */
     .navigation_menu {
-        position: absolute;
-        top: 100%;
-        left: 0;
-        min-width: 200px;
-        background: white;
-        margin-top: 10px;
+        position: fixed;
+        top: calc(var(--header-height) - 1px);
+        left: 34px;
+        margin: 0;
+        padding: 0;
+        max-width: calc(100vw - 32px);
+        max-height: calc(100vh - var(--header-height));
+        overflow: auto;
+        box-sizing: border-box;
+        min-width: 240px;
+        background: var(--salon-paper);
+        border: 1px solid var(--salon-rule-strong);
+        box-shadow:
+            inset 0 0 0 1px var(--salon-paper),
+            inset 0 0 0 2px var(--salon-rule-light),
+            0 2px 3px rgba(36,31,24,.06),
+            0 20px 38px -24px rgba(36,31,24,.35);
 
-        border: 1px solid color-mix(in oklab, var(--border-color), white 10%);
-        border-radius: 4px;
-        box-shadow: 0 0 20px rgba(0, 0, 0, 0.2);
-
-        .midi_button_wrapper {
-            padding: 8px 10px 5px 10px;
-            display: flex;
-            > button {
-                flex: 1;
-                text-align: left;
-                display: block;
-            }
+        @media (max-width: 600px) {
+            left: 16px;
         }
 
-        .account_area {
-            border-bottom: 1px solid color-mix(in oklab, var(--border-color), white 20%);
-            display: flex;
-            padding: 8px 10px;
-            align-items: center;
+        &::backdrop {
+            background: rgba(36, 31, 24, .32);
+        }
 
-            &.logged_in {
-                > :first-child {
-                    flex: 1;
-                }
+        > div {
+            width: auto;
+            height: auto;
+            padding: 0;
+            background: transparent;
+            border: 0;
+            border-radius: 0;
+            box-shadow: none;
+        }
 
-                .username {
-                    min-width: 0;
-                    white-space: nowrap;
-                    overflow: hidden;
-                    text-overflow: ellipsis;
-                }
-            }
-
-            &.logged_out {
-                > * {
-                    flex: 1;
-                    &:last-child {
-                        text-align: right;
-                    }
-                }
-            }
+        a:focus-visible {
+            outline: 2px solid rgba(125, 44, 44, 0.3);
+            outline-offset: 2px;
         }
 
         ul {
             list-style: none;
-            padding: 0;
+            padding: 6px 18px;
             margin: 0;
 
             li {
-                margin: 8px 10px;
+                border-bottom: var(--salon-hairline);
+
+                &:last-child {
+                    border-bottom: 0;
+                }
 
                 a {
                     display: block;
+                    padding: 12px 0;
                 }
             }
-        }
-    }
-
-    .right_section {
-        text-align: right;
-        flex: 1;
-    }
-
-    .logo, .logo_small {
-        opacity: 0.7;
-        display: block;
-    }
-
-    .logo_small {
-        display: none;
-    }
-
-    @media (max-width: 1200px) {
-        .logo {
-            display: none;
-        }
-
-        .logo_small {
-            display: block;
-        }
-    }
-
-
-    :global(.settings_open) & {
-        button {
-            visibility: hidden;
-        }
-    }
-
-    h1 {
-        margin: 0 20px 0 0;
-        line-height: 15px;
-        font-size: 22px;
-        text-transform: uppercase;
-        color: #444;
-        a {
-            color: inherit;
-            text-decoration: none;
-        }
-    }
-
-
-    .logo_link {
-        padding: 0;
-    }
-
-    a {
-        padding: 3px 6px;
-        font-weight: bold;
-        text-decoration: none;
-        color: #444;
-
-        &:hover {
-            color: var(--button-color);
-        }
-
-        &:global(.active) {
-            font-weight: bold;
-            text-decoration: none;
-            background: #f6f6f6;
-            color: color-mix(in oklab, var(--button-color), black 8%);
-            border-radius: 2px;
-            box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.1);
         }
     }
 }

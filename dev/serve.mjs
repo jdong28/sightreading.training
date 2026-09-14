@@ -40,7 +40,7 @@ await ctx.watch()
 const {port} = await ctx.serve({
   servedir: ".",
   fallback: "dev/index.html",
-  port: 3000,
+  port: Number(process.env.PORT) || 3000,
 })
 
 console.log(`\nSight Reading Trainer (frontend only): http://localhost:${port}/`)

@@ -17,7 +17,10 @@ class Layout extends Widget
         else
           link rel: "stylesheet", href: "/static/main.css?#{buster}"
 
-        -- link rel: "stylesheet", href: "https://fonts.googleapis.com/css?family=Raleway"
+        link rel: "preconnect", href: "https://fonts.googleapis.com"
+        link rel: "preconnect", href: "https://fonts.gstatic.com", crossorigin: "anonymous"
+        link rel: "stylesheet", href: "https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,400;0,6..96,500;1,6..96,400&display=swap"
+
         link rel: "icon", sizes: "144x144", href: "/static/img/icon-144.png"
         link rel: "manifest", href: @build_url "/static/manifest.json", scheme: config.default_scheme
 

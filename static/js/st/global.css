@@ -1,7 +1,45 @@
 @import "../../fonts/Raleway/stylesheet.css";
 
+/* Salon de Chopin design tokens, see docs/design/salon-de-chopin.md */
 :root {
-    --border-color: #a2a2a2;
+    --salon-ground: #f3ece0;
+    --salon-paper: #fdfaf4;
+    --salon-paper-warm: #f6efe1;
+    --salon-band: #ece3d2;
+    --salon-rule-light: #e7dcc8;
+    --salon-rule: #ddd0b8;
+    --salon-rule-strong: #cdbfa4;
+    --salon-gilt: #a8824a;
+    --salon-gilt-light: #c9b48c;
+    --salon-bar-fill: #e0cfae;
+    --salon-track: #eee3cf;
+    --salon-ink: #241f18;
+    --salon-ink-soft: #4a4335;
+    --salon-ink-muted: #5a5243;
+    --salon-oxblood: #7d2c2c;
+    --salon-oxblood-dark: #571d1d;
+    --salon-piano-lid: #4a2c1c;
+    --salon-piano-lid-dark: #2f1b11;
+
+    /* ghost pill text and inactive nav, from the handoff markup */
+    --salon-ghost-ink: #3d3629;
+    --salon-nav-ink: #544e3e;
+
+    --salon-double-rule: 3px double var(--salon-rule-strong);
+    --salon-hairline: 1px solid var(--salon-rule-light);
+
+    --salon-wallpaper-image:
+        radial-gradient(circle at 16px 16px, rgba(150,112,58,.12) 0 3px, transparent 4px),
+        radial-gradient(circle at 48px 48px, rgba(150,112,58,.09) 0 2px, transparent 3px),
+        repeating-linear-gradient(90deg, rgba(120,90,50,.055) 0 1px, transparent 1px 22px);
+    --salon-wallpaper-size: 64px 64px, 64px 64px, auto;
+
+    --font-display: "Bodoni Moda", "Bodoni 72", Didot, "Libre Bodoni", Georgia, serif;
+    --font-ui: 'Raleway', sans-serif;
+}
+
+:root {
+    --border-color: #ddd0b8;
 
     --upper-layer-z-index: 10;
 
@@ -9,14 +47,14 @@
     --keyboard-height-short: 120px;
     --keyboard-height-very-short: 90px;
 
-    --button-color: #727290;
-    --button-color-highlight: #e0e0e7;
+    --button-color: #7d2c2c;
+    --button-color-highlight: #efe4d2;
 
     --default-width: 900px;
     --line-spacing: 30px;
 
-    --body-background: #e7e7e7;
-    --body-color: #333333;
+    --body-background: #f3ece0;
+    --body-color: #241f18;
 
     --settings-panel-width: 270px;
 
@@ -26,71 +64,123 @@
 
     --error-color: #d14343;
 
-    --header-height: 50px;
+    /* the fixed header: 18px top padding, 46px wordmark row, 44px nav row */
+    --header-height: 108px;
 }
 
 body {
     color: var(--body-color);
-    background: var(--body-background);
-    font-family: 'Raleway', sans-serif;
+    background-color: var(--body-background);
+    background-image: var(--salon-wallpaper-image);
+    background-size: var(--salon-wallpaper-size);
+    background-attachment: fixed;
+    font-family: var(--font-ui);
     margin: 0;
     padding: 0;
 }
 
 :focus {
-    outline-color: rgba(0, 0, 255, 0.2);
+    outline-color: rgba(125, 44, 44, 0.3);
 }
 
+/* ghost pill */
 button, .button {
-    color: white;
-    font-weight: bold;
-    font-family: 'Raleway', sans-serif;
-    font-size: 14px;
-    border: 0;
-    background: var(--button-color);
-    padding: 5px 10px;
-    border-radius: 4px;
-    box-shadow: inset 0 0 0 1px rgba(0,0,0,0.2);
-    border: 1px solid var(--button-color);
+    display: inline-block;
+    box-sizing: border-box;
+    color: var(--salon-ghost-ink);
+    font-family: var(--font-ui);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    line-height: 1.3;
+    background: var(--salon-paper);
+    border: 1px solid var(--salon-rule);
+    border-radius: 999px;
+    padding: 8px 16px;
+    box-shadow: 0 1px 2px rgba(36,31,24,.08);
     cursor: pointer;
     text-decoration: none;
 
     &:focus {
         outline: none;
-        box-shadow: inset 0 0 0 1px rgba(0,0,0,0.2), 0 0 0 2px rgba(0, 0, 255, 0.2);
+    }
+
+    &:focus-visible {
+        box-shadow: 0 1px 2px rgba(36,31,24,.08), 0 0 0 2px rgba(125, 44, 44, 0.3);
     }
 
     &:hover {
-        background: color-mix(in oklab, var(--button-color), white 2%);
-        color: white;
+        color: var(--salon-ink);
+        border-color: var(--salon-rule-strong);
     }
 
     &:disabled {
-        background: color-mix(in oklab, var(--button-color), white 55%);
-        opacity: 0.8;
+        color: var(--salon-ink-muted);
+        opacity: 0.6;
         cursor: default;
     }
 
     &.outline {
-        background: white;
-        color: color-mix(in oklab, var(--button-color), black 10%);
-    }
-
-    &.big_button {
-        font-size: 18px;
-        padding: 10px 18px;
+        background: var(--salon-paper);
+        color: var(--salon-ghost-ink);
+        border-color: var(--salon-rule);
     }
 }
 
+/* primary pill */
+.big_button, .primary {
+    color: var(--salon-paper);
+    background: var(--salon-oxblood);
+    border: 1px solid var(--salon-oxblood);
+    border-radius: 999px;
+    box-shadow: 0 2px 6px -1px rgba(36,31,24,.3);
+
+    &:is(button, .button) {
+        color: var(--salon-paper);
+        border-color: var(--salon-oxblood);
+    }
+
+    &:hover, &:is(button, .button):hover {
+        color: var(--salon-paper);
+        background: var(--salon-oxblood-dark);
+        border-color: var(--salon-oxblood-dark);
+    }
+
+    &:disabled:hover {
+        background: var(--salon-oxblood);
+    }
+}
+
+.big_button {
+    padding: 13px 26px;
+}
+
 blockquote {
-    background: #f7f7f7;
-    padding: 1em;
     margin: 1em 0;
+    padding: 0;
+    background: transparent;
+    border: 0;
+    text-align: center;
+    font-family: var(--font-display);
+    font-size: 15.5px;
+    font-style: italic;
+    line-height: 1.5;
+    color: var(--salon-ink-soft);
+
+    &::before {
+        content: "❖";
+        display: block;
+        font-family: var(--font-ui);
+        font-style: normal;
+        font-size: 13px;
+        color: var(--salon-gilt);
+        margin-bottom: 10px;
+    }
 
     > p {
         margin: 0;
         margin-bottom: 1em;
-        color: #666;
 
         &:first-child {
             margin-top: 0;
@@ -103,12 +193,27 @@ blockquote {
 }
 
 a {
-    color: var(--button-color);
+    color: var(--salon-oxblood);
     &:hover {
-        color: color-mix(in oklab, var(--button-color), black 10%);
+        color: var(--salon-oxblood-dark);
+    }
+}
+
+input[type='text'], input[type='password'], input[type='email'], input[type='number'],
+input[type='search'], input[type='url'], input:not([type]), select, textarea {
+    font-family: var(--font-ui);
+    color: var(--salon-ink);
+    background: var(--salon-paper);
+    border: 1px solid var(--salon-rule);
+    border-radius: 0;
+
+    &:focus {
+        outline: none;
+        border-color: var(--salon-rule-strong);
+        box-shadow: 0 0 0 2px rgba(125, 44, 44, 0.2);
     }
 }
 
 .header_spacer {
-    height: 50px;
+    height: var(--header-height);
 }
