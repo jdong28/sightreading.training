@@ -756,10 +756,13 @@ export class IntervalGenerator extends Generator {
 
 // Plays back a fixed list of columns in order, wrapping around to the start
 // so a section of a song loops as sight reading flashcards. An empty section
-// yields empty columns, which the staff renders as nothing to play.
+// yields empty columns, which the staff renders as nothing to play. The card
+// of an imported piece's section (st/measure_cards) tells the page which
+// measures are on the staff.
 export class SheetMusicGenerator {
-  constructor(columns=[]) {
+  constructor(columns=[], {card=null}={}) {
     this.columns = columns
+    this.card = card
     this.position = 0
   }
 
@@ -770,6 +773,24 @@ export class SheetMusicGenerator {
 
     let column = this.columns[this.position % this.columns.length]
     this.position += 1
-    return [...column]
+
+    let copy = [...column]
+    if (column.measure != null) {
+      copy.measure = column.measure
+    }
+    return copy
+  }
+
+  currentCard() {
+    return this.card
+  }
+
+  // the whole section isn't one of several cards
+  currentCardNumber() {
+    return null
+  }
+
+  get cards() {
+    return this.card ? [this.card] : []
   }
 }

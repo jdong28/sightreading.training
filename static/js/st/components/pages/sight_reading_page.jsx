@@ -38,12 +38,38 @@ import {isMobile} from "st/browser"
 import {getSession} from "st/app"
 
 import {StaffTwo} from "st/components/staff_two"
+import {fitNoteWidth, fitStaffScale, columnSpan} from "st/components/staff_notes"
+import {cardColumn} from "st/measure_cards"
 
 const DEFAULT_NOTE_WIDTH = 100
 const DEFAULT_SPEED = 4
 
 // the height the new renderer paints the staff at inside the staff plate
 const STAFF_TWO_HEIGHT = 150
+
+// both renderers draw the staff this much smaller inside the staff plate
+export const PLATE_STAFF_SCALE = 0.8
+
+// A piece's card (or whole section) is fitted to the plate: its columns are
+// squeezed down to this width (unscaled like noteWidth), a note head and a
+// little space, then the staff shrinks down to MIN_FIT_SCALE. A card that
+// still doesn't fit runs on past the plate's edge
+export const MIN_FIT_NOTE_WIDTH = 48
+export const MIN_FIT_SCALE = 0.5
+
+// the span in columns of each card, see columnSpan
+const cardSpans = new WeakMap()
+function cardSpan(card) {
+  if (!cardSpans.has(card)) {
+    cardSpans.set(card, columnSpan(card.columns.map((column, idx) => cardColumn(card, idx))))
+  }
+  return cardSpans.get(card)
+}
+
+// the legacy renderer's scale for the window's width
+function staffScale() {
+  return (window.innerWidth < 1000 ? 0.8 : 1) * PLATE_STAFF_SCALE
+}
 
 // Kwiatkowski's watercolour "Chopin's Polonaise, a ball at the Hôtel Lambert
 // in Paris" (1859), public domain (the author died in 1891): resized from
@@ -90,6 +116,19 @@ function measuresLabel(start, end) {
   return start == end ? `measure ${start}` : `measures ${start}–${end}`
 }
 
+// eg. "Card 3 · measures 5–6 of 1–16", or the measures of the whole section
+// without a card number
+export function cardLabel(card, cardNumber, section) {
+  if (!card || cardNumber == null) {
+    return measuresLabel(section.startMeasure, section.endMeasure)
+  }
+
+  let range = section.startMeasure == section.endMeasure ?
+    `${section.startMeasure}` : `${section.startMeasure}–${section.endMeasure}`
+
+  return `Card ${cardNumber} · ${measuresLabel(card.startMeasure, card.endMeasure)} of ${range}`
+}
+
 export default class SightReadingPage extends React.Component {
   constructor(props) {
     super(props);
@@ -98,6 +137,13 @@ export default class SightReadingPage extends React.Component {
     this.releaseNote = this.releaseNote.bind(this)
     this.onFullscreenChange = this.onFullscreenChange.bind(this)
     this.onPageHide = () => this.recordSession()
+    this.onResize = () => {
+      let scale = staffScale()
+      if (scale != this.state.scale) {
+        this.setState({scale})
+      }
+    }
+    this.setStaffWrapper = el => this.observeStaffWrapper(el)
     this.openSettings = () => this.setState({settingsOpen: true})
     this.closeSettings = () => this.setState({settingsOpen: false})
     this.applySettings = () => {
@@ -139,7 +185,9 @@ export default class SightReadingPage extends React.Component {
       bufferSize: 10,
       keyboardOpen: true,
       settingsOpen: false,
-      scale: window.innerWidth < 1000 ? 0.8 : 1,
+      scale: staffScale(),
+      // the width the staff wrapper gives the staff, measured once mounted
+      staffWidth: null,
       stats: this.newStats(),
       keySignature: currentKeySignature(),
 
@@ -216,12 +264,15 @@ export default class SightReadingPage extends React.Component {
     document.addEventListener("webkitfullscreenchange", this.onFullscreenChange)
     // closing the tab doesn't unmount the page
     window.addEventListener("pagehide", this.onPageHide)
+    window.addEventListener("resize", this.onResize)
   }
 
   componentWillUnmount() {
     this.unmounted = true
     document.removeEventListener("webkitfullscreenchange", this.onFullscreenChange)
     window.removeEventListener("pagehide", this.onPageHide)
+    window.removeEventListener("resize", this.onResize)
+    this.observeStaffWrapper(null)
     this.stopClock()
     this.recordSession()
 
@@ -287,8 +338,75 @@ export default class SightReadingPage extends React.Component {
       throw new Error(`unknown generator mode: ${generator.mode}`)
     }
 
-    notes.fillBuffer(this.state.bufferSize)
+    // enough columns to show the whole of any card of a piece
+    let cardColumns = (generatorInstance.cards || []).map(card => card.columns.length)
+    notes.fillBuffer(Math.max(this.state.bufferSize, ...cardColumns))
     return this.setState({ notes: notes })
+  }
+
+  // keeps state.staffWidth up to date with the staff wrapper's width, which
+  // the columns of a piece's card are fitted to
+  observeStaffWrapper(el) {
+    if (this.staffResizeObserver) {
+      this.staffResizeObserver.disconnect()
+      delete this.staffResizeObserver
+    }
+
+    this.staffWrapper = el
+    if (!el) { return }
+
+    if (window.ResizeObserver) {
+      this.staffResizeObserver = new ResizeObserver(() => this.measureStaffWrapper())
+      this.staffResizeObserver.observe(el)
+    }
+
+    this.measureStaffWrapper()
+  }
+
+  measureStaffWrapper() {
+    let el = this.staffWrapper
+    if (!el || this.unmounted) { return }
+
+    let padding = parseFloat(window.getComputedStyle(el).paddingLeft) || 0
+    let staffWidth = el.clientWidth - padding
+    if (staffWidth != this.state.staffWidth) {
+      this.setState({staffWidth})
+    }
+  }
+
+  // the card (or whole section) of the imported piece whose columns are on
+  // the staff, with its place in the deck, if any
+  currentCard() {
+    if (!this.currentPieceSection()) { return null }
+
+    let generator = this.state.notes && this.state.notes.generator
+    let card = generator && generator.currentCard && generator.currentCard()
+    if (!card) { return null }
+
+    return {card, number: generator.currentCardNumber()}
+  }
+
+  // The legacy staff's scale and column width. In wait mode a piece's card
+  // (or whole section) is fitted to the plate so every note of it shows: the
+  // scale fits the widest card of the drill, so the staff keeps its size from
+  // card to card, and the columns fit the card on the staff
+  staffLayout() {
+    let {scale, noteWidth, staffWidth, keySignature} = this.state
+    let current = this.state.mode == "wait" && this.currentCard()
+    if (!current) {
+      return {scale, noteWidth}
+    }
+
+    let widest = Math.max(...this.state.notes.generator.cards.map(cardSpan))
+    scale = fitStaffScale(staffWidth, widest, {
+      scale, keySignature, minWidth: MIN_FIT_NOTE_WIDTH, minScale: MIN_FIT_SCALE,
+    })
+
+    noteWidth = fitNoteWidth(staffWidth, cardSpan(current.card), {
+      scale, keySignature, maxWidth: noteWidth, minWidth: MIN_FIT_NOTE_WIDTH,
+    })
+
+    return {scale, noteWidth}
   }
 
   // Begin: a fresh session in new stats, with the elapsed clock running
@@ -941,7 +1059,8 @@ export default class SightReadingPage extends React.Component {
     if (section) {
       let song = pieceSong(sheetMusicPiece(this.currentSettings()))
       let beats = song && song.metadata && song.metadata.beatsPerMeasure
-      let measures = measuresLabel(section.startMeasure, section.endMeasure)
+      let {card, number} = this.currentCard() || {}
+      let measures = cardLabel(card, number, section)
       return beats ? `${beats} ♩ a bar · ${measures}` : measures
     }
 
@@ -987,16 +1106,17 @@ export default class SightReadingPage extends React.Component {
            noteShaking = {this.state.noteShaking}
            scale = {this.state.scale}
            height = {STAFF_TWO_HEIGHT}
-           maxScale = {0.3}
+           maxScale = {0.3 * PLATE_STAFF_SCALE}
           />
       } else {
+        let {scale, noteWidth} = this.staffLayout()
         staff = this.state.currentStaff.render.call(this, {
           heldNotes: this.state.heldNotes,
           notes: this.state.notes,
           keySignature: this.state.keySignature,
-          noteWidth: this.state.noteWidth,
+          noteWidth,
           noteShaking: this.state.noteShaking,
-          scale: this.state.scale,
+          scale,
         })
       }
     }
@@ -1006,7 +1126,9 @@ export default class SightReadingPage extends React.Component {
         <span>{this.plateLabel()}</span>
         <span className={styles.plate_status} aria-live="polite">{this.statusLine()}</span>
       </div>
-      <div className={classNames(staffStyles.staff_wrapper, styles.staff_wrapper)}>
+      <div
+        ref={this.setStaffWrapper}
+        className={classNames(staffStyles.staff_wrapper, styles.staff_wrapper)}>
         {staff}
       </div>
     </Plate>

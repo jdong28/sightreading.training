@@ -6,6 +6,8 @@ import {MemoryRouter} from "react-router-dom"
 import SightReadingPage, {
   formatElapsed, accuracyPercent, romanNumeral
 } from "st/components/pages/sight_reading_page"
+import {fitNoteWidth, fitStaffScale, columnSpan} from "st/components/staff_notes"
+import staffStyles from "st/components/staff.module.css"
 import drawerStyles from "st/components/sight_reading/programme_drawer.module.css"
 import {setAppStore} from "st/storage"
 import {importMusicXMLPiece} from "st/sheet_music_deck"
@@ -13,7 +15,8 @@ import {SHEET_MUSIC_STORAGE_KEY, BOTH_HANDS} from "st/data"
 import {DRILL_STORAGE_KEY} from "st/generators"
 import {scopeEvent} from "st/events"
 import NoteStats from "st/note_stats"
-import {openTestStore} from "spec/helpers"
+import {KeySignature} from "st/music"
+import {openTestStore, noteXML} from "spec/helpers"
 
 // a two staff 3/4 piece, measures 1 and 2
 let minuetXML = `<?xml version="1.0" encoding="UTF-8"?>
@@ -38,6 +41,28 @@ let minuetXML = `<?xml version="1.0" encoding="UTF-8"?>
       <backup><duration>3</duration></backup>
       <note><pitch><step>C</step><octave>3</octave></pitch><duration>3</duration><staff>2</staff></note>
     </measure>
+  </part>
+</score-partwise>`
+
+// a two staff 3/4 piece of eight measures, each a treble and a bass note
+let octetXML = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <work><work-title>Salon Octet</work-title></work>
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    ${Array.from({length: 8}, (_, idx) => `
+    <measure number="${idx + 1}">
+      ${idx == 0 ? `<attributes>
+        <divisions>1</divisions>
+        <time><beats>3</beats><beat-type>4</beat-type></time>
+        <staves>2</staves>
+        <clef number="1"><sign>G</sign><line>2</line></clef>
+        <clef number="2"><sign>F</sign><line>4</line></clef>
+      </attributes>` : ""}
+      ${noteXML("CDEFGAB"[idx % 7], 5, 3, 1)}
+      <backup><duration>3</duration></backup>
+      ${noteXML("CDEFGAB"[idx % 7], 3, 3, 2)}
+    </measure>`).join("")}
   </part>
 </score-partwise>`
 
@@ -144,6 +169,68 @@ describe("sight reading page", function() {
     expect(accuracyPercent(0, 0)).toBe(null)
     expect(accuracyPercent(3, 1)).toEqual(75)
     expect(["I", "II", "III", "IV", "IX"]).toEqual([1, 2, 3, 4, 9].map(romanNumeral))
+  })
+
+  it("fits a card's columns to the staff width", function() {
+    let opts = {scale: 0.8, maxWidth: 100, minWidth: 48}
+
+    // 805 unscaled pixels, less the clef, the last note and a stacked second
+    expect(fitNoteWidth(644, 10, opts)).toEqual(60)
+    // a key signature takes room before the first column
+    expect(fitNoteWidth(644, 10, {...opts, keySignature: new KeySignature(3)})).toEqual(52)
+    // never wider than the default columns, nor narrower than the minimum
+    expect(fitNoteWidth(644, 5, opts)).toEqual(100)
+    expect(fitNoteWidth(644, 20, opts)).toEqual(48)
+    // before the plate is measured, or for a single column
+    expect(fitNoteWidth(null, 10, opts)).toEqual(100)
+    expect(fitNoteWidth(644, 0, opts)).toEqual(100)
+
+    // the staff shrinks when the columns don't fit at the minimum width
+    let scaleOpts = {scale: 0.8, minWidth: 48, minScale: 0.5}
+    expect(fitStaffScale(644, 10, scaleOpts)).toEqual(0.8)
+    expect(fitStaffScale(644, 20, scaleOpts)).toBeCloseTo(0.555, 3)
+    expect(fitStaffScale(644, 100, scaleOpts)).toEqual(0.5)
+    expect(fitStaffScale(644, 20, {...scaleOpts, scale: 0.4})).toEqual(0.4)
+
+    // a measure's first column after the first sits past a bar gap
+    let second = ["D5"]
+    second.measure = 2
+    expect(columnSpan([["C5"], ["E5"], second, ["F5"]])).toBeCloseTo(3.6, 5)
+  })
+
+  it("shows the measure card on the staff and in the plate header", async function() {
+    let {piece} = await importMusicXMLPiece("salon_octet.musicxml", octetXML, store)
+
+    window.localStorage.setItem(DRILL_STORAGE_KEY, JSON.stringify({staff: "grand", generator: "sheet music"}))
+    window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+      piece: piece.id, startMeasure: 1, endMeasure: 8, hand: BOTH_HANDS, measuresPerCard: "2",
+    }))
+
+    let el = renderPage()
+    let plateLabel = () => el.querySelector("[aria-live]").previousElementSibling.textContent
+    // bar lines with their numbers, on the upper staff of the grand staff
+    let numberedBarLines = () =>
+      [...el.querySelectorAll(`.${staffStyles.bar_line}[data-label]`)].map(line => line.dataset.label)
+
+    expect(plateLabel()).toEqual("3 ♩ a bar · Card 1 · measures 1–2 of 1–8")
+    expect(numberedBarLines()).toEqual(["1", "2"])
+    expect(el.querySelectorAll(`.${staffStyles.bar_line}`).length).toEqual(4)
+
+    click(buttonNamed(el, "Begin"))
+    play(page.state.notes.currentColumn())
+    expect(plateLabel()).toEqual("3 ♩ a bar · Card 1 · measures 1–2 of 1–8")
+    play(page.state.notes.currentColumn())
+
+    expect(plateLabel()).toEqual("3 ♩ a bar · Card 2 · measures 3–4 of 1–8")
+    expect(numberedBarLines()).toEqual(["3", "4"])
+
+    // the whole section loops without a card number, its start coming round
+    // again after its last measure
+    flushSync(() => page.setGenerator(page.state.currentGenerator, {
+      ...page.state.currentGeneratorSettings, measuresPerCard: "all",
+    }))
+    expect(plateLabel()).toEqual("3 ♩ a bar · measures 1–8")
+    expect(numberedBarLines()).toEqual(["1", "2", "3", "4", "5", "6", "7", "8", "1", "2"])
   })
 
   it("opens, closes and applies the programme drawer", function() {

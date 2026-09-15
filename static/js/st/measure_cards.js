@@ -44,27 +44,54 @@ export function measureCards(measures, perCard) {
   let cards = []
 
   for (let i = 0; i < measures.length; i += size) {
-    let group = measures.slice(i, i + size)
-    let columns = []
-    let columnMeasures = []
-
-    group.forEach((measure, idx) => {
-      for (let column of measure.columns) {
-        columns.push(column)
-        columnMeasures.push(idx)
-      }
-    })
-
-    cards.push({
-      startMeasure: group[0].number,
-      endMeasure: group[group.length - 1].number,
-      measures: group.map(measure => measure.number),
-      columns,
-      columnMeasures,
-    })
+    cards.push(sectionCard(measures.slice(i, i + size)))
   }
 
   return cards
+}
+
+/**
+ * One card of all the given measures, eg. the whole section drill.
+ * @param {PoolMeasure[]} measures at least one
+ * @returns {MeasureCard}
+ */
+export function sectionCard(measures) {
+  let columns = []
+  let columnMeasures = []
+
+  measures.forEach((measure, idx) => {
+    for (let column of measure.columns) {
+      columns.push(column)
+      columnMeasures.push(idx)
+    }
+  })
+
+  return {
+    startMeasure: measures[0].number,
+    endMeasure: measures[measures.length - 1].number,
+    measures: measures.map(measure => measure.number),
+    columns,
+    columnMeasures,
+  }
+}
+
+/**
+ * A copy of the card's column for the staff. When the card has more than
+ * one measure, the first column of each measure carries its bar number as
+ * `measure`, where the staff draws a bar line.
+ * @param {MeasureCard} card
+ * @param {number} idx
+ * @returns {string[]}
+ */
+export function cardColumn(card, idx) {
+  let column = [...card.columns[idx]]
+  let measureIdx = card.columnMeasures[idx]
+
+  if (card.measures.length > 1 && (idx == 0 || card.columnMeasures[idx - 1] != measureIdx)) {
+    column.measure = card.measures[measureIdx]
+  }
+
+  return column
 }
 
 /**
@@ -253,10 +280,28 @@ export class MeasureCardGenerator {
 
     let columns = card.columns
     if (this.loop) {
-      return [...columns[this.emitted++ % columns.length]]
+      return cardColumn(card, this.emitted++ % columns.length)
     }
 
-    return this.emitted < columns.length ? [...columns[this.emitted++]] : []
+    return this.emitted < columns.length ? cardColumn(card, this.emitted++) : []
+  }
+
+  /** @returns {MeasureCard|null} the card at the head of the staff */
+  currentCard() {
+    return this.deck.card
+  }
+
+  /**
+   * @returns {number|null} the card's position in the deck, from 1, or null
+   * for a deck with a single card, looped like the whole section
+   */
+  currentCardNumber() {
+    return this.loop || this.deck.index == null ? null : this.deck.index + 1
+  }
+
+  /** @returns {MeasureCard[]} every card the staff may show */
+  get cards() {
+    return this.deck.cards
   }
 
   // the measure tally of the column at the head of the staff
