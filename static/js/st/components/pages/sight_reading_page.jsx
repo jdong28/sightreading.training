@@ -25,7 +25,7 @@ import {dispatch, trigger} from "st/events"
 import {NOTE_EVENTS} from "st/midi"
 import {
   generatorDefaultSettings, storeCurrentDrill, currentStaffFor, currentGeneratorFor,
-  currentKeySignature, currentDrillMode, currentScrollSpeed
+  currentKeySignature, currentDrillMode, currentScrollSpeed, scoreKeySignature
 } from "st/generators"
 
 import * as React from "react"
@@ -159,6 +159,9 @@ export default class SightReadingPage extends React.Component {
       " ": e => this.skipCurrentNote(),
     }
 
+    // the key the user picked, drawn unless the generator sets its own
+    this.userKey = currentKeySignature()
+
     this.state = {
       newRenderer: props.useStaffTwo || false,
       noteShaking: false,
@@ -182,7 +185,7 @@ export default class SightReadingPage extends React.Component {
       // the width the staff wrapper gives the staff, measured once mounted
       staffWidth: null,
       stats: this.newStats(),
-      keySignature: currentKeySignature(),
+      keySignature: this.userKey,
 
       // the session runs from Begin until Rest; notes played at rest are
       // ignored
@@ -200,7 +203,14 @@ export default class SightReadingPage extends React.Component {
         prevState.currentGeneratorSettings != this.state.currentGeneratorSettings ||
         prevState.keySignature != this.state.keySignature)
     {
-      this.refreshNoteList()
+      // an imported piece is drawn in the score's key, which isn't stored
+      let key = scoreKeySignature(this.state.currentGenerator, this.state.currentStaff, this.state.currentGeneratorSettings) ||
+        this.userKey
+      if (key.name() != this.state.keySignature.name()) {
+        this.setState({keySignature: key, notes: null})
+      } else {
+        this.refreshNoteList()
+      }
     }
 
     if (prevState.currentStaff != this.state.currentStaff ||
@@ -759,6 +769,7 @@ export default class SightReadingPage extends React.Component {
   }
 
   setKeySignature(k) {
+    this.userKey = k
     storeCurrentDrill({key: k.name()})
     this.setState({
       keySignature: k,

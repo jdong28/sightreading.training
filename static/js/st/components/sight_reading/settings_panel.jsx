@@ -5,7 +5,8 @@ import Select from "st/components/select"
 import {Pill} from "st/components/salon"
 import {trigger} from "st/events"
 import {
-  generatorDefaultSettings, fixGeneratorSettings, storeGeneratorSettings, allKeySignatures
+  generatorDefaultSettings, fixGeneratorSettings, storeGeneratorSettings, allKeySignatures,
+  scoreKeySignature
 } from "st/generators"
 import styles from "./programme_drawer.module.css"
 
@@ -313,19 +314,33 @@ export class ProgrammeDrawer extends React.PureComponent {
 
   renderKeys() {
     let keys = allKeySignatures()
+    let generator = this.props.currentGenerator
+    let scoreKey = scoreKeySignature(
+      generator, this.props.currentStaff, this.props.currentGeneratorSettings
+    )
+    let currentKey = scoreKey || this.props.currentKey
+    let hint = scoreKey ? "Set by the score" : generator && generator.keyHint ?
+      generator.keyHint({
+        ...generatorDefaultSettings(generator, this.props.currentStaff),
+        ...this.props.currentGeneratorSettings,
+      }) : null
 
-    return <div className={styles.pills}>
-      {
-        keys.map(key =>
-          <Pill
-            variant="choice"
-            key={key.name()}
-            className={classNames(styles.key_pill, {[styles.chromatic]: key.isChromatic()})}
-            selected={this.props.currentKey.name() == key.name()}
-            onClick={() => this.props.setKeySignature(key)}>{keyLabel(key)}</Pill>
-        )
-      }
-    </div>
+    return <>
+      <div className={styles.pills}>
+        {
+          keys.map(key =>
+            <Pill
+              variant="choice"
+              key={key.name()}
+              className={classNames(styles.key_pill, {[styles.chromatic]: key.isChromatic()})}
+              selected={currentKey.name() == key.name()}
+              disabled={!!scoreKey}
+              onClick={() => this.props.setKeySignature(key)}>{keyLabel(key)}</Pill>
+          )
+        }
+      </div>
+      {hint ? <div className={styles.input_hint}>{hint}</div> : null}
+    </>
   }
 }
 
@@ -643,7 +658,10 @@ export class GeneratorSettings extends React.PureComponent {
           return
         }
 
-        let text = `"${result.piece.title}" is in the deck`
+        let title = result.piece.title
+        let text = result.updated ? `"${title}" was updated in the deck` :
+          result.sameTitle ? `"${title}" was added as a new piece (another "${title}" is already in the deck)` :
+          `"${title}" is in the deck`
         this.setState({deckMessage: {text: result.warning ? `${text}. ${result.warning}` : text}})
         this.pickPiece(input, result.piece.id)
       })

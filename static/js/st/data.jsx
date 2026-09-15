@@ -5,12 +5,13 @@ import {MajorScale, parseNote, noteName} from "st/music"
 
 import {
   RandomNotes, SweepRangeNotes, MiniSteps, TriadNotes, SevenOpenNotes,
-  ProgressionGenerator, PositionGenerator, IntervalGenerator, SheetMusicGenerator
+  ProgressionGenerator, PositionGenerator, IntervalGenerator, SheetMusicGenerator,
+  allKeySignatures
 } from "st/generators"
 
 import {
   extractSectionColumns, filterColumnsToRange, parseSongText, countMeasures,
-  measureNumberRange, measureNumberList, staffTracks
+  measureNumberRange, measureNumberList, measureKeySignature, staffTracks
 } from "st/song_sections"
 
 import {
@@ -263,6 +264,18 @@ export function sheetMusicPieceSettings(settings, song) {
   let endMeasure = Math.max(startMeasure, Math.min(startMeasure + 3, last))
 
   return {...settings, startMeasure, endMeasure, hand: BOTH_HANDS}
+}
+
+// the trainer's key signature for the score's key at the start measure, so
+// its notes are drawn with the score's accidentals rather than the
+// programme's; null for a song without a key or one the trainer lacks
+export function sheetMusicKeyFor(song, startMeasure) {
+  let fifths = measureKeySignature(song, startMeasure)
+  if (typeof fifths != "number") {
+    return null
+  }
+
+  return allKeySignatures().find(key => !key.isChromatic() && key.count == fifths) || null
 }
 
 // the grand staff for a piece with both a treble and a bass staff, which a
@@ -641,6 +654,18 @@ export const GENERATORS = [
     // shown under the inputs in the settings panel
     status: function(staff, settings) {
       return sheetMusicSection(staff, settings).status
+    },
+    // an imported piece is drawn in the score's key, see scoreKeySignature
+    keySignature: function(settings) {
+      let piece = sheetMusicPiece(settings)
+      return piece ? sheetMusicKeyFor(pieceSong(piece), settings.startMeasure) : null
+    },
+    // shown under the key pills when the key can't follow the score
+    keyHint: function(settings) {
+      let piece = sheetMusicPiece(settings)
+      let metadata = piece && pieceSong(piece).metadata
+      return metadata && !Array.isArray(metadata.measureKeySignatures) ?
+        "Re-import to follow the score key" : null
     },
     create: function(staff, keySignature, settings) {
       let deck = measureCardDeck(staff, settings)

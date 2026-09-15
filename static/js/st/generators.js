@@ -100,6 +100,17 @@ export function currentKeySignature() {
   return allKeySignatures().find(k => k.name() == key) || allKeySignatures()[0]
 }
 
+// the key signature a generator's settings draw in instead of the
+// programme's key (eg. an imported piece's score key), or null. settings are
+// the generator's current settings, defaults filled in from the staff
+export function scoreKeySignature(generator, staff, settings) {
+  if (!generator || !generator.keySignature) {
+    return null
+  }
+
+  return generator.keySignature({...generatorDefaultSettings(generator, staff), ...settings})
+}
+
 export const DRILL_MODES = ["wait", "scroll"]
 
 // the stored trainer mode: wait for each note, or scroll at the speed

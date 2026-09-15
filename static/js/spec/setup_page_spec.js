@@ -12,12 +12,12 @@ import {
   currentDrillMode, currentScrollSpeed, generatorDefaultSettings,
 } from "st/generators"
 import {setAppStore} from "st/storage"
-import {addPiece} from "st/sheet_music_deck"
+import {addPiece, importMusicXMLPiece} from "st/sheet_music_deck"
 import {parseSongText} from "st/song_sections"
 import {HomeGate} from "st/components/app"
 import {ONBOARDED_KEY} from "st/onboarding"
 
-import {openTestStore} from "spec/helpers"
+import {openTestStore, reverieOpening, keyChangeScore} from "spec/helpers"
 
 describe("setup page", function() {
   // the keys are shared with the app on this origin, so put back whatever
@@ -238,6 +238,39 @@ describe("setup page", function() {
 
     click(findButton(el, "Random notes"))
     expect(el.querySelector(`.${styles.exercise_inputs}`)).toBe(null)
+  })
+
+  it("sets the key by the score while a piece is picked", async function() {
+    let {piece} = await importMusicXMLPiece("reverie.musicxml", reverieOpening())
+
+    let el = renderSetup()
+    click(findButton(el, "D"))
+    click(findButton(el, "Sheet music"))
+    expect(findButton(el, "D").disabled).toBe(false)
+
+    changeValue(el.querySelector(`.${styles.exercise_inputs} select`), piece.id, "change")
+
+    expect(summary(el).subtitle).toEqual("Rêverie, grand staff in F major")
+    expect(findButton(el, "F").getAttribute("aria-pressed")).toEqual("true")
+    expect(findButton(el, "D").disabled).toBe(true)
+    expect(el.querySelector(`.${styles.key_note}`).textContent).toEqual("Set by the score")
+
+    // Begin stores the programme's own key; the trainer follows the score
+    click(findButton(el, "Begin reading"))
+    expect(currentKeySignature().name()).toEqual("D")
+  })
+
+  it("keeps the programme's key for a score in a key the trainer lacks", async function() {
+    let {piece} = await importMusicXMLPiece("f_sharp.musicxml", keyChangeScore({title: "F Sharp", keys: [6]}))
+
+    let el = renderSetup()
+    click(findButton(el, "D"))
+    click(findButton(el, "Sheet music"))
+    changeValue(el.querySelector(`.${styles.exercise_inputs} select`), piece.id, "change")
+
+    expect(summary(el).subtitle).toEqual("F Sharp, treble staff in D major")
+    expect(findButton(el, "D").disabled).toBe(false)
+    expect(el.querySelector(`.${styles.key_note}`)).toBe(null)
   })
 
   it("sets up a drill of an imported piece with the sheet music inputs", async function() {
