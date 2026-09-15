@@ -48,7 +48,7 @@ describe("song editor", function() {
   it("reports an import the notation can't express without replacing the code", async function() {
     let imported = []
     let editor = renderEditor({
-      code: "c5 d5",
+      code: "c4 d4",
       onImportSong: (...args) => imported.push(args),
     })
 
@@ -57,9 +57,9 @@ describe("song editor", function() {
 
     expect(imported.length).toEqual(1)
     expect(imported[0][0].length).toEqual(5)
-    expect(imported[0][1]).toEqual("c5 d5")
+    expect(imported[0][1]).toEqual("c4 d4")
     expect(imported[0][2]).toBe(false)
-    expect(editor.state.code).toEqual("c5 d5")
+    expect(editor.state.code).toEqual("c4 d4")
 
     editor.beforeSubmit()
     expect(editor.notesCountInputRef.current.value).toEqual("2")
@@ -73,15 +73,15 @@ describe("song editor", function() {
   })
 
   it("blocks saving while the page reports an unsaveable import, across remounts", function() {
-    renderEditor({code: "c5 d5", importUnsaveable: true})
+    renderEditor({code: "c4 d4", importUnsaveable: true})
     expect(saveButton().disabled).toBe(true)
     expect(importNotice()).toBeTruthy()
 
-    renderEditor({code: "c5 d5", importUnsaveable: true})
+    renderEditor({code: "c4 d4", importUnsaveable: true})
     expect(saveButton().disabled).toBe(true)
     expect(importNotice()).toBeTruthy()
 
-    renderEditor({code: "c5 d5 e5", importUnsaveable: false})
+    renderEditor({code: "c4 d4 e4", importUnsaveable: false})
     expect(saveButton().disabled).toBe(false)
     expect(importNotice()).toBe(null)
   })

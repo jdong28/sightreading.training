@@ -68,25 +68,25 @@ describe("staff two", function() {
         type: "grand",
         keySignature: new KeySignature(0),
         notes: new NoteList([
-          ["C5"],
-          ["B4"],
-          ["A4"],
-          ["G4"],
-          ["F4"],
-          ["E4"],
+          ["C4"],
+          ["B3"],
+          ["A3"],
+          ["G3"],
+          ["F3"],
+          ["E3"],
+          ["D3"],
+          ["E3"],
+          ["F3"],
+          ["G3"],
+          ["A3"],
+          ["B3"],
+          ["C4"],
           ["D4"],
           ["E4"],
           ["F4"],
           ["G4"],
           ["A4"],
           ["B4"],
-          ["C5"],
-          ["D5"],
-          ["E5"],
-          ["F5"],
-          ["G5"],
-          ["A5"],
-          ["B5"],
         ])
       }),
 
@@ -95,10 +95,10 @@ describe("staff two", function() {
         type: "grand",
         keySignature: new KeySignature(0),
         notes: new NoteList([
+          ["C4"],
+          ["B3"],
           ["C5"],
-          ["B4"],
-          ["C6"],
-          ["B4"],
+          ["B3"],
         ])
       }),
 
@@ -106,8 +106,8 @@ describe("staff two", function() {
         type: "grand",
         keySignature: new KeySignature(0),
         notes: new NoteList([
-          ["F4", "A4", "D5"],
-          ["A4", "D5", "F5"]
+          ["F3", "A3", "D4"],
+          ["A3", "D4", "F4"]
         ])
       })
     )
@@ -121,11 +121,11 @@ describe("staff two", function() {
         type: "grand",
         keySignature: new KeySignature(0),
         heldNotes: {
-          "C5": true
+          "C4": true
         },
         notes: new NoteList([
-          ["A4", "C5", "F5"],
-          ["C5"]
+          ["A3", "C4", "F4"],
+          ["C4"]
         ])
       })
     )
@@ -135,14 +135,14 @@ describe("staff two", function() {
 
   it("renders held notes", function() {
     const heldNotes = {
-      "F5": true,
-      "A4": true,
-      "F4": true
+      "F4": true,
+      "A3": true,
+      "F3": true
     }
 
     const notes = new NoteList([
-      ["A4","G5"],
-      ["F5"]
+      ["A3","G4"],
+      ["F4"]
     ])
 
     render(
@@ -171,16 +171,16 @@ describe("staff two", function() {
       type: "treble",
       keySignature: new KeySignature(0),
       notes: new NoteList([
-        ["G5"],
-        ["F6", "E5"], // the extend of the cleff
-        ["G6", "D5"],
-        ["A6", "C5"],
-        ["B6", "B4"],
-        ["C7", "A4"],
+        ["G4"],
+        ["F5", "E4"], // the extend of the cleff
+        ["G5", "D4"],
+        ["A5", "C4"],
+        ["B5", "B3"],
+        ["C6", "A3"],
       ]),
       heldNotes: {
-        "C7": true,
-        "A3": true
+        "C6": true,
+        "A2": true
       }
     }))
 
@@ -189,12 +189,12 @@ describe("staff two", function() {
 
   it("renders full alto staff", function() {
     const notes = new NoteList([
-      ["F6"], // key signature root
-      ["C6"],
-      ["E6", "A5"],
-      ["G6", "F5"],
-      ["B6", "D5"],
-      ["D7", "B4"],
+      ["F5"], // key signature root
+      ["C5"],
+      ["E5", "A4"],
+      ["G5", "F4"],
+      ["B5", "D4"],
+      ["D6", "B3"],
     ])
 
 
@@ -227,14 +227,14 @@ describe("staff two", function() {
 
   it("renders key signatures", function() {
     const notes = new NoteList([
+      ["G4"],
+      ["A4"],
+      ["B4"],
+      ["C5"],
+      ["D5"],
+      ["E5"],
+      ["F5"],
       ["G5"],
-      ["A5"],
-      ["B5"],
-      ["C6"],
-      ["D6"],
-      ["E6"],
-      ["F6"],
-      ["G6"],
     ])
 
     render(
@@ -273,9 +273,9 @@ describe("staff two", function() {
 
   it("renders stacked notes", function() {
     const notes = new NoteList([
-      ["C5", "D5", "E5", "F5"],
-      ["G5", "A5", "C6"],
-      ["F5", "A5", "B5"],
+      ["C4", "D4", "E4", "F4"],
+      ["G4", "A4", "C5"],
+      ["F4", "A4", "B4"],
     ])
 
     render(
@@ -300,12 +300,12 @@ describe("staff two", function() {
 
   it("renders accidentals", function() {
     const notes = new NoteList([
-      ["G5", "C5"],
-      ["E#5", "G#5", "B#5"],
-      ["E#5", "F#5", "G#5"],
+      ["G4", "C4"],
+      ["E#4", "G#4", "B#4"],
+      ["E#4", "F#4", "G#4"],
 
-      ["G#5", "C#5"],
-      ["Gb5", "Cb5"],
+      ["G#4", "C#4"],
+      ["Gb4", "Cb4"],
     ])
 
     render(
@@ -403,7 +403,7 @@ describe("staff two mount/unmount race", function() {
       root.render(React.createElement(StaffTwo, {
         type: "treble",
         keySignature: new KeySignature(0),
-        notes: new NoteList([["C5"]])
+        notes: new NoteList([["C4"]])
       }))
     })
 
@@ -424,7 +424,7 @@ describe("staff two mount/unmount race", function() {
         ref: inst => { instance = inst },
         type: "treble",
         keySignature: new KeySignature(0),
-        notes: new NoteList([["C5"]])
+        notes: new NoteList([["C4"]])
       }))
     })
 
@@ -438,7 +438,7 @@ describe("staff two mount/unmount race", function() {
         ref: inst => { instance = inst },
         type: "bass",
         keySignature: new KeySignature(0),
-        notes: new NoteList([["C5"]])
+        notes: new NoteList([["C4"]])
       }))
     })).not.toThrow()
     expect(instance.assets.fclef.current).toBeTruthy()

@@ -1,14 +1,14 @@
 
 m0 {
   dt
-  { dt e5.3 d5 }
-  c5
-  d5 e5
-  e5 e5.2
+  { dt e4.3 d4 }
+  c4
+  d4 e4
+  e4 e4.2
 }
 
 m1 {
   dt
-  d5 d5 d5.2
-  e5 g5 g5.2
+  d4 d4 d4.2
+  e4 g4 g4.2
 }

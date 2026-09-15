@@ -1,33 +1,33 @@
 m0 {
-  r3 c5
+  r3 c4
   |
-  c4 d4 f4 e4
+  c3 d3 f3 e3
 }
 
 
 m1 {
-  d5 f5 e5 g5.2
+  d4 f4 e4 g4.2
   |
-  g4.2
-  c4 f4
+  g3.2
+  c3 f3
 }
 
 m2 {
-  r1 c5 f5 e5.2
+  r1 c4 f4 e4.2
   |
-  e4.2 d4 g4
+  e3.2 d3 g3
 }
 
 m3 {
-  r1 d5 c5 f5
+  r1 d4 c4 f4
   |
-  f4.2 e4 d4
+  f3.2 e3 d3
 }
 
 m4 {
-  e5 c5 d5.4
+  e4 c4 d4.4
   |
-  c4 e4 g4.4
+  c3 e3 g3.4
 }
 
 m5 {
@@ -35,60 +35,60 @@ m5 {
 }
 
 m6 {
-  d5 e5 g5 f5
+  d4 e4 g4 f4
   |
-  r3 d4
+  r3 d3
 }
 
 m7 {
-  e5.2 d5 e5
+  e4.2 d4 e4
   |
-  e4 g4 f4 e4.2
+  e3 g3 f3 e3.2
 
 }
 
 m8 {
-  g5 f5 e5 c5
+  g4 f4 e4 c4
   |
-  r1 d4 e4.2
+  r1 d3 e3.2
 }
 
 m9 {
-  d5 f5 e5 d5
+  d4 f4 e4 d4
   |
-  f4 d4 g4 f4
+  f3 d3 g3 f3
 }
 
 m10 {
-  e5.4 | e4.4
+  e4.4 | e3.4
 }
 
 # 
 
 m11 {
-  r2 g4 d4
+  r2 g3 d3
 }
 
 m12 {
-  g5 d5 e5 f5
+  g4 d4 e4 f4
   |
-  e4 f4 g4.2
+  e3 f3 g3.2
 }
 
 m13 {
-  g5.2 e5 d5.2
+  g4.2 e4 d4.2
   |
-  d4 e4 f4.2
+  d3 e3 f3.2
 }
 
 m14 {
-  r1 c5 f5 e5
+  r1 c4 f4 e4
   |
-  e4.2 d4 c4
+  e3.2 d3 c3
 }
 
 m15 {
-  f5.6 | f4.6
+  f4.6 | f3.6
 }
 
 m16 {
@@ -96,53 +96,53 @@ m16 {
 }
 
 m17 {
-  c5 d5 f5 e5
+  c4 d4 f4 e4
   |
-  r2 c4.3
+  r2 c3.3
 }
 
 m18 {
-  g5.3 c5
+  g4.3 c4
   |
-  r1 d4 f4 e4
+  r1 d3 f3 e3
 }
 
 m19 {
-  d5 f5 e5 g5
+  d4 f4 e4 g4
   |
-  g4.2 c4 f4
+  g3.2 c3 f3
 }
 
 m20 {
-  c5 d5 f5 e5
+  c4 d4 f4 e4
   |
-  e4 g4.2 c4
+  e3 g3.2 c3
 }
 
 m21 {
-  g5 c5 d5 f5
+  g4 c4 d4 f4
   |
-  f4 e4 g4.3
+  f3 e3 g3.3
 }
 
 m22 {
-  e5 d5.2 c5
+  e4 d4.2 c4
   |
-  r1 f4 e4.3
+  r1 f3 e3.3
 }
 
 m23 {
-  f5.3 e5.2
+  f4.3 e4.2
   |
-  r1 d4 g4.2
+  r1 d3 g3.2
 }
 
 m24 {
-  r1 d5 c5 f5
+  r1 d4 c4 f4
   |
-  f4.2 e4 d4
+  f3.2 e3 d3
 }
 
 m25 {
-  c5.4 | c4.4
+  c4.4 | c3.4
 }

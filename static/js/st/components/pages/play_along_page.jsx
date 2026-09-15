@@ -714,8 +714,8 @@ export class PlayAlongPage extends React.Component {
 
   renderKeyboard() {
     return <Keyboard
-      lower={"C4"}
-      upper={"C7"}
+      lower={"C3"}
+      upper={"C6"}
       className={styles.keyboard}
       midiOutput={this.props.midiOutput}
       heldNotes={this.state.heldNotes}

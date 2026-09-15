@@ -1,43 +1,43 @@
 ht 
 
 m0 {
-  c6 d6
+  c5 d5
   |
-  c4 d4
+  c3 d3
 }
 
 m1 {
-  e6.2 | e4.2
+  e5.2 | e3.2
 }
 
 m2 {
-  f6 e6
+  f5 e5
   |
-  f4 e4
+  f3 e3
 }
 
 m3 {
-  d6 | d4
+  d5 | d3
 }
 
 m4 {
-  e6 f6
+  e5 f5
   |
-  e4 f4
+  e3 f3
 }
 
 m5 {
-  g6 f6
+  g5 f5
   |
-  g4 f4
+  g3 f3
 }
 
 m6 {
-  e6 d6
+  e5 d5
   |
-  e4 d4
+  e3 d3
 }
 
 m7 {
-  c6.2 | c4.2
+  c5.2 | c3.2
 }

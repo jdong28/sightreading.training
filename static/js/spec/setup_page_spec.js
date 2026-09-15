@@ -145,7 +145,7 @@ describe("setup page", function() {
       title: "Random notes",
       italic: "notes",
       subtitle: "Treble staff in C major",
-      rows: [["Range", "A4 – C7"], ["Tempo", "Wait · speed 100"], ["Length", "Until you stop"]],
+      rows: [["Range", "A3 – C6"], ["Tempo", "Wait · speed 100"], ["Length", "Until you stop"]],
     })
 
     click(findButton(el, "Grand"))
@@ -159,7 +159,7 @@ describe("setup page", function() {
       title: "Triad chords",
       italic: "chords",
       subtitle: "Grand staff in B♭ major",
-      rows: [["Range", "C3 – C7"], ["Tempo", "Scroll · speed 150"], ["Length", "Until you stop"]],
+      rows: [["Range", "C2 – C6"], ["Tempo", "Scroll · speed 150"], ["Length", "Until you stop"]],
     })
 
     click(findButton(el, "Chromatic"))
@@ -274,7 +274,7 @@ describe("setup page", function() {
   })
 
   it("sets up a drill of an imported piece with the sheet music inputs", async function() {
-    let {song} = parseSongText("c5 d5 e5 f5 g5 a5 b5 c6")
+    let {song} = parseSongText("c4 d4 e4 f4 g4 a4 b4 c5")
     let {piece} = await addPiece("Little Study", song)
 
     let el = renderSetup()

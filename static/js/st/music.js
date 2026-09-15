@@ -4,6 +4,22 @@ import NoteList from "st/note_list"
 export const MIDDLE_C_PITCH = 60
 export const OCTAVE_SIZE = 12
 
+// Note names use scientific pitch notation, the MusicXML and MIDI convention
+// where middle C (MIDDLE_C_PITCH) is "C4": the octave in a name is one less
+// than the pitch's octave, Math.floor(pitch / OCTAVE_SIZE). Every conversion
+// between the two goes through nameOctave and octavePitch.
+const NAME_OCTAVE_OFFSET = 1
+
+// the octave number a note name uses for pitch
+function nameOctave(pitch) {
+  return Math.floor(pitch / OCTAVE_SIZE) - NAME_OCTAVE_OFFSET
+}
+
+// the pitch of C in a note name's octave
+function octavePitch(octave) {
+  return (octave + NAME_OCTAVE_OFFSET) * OCTAVE_SIZE
+}
+
 export const OFFSETS = {
   [0]: "C",
   [2]: "D",
@@ -43,8 +59,8 @@ export const NOTE_NAME_OFFSETS = {
 }
 
 export function noteName(pitch, sharpen=true) {
-  let octave = Math.floor(pitch / OCTAVE_SIZE)
-  let offset = pitch - octave * OCTAVE_SIZE
+  let octave = nameOctave(pitch)
+  let offset = pitch - octavePitch(octave)
 
   let name = OFFSETS[offset]
   if (!name) {
@@ -72,7 +88,7 @@ function letterNoteName(pitch, rootOctave, rootLetterIndex, degree) {
   let letter = LETTERS[((letterIndex % 7) + 7) % 7]
   let octave = rootOctave + Math.floor(letterIndex / 7)
 
-  let accidental = pitch - (OFFSETS[letter] + octave * OCTAVE_SIZE)
+  let accidental = pitch - (OFFSETS[letter] + octavePitch(octave))
   let accidentalStr = accidental > 0 ? "#".repeat(accidental) : "b".repeat(-accidental)
 
   return `${letter}${accidentalStr}${octave}`;
@@ -111,7 +127,7 @@ function parseNoteOffset(note) {
 
 // converts note name to MIDI pitch integer
 export function parseNote(note) {
-  const parsed = note.match(/^([A-G])(#|b)?(\d+)$/)
+  const parsed = note.match(/^([A-G])(#|b)?(-?\d+)$/)
 
   if (!parsed) {
     throw new Error(`parseNote: invalid note format '${note}'`)
@@ -123,7 +139,7 @@ export function parseNote(note) {
     throw `invalid note letter: ${letter}`
   }
 
-  let n = OFFSETS[letter] + parseInt(octave, 10) * OCTAVE_SIZE;
+  let n = OFFSETS[letter] + octavePitch(parseInt(octave, 10));
 
   if (accidental == "#") {
     n += 1
@@ -136,10 +152,25 @@ export function parseNote(note) {
   return n;
 }
 
+// the same spelling some octaves up or down: ("C#5", -1) -> "C#4". Used to
+// move note names written in the app's former numbering, where middle C was
+// "C5", to the current one
+export function shiftNoteOctave(note, octaves) {
+  let parsed = note.match(/^([A-G](?:#|b)?)(-?\d+)$/)
+
+  if (!parsed) {
+    throw new Error(`shiftNoteOctave: invalid note format '${note}'`)
+  }
+
+  return `${parsed[1]}${+parsed[2] + octaves}`
+}
+
+// the staff row of a note, counting letter steps up from C in the pitch's
+// octave 0 (so rows don't depend on the octave numbering of names)
 export function noteStaffOffset(note) {
-  let [_, name, octave] = note.match(/(\w)[#b]?(\d+)/)
+  let [_, name, octave] = note.match(/(\w)[#b]?(-?\d+)/)
   if (!name) { throw "Invalid note" }
-  return +octave * 7 + NOTE_NAME_OFFSETS[name]
+  return (+octave + NAME_OCTAVE_OFFSET) * 7 + NOTE_NAME_OFFSETS[name]
 }
 
 // octaveless note comparison
@@ -349,7 +380,7 @@ export class KeySignature {
       min = parseNote(min)
     }
 
-    let octave = 5; // TODO: pick something close to min/max
+    let octave = 4; // TODO: pick something close to min/max
     let notes = null
 
     if (this.count > 0) {
@@ -692,9 +723,9 @@ export class Chord extends Scale {
     "Qb4": [4, 5],
   }
 
-  // Chord.notes("C5", "M", 1) -> first inversion C major chord
+  // Chord.notes("C4", "M", 1) -> first inversion C major chord
   static notes(note, chordName, inversion=0, notesCount=0) {
-    let [, root, octave] = note.match(/^([^\d]+)(\d+)$/);
+    let [, root, octave] = note.match(/^([^\d-]+)(-?\d+)$/);
     octave = +octave
 
     let intervals = Chord.SHAPES[chordName]
@@ -751,7 +782,7 @@ export class Chord extends Scale {
     }
 
     // new root is 5 halfsteps above the current (or 7 below)
-    let [_, newRoot] = noteName(parseNote(`${this.root}5`) + 5).match(/^([^\d]+)(\d+)$/)
+    let [_, newRoot] = noteName(parseNote(`${this.root}4`) + 5).match(/^([^\d]+)(\d+)$/)
 
     // triads
     if (noteCount == 3) {
@@ -804,8 +835,8 @@ export class Chord extends Scale {
 
   // how many notes do the two chords share
   countSharedNotes(otherChord) {
-    let myNotes = this.getRange(5, this.steps.length)
-    let theirNotes = otherChord.getRange(5, this.steps.length)
+    let myNotes = this.getRange(4, this.steps.length)
+    let theirNotes = otherChord.getRange(4, this.steps.length)
     let count = 0
 
     let noteNames = {}
@@ -830,7 +861,7 @@ export class Chord extends Scale {
   toString() {
     let name = this.chordShapeName()
     if (!name) {
-      console.warn("don't know name of chord", this.root, this.steps, this.getRange(5, 3))
+      console.warn("don't know name of chord", this.root, this.steps, this.getRange(4, 3))
     }
 
     if (name == "M") { name = "" }
@@ -849,8 +880,8 @@ export class Staff {
 
   static allStaves() {
     return [
-      new Staff("treble", "E5", "F6", "G5"),
-      new Staff("bass", "G3", "A4", "F4")
+      new Staff("treble", "E4", "F5", "G4"),
+      new Staff("bass", "G2", "A3", "F3")
       // TODO: alto, middle C center
     ]
   }

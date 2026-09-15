@@ -96,8 +96,8 @@ let secondsXML = (title, second) => `<?xml version="1.0" encoding="UTF-8"?>
   </part>
 </score-partwise>`
 
-// C#5 is outside C major, so never a random note in that key
-const WRONG_NOTE = "C#5"
+// C#4 is outside C major, so never a random note in that key
+const WRONG_NOTE = "C#4"
 
 let buttonNamed = (el, text) =>
   [...el.querySelectorAll("button")].find(b => b.textContent.trim() == text)
@@ -230,10 +230,10 @@ describe("sight reading page", function() {
     root = createRoot(container)
 
     let cases = [
-      [new KeySignature(-1), [["A5"], ["Eb5"]], staffStyles.flat],
-      [new KeySignature(1), [["A5"], ["C#5"]], staffStyles.sharp],
-      // the F5 of the second is pushed right of the E5
-      [new KeySignature(0), [["E5", "F5"], ["G#5"]], staffStyles.sharp],
+      [new KeySignature(-1), [["A4"], ["Eb4"]], staffStyles.flat],
+      [new KeySignature(1), [["A4"], ["C#4"]], staffStyles.sharp],
+      // the F4 of the second is pushed right of the E4
+      [new KeySignature(0), [["E4", "F4"], ["G#4"]], staffStyles.sharp],
     ]
 
     for (let scale of [MIN_FIT_SCALE, PLATE_STAFF_SCALE]) {
@@ -275,7 +275,7 @@ describe("sight reading page", function() {
 
     let headAndAccidental = NOTE_HEAD_WIDTH + ACCIDENTAL_WIDTH
     let layout = page.staffLayout()
-    expect([...page.state.notes.currentColumn()]).toEqual(["C4", "E5", "F5"])
+    expect([...page.state.notes.currentColumn()]).toEqual(["C3", "E4", "F4"])
     expect(layout.scale).toEqual(MIN_FIT_SCALE)
     expect(layout.noteWidth).toBeGreaterThanOrEqual(headAndAccidental + GROUP_OFFSET)
 
@@ -284,7 +284,7 @@ describe("sight reading page", function() {
     }))
 
     layout = page.staffLayout()
-    expect([...page.state.notes.currentColumn()]).toEqual(["C4", "E5"])
+    expect([...page.state.notes.currentColumn()]).toEqual(["C3", "E4"])
     expect(layout.scale).toEqual(MIN_FIT_SCALE)
     expect(layout.noteWidth).toBeGreaterThanOrEqual(headAndAccidental)
     expect(layout.noteWidth).toBeLessThan(headAndAccidental + GROUP_OFFSET)
@@ -608,7 +608,7 @@ describe("sight reading page", function() {
 
     // F major: Bb3 is drawn as the score spells it, without an accidental
     expect(page.state.keySignature.name()).toEqual("F")
-    let flat = el.querySelector(`.${staffStyles.staff_notes} [data-note="Bb4"]`)
+    let flat = el.querySelector(`.${staffStyles.staff_notes} [data-note="Bb3"]`)
     expect(flat).not.toBe(null)
     expect(flat.classList).not.toContain(staffStyles.is_flat)
     expect(flat.classList).not.toContain(staffStyles.is_sharp)

@@ -1,13 +1,15 @@
 import {MultiTrackSong, SongNote} from "st/song_note_list"
-import {songToJSON, exportLibraryFile, importLibraryFile, MAX_PIECES} from "st/sheet_music_deck"
+import {songToJSON, exportLibraryFile, importLibraryFile, MAX_PIECES, pieceSong} from "st/sheet_music_deck"
 import NoteStats from "st/note_stats"
+import {parseNote} from "st/music"
+import {openDB, deleteDB} from "idb"
 
 import {
   LEGACY_DECK_KEY, DECK_MIGRATION_MARKER, LIBRARY_FORMAT, LIBRARY_VERSION,
   RECENT_SESSION_DAYS
 } from "st/storage"
 
-import {openTestStore, MemoryStorage} from "spec/helpers"
+import {openTestStore, MemoryStorage, TEST_DB_NAME} from "spec/helpers"
 
 const DAY = 24 * 60 * 60 * 1000
 
@@ -18,7 +20,7 @@ let songData = (...notes) => {
   return songToJSON(song)
 }
 
-let pieceData = (id, title, importedAt, notes=["C5", "D5"]) =>
+let pieceData = (id, title, importedAt, notes=["C4", "D4"]) =>
   ({id, title, importedAt, song: songData(...notes)})
 
 let section = (pieceId, startMeasure, endMeasure, extra={}) => ({
@@ -60,7 +62,7 @@ describe("local store", function() {
 
       let reopened = await open({keep: true})
       expect(reopened.pieces().map(piece => piece.title)).toEqual(["First", "Second"])
-      expect(reopened.piece("b").song).toEqual(songData("C5", "D5"))
+      expect(reopened.piece("b").song).toEqual(songData("C4", "D4"))
       expect(reopened.sectionStats("a").length).toEqual(1)
       expect(reopened.sectionStats("b")).toEqual([])
     })
@@ -111,9 +113,44 @@ describe("local store", function() {
     })
   })
 
+  describe("schema upgrade", function() {
+    it("renumbers the note names of pieces stored when middle C was C5", async function() {
+      await deleteDB(TEST_DB_NAME)
+
+      // the version 1 database
+      let db = await openDB(TEST_DB_NAME, 1, {
+        upgrade(db) {
+          db.createObjectStore("pieces", {keyPath: "id"})
+          db.createObjectStore("sectionStats", {keyPath: ["pieceId", "startMeasure", "endMeasure"]})
+            .createIndex("pieceId", "pieceId")
+          db.createObjectStore("sessions", {keyPath: "id"}).createIndex("startedAt", "startedAt")
+          db.createObjectStore("meta", {keyPath: "key"})
+        },
+      })
+      await db.put("pieces", pieceData("p1", "Minuet", 1000, ["C5", "D#6", "Gb3"]))
+      await db.put("pieces", {...pieceData("p2", "Waltz", 2000, ["A5"]), fileName: "waltz.musicxml"})
+      await db.put("sectionStats", section("p1", 1, 4))
+      await db.put("meta", {key: DECK_MIGRATION_MARKER, migratedAt: 1, pieces: 0})
+      db.close()
+
+      let store = await open({keep: true})
+      expect(store.persistent).toBe(true)
+      expect(store.piece("p1").song).toEqual(songData("C4", "D#5", "Gb2"))
+      expect([...pieceSong(store.piece("p1")).tracks[0]].map(note => parseNote(note.note))).toEqual([60, 75, 42])
+      expect(store.piece("p2")).toEqual({...pieceData("p2", "Waltz", 2000, ["A4"]), fileName: "waltz.musicxml"})
+      expect(store.sectionStats("p1")).toEqual([section("p1", 1, 4)])
+
+      // renumbered once: reopening leaves the pieces alone
+      await store.close()
+      let reopened = await open({keep: true})
+      expect(reopened.piece("p1").song).toEqual(songData("C4", "D#5", "Gb2"))
+    })
+  })
+
   describe("legacy deck migration", function() {
     let legacy = () => new MemoryStorage({
       [LEGACY_DECK_KEY]: JSON.stringify({pieces: [
+        // written while note names put middle C at "C5"
         {id: "p1", title: "Minuet", song: songData("G5")},
         {id: 5, title: "Broken"},
         {id: "p2", title: "Waltz", song: songData("A5")},
@@ -126,6 +163,8 @@ describe("local store", function() {
 
       expect(store.pieces().map(piece => [piece.id, piece.title])).toEqual([["p1", "Minuet"], ["p2", "Waltz"]])
       expect(typeof store.piece("p1").importedAt).toEqual("number")
+      expect(store.piece("p1").song).toEqual(songData("G4"))
+      expect(store.piece("p2").song).toEqual(songData("A4"))
 
       let marker = await store.backend.get("meta", DECK_MIGRATION_MARKER)
       expect(marker.pieces).toEqual(2)
@@ -238,7 +277,7 @@ describe("local store", function() {
     it("round trips pieces and section stats", async function() {
       let store = await open()
       await store.putPiece({...pieceData("a", "First", 1000), fileName: "first.musicxml"})
-      await store.putPiece(pieceData("b", "Second", 2000, ["E5"]))
+      await store.putPiece(pieceData("b", "Second", 2000, ["E4"]))
       await store.recordSectionPractice(section("a", 1, 4, {at: 1500}))
       await store.putSession({id: "recent", startedAt: Date.now() - DAY, notesRead: 12})
       await store.putSession({id: "old", startedAt: Date.now() - (RECENT_SESSION_DAYS + 1) * DAY, notesRead: 7})
@@ -277,7 +316,7 @@ describe("local store", function() {
     it("merges by id and content without duplicating", async function() {
       let store = await open()
       await store.putPiece(pieceData("a", "First", 1000))
-      await store.putPiece(pieceData("local", "Same notes", 1500, ["F5"]))
+      await store.putPiece(pieceData("local", "Same notes", 1500, ["F4"]))
       await store.recordSectionPractice(section("a", 1, 4, {at: 5000}))
       await store.recordSectionPractice(section("local", 1, 4, {at: 1000}))
 
@@ -287,8 +326,8 @@ describe("local store", function() {
         pieces: [
           pieceData("a", "First, elsewhere", 1000),
           // the same title and notes under another id
-          pieceData("remote", "Same notes", 1500, ["F5"]),
-          pieceData("c", "New", 3000, ["G5"]),
+          pieceData("remote", "Same notes", 1500, ["F4"]),
+          pieceData("c", "New", 3000, ["G4"]),
           {id: "broken"},
         ],
         sectionStats: [
@@ -332,6 +371,32 @@ describe("local store", function() {
       expect(store.pieces().length).toEqual(MAX_PIECES)
     })
 
+    it("imports a library exported before middle C was C4 with its pitches unchanged", async function() {
+      let store = await open()
+      await store.putPiece(pieceData("local", "Already here", 1000, ["E4", "G4"]))
+
+      // version 1 files named middle C "C5"
+      let library = {
+        format: LIBRARY_FORMAT,
+        version: 1,
+        pieces: [
+          pieceData("old", "Old Minuet", 2000, ["C5", "F#5", "Bb3", "Cb6"]),
+          pieceData("dupe", "Already here", 1000, ["E5", "G5"]),
+        ],
+        sectionStats: [section("old", 1, 2)],
+      }
+
+      let result = await importLibraryFile(JSON.stringify(library), store)
+      expect(result.report.addedPieces).toEqual(1)
+      // the renumbered piece is recognized as the stored one
+      expect(result.report.existingPieces).toEqual(1)
+
+      let imported = store.piece("old")
+      expect(imported.song).toEqual(songData("C4", "F#4", "Bb2", "Cb5"))
+      expect([...pieceSong(imported).tracks[0]].map(note => parseNote(note.note))).toEqual([60, 66, 46, 71])
+      expect(store.sectionStats("old").length).toEqual(1)
+    })
+
     it("refuses files that aren't a library", async function() {
       let store = await open()
       expect((await importLibraryFile("not json", store)).error).toEqual("The file isn't an exported sight reading library.")
@@ -357,15 +422,15 @@ describe("local store", function() {
       let stats = new NoteStats()
       expect(stats.sessionRecord({staff: "treble", generator: "random"})).toBe(null)
 
-      stats.hitNotes(["C5"])
-      stats.hitNotes(["D5", "F5"])
-      stats.missNotes(["C6"])
       stats.hitNotes(["C4"])
+      stats.hitNotes(["D4", "F4"])
+      stats.missNotes(["C5"])
+      stats.hitNotes(["C3"])
 
       let record = stats.sessionRecord({
         staff: "treble",
         generator: "sheet music",
-        settings: {piece: "p1", startMeasure: 1, endMeasure: 4, song: "c5 ".repeat(100), noteRange: [60, 72]},
+        settings: {piece: "p1", startMeasure: 1, endMeasure: 4, song: "c4 ".repeat(100), noteRange: [60, 72]},
       })
 
       expect(record).toEqual({
@@ -392,7 +457,7 @@ describe("local store", function() {
       await store.putSession(record)
 
       // a growing session replaces its earlier record
-      stats.hitNotes(["E5"])
+      stats.hitNotes(["E4"])
       await store.putSession(stats.sessionRecord({staff: "treble", generator: "sheet music"}))
 
       let reopened = await open({keep: true})
@@ -413,17 +478,17 @@ describe("local store", function() {
 
       it("counts active time from the gaps between notes, leaving out pauses", function() {
         let stats = new NoteStats()
-        stats.hitNotes(["C5"])
+        stats.hitNotes(["C4"])
         jasmine.clock().tick(4000)
-        stats.missNotes(["D5"])
+        stats.missNotes(["D4"])
         jasmine.clock().tick(6000)
-        stats.hitNotes(["D5"])
+        stats.hitNotes(["D4"])
 
         // a pause of a few minutes isn't practice
         jasmine.clock().tick(3 * 60 * 1000)
-        stats.hitNotes(["E5"])
+        stats.hitNotes(["E4"])
         jasmine.clock().tick(2000)
-        stats.hitNotes(["F5"])
+        stats.hitNotes(["F4"])
 
         let record = stats.sessionRecord()
         expect(record.activeSeconds).toEqual(12)
@@ -436,17 +501,17 @@ describe("local store", function() {
           onSessionEnd: s => ended.push(s.sessionRecord({staff: "treble"})),
         })
 
-        stats.hitNotes(["C5"])
+        stats.hitNotes(["C4"])
         jasmine.clock().tick(5000)
-        stats.hitNotes(["D5"])
+        stats.hitNotes(["D4"])
         let firstId = stats.id
 
         jasmine.clock().tick(NoteStats.SESSION_GAP - 1)
-        stats.missNotes(["E5"])
+        stats.missNotes(["E4"])
         expect(ended).toEqual([])
 
         jasmine.clock().tick(NoteStats.SESSION_GAP)
-        stats.hitNotes(["G5"])
+        stats.hitNotes(["G4"])
 
         expect(ended.length).toEqual(1)
         expect(ended[0].id).toEqual(firstId)

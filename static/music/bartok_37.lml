@@ -2,183 +2,183 @@
 ts2/4
 
 m0 {
-  f4 c5
+  f3 c4
 }
 
 m1 {
-  b4 {dt a4 b4}
+  b3 {dt a3 b3}
 }
 
 m2 {
-  g4 f4
+  g3 f3
 }
 
 m3 {
-  a4 c5
+  a3 c4
 }
 
 m4 {
-  f5.3
+  f4.3
 |
-  b4 {dt a4 b4}
+  b3 {dt a3 b3}
 }
 
 m5 {
-  r1 c6
+  r1 c5
 |
-  g4.3
+  g3.3
 }
 
 m6 {
-  b5 {dt a5 b5}
+  b4 {dt a4 b4}
 |
-  r1 c5
+  r1 c4
 }
 
 m7 {
-  g5 f5
+  g4 f4
 |
-  b4 {dt a4 g4}
+  b3 {dt a3 g3}
 }
 
 m8 {
-  a5 c5
+  a4 c4
 |
-  f4 a4
+  f3 a3
 }
 
 m9 {
-  b5 {dt a5 b5}
+  b4 {dt a4 b4}
 |
-  g4.3
+  g3.3
 }
 
 m10 {
-  g5.2
+  g4.2
 |
-  r1 a4 b4
+  r1 a3 b3
 }
 
 m11 {
-  r1 c6
+  r1 c5
 |
-  g4 c5.2
+  g3 c4.2
 }
 
 m12 {
-  c6 c6
+  c5 c5
 |
-  r1 c5.2
+  r1 c4.2
 }
 
 m13 {
-  c6 {dt b5 g5}
+  c5 {dt b4 g4}
 |
-  r1 c5.2
+  r1 c4.2
 }
 
 m14 {
-  { dt a5 g5 f5 g5 }
+  { dt a4 g4 f4 g4 }
 |
-  r1 { dt b4 f4 }
+  r1 { dt b3 f3 }
 }
 
 m15 {
-  a5 f5
+  a4 f4
 |
-  { dt c5 b4 a4 b4 }
+  { dt c4 b3 a3 b3 }
 }
 
 m16 {
-  r1 c6.2
+  r1 c5.2
 |
-  c5 c5
+  c4 c4
 }
 
 m17 {
-  r1 c6.2
+  r1 c5.2
 |
-  c5 c5
+  c4 c4
 }
 
 m18 {
-  r1 c6
+  r1 c5
 |
-  c5 c5
+  c4 c4
 }
 
 m19 {
-  b5 { dt a5 b5 }
+  b4 { dt a4 b4 }
 |
-  r1 c5
+  r1 c4
 }
 
 m20 {
-  g5.3
+  g4.3
 |
-  b4 { dt a4 b4}
+  b3 { dt a3 b3}
 }
 
 m21 {
-  r1 {dt a5 b5}
+  r1 {dt a4 b4}
 |
-  {dt g4 r1} c5.2
+  {dt g3 r1} c4.2
 }
 
 m22 {
-  {dt c6 a5 b5 g5}
+  {dt c5 a4 b4 g4}
 |
-  r1 f4
+  r1 f3
 }
 
 m23 {
-  {dt a5 g5 a5 f5}
+  {dt a4 g4 a4 f4}
 |
-  {dt b4.5}
+  {dt b3.5}
 }
 
 m24 {
-  {dt g5.5 }
+  {dt g4.5 }
 |
-  {dt r1 a4 b4 g4}
+  {dt r1 a3 b3 g3}
 }
 
 m25 {
-  {dt r1 f5 a5 b5}
+  {dt r1 f4 a4 b4}
 |
-  a4.3
+  a3.3
 }
 
 m26 {
-  {dt c6 b5 a5 b5}
+  {dt c5 b4 a4 b4}
 |
-  r1 { dt f4 g4}
+  r1 { dt f3 g3}
 }
 
 m27 {
-  {dt a5 g5 f5 g5}
+  {dt a4 g4 f4 g4}
 |
-  a4 b4
+  a3 b3
 }
 
 m28 {
-  r1 {dt a5 b5}
+  r1 {dt a4 b4}
 |
-  c5.3
+  c4.3
 }
 
 m29 {
-  a5 g5
+  a4 g4
 |
-  r1 {dt f4 g4}
+  r1 {dt f3 g3}
 }
 
 m30 {
-  f5 {dt g5 f5}
+  f4 {dt g4 f4}
 |
-  a4 b4
+  a3 b3
 }
 
 m31 {
-  c5.2
+  c4.2
 }

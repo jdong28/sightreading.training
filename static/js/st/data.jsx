@@ -2,6 +2,7 @@
 import * as React from "react"
 
 import {MajorScale, parseNote, noteName} from "st/music"
+import {shiftNotationOctaves} from "st/song_parser"
 
 import {
   RandomNotes, SweepRangeNotes, MiniSteps, TriadNotes, SevenOpenNotes,
@@ -48,7 +49,11 @@ let noteRangeInput = {
 // text, measure range, hand or track) so a reload in frontend-only mode (no
 // server side song library) restores it. Imported pieces themselves live in
 // the deck, see st/sheet_music_deck
-export const SHEET_MUSIC_STORAGE_KEY = "st:sheet_music_deck"
+export const SHEET_MUSIC_STORAGE_KEY = "st:sheet_music_deck:v2"
+
+// where the section was kept while note names put middle C at "C5" (song
+// text c5), migrated to SHEET_MUSIC_STORAGE_KEY once
+export const LEGACY_SHEET_MUSIC_STORAGE_KEY = "st:sheet_music_deck"
 
 const ALL_TRACKS = "all"
 
@@ -300,7 +305,7 @@ export const STAVES = [
   {
     mode: "notes",
     name: "treble",
-    range: ["A4", "C7"],
+    range: ["A3", "C6"],
     render: function(props=this.state) {
       return <GStaff
         ref={(staff) => this.staff = staff}
@@ -311,7 +316,7 @@ export const STAVES = [
   {
     mode: "notes",
     name: "bass",
-    range: ["C3", "E5"],
+    range: ["C2", "E4"],
     render: function(props=this.state) {
       return <FStaff
         ref={(staff) => this.staff = staff}
@@ -322,7 +327,7 @@ export const STAVES = [
   {
     mode: "notes",
     name: "grand",
-    range: ["C3", "C7"],
+    range: ["C2", "C6"],
     render: function(props=this.state) {
       return <GrandStaff
         ref={(staff) => this.staff = staff}
@@ -333,7 +338,7 @@ export const STAVES = [
   {
     mode: "chords",
     name: "chord",
-    range: ["B7", "C8"],
+    range: ["B6", "C7"],
     render: function(props) {
       return <ChordStaff 
         chords={this.state.notes}
@@ -554,6 +559,11 @@ export const GENERATORS = [
     label: "Sheet music",
     mode: "notes",
     storageKey: SHEET_MUSIC_STORAGE_KEY,
+    legacyStorage: {
+      key: LEGACY_SHEET_MUSIC_STORAGE_KEY,
+      migrate: settings => typeof settings.song == "string" ?
+        {...settings, song: shiftNotationOctaves(settings.song, -1)} : settings,
+    },
     inputs: [
       {
         name: "piece",

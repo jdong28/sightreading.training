@@ -1,43 +1,43 @@
 import {
   notesLessThan, notesGreaterThan, compareNotes, noteName, parseNote, notesSame,
-  noteStaffOffset,
+  noteStaffOffset, shiftNoteOctave, MIDDLE_C_PITCH,
   MajorScale, MinorScale, HarmonicMinorScale, AscendingMelodicMinorScale, Chord, KeySignature, ChromaticScale, Staff
 } from "st/music"
 
 describe("music", function() {
   it("less than", function() {
-    expect(notesLessThan("C5", "C#5")).toBe(true);
-    expect(notesLessThan("B5", "D6")).toBe(true);
-    expect(notesLessThan("B5", "B5")).toBe(false);
+    expect(notesLessThan("C4", "C#4")).toBe(true);
+    expect(notesLessThan("B4", "D5")).toBe(true);
+    expect(notesLessThan("B4", "B4")).toBe(false);
   });
 
   it("notesSame", function() {
-    expect(notesSame("C5", "C6")).toBe(true);
-    expect(notesSame("C5", "C5")).toBe(true);
+    expect(notesSame("C4", "C5")).toBe(true);
+    expect(notesSame("C4", "C4")).toBe(true);
 
-    expect(notesSame("C5", "D5")).toBe(false);
-    expect(notesSame("C#5", "C5")).toBe(false);
-    expect(notesSame("Ab5", "A3")).toBe(false);
+    expect(notesSame("C4", "D4")).toBe(false);
+    expect(notesSame("C#4", "C4")).toBe(false);
+    expect(notesSame("Ab4", "A2")).toBe(false);
 
-    expect(notesSame("Db5", "Db6")).toBe(true);
-    expect(notesSame("G#5", "G#7")).toBe(true);
+    expect(notesSame("Db4", "Db5")).toBe(true);
+    expect(notesSame("G#4", "G#6")).toBe(true);
 
     // wrapping
-    expect(notesSame("B#5", "C6")).toBe(true);
-    expect(notesSame("B#5", "C7")).toBe(true);
+    expect(notesSame("B#4", "C5")).toBe(true);
+    expect(notesSame("B#4", "C6")).toBe(true);
 
-    expect(notesSame("B3", "Cb5")).toBe(true);
-    expect(notesSame("B5", "Cb3")).toBe(true);
+    expect(notesSame("B2", "Cb4")).toBe(true);
+    expect(notesSame("B4", "Cb2")).toBe(true);
   });
 
   it("greater than", function() {
-    expect(notesGreaterThan("G5", "C#5")).toBe(true);
-    expect(notesGreaterThan("G5", "Fb5")).toBe(true);
-    expect(notesGreaterThan("E#5", "F5")).toBe(false);
+    expect(notesGreaterThan("G4", "C#4")).toBe(true);
+    expect(notesGreaterThan("G4", "Fb4")).toBe(true);
+    expect(notesGreaterThan("E#4", "F4")).toBe(false);
   });
 
   it("compare", function() {
-    expect(compareNotes("E#5", "F5")).toBe(0);
+    expect(compareNotes("E#4", "F4")).toBe(0);
   });
 
   it("gets note names", function() {
@@ -45,23 +45,23 @@ describe("music", function() {
 
     // sharpened
     expect(pitches.map((p) => noteName(p))).toEqual([
-      "C2", "C#2", "D2", "D#2", "E2", "F2", "F#2", "G2", "G#2", "A2", "A#2", "B2", "C3"
+      "C1", "C#1", "D1", "D#1", "E1", "F1", "F#1", "G1", "G#1", "A1", "A#1", "B1", "C2"
     ])
 
     // flattened
     expect(pitches.map((p) => noteName(p, false))).toEqual([
-      "C2", "Db2", "D2", "Eb2", "E2", "F2", "Gb2", "G2", "Ab2", "A2", "Bb2", "B2", "C3"
+      "C1", "Db1", "D1", "Eb1", "E1", "F1", "Gb1", "G1", "Ab1", "A1", "Bb1", "B1", "C2"
     ])
 
   })
 
   it("gets notes pitches", function() {
     let sharpNames = [
-      "C2", "C#2", "D2", "D#2", "E2", "F2", "F#2", "G2", "G#2", "A2", "A#2", "B2", "C3"
+      "C1", "C#1", "D1", "D#1", "E1", "F1", "F#1", "G1", "G#1", "A1", "A#1", "B1", "C2"
     ]
 
     let flatNames = [
-      "C2", "Db2", "D2", "Eb2", "E2", "F2", "Gb2", "G2", "Ab2", "A2", "Bb2", "B2", "C3"
+      "C1", "Db1", "D1", "Eb1", "E1", "F1", "Gb1", "G1", "Ab1", "A1", "Bb1", "B1", "C2"
     ]
 
     expect(sharpNames.map((n) => parseNote(n))).toEqual([
@@ -73,35 +73,88 @@ describe("music", function() {
     ])
 
   })
+
+  it("names middle C C4 like MusicXML and MIDI", function() {
+    expect(MIDDLE_C_PITCH).toEqual(60)
+    expect(noteName(60)).toEqual("C4")
+    expect(noteName(59)).toEqual("B3")
+    expect(noteName(72)).toEqual("C5")
+    expect(noteName(69)).toEqual("A4")
+
+    expect(parseNote("C4")).toEqual(60)
+    expect(parseNote("B3")).toEqual(59)
+    expect(parseNote("C5")).toEqual(72)
+    expect(parseNote("A4")).toEqual(69)
+  })
+
+  it("keeps accidentals on the octave of their letter across B3 to C4", function() {
+    // sharps and flats around the boundary
+    expect(noteName(58)).toEqual("A#3")
+    expect(noteName(58, false)).toEqual("Bb3")
+    expect(noteName(61)).toEqual("C#4")
+    expect(noteName(61, false)).toEqual("Db4")
+
+    expect(parseNote("A#3")).toEqual(58)
+    expect(parseNote("Bb3")).toEqual(58)
+    expect(parseNote("C#4")).toEqual(61)
+    expect(parseNote("Db4")).toEqual(61)
+
+    // spellings whose letter is in the other octave than their pitch
+    expect(parseNote("B#3")).toEqual(60)
+    expect(parseNote("Cb4")).toEqual(59)
+    expect(compareNotes("B#3", "C4")).toBe(0)
+    expect(compareNotes("Cb4", "B3")).toBe(0)
+    expect(new MajorScale("Gb").getRange(4)[3]).toEqual("Cb5")
+    expect(new MajorScale("C#").getRange(3)[6]).toEqual("B#3")
+  })
+
+  it("round trips every piano key", function() {
+    for (let pitch = 21; pitch <= 108; pitch++) {
+      expect(parseNote(noteName(pitch))).toEqual(pitch)
+      expect(parseNote(noteName(pitch, false))).toEqual(pitch)
+    }
+
+    expect(noteName(21)).toEqual("A0")
+    expect(noteName(108)).toEqual("C8")
+  })
+
+  it("shifts a note name's octave keeping its spelling", function() {
+    expect(shiftNoteOctave("C5", -1)).toEqual("C4")
+    expect(shiftNoteOctave("Cb5", -1)).toEqual("Cb4")
+    expect(shiftNoteOctave("F#6", -1)).toEqual("F#5")
+    expect(shiftNoteOctave("B3", 1)).toEqual("B4")
+    expect(parseNote(shiftNoteOctave("Cb5", -1))).toEqual(parseNote("Cb5") - 12)
+    expect(() => shiftNoteOctave("H5", -1)).toThrow()
+  })
 });
 
 describe("scales", function() {
   it("gets notes in chromatic scale", function() {
     let scale = new ChromaticScale("C")
-    expect(scale.getRange(5)).toEqual([
-      "C5", "C#5", "D5", "D#5", "E5", "F5", "F#5", "G5", "G#5", "A5", "A#5", "B5", "C6"
+    expect(scale.getRange(4)).toEqual([
+      "C4", "C#4", "D4", "D#4", "E4", "F4", "F#4", "G4", "G#4", "A4", "A#4", "B4", "C5"
     ]);
   })
 
   it("gets notes in C MajorScale", function() {
     let scale = new MajorScale("C");
-    expect(scale.getRange(5)).toEqual([
-      "C5", "D5", "E5", "F5", "G5", "A5", "B5", "C6"
+    expect(scale.getRange(4)).toEqual([
+      "C4", "D4", "E4", "F4", "G4", "A4", "B4", "C5"
     ]);
   });
 
   it("gets notes in D MajorScale", function() {
     let scale = new MajorScale("D");
-    expect(scale.getRange(5)).toEqual([
-      "D5", "E5", "F#5", "G5", "A5", "B5", "C#6", "D6"
+    expect(scale.getRange(4)).toEqual([
+      "D4", "E4", "F#4", "G4", "A4", "B4", "C#5", "D5"
     ]);
   });
 
   it("gets notes in Gb MajorScale", function() {
     let scale = new MajorScale("Gb");
     // G♭, A♭, B♭, C♭, D♭, E♭, F
-    expect(scale.getRange(5)).toEqual([
-      "Gb5", "Ab5", "Bb5", "Cb6", "Db6", "Eb6", "F6", "Gb6"
+    expect(scale.getRange(4)).toEqual([
+      "Gb4", "Ab4", "Bb4", "Cb5", "Db5", "Eb5", "F5", "Gb5"
     ]);
   });
 
@@ -112,30 +165,30 @@ describe("scales", function() {
   it("gets notes in C# MajorScale", function() {
     let scale = new MajorScale("C#");
     // C♯, D♯, E♯, F♯, G♯, A♯, B♯
-    expect(scale.getRange(5)).toEqual([
-      "C#5", "D#5", "E#5", "F#5", "G#5", "A#5", "B#5", "C#6"
+    expect(scale.getRange(4)).toEqual([
+      "C#4", "D#4", "E#4", "F#4", "G#4", "A#4", "B#4", "C#5"
     ]);
   });
 
   it("gets notes in F MajorScale", function() {
     let scale = new MajorScale("F");
-    // TODO: should be Bb5
-    expect(scale.getRange(5)).toEqual([
-      "F5", "G5", "A5", "Bb5", "C6", "D6", "E6", "F6"
+    // TODO: should be Bb4
+    expect(scale.getRange(4)).toEqual([
+      "F4", "G4", "A4", "Bb4", "C5", "D5", "E5", "F5"
     ]);
   });
 
   it("gets notes in loose range for scale", function() {
     let scale = new MajorScale("G");
-    let range = scale.getLooseRange("C5", "C6")
+    let range = scale.getLooseRange("C4", "C5")
     expect(range).toEqual([
-      "C5", "D5", "E5", "F#5", "G5", "A5", "B5", "C6"
+      "C4", "D4", "E4", "F#4", "G4", "A4", "B4", "C5"
     ]);
   });
 
   it("gets scale degrees for C major", function() {
     let scale = new MajorScale("C")
-    let range = scale.getLooseRange("C5", "C6")
+    let range = scale.getLooseRange("C4", "C5")
 
     expect(range.map(scale.getDegree.bind(scale))).toEqual([
       1, 2, 3, 4, 5, 6, 7, 1
@@ -144,7 +197,7 @@ describe("scales", function() {
 
   it("gets scale degrees for G major", function() {
     let scale = new MajorScale("G")
-    let range = scale.getLooseRange("C5", "C6")
+    let range = scale.getLooseRange("C4", "C5")
 
     expect(range.map(scale.getDegree.bind(scale))).toEqual([
       4, 5, 6, 7, 1, 2, 3, 4
@@ -166,23 +219,23 @@ describe("scales", function() {
 
   it("gets notes in A MinorScale", function() {
     let scale = new MinorScale("A");
-    expect(scale.getRange(5)).toEqual([
-      "A5", "B5", "C6", "D6", "E6", "F6", "G6", "A6"
+    expect(scale.getRange(4)).toEqual([
+      "A4", "B4", "C5", "D5", "E5", "F5", "G5", "A5"
     ]);
   });
 
   it("gets notes in C MinorScale", function() {
     let scale = new MinorScale("C");
-    expect(scale.getRange(5)).toEqual([
-      "C5", "D5", "Eb5", "F5", "G5", "Ab5", "Bb5", "C6"
+    expect(scale.getRange(4)).toEqual([
+      "C4", "D4", "Eb4", "F4", "G4", "Ab4", "Bb4", "C5"
     ]);
   });
 
   it("gets notes in C HarmonicMinorScale", function() {
     let scale = new HarmonicMinorScale("C");
     // TODO: this should be giving flats not sharps
-    expect(scale.getRange(5)).toEqual([
-      "C5", "D5", "Eb5", "F5", "G5", "Ab5", "B5", "C6"
+    expect(scale.getRange(4)).toEqual([
+      "C4", "D4", "Eb4", "F4", "G4", "Ab4", "B4", "C5"
     ]);
   });
 
@@ -301,80 +354,80 @@ describe("scales", function() {
 
 describe("chords", function() {
   it("gets notes for major chord", function() {
-    expect(Chord.notes("C5", "M")).toEqual([
-      "C5", "E5", "G5"
+    expect(Chord.notes("C4", "M")).toEqual([
+      "C4", "E4", "G4"
     ])
 
-    expect(Chord.notes("C5", "M", 1)).toEqual([
-      "E5", "G5", "C6"
-    ])
-
-    expect(Chord.notes("C5", "M", -1)).toEqual([
-      "G4", "C5", "E5"
-    ])
-
-    expect(Chord.notes("C5", "M", -2)).toEqual([
+    expect(Chord.notes("C4", "M", 1)).toEqual([
       "E4", "G4", "C5"
     ])
 
-    expect(Chord.notes("C5", "M", -3)).toEqual([
-      "C4", "E4", "G4"
+    expect(Chord.notes("C4", "M", -1)).toEqual([
+      "G3", "C4", "E4"
+    ])
+
+    expect(Chord.notes("C4", "M", -2)).toEqual([
+      "E3", "G3", "C4"
+    ])
+
+    expect(Chord.notes("C4", "M", -3)).toEqual([
+      "C3", "E3", "G3"
     ])
 
   })
 
   it("gets notes for minor chord", function() {
-    expect(Chord.notes("C5", "m")).toEqual([
-      "C5", "D#5", "G5"
+    expect(Chord.notes("C4", "m")).toEqual([
+      "C4", "D#4", "G4"
     ])
 
-    expect(Chord.notes("C5", "m", 1)).toEqual([
-      "D#5", "G5", "C6"
+    expect(Chord.notes("C4", "m", 1)).toEqual([
+      "D#4", "G4", "C5"
     ])
   })
 
   it("gets notes for major 7 chord", function() {
-    expect(Chord.notes("C5", "M7")).toEqual([
-      "C5", "E5", "G5", "B5"
+    expect(Chord.notes("C4", "M7")).toEqual([
+      "C4", "E4", "G4", "B4"
     ])
 
-    expect(Chord.notes("C5", "M7", 1)).toEqual([
-      "E5", "G5", "B5", "C6"
-    ])
-
-    expect(Chord.notes("C5", "M7", -1)).toEqual([
-      "B4", "C5", "E5", "G5"
-    ])
-
-    expect(Chord.notes("C5", "M7", -2)).toEqual([
-      "G4", "B4", "C5", "E5"
-    ])
-
-    expect(Chord.notes("C5", "M7", -3)).toEqual([
+    expect(Chord.notes("C4", "M7", 1)).toEqual([
       "E4", "G4", "B4", "C5"
+    ])
+
+    expect(Chord.notes("C4", "M7", -1)).toEqual([
+      "B3", "C4", "E4", "G4"
+    ])
+
+    expect(Chord.notes("C4", "M7", -2)).toEqual([
+      "G3", "B3", "C4", "E4"
+    ])
+
+    expect(Chord.notes("C4", "M7", -3)).toEqual([
+      "E3", "G3", "B3", "C4"
     ])
 
   })
 
   it("gets notes for dominant 7 chord", function() {
-    expect(Chord.notes("C5", "7")).toEqual([
-      "C5", "E5", "G5", "A#5"
+    expect(Chord.notes("C4", "7")).toEqual([
+      "C4", "E4", "G4", "A#4"
     ])
 
-    expect(Chord.notes("C5", "7", 1)).toEqual([
-      "E5", "G5", "A#5", "C6"
+    expect(Chord.notes("C4", "7", 1)).toEqual([
+      "E4", "G4", "A#4", "C5"
     ])
   })
 
   it("gets notes for minor 7 chord", function() {
-    expect(Chord.notes("C5", "m7")).toEqual([
-      "C5", "D#5", "G5", "A#5"
+    expect(Chord.notes("C4", "m7")).toEqual([
+      "C4", "D#4", "G4", "A#4"
     ])
   })
 
   it("gets notes for minor 7 flat 5 chord", function() {
-    expect(Chord.notes("C5", "m7b5")).toEqual([
-      "C5", "D#5", "F#5", "A#5"
+    expect(Chord.notes("C4", "m7b5")).toEqual([
+      "C4", "D#4", "F#4", "A#4"
     ])
   })
 
@@ -447,7 +500,7 @@ describe("chords", function() {
     it("checks notes in CM7", function () {
       let chord = new Chord("C", "M7");
 
-      for (let octave of [4,5,6]) {
+      for (let octave of [3,4,5]) {
         expect(chord.containsNote(`C${octave}`)).toBe(true)
         expect(chord.containsNote(`E${octave}`)).toBe(true)
         expect(chord.containsNote(`G${octave}`)).toBe(true)
@@ -462,7 +515,7 @@ describe("chords", function() {
     it("checks notes in Cm", function () {
       let chord = new Chord("C", "m");
 
-      for (let octave of [4,5,6]) {
+      for (let octave of [3,4,5]) {
         expect(chord.containsNote(`C${octave}`)).toBe(true)
         expect(chord.containsNote(`D#${octave}`)).toBe(true)
         expect(chord.containsNote(`Eb${octave}`)).toBe(true)
@@ -497,8 +550,8 @@ describe("chords", function() {
 })
 
 describe("key signature", function() {
-  let trebleCleff = ["A4", "C7"]
-  let bassCleff = ["C3", "E5"]
+  let trebleCleff = ["A3", "C6"]
+  let bassCleff = ["C2", "E4"]
 
   it("gets name for key signature", function() {
 
@@ -537,8 +590,8 @@ describe("key signature", function() {
 
     expect(key.accidentalNotes()).toEqual(["F", "C"])
 
-    expect(key.notesInRange(...trebleCleff)).toEqual(["F5", "C6"])
-    expect(key.notesInRange(...trebleCleff)).toEqual(["F5", "C6"])
+    expect(key.notesInRange(...trebleCleff)).toEqual(["F4", "C5"])
+    expect(key.notesInRange(...trebleCleff)).toEqual(["F4", "C5"])
   })
 
   it("gets key signature notes for Bb", function() {
@@ -548,8 +601,8 @@ describe("key signature", function() {
 
     expect(key.accidentalNotes()).toEqual(["B", "E"])
 
-    expect(key.notesInRange(...trebleCleff)).toEqual(["B5", "E5"])
-    expect(key.notesInRange(...trebleCleff)).toEqual(["B5", "E5"])
+    expect(key.notesInRange(...trebleCleff)).toEqual(["B4", "E4"])
+    expect(key.notesInRange(...trebleCleff)).toEqual(["B4", "E4"])
   })
 
   it("gets key signature notes for E", function() {
@@ -559,40 +612,40 @@ describe("key signature", function() {
 
     expect(key.accidentalNotes()).toEqual(["F", "C", "G", "D"])
 
-    expect(key.notesInRange(...trebleCleff)).toEqual(["F5", "C6", "G6", "D6"])
-    expect(key.notesInRange(...trebleCleff)).toEqual(["F5", "C6", "G6", "D6"])
+    expect(key.notesInRange(...trebleCleff)).toEqual(["F4", "C5", "G5", "D5"])
+    expect(key.notesInRange(...trebleCleff)).toEqual(["F4", "C5", "G5", "D5"])
   })
 
   it("gets accidentals for notes in D", function() {
     let key = new KeySignature(2) // f c
     let examples = [
-      ["C5", 0],
-      ["C#5", null],
-      ["Cb5", -1],
+      ["C4", 0],
+      ["C#4", null],
+      ["Cb4", -1],
 
-      ["D5", null],
-      ["D#5", 1],
-      ["Db5", -1],
+      ["D4", null],
+      ["D#4", 1],
+      ["Db4", -1],
 
-      ["E5", null],
-      ["E#5", 1],
-      ["Eb5", -1],
+      ["E4", null],
+      ["E#4", 1],
+      ["Eb4", -1],
 
-      ["F5", 0],
-      ["F#5", null],
-      ["Fb5", -1],
+      ["F4", 0],
+      ["F#4", null],
+      ["Fb4", -1],
 
-      ["G5", null],
-      ["G#5", 1],
-      ["Gb5", -1],
+      ["G4", null],
+      ["G#4", 1],
+      ["Gb4", -1],
 
-      ["A5", null],
-      ["A#5", 1],
-      ["Ab5", -1],
+      ["A4", null],
+      ["A#4", 1],
+      ["Ab4", -1],
 
-      ["B5", null],
-      ["B#5", 1],
-      ["Bb5", -1],
+      ["B4", null],
+      ["B#4", 1],
+      ["Bb4", -1],
     ]
 
     for (let [note, accidentals] of examples) {
@@ -604,33 +657,33 @@ describe("key signature", function() {
     let key = new KeySignature(-3) // b e a
 
     let examples = [
-      ["C5", null],
-      ["C#5", 1],
-      ["Cb5", -1],
+      ["C4", null],
+      ["C#4", 1],
+      ["Cb4", -1],
 
-      ["D5", null],
-      ["D#5", 1],
-      ["Db5", -1],
+      ["D4", null],
+      ["D#4", 1],
+      ["Db4", -1],
 
-      ["E5", 0],
-      ["E#5", 1],
-      ["Eb5", null],
+      ["E4", 0],
+      ["E#4", 1],
+      ["Eb4", null],
 
-      ["F5", null],
-      ["F#5", 1],
-      ["Fb5", -1],
+      ["F4", null],
+      ["F#4", 1],
+      ["Fb4", -1],
 
-      ["G5", null],
-      ["G#5", 1],
-      ["Gb5", -1],
+      ["G4", null],
+      ["G#4", 1],
+      ["Gb4", -1],
 
-      ["A5", 0],
-      ["A#5", 1],
-      ["Ab5", null],
+      ["A4", 0],
+      ["A#4", 1],
+      ["Ab4", null],
 
-      ["B5", 0],
-      ["B#5", 1],
-      ["Bb5", null],
+      ["B4", 0],
+      ["B#4", 1],
+      ["Bb4", null],
     ]
 
     for (let [note, accidentals] of examples) {
@@ -640,10 +693,10 @@ describe("key signature", function() {
 
   it("gets enharmonic spelling of notes for key", function() {
     let key = new KeySignature(-3) // b e a
-    let notes = new MajorScale(key.name()).getRange(4).map((n) => key.enharmonic(n))
+    let notes = new MajorScale(key.name()).getRange(3).map((n) => key.enharmonic(n))
 
     expect(notes).toEqual([
-      "Eb4", "F4", "G4", "Ab4", "Bb4", "C5", "D5", "Eb5"
+      "Eb3", "F3", "G3", "Ab3", "Bb3", "C4", "D4", "Eb4"
     ])
   })
 })
@@ -652,17 +705,17 @@ describe("key signature", function() {
 describe("noteStaffOffset", function() {
   it("gets offsets for notes", function() {
     let notes = [
-      "A#3",
-      "B#3",
-      "C#4",
+      "A#2",
+      "B#2",
+      "C#3",
 
-      "Ab3",
-      "Bb3",
-      "Cb4",
+      "Ab2",
+      "Bb2",
+      "Cb3",
 
-      "A3",
-      "B3",
-      "C4",
+      "A2",
+      "B2",
+      "C3",
     ]
 
     expect(notes.map(noteStaffOffset)).toEqual([
@@ -687,16 +740,16 @@ describe("staff", function() {
     }))).toEqual([
       {
         name: "treble",
-        lower: "E5",
-        upper: "F6",
-        clefNote: "G5",
+        lower: "E4",
+        upper: "F5",
+        clefNote: "G4",
         clefName: "G"
       },
       {
         name: "bass",
-        lower: "G3",
-        upper: "A4",
-        clefNote: "F4",
+        lower: "G2",
+        upper: "A3",
+        clefNote: "F3",
         clefName: "F"
       }
     ])

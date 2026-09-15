@@ -77,10 +77,10 @@ export class SampleOutputMetronome extends SampleOutput {
   }
 
   tick() {
-    this.noteOn(parseNote("G5"), 100)
+    this.noteOn(parseNote("G4"), 100)
   }
 
   tock() {
-    this.noteOn(parseNote("C5"), 70)
+    this.noteOn(parseNote("C4"), 70)
   }
 }

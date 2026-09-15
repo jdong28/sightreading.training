@@ -6,8 +6,8 @@ import {MultiTrackSong, SongNote} from "st/song_note_list"
 import {AutoChords} from "st/auto_chords"
 
 // tokens are separated by whitepace
-// a note is a5.1.2
-//   - 5 is the octave
+// a note is a4.1.2
+//   - 4 is the octave, middle C is c4
 //   - 1 is the duration
 //   - 2 is the start
 //
@@ -15,6 +15,27 @@ import {AutoChords} from "st/auto_chords"
 //   duration defaults to 1 beat (or the current duration)
 //   start defauls to current cusor position
 
+
+// A note command (see song_parser_peg.pegjs) or a comment, in song text.
+// Commands are separated by white space, a note can also follow a block's
+// "{" and be followed by its timing or a "}"; a comment runs from a "#" after
+// white space to the end of the line
+const NOTATION_NOTE_OR_COMMENT = /(^|[\s{])(?:(#[^\n]*)|([a-gA-G][+=-]?)([0-9])(?=$|[\s.}]))/g
+
+// Song text with the octave of every note moved by octaves, eg. ("c5 d+5.2",
+// -1) -> "c4 d+4.2". Notation octaves are a single digit, so a note that
+// would move out of 0-9 is left as written. Used to move songs written in
+// the app's former numbering, where middle C was c5, to the current one
+export function shiftNotationOctaves(text, octaves) {
+  return text.replace(NOTATION_NOTE_OR_COMMENT, (match, before, comment, name, octave) => {
+    let shifted = +octave + octaves
+    if (comment || shifted < 0 || shifted > 9) {
+      return match
+    }
+
+    return `${before}${name}${shifted}`
+  })
+}
 
 export default class SongParser {
   static peg = peg

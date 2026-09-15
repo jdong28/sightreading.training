@@ -100,7 +100,7 @@ export function romanNumeral(n) {
   return out
 }
 
-// eg. "C#5" -> "C♯5", in the app's octave numbering like the keyboard labels
+// eg. "C#4" -> "C♯4", in the app's octave numbering like the keyboard labels
 function displayNoteName(note) {
   return String(note).replace("#", "♯").replace(/^([A-G])b/, "$1♭")
 }

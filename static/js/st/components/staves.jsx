@@ -181,7 +181,7 @@ export class Staff extends React.PureComponent {
 export class GStaff extends Staff {
   static defaultProps = {
     // where the key signature is centered around
-    keySignatureCenter: "F6",
+    keySignatureCenter: "F5",
     upperRow: 45,
     lowerRow: 37,
     cleffImage: "/static/svg/clefs.G.svg",
@@ -191,7 +191,7 @@ export class GStaff extends Staff {
 
 export class FStaff extends Staff {
   static defaultProps = {
-    keySignatureCenter: "F4",
+    keySignatureCenter: "F3",
     upperRow: 33,
     lowerRow: 25,
     cleffImage: "/static/svg/clefs.F_change.svg",

@@ -113,22 +113,22 @@ class StaffGroup extends React.PureComponent {
   static STAFF_TYPES = {
     treble: {
       // where the F of the key signature is centered around
-      keySignatureCenter: "F6",
-      upperLine: "F6", // upper line is where origin (0) is for staff lines
+      keySignatureCenter: "F5",
+      upperLine: "F5", // upper line is where origin (0) is for staff lines
 
       clefAsset: "gclef",
       assetOffset: 14,
     },
     bass: {
-      keySignatureCenter: "F4",
-      upperLine: "A4",
+      keySignatureCenter: "F3",
+      upperLine: "A3",
 
       clefAsset: "fclef",
       assetOffset: 102,
     },
     alto: {
-      keySignatureCenter: "F6",
-      upperLine: "G6",
+      keySignatureCenter: "F5",
+      upperLine: "G5",
 
       clefAsset: "cclef",
       assetOffset: 100,

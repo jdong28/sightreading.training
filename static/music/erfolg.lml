@@ -5,59 +5,59 @@ dt
 
 m0 {
   r7
-  a5
+  a4
 }
 
 m1 {
-  { a5.2 | a6.2 }
+  { a4.2 | a5.2 }
 
   {
     dt
-    g6 f6 e6.3
-    f6 g6 c6
+    g5 f5 e5.3
+    f5 g5 c5
   }
 
-  { g5.2 | d6.2}
+  { g4.2 | d5.2}
 
   |
 
-  d4 f4 a4 { dt c5 a4 }
-  f4 d4 e-4 g4
+  d3 f3 a3 { dt c4 a3 }
+  f3 d3 e-3 g3
 }
 
 m2 {
-  {dt c6 b5 }
-  a5.2
-  d6
-  { ht d6 | a6}
-  { dt g6 f6 e6.3 }
+  {dt c5 b4 }
+  a4.2
+  d5
+  { ht d5 | a5}
+  { dt g5 f5 e5.3 }
 
   |
 
-  b4 d5
-  { dt b4 d5 b4 g4 }
-  d4 f4 a4
-  { dt c5 a4 }
+  b3 d4
+  { dt b3 d4 b3 g3 }
+  d3 f3 a3
+  { dt c4 a3 }
 }
 
 m3 {
   {
     dt
     r1 # tied from last
-    f6 g6 c7
+    f5 g5 c6
   }
 
   {
-    c6.6 | {a6.5 a6 }
+    c5.6 | {a5.5 a5 }
   }
 
   |
 
-  { dt f4 d4 f4 a4 }
-  a4 c5 e5 g5
-  { dt e5 c5 a4 c5 }
+  { dt f3 d3 f3 a3 }
+  a3 c4 e4 g4
+  { dt e4 c4 a3 c4 }
 }
 
 m4 {
-  { ht a6 | d6 }
+  { ht a5 | d5 }
 }

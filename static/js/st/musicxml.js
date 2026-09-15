@@ -7,9 +7,8 @@
 //   - starts and durations are in quarter note beats, the unit the rest of
 //     the app uses (MusicXML <divisions> is per quarter note, so a
 //     <duration> is simply divided by the active divisions)
-//   - note names use the app's octave numbering, where middle C is "C5"
-//     (parseNote("C5") == MIDDLE_C_PITCH), one octave higher than the
-//     MusicXML/scientific numbering where middle C is octave 4
+//   - note names keep the MusicXML octave, which is the app's numbering too:
+//     middle C is "C4" (parseNote("C4") == MIDDLE_C_PITCH)
 //   - every staff of a part becomes its own track, so a piano part becomes
 //     two tracks, each with a clef entry from the part's <clef> elements
 //   - repeats, endings, and transposition are ignored
@@ -94,7 +93,7 @@ function normalizeFifths(fifths) {
   return fifths
 }
 
-// pitch element -> app note name like "C#5", or null if it can't be named
+// pitch element -> app note name like "C#4", or null if it can't be named
 function pitchToNoteName(pitchEl) {
   let step = childText(pitchEl, "step")
   let octave = childText(pitchEl, "octave")
@@ -104,23 +103,23 @@ function pitchToNoteName(pitchEl) {
     return null
   }
 
-  let appOctave = +octave + 1
+  octave = +octave
 
   if (alter == 0) {
-    return `${step}${appOctave}`
+    return `${step}${octave}`
   }
 
   if (alter == 1) {
-    return `${step}#${appOctave}`
+    return `${step}#${octave}`
   }
 
   if (alter == -1) {
-    return `${step}b${appOctave}`
+    return `${step}b${octave}`
   }
 
   // double sharps/flats can't be spelled in the app's note names, use the
   // nearest enharmonic with the same accidental direction
-  let pitch = parseNote(`${step}${appOctave}`) + alter
+  let pitch = parseNote(`${step}${octave}`) + alter
   return noteName(pitch, alter > 0)
 }
 
