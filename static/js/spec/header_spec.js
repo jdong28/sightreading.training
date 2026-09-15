@@ -49,6 +49,18 @@ describe("header", function() {
     expect(active).toEqual(["Statistics"])
   })
 
+  for (let [path, label] of [
+    ["/ear-training/melody-playback", "Ear training"],
+    ["/flash-cards/chord-identification", "Flash cards"],
+    ["/play-along/recent", "Play along"],
+  ]) {
+    it(`marks ${label} active on ${path}`, function() {
+      let el = renderHeader({}, {path})
+      let active = [...el.querySelectorAll("nav a.active")].map(a => a.textContent)
+      expect(active).toEqual([label])
+    })
+  }
+
   it("has no account links or username", function() {
     let el = renderHeader({midiInput: {name: "Roland FP-30"}})
     let text = el.textContent

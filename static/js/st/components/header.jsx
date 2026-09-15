@@ -2,13 +2,11 @@ import * as React from "react"
 import * as ReactDOM from "react-dom"
 import * as types from "prop-types"
 import classNames from "classnames"
-import {Link, NavLink} from "react-router-dom"
+import {Link, NavLink, useMatch} from "react-router-dom"
 
 import {trigger} from "st/events"
 
 import Lightbox from "st/components/lightbox"
-
-import {toggleActive} from "st/components/util"
 
 import styles from "./header.module.css"
 
@@ -18,11 +16,16 @@ const COLLAPSE_NAV_WIDTH = 700
 export const NAV_LINKS = [
   {to: "/", label: "Sight reading", end: true},
   {to: "/play-along", label: "Play along"},
-  {to: "/ear-training/interval-melodies", label: "Ear training", end: true},
-  {to: "/flash-cards/note-math", label: "Flash cards", end: true},
+  {to: "/ear-training/interval-melodies", section: "/ear-training", label: "Ear training"},
+  {to: "/flash-cards/note-math", section: "/flash-cards", label: "Flash cards"},
   {to: "/stats", label: "Statistics", end: true},
   {to: "/about", label: "Guide", end: true},
 ]
+
+function NavItem({to, section, end, label}) {
+  let active = useMatch({path: section || to, end: !!end})
+  return <NavLink to={to} end={end} className={() => active ? "active" : ""}>{label}</NavLink>
+}
 
 class SizedElement extends React.Component {
   constructor(props) {
@@ -107,7 +110,7 @@ export default class Header extends React.Component {
 
   getPageLinks() {
     return NAV_LINKS.map(link =>
-      <NavLink key={link.to} to={link.to} end={link.end} {...toggleActive}>{link.label}</NavLink>
+      <NavItem key={link.to} {...link} />
     )
   }
 

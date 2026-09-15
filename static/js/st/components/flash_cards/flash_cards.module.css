@@ -124,6 +124,8 @@
         > button {
             margin-left: 15px;
             font-size: 18px;
+            letter-spacing: normal;
+            text-transform: none;
             padding: 10px 20px;
 
             &:first-child {
