@@ -1,0 +1,297 @@
+/* The setup screen, see "Setup / programme" in docs/design/salon-de-chopin.md */
+
+.setup_page {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 1060px;
+    margin: 0 auto;
+    padding: 26px 34px 44px;
+    color: var(--salon-ink);
+}
+
+.setup_body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 300px;
+    gap: 22px;
+    align-items: start;
+}
+
+.choice_panel {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    min-width: 0;
+    background: var(--salon-paper);
+    border: 1px solid var(--salon-rule-strong);
+    padding: 24px 26px 26px;
+    box-shadow: 0 2px 3px rgba(36,31,24,.06), 0 20px 38px -26px rgba(36,31,24,.32);
+}
+
+.group_label {
+    margin-bottom: 11px;
+
+    &.exercise_label {
+        margin-bottom: 6px;
+    }
+}
+
+.pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+}
+
+.pills .key_pill {
+    font-family: var(--font-display);
+    font-size: 15px;
+    font-weight: 400;
+    letter-spacing: 0;
+    padding: 7px 15px;
+}
+
+.exercise_list {
+    display: flex;
+    flex-direction: column;
+}
+
+.exercise {
+    border-bottom: var(--salon-hairline);
+
+    &:last-child {
+        border-bottom: 0;
+
+        > .exercise_row:last-child {
+            padding-bottom: 0;
+        }
+    }
+}
+
+button.exercise_row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 12px 0;
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    text-align: left;
+    letter-spacing: normal;
+    cursor: pointer;
+
+    &:hover .exercise_title {
+        color: var(--salon-ink);
+    }
+
+    &:focus-visible {
+        box-shadow: none;
+        outline: 2px solid rgba(125, 44, 44, 0.3);
+        outline-offset: 2px;
+    }
+}
+
+.exercise_title {
+    font-family: var(--font-display);
+    font-size: 16px;
+    font-weight: 400;
+    color: var(--salon-nav-ink);
+}
+
+.selected .exercise_title {
+    color: var(--salon-ink);
+}
+
+.exercise_mark {
+    color: var(--salon-gilt);
+    font-size: 13px;
+}
+
+.exercise_qualifier {
+    flex: none;
+    font-family: var(--font-ui);
+    font-size: 11px;
+    font-weight: 400;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--salon-ink-muted);
+}
+
+.exercise_inputs {
+    padding: 2px 0 16px;
+}
+
+.tempo_header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 15px;
+}
+
+.tempo_value {
+    font-family: var(--font-display);
+    font-size: 19px;
+}
+
+.mode_pills {
+    margin-bottom: 20px;
+}
+
+.tempo_slider {
+    padding-top: 6px;
+}
+
+.track {
+    position: relative;
+    height: 4px;
+    margin: 0 8px;
+    background: var(--salon-rule-light);
+    border-radius: 999px;
+}
+
+.fill {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    background: var(--salon-gilt);
+    border-radius: 999px;
+}
+
+/* the native range input sits invisibly over the track for pointer, touch
+   and keyboard input; its thumb travel matches the track's ends */
+.range_input {
+    position: absolute;
+    top: -8px;
+    left: -8px;
+    width: calc(100% + 16px);
+    height: 20px;
+    margin: 0;
+    opacity: 0;
+    cursor: pointer;
+}
+
+.knob {
+    position: absolute;
+    top: -6px;
+    width: 16px;
+    height: 16px;
+    margin-left: -8px;
+    box-sizing: border-box;
+    border-radius: 50%;
+    background: var(--salon-paper);
+    border: 1px solid var(--salon-gilt);
+    box-shadow: 0 1px 4px rgba(36,31,24,.28);
+    pointer-events: none;
+}
+
+.range_input:focus-visible + .knob {
+    box-shadow: 0 1px 4px rgba(36,31,24,.28), 0 0 0 3px rgba(125, 44, 44, 0.25);
+}
+
+.legend {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 12px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    color: var(--salon-ink-muted);
+}
+
+.programme_column {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    min-width: 0;
+}
+
+.programme_label {
+    text-align: center;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .2em;
+    text-transform: uppercase;
+    color: var(--salon-ink-muted);
+    padding-bottom: 12px;
+}
+
+.programme_heading {
+    text-align: center;
+    padding: 16px 0 6px;
+}
+
+.programme_title {
+    font-family: var(--font-display);
+    font-size: 26px;
+    line-height: 1.15;
+    overflow-wrap: anywhere;
+
+    .italic {
+        font-style: italic;
+    }
+}
+
+.programme_subtitle {
+    margin-top: 8px;
+    font-family: var(--font-display);
+    font-size: 15px;
+    font-style: italic;
+    color: var(--salon-nav-ink);
+    overflow-wrap: anywhere;
+}
+
+.programme_rows {
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+    margin: 0;
+    padding: 10px 0 16px;
+    font-size: 12px;
+    color: var(--salon-ink-soft);
+
+    > div {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 12px;
+    }
+
+    dt {
+        flex: none;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: .1em;
+        text-transform: uppercase;
+        color: var(--salon-ink-muted);
+    }
+
+    dd {
+        margin: 0;
+        text-align: right;
+    }
+}
+
+.begin {
+    display: block;
+    width: 100%;
+    padding: 13px 0;
+}
+
+@media (max-width: 760px) {
+    .setup_page {
+        padding: 26px 16px 44px;
+    }
+
+    .setup_body {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+@media (max-width: 440px) {
+    .choice_panel {
+        padding: 22px 18px 24px;
+    }
+}

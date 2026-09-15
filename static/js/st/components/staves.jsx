@@ -37,6 +37,9 @@ export class Staff extends React.PureComponent {
 
   // skips react for performance
   setOffset(amount) {
+    // no notes rendered yet, eg. a scroll mode entered as the page mounts
+    if (!this.refs.notes) { return }
+
     let scale = this.props.scale || 1
     let noteWidth = this.props.noteWidth || 1
     this.refs.notes.setOffset(amount * noteWidth * scale)

@@ -19,7 +19,10 @@ import {GeneratorSettings, SettingsPanel} from "st/components/sight_reading/sett
 import {setTitle, gaEvent, csrfToken} from "st/globals"
 import {dispatch, trigger} from "st/events"
 import {NOTE_EVENTS} from "st/midi"
-import {generatorDefaultSettings, storeCurrentDrill, currentStaffFor, currentGeneratorFor} from "st/generators"
+import {
+  generatorDefaultSettings, storeCurrentDrill, currentStaffFor, currentGeneratorFor,
+  currentKeySignature, currentDrillMode, currentScrollSpeed
+} from "st/generators"
 
 import * as React from "react"
 import classNames from "classnames"
@@ -68,7 +71,7 @@ export default class SightReadingPage extends React.Component {
       // Resets to empty when all notes are released
       touchedNotes: {},
 
-      scrollSpeed: 100,
+      scrollSpeed: currentScrollSpeed(),
 
       noteWidth: DEFAULT_NOTE_WIDTH,
 
@@ -77,7 +80,7 @@ export default class SightReadingPage extends React.Component {
       settingsOpen: false,
       scale: window.innerWidth < 1000 ? 0.8 : 1,
       stats: this.newStats(),
-      keySignature: new KeySignature(0),
+      keySignature: currentKeySignature(),
     }
   }
 
@@ -105,7 +108,11 @@ export default class SightReadingPage extends React.Component {
     setTitle()
 
     this.setStaff(currentStaffFor(STAVES), () => {
-      this.enterWaitMode()
+      if (currentDrillMode() == "scroll") {
+        this.enterScrollMode()
+      } else {
+        this.enterWaitMode()
+      }
     })
 
     dispatch(this, {
@@ -420,6 +427,8 @@ export default class SightReadingPage extends React.Component {
   }
 
   toggleMode() {
+    storeCurrentDrill({mode: this.state.mode == "wait" ? "scroll" : "wait"})
+
     if (this.state.mode == "wait") {
       this.enterScrollMode();
     } else {
@@ -479,6 +488,7 @@ export default class SightReadingPage extends React.Component {
   }
 
   setKeySignature(k) {
+    storeCurrentDrill({key: k.name()})
     this.setState({
       keySignature: k,
       notes: null
@@ -822,9 +832,10 @@ export default class SightReadingPage extends React.Component {
           min={50}
           max={300}
           disabled={this.state.mode == "scroll"}
-          onChange={(value) => this.setState({
-            scrollSpeed: Math.round(value)
-          })}
+          onChange={(value) => {
+            storeCurrentDrill({speed: Math.round(value)})
+            this.setState({scrollSpeed: Math.round(value)})
+          }}
           value={+this.state.scrollSpeed} />
         <span className={classNames(sliderStyles.slider_value, "slider_value")}>{ this.state.scrollSpeed }</span>
       </span>

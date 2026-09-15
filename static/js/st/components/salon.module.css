@@ -72,6 +72,24 @@
     .plate_header_aside {
         color: var(--salon-oxblood);
     }
+
+    &.compact {
+        padding: 20px 22px 22px;
+        box-shadow:
+            inset 0 0 0 1px var(--salon-paper),
+            inset 0 0 0 2px var(--salon-rule-light),
+            0 18px 32px -24px rgba(36,31,24,.34);
+
+        .lozenge {
+            width: 5px;
+            height: 5px;
+        }
+
+        .top_left { top: 7px; left: 7px; }
+        .top_right { top: 7px; right: 7px; }
+        .bottom_left { bottom: 7px; left: 7px; }
+        .bottom_right { bottom: 7px; right: 7px; }
+    }
 }
 
 .card {

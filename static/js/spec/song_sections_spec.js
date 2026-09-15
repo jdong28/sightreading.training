@@ -8,7 +8,8 @@ import {
 
 import {
   SheetMusicGenerator, generatorDefaultSettings, storeGeneratorSettings,
-  storeCurrentDrill, currentStaffFor, currentGeneratorFor, DRILL_STORAGE_KEY
+  storeCurrentDrill, currentStaffFor, currentGeneratorFor, DRILL_STORAGE_KEY,
+  currentKeySignature, currentDrillMode, currentScrollSpeed,
 } from "st/generators"
 import {sheetMusicSection} from "st/data"
 import NoteList from "st/note_list"
@@ -300,6 +301,25 @@ describe("song sections", function() {
       expect(currentStaffFor(staves)).toBe(grand)
       expect(currentGeneratorFor(generators, "notes")).toBe(sheetMusic)
       expect(currentGeneratorFor(generators, "chords")).toBe(chords)
+    })
+
+    it("restores the key signature, mode and scroll speed", function() {
+      expect(currentKeySignature().name()).toEqual("C")
+      expect(currentDrillMode()).toEqual("wait")
+      expect(currentScrollSpeed()).toEqual(100)
+
+      storeCurrentDrill({key: "Chromatic", mode: "scroll", speed: 180})
+      expect(currentKeySignature().isChromatic()).toBe(true)
+      expect(currentDrillMode()).toEqual("scroll")
+      expect(currentScrollSpeed()).toEqual(180)
+
+      storeCurrentDrill({key: "H", mode: "fast", speed: 9000})
+      expect(currentKeySignature().name()).toEqual("C")
+      expect(currentDrillMode()).toEqual("wait")
+      expect(currentScrollSpeed()).toEqual(300)
+
+      storeCurrentDrill({speed: "quick"})
+      expect(currentScrollSpeed()).toEqual(100)
     })
 
     it("falls back when the stored drill is unknown or malformed", function() {

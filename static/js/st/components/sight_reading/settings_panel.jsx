@@ -228,11 +228,18 @@ export class GeneratorSettings extends React.PureComponent {
     currentStaff: types.object.isRequired,
     staves: types.array,
     setStaff: types.func,
+    // class names by this panel's style names, used in place of its styles
+    // when the inputs are rendered outside the panel, eg. on the setup page
+    classes: types.object,
   }
 
   constructor(props) {
     super(props)
     this.state = {}
+  }
+
+  get styles() {
+    return this.props.classes || styles
   }
 
   componentDidMount() {
@@ -259,7 +266,7 @@ export class GeneratorSettings extends React.PureComponent {
 
     let inputs = this.props.generator.inputs
 
-    return <div className={styles.generator_inputs}>{
+    return <div className={this.styles.generator_inputs}>{
       inputs.map((input, idx) => {
         // inputs can depend on the other settings, eg. the sheet music track
         // picker is only for pasted notation
@@ -306,11 +313,11 @@ export class GeneratorSettings extends React.PureComponent {
         let el = ["toggles", "text", "deck"].includes(input.type) ? "div" : "label"
 
         let inside = React.createElement(el, null, ...[
-          <div className={styles.input_label}>{input.label || input.name}</div>,
+          <div className={this.styles.input_label}>{input.label || input.name}</div>,
           fn.call(this, input, idx)
         ])
 
-        return <div key={input.name} className={styles.generator_input}>
+        return <div key={input.name} className={this.styles.generator_input}>
           {inside}
         </div>
       })
@@ -325,7 +332,7 @@ export class GeneratorSettings extends React.PureComponent {
     let text = g.status(this.props.currentStaff, this.cachedSettings)
     if (!text) { return }
 
-    return <div className={styles.generator_status}>{text}</div>
+    return <div className={this.styles.generator_status}>{text}</div>
   }
 
   updateInputValue(input, value) {
@@ -367,7 +374,7 @@ export class GeneratorSettings extends React.PureComponent {
     }
 
     return <Select
-      className={styles.select_component}
+      className={this.styles.select_component}
       onChange={ value => this.updateInputValue(input, value) }
       value={currentValue}
       options={options} />
@@ -389,7 +396,7 @@ export class GeneratorSettings extends React.PureComponent {
 
     let numberInput = <input
       type="number"
-      className={styles.number_input}
+      className={this.styles.number_input}
       min={input.min}
       max={input.max}
       value={draft != null ? draft : (currentValue == null ? "" : currentValue)}
@@ -413,7 +420,7 @@ export class GeneratorSettings extends React.PureComponent {
 
     return <>
       {numberInput}
-      <div className={styles.input_hint}>{hint}</div>
+      <div className={this.styles.input_hint}>{hint}</div>
     </>
   }
 
@@ -437,10 +444,10 @@ export class GeneratorSettings extends React.PureComponent {
 
     let message = this.state.deckMessage
 
-    return <div className={styles.deck_input}>
-      <div className={styles.deck_row}>
+    return <div className={this.styles.deck_input}>
+      <div className={this.styles.deck_row}>
         <Select
-          className={styles.select_component}
+          className={this.styles.select_component}
           value={currentValue}
           options={options}
           onChange={id => {
@@ -462,7 +469,7 @@ export class GeneratorSettings extends React.PureComponent {
               })
             }}>Remove</button> : null}
       </div>
-      <label className={styles.file_input}>
+      <label className={this.styles.file_input}>
         <span>Import MusicXML</span>
         <input
           type="file"
@@ -470,13 +477,13 @@ export class GeneratorSettings extends React.PureComponent {
           onChange={e => this.importPiece(input, e)} />
       </label>
       {input.exportLibrary ?
-        <div className={styles.deck_row}>
+        <div className={this.styles.deck_row}>
           <button
             type="button"
             onClick={() => this.exportLibrary(input)}>Export library</button>
         </div> : null}
       {input.importLibrary ?
-        <label className={styles.file_input}>
+        <label className={this.styles.file_input}>
           <span>Import library</span>
           <input
             type="file"
@@ -484,8 +491,8 @@ export class GeneratorSettings extends React.PureComponent {
             onChange={e => this.importLibrary(input, e)} />
         </label> : null}
       {message ?
-        <div className={message.error ? styles.input_error : styles.input_notice}>{message.text}</div> : null}
-      {input.hint ? <div className={styles.input_hint}>{input.hint}</div> : null}
+        <div className={message.error ? this.styles.input_error : this.styles.input_notice}>{message.text}</div> : null}
+      {input.hint ? <div className={this.styles.input_hint}>{input.hint}</div> : null}
     </div>
   }
 
@@ -579,15 +586,15 @@ export class GeneratorSettings extends React.PureComponent {
   renderText(input, idx) {
     let currentValue = this.cachedSettings[input.name] || ""
 
-    return <div className={styles.text_input_row}>
+    return <div className={this.styles.text_input_row}>
       {input.library ? this.renderSongLibrary(input) : null}
       <textarea
-        className={styles.text_input}
+        className={this.styles.text_input}
         rows={8}
         spellCheck={false}
         value={currentValue}
         onChange={e => this.updateInputValue(input, e.target.value)} />
-      {input.hint ? <div className={styles.input_hint}>{input.hint}</div> : null}
+      {input.hint ? <div className={this.styles.input_hint}>{input.hint}</div> : null}
     </div>
   }
 
@@ -612,7 +619,7 @@ export class GeneratorSettings extends React.PureComponent {
 
       return <Select
         key={label}
-        className={styles.select_component}
+        className={this.styles.select_component}
         value=""
         options={options}
         onChange={songId => {
@@ -655,11 +662,11 @@ export class GeneratorSettings extends React.PureComponent {
       options.push(noteName(i))
     }
 
-    return <div className={styles.note_range_row}>
+    return <div className={this.styles.note_range_row}>
       <label>
         Note
         <Select
-          className={styles.select_component}
+          className={this.styles.select_component}
           onChange={value => {
             this.updateInputValue(input, parseNote(value))
           }}
@@ -701,11 +708,11 @@ export class GeneratorSettings extends React.PureComponent {
       }
     }
 
-    return <div className={styles.note_range_row}>
+    return <div className={this.styles.note_range_row}>
       <label>
         Min
         <Select
-          className={styles.select_component}
+          className={this.styles.select_component}
           onChange={value => {
             this.updateInputValue(input, [
               parseNote(value),
@@ -720,7 +727,7 @@ export class GeneratorSettings extends React.PureComponent {
       <label>
         Max
         <Select
-          className={styles.select_component}
+          className={this.styles.select_component}
           onChange={value => {
             this.updateInputValue(input, [
               currentValue[0],
@@ -737,13 +744,13 @@ export class GeneratorSettings extends React.PureComponent {
   renderRange(input, idx) {
     let currentValue = this.cachedSettings[input.name]
 
-    return <div className={styles.slider_row}>
+    return <div className={this.styles.slider_row}>
       <Slider
         min={input.min}
         max={input.max}
         onChange={(value) => this.updateInputValue(input, value)}
         value={currentValue} />
-      <span className={styles.current_value}>{currentValue}</span>
+      <span className={this.styles.current_value}>{currentValue}</span>
     </div>
   }
 
