@@ -273,6 +273,7 @@ export default function SetupPage({staves=STAVES, generators=GENERATORS}) {
                       staves={staves}
                       classes={inputStyles}
                       setStaff={chooseStaff}
+                      setKeySignature={chooseKey}
                       setGenerator={(_, newSettings) => setSettings(newSettings)} />
                   </div> : null}
               </div>

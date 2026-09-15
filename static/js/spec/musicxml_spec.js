@@ -1,5 +1,6 @@
 import {parseMusicXML, MusicXMLError, COMPRESSED_MESSAGE} from "st/musicxml"
 import {SongNote, measureStartsUntil, clickStartsMeasure} from "st/song_note_list"
+import {reverieOpening} from "spec/helpers"
 
 // [note, start, duration] tuples of a note list, in document order
 let tuples = notes => [...notes].map(n => [n.note, n.start, n.duration])
@@ -37,6 +38,39 @@ let note = (step, octave, duration, extra="", alter=null) => `
 let rest = (duration, extra="") => `<note><rest/><duration>${duration}</duration>${extra}</note>`
 
 describe("musicxml", function() {
+  it("imports Rêverie's opening note for note, voices, hidden rests and ties included", function() {
+    let song = parseMusicXML(reverieOpening())
+
+    expect(song.metadata.keySignature).toEqual(-1)
+    expect(song.metadata.beatsPerMeasure).toEqual(4)
+    // measure 1 holds only two beats of hidden rests
+    expect(song.metadata.measureStarts).toEqual([0, 2, 6, 10])
+    expect(song.metadata.measureNumbers).toEqual([1, 2, 3, 4])
+    expect(song.metadata.measuresEnd).toEqual(14)
+
+    expect(song.tracks.map(t => t.cleffs)).toEqual([[[0, "g"]], [[0, "g"]]])
+
+    // staff 1: G5 and D5 of measure 4, one octave up in the app's numbering
+    expect(tuples(song.tracks[0])).toEqual([["G6", 10, 2], ["D6", 12, 2]])
+
+    // staff 2, voice 5's ostinato with each tie merged, then voice 6's whole
+    // note, measure by measure
+    let ostinato = (start, tiedIn) => [
+      ...(tiedIn ? [] : [["Bb4", start, 0.5]]),
+      ["C5", start + 0.5, 0.5],
+      ["D5", start + 1, 0.5],
+      ["G5", start + 1.5, 1],
+      ["D5", start + 2.5, 0.5],
+      ["C5", start + 3, 0.5],
+    ]
+
+    expect(tuples(song.tracks[1])).toEqual([
+      ...ostinato(2, false), ["Bb4", 5.5, 1], ["Bb4", 2, 4],
+      ...ostinato(6, true), ["Bb4", 9.5, 1], ["Bb4", 6, 4],
+      ...ostinato(10, true), ["Bb4", 13.5, 0.5],
+    ])
+  })
+
   it("converts a two measure piano piece with both staves", function() {
     // treble: C4 D4 E4 F4 | G4 (whole)
     // bass:   C3 (half) G3 (half) | C3 (whole)

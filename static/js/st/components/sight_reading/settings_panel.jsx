@@ -277,6 +277,7 @@ export class ProgrammeDrawer extends React.PureComponent {
       currentSettings={this.props.currentGeneratorSettings}
       staves={this.props.staves}
       setStaff={this.props.setStaff}
+      setKeySignature={this.props.setKeySignature}
       setGenerator={this.props.setGenerator} />
   }
 
@@ -338,6 +339,7 @@ export class GeneratorSettings extends React.PureComponent {
     currentStaff: types.object.isRequired,
     staves: types.array,
     setStaff: types.func,
+    setKeySignature: types.func,
     // class names by this panel's style names, used in place of its styles
     // when the inputs are rendered outside the panel, eg. on the setup page
     classes: types.object,
@@ -703,8 +705,14 @@ export class GeneratorSettings extends React.PureComponent {
       return
     }
 
-    let {settings, staff} = input.pick(this.cachedSettings, id)
+    let {settings, staff, key} = input.pick(this.cachedSettings, id)
     this.updateSettings(settings)
+
+    // the score's key signature, so its notes carry the score's accidentals.
+    // A key picked afterwards stays until another piece is picked
+    if (key && this.props.setKeySignature && this.props.currentKey.name() != key.name()) {
+      this.props.setKeySignature(key)
+    }
 
     // eg. the grand staff for a piece with both hands, so neither is skipped
     let singleStaff = ["treble", "bass"].includes(this.props.currentStaff.name)

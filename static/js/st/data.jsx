@@ -5,7 +5,8 @@ import {MajorScale, parseNote, noteName} from "st/music"
 
 import {
   RandomNotes, SweepRangeNotes, MiniSteps, TriadNotes, SevenOpenNotes,
-  ProgressionGenerator, PositionGenerator, IntervalGenerator, SheetMusicGenerator
+  ProgressionGenerator, PositionGenerator, IntervalGenerator, SheetMusicGenerator,
+  allKeySignatures
 } from "st/generators"
 
 import {
@@ -263,6 +264,18 @@ export function sheetMusicPieceSettings(settings, song) {
   let endMeasure = Math.max(startMeasure, Math.min(startMeasure + 3, last))
 
   return {...settings, startMeasure, endMeasure, hand: BOTH_HANDS}
+}
+
+// the trainer's key signature for the score's key (metadata.keySignature, in
+// fifths), so its notes are drawn with the score's accidentals rather than
+// the programme's; null for a song without a key or one the trainer lacks
+export function sheetMusicKeyFor(song) {
+  let fifths = song && song.metadata && song.metadata.keySignature
+  if (typeof fifths != "number") {
+    return null
+  }
+
+  return allKeySignatures().find(key => !key.isChromatic() && key.count == fifths) || null
 }
 
 // the grand staff for a piece with both a treble and a bass staff, which a
@@ -552,17 +565,19 @@ export const GENERATORS = [
         removePiece: id => removePiece(id),
         exportLibrary: () => exportLibraryFile(),
         importLibrary: text => importLibraryFile(text),
-        // settings and staff for drilling a piece that was just picked
+        // settings, staff and key signature for drilling a piece that was
+        // just picked
         pick: (settings, id) => {
           let piece = findPiece(id)
           let song = piece && pieceSong(piece)
           if (!song) {
-            return {settings: {...settings, piece: ""}, staff: null}
+            return {settings: {...settings, piece: ""}, staff: null, key: null}
           }
 
           return {
             settings: sheetMusicPieceSettings({...settings, piece: id}, song),
             staff: sheetMusicStaffFor(song),
+            key: sheetMusicKeyFor(song),
           }
         },
         hint: "Import an uncompressed MusicXML file (.musicxml or .xml). Imported pieces stay in this browser's library; export it to keep a copy or move it to another browser.",

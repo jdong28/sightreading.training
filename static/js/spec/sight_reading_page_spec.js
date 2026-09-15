@@ -20,7 +20,7 @@ import {DRILL_STORAGE_KEY} from "st/generators"
 import {scopeEvent} from "st/events"
 import NoteStats from "st/note_stats"
 import {KeySignature} from "st/music"
-import {openTestStore, noteXML} from "spec/helpers"
+import {openTestStore, noteXML, reverieOpening} from "spec/helpers"
 
 // a two staff 3/4 piece, measures 1 and 2
 let minuetXML = `<?xml version="1.0" encoding="UTF-8"?>
@@ -589,6 +589,51 @@ describe("sight reading page", function() {
     let el = renderPage()
     expect(el.querySelector("ol")).toBe(null)
     expect(el.textContent).toContain("Nothing played yet")
+  })
+
+  it("draws a picked piece in the score's key signature until another key is picked", async function() {
+    let {piece} = await importMusicXMLPiece("reverie.musicxml", reverieOpening(), store)
+
+    window.localStorage.setItem(DRILL_STORAGE_KEY, JSON.stringify({staff: "grand", generator: "sheet music", key: "D"}))
+
+    let el = renderPage()
+    click(buttonLabelled(el, "Programme"))
+
+    let drawer = el.querySelector(`.${drawerStyles.drawer}`)
+    let keyPill = name => buttonNamed(drawer, name)
+    let staffNote = name => el.querySelector(`.${staffStyles.staff_notes} [data-note="${name}"]`)
+    let pickPiece = id => {
+      let select = drawer.querySelector(`.${drawerStyles.exercise}.${drawerStyles.selected} select`)
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(select, id)
+      flushSync(() => select.dispatchEvent(new Event("change", {bubbles: true})))
+      flushSync(() => {})
+    }
+
+    expect(keyPill("D").getAttribute("aria-pressed")).toEqual("true")
+
+    pickPiece(piece.id)
+
+    // F major: Bb3 is drawn as the score spells it, without an accidental
+    expect(page.state.keySignature.name()).toEqual("F")
+    expect(keyPill("F").getAttribute("aria-pressed")).toEqual("true")
+    expect(JSON.parse(window.localStorage.getItem(DRILL_STORAGE_KEY)).key).toEqual("F")
+    let flat = staffNote("Bb4")
+    expect(flat).not.toBe(null)
+    expect(flat.classList).not.toContain(staffStyles.is_flat)
+    expect(flat.classList).not.toContain(staffStyles.is_sharp)
+
+    // a key picked afterwards is kept while the piece stays
+    click(keyPill("D"))
+    expect(page.state.keySignature.name()).toEqual("D")
+    let endMeasure = [...drawer.querySelectorAll("input[type=number]")][1]
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(endMeasure, "3")
+    flushSync(() => endMeasure.dispatchEvent(new Event("input", {bubbles: true})))
+    expect(page.state.keySignature.name()).toEqual("D")
+
+    // picking the piece again goes back to the score's key
+    pickPiece("")
+    pickPiece(piece.id)
+    expect(page.state.keySignature.name()).toEqual("F")
   })
 
   it("keeps the sheet music deck, measure range and hand in the drawer", async function() {

@@ -12,11 +12,11 @@ import {
 
 import {
   pieceSection, sheetMusicSection, sheetMusicPieceSettings, sheetMusicStaffFor,
-  measuresDescription, BOTH_HANDS, RIGHT_HAND, LEFT_HAND
+  sheetMusicKeyFor, measuresDescription, GENERATORS, BOTH_HANDS, RIGHT_HAND, LEFT_HAND
 } from "st/data"
 
 import {setAppStore} from "st/storage"
-import {openTestStore, pickupScore, noteXML} from "spec/helpers"
+import {openTestStore, pickupScore, noteXML, reverieOpening} from "spec/helpers"
 
 let tuples = notes => [...notes]
   .map(n => [n.note, n.start, n.duration])
@@ -225,6 +225,21 @@ describe("sheet music deck", function() {
     })
   })
 
+  describe("key signature", function() {
+    it("follows the score's key, and leaves a song without one alone", function() {
+      expect(sheetMusicKeyFor(parseMusicXML(reverieOpening())).name()).toEqual("F")
+      expect(sheetMusicKeyFor(parseMusicXML(pickupScore())).name()).toEqual("G")
+
+      let song = new MultiTrackSong()
+      song.pushWithTrack(new SongNote("C5", 0, 1), 0)
+      expect(sheetMusicKeyFor(song)).toBe(null)
+
+      song.metadata = {keySignature: -1}
+      expect(sheetMusicKeyFor(song).name()).toEqual("F")
+      expect(sheetMusicKeyFor(null)).toBe(null)
+    })
+  })
+
   describe("deck", function() {
     // a store on the specs' own database, so the specs never touch the real
     // deck
@@ -352,6 +367,35 @@ describe("sheet music deck", function() {
     afterEach(async function() {
       setAppStore(appStore)
       await store.close()
+    })
+
+    it("drills Rêverie's opening measures as the score's onsets", async function() {
+      let {piece} = await importMusicXMLPiece("reverie.musicxml", reverieOpening())
+      let settings = {piece: piece.id, startMeasure: 1, endMeasure: 2, hand: BOTH_HANDS}
+
+      // measure 1 has no notes; measure 2's tied G4 isn't struck again and
+      // voice 6's whole note Bb3 shares the first column with voice 5's
+      let measure2 = [["Bb4"], ["C5"], ["D5"], ["G5"], ["D5"], ["C5"], ["Bb4"]]
+      expect(sheetMusicSection(grand, settings).columns).toEqual(measure2)
+      expect(sheetMusicSection(grand, {...settings, hand: LEFT_HAND}).columns).toEqual(measure2)
+      expect(sheetMusicSection(grand, {...settings, hand: RIGHT_HAND}).columns).toEqual([])
+
+      // measure 4: the melody starts over the tied Bb3 and the tied G4
+      expect(sheetMusicSection(grand, {...settings, startMeasure: 4, endMeasure: 4}).columns).toEqual([
+        ["G6"], ["C5"], ["D5"], ["G5"], ["D6"], ["D5"], ["C5"], ["Bb4"],
+      ])
+    })
+
+    it("picks a piece in the score's key signature", async function() {
+      let pieceInput = GENERATORS.find(g => g.name == "sheet music").inputs.find(i => i.name == "piece")
+
+      let {piece} = await importMusicXMLPiece("reverie.musicxml", reverieOpening())
+      let {settings, staff, key} = pieceInput.pick({}, piece.id)
+      expect([settings.piece, settings.startMeasure, settings.endMeasure, settings.hand]).toEqual([piece.id, 1, 4, BOTH_HANDS])
+      expect(staff).toEqual("grand")
+      expect(key.name()).toEqual("F")
+
+      expect(pieceInput.pick({}, "missing").key).toBe(null)
     })
 
     it("drills the picked piece and falls back to the notation once it's removed", async function() {
