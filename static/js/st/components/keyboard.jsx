@@ -16,8 +16,8 @@ export default class Keyboard extends React.PureComponent {
     className: types.string,
   }
 
-  defaultLower = "C5"
-  defaultUpper = "B6"
+  defaultLower = "C4"
+  defaultUpper = "B5"
 
   constructor(props) {
     super(props);
@@ -53,7 +53,7 @@ export default class Keyboard extends React.PureComponent {
       }
 
       const key = keyCodeToChar(event.keyCode)
-      const note = noteForKey("C5", key)
+      const note = noteForKey("C4", key)
 
       if (note && !this.heldKeyboardKeys[note]) {
         this.heldKeyboardKeys[note] = true
@@ -63,7 +63,7 @@ export default class Keyboard extends React.PureComponent {
 
     this.upListener = event => {
       const key = keyCodeToChar(event.keyCode)
-      const note = noteForKey("C5", key)
+      const note = noteForKey("C4", key)
 
       if (note && this.heldKeyboardKeys[note]) {
         this.heldKeyboardKeys[note] = false

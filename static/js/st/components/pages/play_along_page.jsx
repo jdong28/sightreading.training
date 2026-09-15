@@ -36,8 +36,6 @@ import {TransitionGroup, CSSTransition} from "react-transition-group"
 
 import {getSession} from "st/app"
 
-import {useParams} from "react-router-dom"
-
 const TimeBar = <div className={staffStyles.time_bar}></div>
 const EmptySong = []
 
@@ -258,40 +256,6 @@ export class PlayAlongPage extends React.Component {
     }
   }
 
-  loadSong() {
-    if (this.state.loading) {
-      return
-    }
-
-    this.setState({loading: true})
-    let request = new XMLHttpRequest()
-
-    let songId = this.props.params.song_id
-
-    if (!songId) {
-      console.error("no song id to load")
-    }
-
-    request.open("GET", `/songs/${songId}.json`)
-    request.onload = (e) => {
-      try {
-        let res = JSON.parse(request.responseText)
-        this.setState({
-          songModel: res.song,
-          currentSongCode: res.song.song,
-        })
-
-        this.stats.setTimerUrl(`/songs/${res.song.id}/stats.json`)
-      } catch (e) {
-        this.setState({
-          songError: "Failed to fetch song"
-        })
-      }
-    }
-
-    request.send()
-  }
-
   setSong(song) {
     let currentBeat = this.currentBeat
 
@@ -300,7 +264,6 @@ export class PlayAlongPage extends React.Component {
     }
 
     this.setState({
-      loading: false,
       songError: null,
       song,
       loopLeft: 0,
@@ -369,9 +332,6 @@ export class PlayAlongPage extends React.Component {
   componentDidMount() {
     setTitle("Play along")
     this.updateBeat(0)
-    if (!this.props.newSong) {
-      this.loadSong()
-    }
 
     dispatch(this, {
       setMinChordSpacing: (e, value) => {
@@ -564,7 +524,6 @@ export class PlayAlongPage extends React.Component {
       </TransitionGroup>
 
       <div className={classNames(styles.play_along_workspace, { [styles.settings_open]: this.state.settingsPanelOpen })}>
-        {this.state.songModel ? <h2>{this.state.songModel.title}</h2> : null}
         {this.renderSongTrackTools()}
         <div className={classNames(staffStyles.staff_wrapper, styles.staff_wrapper)}>
           {songError}
@@ -714,8 +673,8 @@ export class PlayAlongPage extends React.Component {
 
   renderKeyboard() {
     return <Keyboard
-      lower={"C4"}
-      upper={"C7"}
+      lower={"C3"}
+      upper={"C6"}
       className={styles.keyboard}
       midiOutput={this.props.midiOutput}
       heldNotes={this.state.heldNotes}
@@ -729,7 +688,6 @@ export class PlayAlongPage extends React.Component {
       parserParams={this.songParserParams()}
       ref={this.songEditorRef}
       songNotes={this.state.song}
-      song={this.state.songModel}
       code={this.state.currentSongCode}
       importUnsaveable={this.importUnsaveable()}
       onImportSong={(song, code, saveable) => this.importSong(song, code, saveable)}
@@ -865,8 +823,3 @@ export class PlayAlongPage extends React.Component {
     return [...this.props.midi.outputs.values()]
   }
 }
-
-export const PlayAlongPageWithParams = React.forwardRef((props, ref) => {
-  const params = useParams()
-  return <PlayAlongPage {...props} params={params} ref={ref} />
-})

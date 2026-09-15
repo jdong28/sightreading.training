@@ -39,6 +39,7 @@ export function generatorDefaultSettings(generator, staff) {
   }
 
   if (generator.storageKey) {
+    migrateGeneratorSettings(generator)
     Object.assign(out, fixGeneratorSettings(generator, loadGeneratorSettings(generator.storageKey)))
   }
 
@@ -53,6 +54,28 @@ export function loadGeneratorSettings(storageKey) {
     return stored && typeof stored == "object" ? stored : {}
   } catch (e) {
     return {}
+  }
+}
+
+// Settings a generator kept under its legacyStorage.key, from before a change
+// to what they mean, are copied to its storageKey through legacyStorage.migrate
+// the first time they're needed. The legacy key itself is left in place
+function migrateGeneratorSettings({storageKey, legacyStorage}) {
+  if (!legacyStorage) {
+    return
+  }
+
+  try {
+    if (window.localStorage.getItem(storageKey) != null) {
+      return
+    }
+
+    let legacy = loadGeneratorSettings(legacyStorage.key)
+    if (Object.keys(legacy).length) {
+      storeGeneratorSettings(storageKey, legacyStorage.migrate(legacy))
+    }
+  } catch (e) {
+    // storage unavailable, or settings the migration can't read
   }
 }
 
@@ -197,8 +220,8 @@ export function fixGeneratorSettings(generator, settings) {
 
 export function testRandomNotes() {
   let scale = new MajorScale("C")
-  // let notes = scale.getLooseRange("A4", "C7")
-  let notes = scale.getLooseRange("C3", "C7")
+  // let notes = scale.getLooseRange("A3", "C6")
+  let notes = scale.getLooseRange("C2", "C6")
 
   let r = new RandomNotes(notes, {})
 
@@ -742,7 +765,7 @@ export class IntervalGenerator extends Generator {
     }
 
     if (Object.keys(intervals).length == 0) {
-      return "C5"
+      return "C4"
     }
 
     if (this.currentNote != null) {

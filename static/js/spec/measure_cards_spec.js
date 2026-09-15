@@ -16,13 +16,13 @@ import NoteStats from "st/note_stats"
 
 import {openTestStore, pickupScore, noteXML} from "spec/helpers"
 
-const grand = {name: "grand", range: ["C3", "C7"]}
+const grand = {name: "grand", range: ["C2", "C6"]}
 
 // the measures of pickupScore on the grand staff
 const pickupMeasures = () => [
-  {number: 0, columns: [["D6"]]},
-  {number: 1, columns: [["G4", "G5"], ["A5"], ["B5"]]},
-  {number: 2, columns: [["C4", "E4", "G4", "C6"]]},
+  {number: 0, columns: [["D5"]]},
+  {number: 1, columns: [["G3", "G4"], ["A4"], ["B4"]]},
+  {number: 2, columns: [["C3", "E3", "G3", "C5"]]},
 ]
 
 // the notes of columns, without the measure marks of cardColumn
@@ -58,12 +58,12 @@ describe("measure cards", function() {
       expect(cards).toEqual([
         {
           startMeasure: 0, endMeasure: 1, measures: [0, 1],
-          columns: [["D6"], ["G4", "G5"], ["A5"], ["B5"]],
+          columns: [["D5"], ["G3", "G4"], ["A4"], ["B4"]],
           columnMeasures: [0, 1, 1, 1],
         },
         {
           startMeasure: 2, endMeasure: 2, measures: [2],
-          columns: [["C4", "E4", "G4", "C6"]],
+          columns: [["C3", "E3", "G3", "C5"]],
           columnMeasures: [0],
         },
       ])
@@ -238,22 +238,22 @@ describe("measure cards", function() {
       let notes = new NoteList([], {generator: track(new MeasureCardGenerator(deck))})
       notes.fillBuffer(6)
 
-      expect(notesOf(notes)).toEqual([["D6"], ["G4", "G5"], ["A5"], ["B5"], [], []])
+      expect(notesOf(notes)).toEqual([["D5"], ["G3", "G4"], ["A4"], ["B4"], [], []])
       expect(measureMarks(notes)).toEqual([0, 1, null, null, null, null])
 
       notes = hit(notes, stats)
       notes = hit(notes, stats)
       notes = hit(notes, stats)
-      expect(notesOf(notes)).toEqual([["B5"], [], [], [], [], []])
+      expect(notesOf(notes)).toEqual([["B4"], [], [], [], [], []])
 
       notes = hit(notes, stats)
       expect(deck.card.measures).toEqual([2])
-      expect([...notes]).toEqual([["C4", "E4", "G4", "C6"], [], [], [], [], []])
+      expect([...notes]).toEqual([["C3", "E3", "G3", "C5"], [], [], [], [], []])
       expect(measureMarks(notes)).toEqual([null, null, null, null, null, null])
 
       notes = hit(notes, stats)
       expect(deck.card.measures).toEqual([0, 1])
-      expect(notesOf(notes)).toEqual([["D6"], ["G4", "G5"], ["A5"], ["B5"], [], []])
+      expect(notesOf(notes)).toEqual([["D5"], ["G3", "G4"], ["A4"], ["B4"], [], []])
     })
 
     it("loops a card covering the whole pool like the plain sheet music drill", function() {
@@ -304,13 +304,13 @@ describe("measure cards", function() {
         let stats = new NoteStats()
 
         time = 1000
-        stats.missNotes(["D6"])
+        stats.missNotes(["D5"])
         time = 1500
         notes = hit(notes, stats)
         time = 2500
         notes = hit(notes, stats)
         time = 3000
-        stats.missNotes(["A5"])
+        stats.missNotes(["A4"])
         time = 3500
         notes = hit(notes, stats)
 
@@ -373,7 +373,7 @@ describe("measure cards", function() {
         time = 1600
         notes = hit(notes, stats)
         time = 1800
-        stats.missNotes(["A5"])
+        stats.missNotes(["A4"])
         time = 2000
         notes = hit(notes, stats)
         time = 3000
@@ -497,7 +497,7 @@ describe("measure cards", function() {
       generator = sheetMusic.create(grand, null, settings)
       expect(generator instanceof MeasureCardGenerator).toBe(true)
       expect(notesOf([generator.nextNote(), generator.nextNote(), generator.nextNote(), generator.nextNote(), generator.nextNote()]))
-        .toEqual([["D6"], ["G4", "G5"], ["A5"], ["B5"], []])
+        .toEqual([["D5"], ["G3", "G4"], ["A4"], ["B4"], []])
     })
 
     it("keeps the settings status the same as cards advance", function() {
@@ -521,7 +521,7 @@ describe("measure cards", function() {
       let settings = settingsFor({startMeasure: 1, endMeasure: 2, measuresPerCard: 1, hand: "left hand (bass staff)"})
       generator = sheetMusic.create(grand, null, settings)
       expect(generator.deck.card.measures).toEqual([1])
-      expect(generator.nextNote()).toEqual(["G4"])
+      expect(generator.nextNote()).toEqual(["G3"])
       expect(generator.nextNote()).toEqual([])
     })
 
@@ -536,7 +536,7 @@ describe("measure cards", function() {
     })
 
     it("keeps pasted notation as a looping drill", function() {
-      let settings = settingsFor({piece: "", song: "c5 d5 e5", startMeasure: 1, endMeasure: 1})
+      let settings = settingsFor({piece: "", song: "c4 d4 e4", startMeasure: 1, endMeasure: 1})
       generator = sheetMusic.create(grand, null, settings)
 
       expect(generator instanceof SheetMusicGenerator).toBe(true)

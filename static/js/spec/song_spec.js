@@ -15,8 +15,8 @@ describe("song", function() {
 
   it("gets duration from song with notes", function() {
     let song = new SongNoteList()
-    song.push(new SongNote("C5", 2, 1))
-    song.push(new SongNote("D5", 0, 1))
+    song.push(new SongNote("C4", 2, 1))
+    song.push(new SongNote("D4", 0, 1))
 
     expect(song.getStartInBeats()).toEqual(0)
     expect(song.getStopInBeats()).toEqual(3)
@@ -24,22 +24,22 @@ describe("song", function() {
 
   it("gets notes in time range", function() {
     let song = SongNoteList.newSong([
-      ["C5", 0, 1],
-      ["D5", 1, 1],
-      ["E5", 3, 1],
-      ["D5", 5, 1],
+      ["C4", 0, 1],
+      ["D4", 1, 1],
+      ["E4", 3, 1],
+      ["D4", 5, 1],
 
-      ["F5", 1, 5], // overlap (1 - 6)
-      ["F5", 1, 3], // overlap start (1 - 4)
-      ["F5", 4, 2], // overlap end (4 - 6)
+      ["F4", 1, 5], // overlap (1 - 6)
+      ["F4", 1, 3], // overlap start (1 - 4)
+      ["F4", 4, 2], // overlap end (4 - 6)
     ])
 
     let range = song.notesInRange(3,5)
     matchNotes(range, [
-      new SongNote("E5", 3, 1),
-      new SongNote("F5", 1, 5),
-      new SongNote("F5", 1, 3),
-      new SongNote("F5", 4, 2),
+      new SongNote("E4", 3, 1),
+      new SongNote("F4", 1, 5),
+      new SongNote("F4", 1, 3),
+      new SongNote("F4", 4, 2),
     ])
   })
 })
@@ -64,10 +64,10 @@ describe("autochords", function() {
 
   it("finds chord blocks for basic song", function() {
     let song = SongNoteList.newSong([
-      ["C5", 0, 1],
-      ["D5", 1, 1],
-      ["E5", 3, 1],
-      ["D5", 5, 1]
+      ["C4", 0, 1],
+      ["D4", 1, 1],
+      ["E4", 3, 1],
+      ["D4", 5, 1]
     ])
 
     song.metadata = {

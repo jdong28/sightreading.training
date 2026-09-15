@@ -22,8 +22,8 @@ let tuples = notes => [...notes]
   .map(n => [n.note, n.start, n.duration])
   .sort((a, b) => a[1] - b[1] || a[0].localeCompare(b[0]))
 
-const grand = {name: "grand", range: ["C3", "C7"]}
-const treble = {name: "treble", range: ["A4", "C7"]}
+const grand = {name: "grand", range: ["C2", "C6"]}
+const treble = {name: "treble", range: ["A3", "C6"]}
 
 describe("sheet music deck", function() {
   describe("stored song", function() {
@@ -53,17 +53,17 @@ describe("sheet music deck", function() {
     it("stores notes compactly and rounds float beats", function() {
       let song = new MultiTrackSong()
       song.metadata = {beatsPerMeasure: 4}
-      song.pushWithTrack(new SongNote("C5", 1 / 3, 1 / 3), 0)
+      song.pushWithTrack(new SongNote("C4", 1 / 3, 1 / 3), 0)
 
       let data = songToJSON(song)
-      expect(data.tracks).toEqual([{notes: ["C5", 0.333333, 0.333333]}])
+      expect(data.tracks).toEqual([{notes: ["C4", 0.333333, 0.333333]}])
       expect(JSON.stringify(data)).not.toContain("<")
     })
 
     it("refuses stored data of the wrong shape", function() {
       expect(() => songFromJSON(null)).toThrow()
       expect(() => songFromJSON({format: 99, tracks: []})).toThrow()
-      expect(() => songFromJSON({format: 1, tracks: [{notes: ["C5", 0]}]})).toThrow()
+      expect(() => songFromJSON({format: 1, tracks: [{notes: ["C4", 0]}]})).toThrow()
       expect(() => songFromJSON({format: 1, tracks: [{notes: [5, 0, 1]}]})).toThrow()
     })
   })
@@ -81,12 +81,12 @@ describe("sheet music deck", function() {
       expect(measureBeatRange(song, 1, 1)).toEqual([1, 4])
       expect(measureBeatRange(song, 2, 2)).toEqual([4, Infinity])
 
-      expect(extractSectionColumns(song, {startMeasure: 0, endMeasure: 0})).toEqual([["D6"]])
+      expect(extractSectionColumns(song, {startMeasure: 0, endMeasure: 0})).toEqual([["D5"]])
       expect(extractSectionColumns(song, {startMeasure: 1, endMeasure: 1})).toEqual([
-        ["G4", "G5"], ["A5"], ["B5"],
+        ["G3", "G4"], ["A4"], ["B4"],
       ])
       expect(extractSectionColumns(song, {startMeasure: 2, endMeasure: 5})).toEqual([
-        ["C4", "E4", "G4", "C6"],
+        ["C3", "E3", "G3", "C5"],
       ])
 
       // past the end of the score
@@ -110,7 +110,7 @@ describe("sheet music deck", function() {
       let song = parseMusicXML(xml)
       expect(song.metadata.measureStarts).toEqual([0, 1, 4])
       expect(song.metadata.measureNumbers).toEqual([0, 1, 2])
-      expect(extractSectionColumns(song, {startMeasure: 1, endMeasure: 1})).toEqual([["G5"]])
+      expect(extractSectionColumns(song, {startMeasure: 1, endMeasure: 1})).toEqual([["G4"]])
     })
 
     it("keeps a split bar's number and follows meter changes", function() {
@@ -139,11 +139,11 @@ describe("sheet music deck", function() {
 
       expect(measureBeatRange(song, 2, 2)).toEqual([4, 8])
       expect(extractSectionColumns(song, {startMeasure: 2, endMeasure: 3})).toEqual([
-        ["D6"], ["E6"], ["F6"],
+        ["D5"], ["E5"], ["F5"],
       ])
 
       // a start before the first measure starts at the first measure
-      expect(extractSectionColumns(song, {startMeasure: 0, endMeasure: 1})).toEqual([["C6"]])
+      expect(extractSectionColumns(song, {startMeasure: 0, endMeasure: 1})).toEqual([["C5"]])
     })
   })
 
@@ -155,15 +155,15 @@ describe("sheet music deck", function() {
       let settings = {startMeasure: 1, endMeasure: 2}
 
       expect(pieceSection(grand, {...settings, hand: RIGHT_HAND}, song).columns).toEqual([
-        ["G5"], ["A5"], ["B5"], ["C6"],
+        ["G4"], ["A4"], ["B4"], ["C5"],
       ])
 
       expect(pieceSection(grand, {...settings, hand: LEFT_HAND}, song).columns).toEqual([
-        ["G4"], ["C4", "E4", "G4"],
+        ["G3"], ["C3", "E3", "G3"],
       ])
 
       expect(pieceSection(grand, {...settings, hand: BOTH_HANDS}, song).columns).toEqual([
-        ["G4", "G5"], ["A5"], ["B5"], ["C4", "E4", "G4", "C6"],
+        ["G3", "G4"], ["A4"], ["B4"], ["C3", "E3", "G3", "C5"],
       ])
     })
 
@@ -173,7 +173,7 @@ describe("sheet music deck", function() {
       expect(staffTracks(song)).toEqual({treble: [1], bass: [0]})
 
       let {columns} = pieceSection(grand, {startMeasure: 1, endMeasure: 1, hand: LEFT_HAND}, song)
-      expect(columns).toEqual([["G5"], ["A5"], ["B5"]])
+      expect(columns).toEqual([["G4"], ["A4"], ["B4"]])
     })
 
     it("falls back to track order when both staves open in the same clef", function() {
@@ -183,7 +183,7 @@ describe("sheet music deck", function() {
       expect(sheetMusicStaffFor(song)).toEqual("grand")
 
       let {columns, status} = pieceSection(grand, {startMeasure: 1, endMeasure: 1, hand: LEFT_HAND}, song)
-      expect(columns).toEqual([["G4"]])
+      expect(columns).toEqual([["G3"]])
       expect(status).not.toContain("no bass staff")
 
       let upperBass = parseMusicXML(pickupScore({clefs: [["F", 4], ["F", 4]]}))
@@ -196,13 +196,13 @@ describe("sheet music deck", function() {
       expect(staffTracks(song)).toEqual({treble: [0], bass: [1]})
 
       let {columns} = pieceSection(grand, {startMeasure: 1, endMeasure: 1, hand: LEFT_HAND}, song)
-      expect(columns).toEqual([["G4"]])
+      expect(columns).toEqual([["G3"]])
     })
 
     it("reports a hand the score doesn't have", function() {
       let song = new MultiTrackSong()
       song.metadata = {beatsPerMeasure: 4, measureStarts: [0], measureNumbers: [1]}
-      song.pushWithTrack(new SongNote("C5", 0, 1), 0)
+      song.pushWithTrack(new SongNote("C4", 0, 1), 0)
       song.getTrack(0).cleffs = [[0, "g"]]
 
       let {columns, status} = pieceSection(grand, {startMeasure: 1, endMeasure: 1, hand: LEFT_HAND}, song)
@@ -433,14 +433,14 @@ describe("sheet music deck", function() {
 
       // measure 1 has no notes; measure 2's tied G4 isn't struck again and
       // voice 6's whole note Bb3 shares the first column with voice 5's
-      let measure2 = [["Bb4"], ["C5"], ["D5"], ["G5"], ["D5"], ["C5"], ["Bb4"]]
+      let measure2 = [["Bb3"], ["C4"], ["D4"], ["G4"], ["D4"], ["C4"], ["Bb3"]]
       expect(sheetMusicSection(grand, settings).columns).toEqual(measure2)
       expect(sheetMusicSection(grand, {...settings, hand: LEFT_HAND}).columns).toEqual(measure2)
       expect(sheetMusicSection(grand, {...settings, hand: RIGHT_HAND}).columns).toEqual([])
 
       // measure 4: the melody starts over the tied Bb3 and the tied G4
       expect(sheetMusicSection(grand, {...settings, startMeasure: 4, endMeasure: 4}).columns).toEqual([
-        ["G6"], ["C5"], ["D5"], ["G5"], ["D6"], ["D5"], ["C5"], ["Bb4"],
+        ["G5"], ["C4"], ["D4"], ["G4"], ["D5"], ["D4"], ["C4"], ["Bb3"],
       ])
     })
 
@@ -466,14 +466,14 @@ describe("sheet music deck", function() {
       let {piece} = await importMusicXMLPiece("minuet.musicxml", pickupScore())
 
       let settings = {
-        piece: piece.id, song: "c5 d5", startMeasure: 0, endMeasure: 0,
+        piece: piece.id, song: "c4 d4", startMeasure: 0, endMeasure: 0,
         hand: BOTH_HANDS, track: "all",
       }
 
-      expect(sheetMusicSection(grand, settings).columns).toEqual([["D6"]])
+      expect(sheetMusicSection(grand, settings).columns).toEqual([["D5"]])
 
       await removePiece(piece.id)
-      expect(sheetMusicSection(grand, {...settings, endMeasure: 1}).columns).toEqual([["C5"], ["D5"]])
+      expect(sheetMusicSection(grand, {...settings, endMeasure: 1}).columns).toEqual([["C4"], ["D4"]])
     })
   })
 })

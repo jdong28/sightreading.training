@@ -15,11 +15,14 @@
 // Times are milliseconds since the epoch (Date.now()).
 
 import {openDB} from "idb"
+import {shiftNoteOctave} from "st/music"
 
 export const DB_NAME = "sightreading"
 
 // bump with a new step in upgradeSchema when the stores change
-export const DB_VERSION = 1
+// 2: note names of stored pieces moved to middle C "C4", see
+// renumberPieceOctaves
+export const DB_VERSION = 2
 
 // the localStorage deck used before the local store, migrated into the pieces
 // store once, see migrateLegacyDeck. The key itself is left in place
@@ -30,7 +33,8 @@ export const LEGACY_DECK_KEY = "st:sheet_music_pieces:v1"
 export const DECK_MIGRATION_MARKER = "legacyDeckMigrated"
 
 export const LIBRARY_FORMAT = "sightreading-library"
-export const LIBRARY_VERSION = 1
+// 2: note names use middle C "C4", version 1 pieces are renumbered on import
+export const LIBRARY_VERSION = 2
 
 // sessions started within this many days are loaded into the cache
 export const RECENT_SESSION_DAYS = 30
@@ -118,13 +122,54 @@ const STORES = {
  * @property {number} existingSessions
  */
 
-function upgradeSchema(db, oldVersion) {
+// The app used to number octaves one higher, with middle C as "C5" (and it
+// still does in pieces stored before DB_VERSION 2, the legacy deck and
+// libraries exported before LIBRARY_VERSION 2). A piece in that numbering ->
+// the same piece with its note names renumbered so every pitch stays the same.
+// Anything that isn't a note name is left as it is
+export function renumberPieceOctaves(piece) {
+  let tracks = piece && piece.song && piece.song.tracks
+  if (!Array.isArray(tracks)) {
+    return piece
+  }
+
+  let renumber = name => {
+    try {
+      return shiftNoteOctave(name, -1)
+    } catch (e) {
+      return name
+    }
+  }
+
+  return {
+    ...piece,
+    song: {
+      ...piece.song,
+      tracks: tracks.map(track => track && Array.isArray(track.notes) ? {
+        ...track,
+        notes: track.notes.map((value, idx) =>
+          idx % 3 == 0 && typeof value == "string" ? renumber(value) : value)
+      } : track),
+    },
+  }
+}
+
+async function upgradeSchema(db, oldVersion, newVersion, transaction) {
   if (oldVersion < 1) {
     for (let [name, {keyPath, indexes}] of Object.entries(STORES)) {
       let store = db.createObjectStore(name, {keyPath})
       for (let [indexName, indexPath] of Object.entries(indexes || {})) {
         store.createIndex(indexName, indexPath)
       }
+    }
+  }
+
+  if (oldVersion >= 1 && oldVersion < 2) {
+    // only requests on the upgrade transaction may be awaited here, or it
+    // commits before the pieces are written back
+    let pieces = transaction.objectStore("pieces")
+    for (let piece of await pieces.getAll()) {
+      pieces.put(renumberPieceOctaves(piece))
     }
   }
 }
@@ -413,7 +458,8 @@ export class LocalStore {
       try {
         let stored = JSON.parse(this.localStorage ? this.localStorage.getItem(LEGACY_DECK_KEY) : null)
         if (stored && Array.isArray(stored.pieces)) {
-          pieces = stored.pieces.filter(validPiece)
+          // the legacy deck predates the current octave numbering
+          pieces = stored.pieces.filter(validPiece).map(renumberPieceOctaves)
         }
       } catch (e) {
         pieces = [] // blocked storage or malformed deck
@@ -660,6 +706,10 @@ export class LocalStore {
         addedSections: 0, updatedSections: 0, addedSessions: 0, existingSessions: 0,
       }
 
+      let importedPieces = data.version < 2 ?
+        data.pieces.map(piece => validPiece(piece) ? renumberPieceOctaves(piece) : piece) :
+        data.pieces
+
       let pieces = [...this.cache.pieces]
       let byId = new Map(pieces.map(piece => [piece.id, piece]))
       let byContent = new Map(pieces.map(piece => [pieceContent(piece), piece]))
@@ -667,7 +717,7 @@ export class LocalStore {
       let ops = []
       let now = Date.now()
 
-      for (let piece of data.pieces) {
+      for (let piece of importedPieces) {
         if (!validPiece(piece)) {
           report.invalidPieces += 1
           continue

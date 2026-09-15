@@ -154,7 +154,7 @@ export default class ChordIdentificationExercise extends React.PureComponent {
 
       currentCard: {
         notes,
-        octave: 5,
+        octave: 4,
         keySignature,
         chord,
         inversion

@@ -25,7 +25,7 @@ npm run dev
 Then open <http://localhost:3000/> (set `PORT` to serve on another port, e.g.
 `PORT=3001 npm run dev`). The dev server bundles with esbuild,
 watches for changes, and reloads the page automatically. Backend-only features
-(stats, the play-along song library) will not function in this mode;
+(stats) will not function in this mode;
 everything else works, including MIDI input and output.
 
 The jasmine specs (`static/js/specs.js`) are bundled by the same dev server;

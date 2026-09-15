@@ -51,24 +51,24 @@ describe("musicxml", function() {
 
     expect(song.tracks.map(t => t.cleffs)).toEqual([[[0, "g"]], [[0, "g"]]])
 
-    // staff 1: G5 and D5 of measure 4, one octave up in the app's numbering
-    expect(tuples(song.tracks[0])).toEqual([["G6", 10, 2], ["D6", 12, 2]])
+    // staff 1: G5 and D5 of measure 4
+    expect(tuples(song.tracks[0])).toEqual([["G5", 10, 2], ["D5", 12, 2]])
 
     // staff 2, voice 5's ostinato with each tie merged, then voice 6's whole
     // note, measure by measure
     let ostinato = (start, tiedIn) => [
-      ...(tiedIn ? [] : [["Bb4", start, 0.5]]),
-      ["C5", start + 0.5, 0.5],
-      ["D5", start + 1, 0.5],
-      ["G5", start + 1.5, 1],
-      ["D5", start + 2.5, 0.5],
-      ["C5", start + 3, 0.5],
+      ...(tiedIn ? [] : [["Bb3", start, 0.5]]),
+      ["C4", start + 0.5, 0.5],
+      ["D4", start + 1, 0.5],
+      ["G4", start + 1.5, 1],
+      ["D4", start + 2.5, 0.5],
+      ["C4", start + 3, 0.5],
     ]
 
     expect(tuples(song.tracks[1])).toEqual([
-      ...ostinato(2, false), ["Bb4", 5.5, 1], ["Bb4", 2, 4],
-      ...ostinato(6, true), ["Bb4", 9.5, 1], ["Bb4", 6, 4],
-      ...ostinato(10, true), ["Bb4", 13.5, 0.5],
+      ...ostinato(2, false), ["Bb3", 5.5, 1], ["Bb3", 2, 4],
+      ...ostinato(6, true), ["Bb3", 9.5, 1], ["Bb3", 6, 4],
+      ...ostinato(10, true), ["Bb3", 13.5, 0.5],
     ])
   })
 
@@ -105,20 +105,20 @@ describe("musicxml", function() {
     expect(song.tracks[0].cleffs).toEqual([[0, "g"]])
     expect(song.tracks[0].fittingStaff()).toEqual("treble")
     expect(tuples(song.tracks[0])).toEqual([
-      ["C5", 0, 1],
-      ["D5", 1, 1],
-      ["E5", 2, 1],
-      ["F5", 3, 1],
-      ["G5", 4, 4],
+      ["C4", 0, 1],
+      ["D4", 1, 1],
+      ["E4", 2, 1],
+      ["F4", 3, 1],
+      ["G4", 4, 4],
     ])
 
     expect(song.tracks[1].trackName).toEqual("Piano (staff 2)")
     expect(song.tracks[1].cleffs).toEqual([[0, "f"]])
     expect(song.tracks[1].fittingStaff()).toEqual("bass")
     expect(tuples(song.tracks[1])).toEqual([
-      ["C4", 0, 2],
-      ["G4", 2, 2],
-      ["C4", 4, 4],
+      ["C3", 0, 2],
+      ["G3", 2, 2],
+      ["C3", 4, 4],
     ])
 
     // all notes are also in the song itself
@@ -140,10 +140,10 @@ describe("musicxml", function() {
 
     let song = parseMusicXML(xml)
     expect(tuples(song.tracks[0])).toEqual([
-      ["C5", 0, 2],
-      ["E5", 0, 2],
-      ["G5", 0, 2],
-      ["A5", 2, 2],
+      ["C4", 0, 2],
+      ["E4", 0, 2],
+      ["G4", 0, 2],
+      ["A4", 2, 2],
     ])
   })
 
@@ -162,9 +162,9 @@ describe("musicxml", function() {
 
     let song = parseMusicXML(xml)
     expect(tuples(song.tracks[0])).toEqual([
-      ["C5", 0, 2],
-      ["D5", 2, 3],
-      ["E5", 5, 3],
+      ["C4", 0, 2],
+      ["D4", 2, 3],
+      ["E4", 5, 3],
     ])
   })
 
@@ -185,8 +185,8 @@ describe("musicxml", function() {
 
     let song = parseMusicXML(xml)
     expect(tuples(song.tracks[0])).toEqual([
-      ["C5", 0, 10],
-      ["D5", 10, 2],
+      ["C4", 0, 10],
+      ["D4", 10, 2],
     ])
   })
 
@@ -200,8 +200,8 @@ describe("musicxml", function() {
     `)
 
     expect(tuples(parseMusicXML(xml).tracks[0])).toEqual([
-      ["C5", 0, 2],
-      ["D5", 2, 2],
+      ["C4", 0, 2],
+      ["D4", 2, 2],
     ])
   })
 
@@ -217,9 +217,9 @@ describe("musicxml", function() {
     `)
 
     expect(tuples(parseMusicXML(xml).tracks[0])).toEqual([
-      ["C5", 0, 1.5],
-      ["D5", 1.5, 0.5],
-      ["E5", 2, 2],
+      ["C4", 0, 1.5],
+      ["D4", 1.5, 0.5],
+      ["E4", 2, 2],
     ])
   })
 
@@ -237,7 +237,7 @@ describe("musicxml", function() {
     `)
 
     let notes = tuples(parseMusicXML(xml).tracks[0])
-    expect(notes.map(n => n[0])).toEqual(["C5", "D5", "E5", "F5"])
+    expect(notes.map(n => n[0])).toEqual(["C4", "D4", "E4", "F4"])
 
     expect(notes[0][1]).toBeCloseTo(0, 10)
     expect(notes[1][1]).toBeCloseTo(1/3, 10)
@@ -265,10 +265,10 @@ describe("musicxml", function() {
     let song = parseMusicXML(xml)
     expect(song.metadata.keySignature).toEqual(2)
     expect(tuples(song.tracks[0])).toEqual([
-      ["D5", 0, 1],
-      ["F#5", 1, 1],
-      ["C#6", 2, 1],
-      ["C6", 3, 1],
+      ["D4", 0, 1],
+      ["F#4", 1, 1],
+      ["C#5", 2, 1],
+      ["C5", 3, 1],
     ])
   })
 
@@ -287,10 +287,10 @@ describe("musicxml", function() {
     let song = parseMusicXML(xml)
     expect(song.metadata.keySignature).toEqual(-3)
     expect(tuples(song.tracks[0])).toEqual([
-      ["Eb5", 0, 1],
-      ["Bb4", 1, 1],
-      ["Ab4", 2, 1],
-      ["G5", 3, 1],
+      ["Eb4", 0, 1],
+      ["Bb3", 1, 1],
+      ["Ab3", 2, 1],
+      ["G4", 3, 1],
     ])
   })
 
@@ -304,8 +304,8 @@ describe("musicxml", function() {
     `)
 
     expect(tuples(parseMusicXML(xml).tracks[0])).toEqual([
-      ["G5", 0, 1],
-      ["A5", 1, 1],
+      ["G4", 0, 1],
+      ["A4", 1, 1],
     ])
   })
 
@@ -341,10 +341,10 @@ describe("musicxml", function() {
     expect(song.metadata.beatsPerMeasure).toEqual(3)
     expect(song.metadata.measureStarts).toEqual([0, 3])
     expect(tuples(song.tracks[0])).toEqual([
-      ["C5", 0, 1],
-      ["D5", 1, 1],
-      ["E5", 2, 1],
-      ["F5", 3, 3],
+      ["C4", 0, 1],
+      ["D4", 1, 1],
+      ["E4", 2, 1],
+      ["F4", 3, 3],
     ])
   })
 
@@ -366,11 +366,11 @@ describe("musicxml", function() {
     expect(song.metadata.beatsPerMeasure).toEqual(3)
     expect(song.metadata.measureStarts).toEqual([0, 3])
     expect(tuples(song.tracks[0])).toEqual([
-      ["C5", 0, 0.5],
-      ["D5", 0.5, 0.5],
-      ["E5", 1, 0.5],
-      ["F5", 1.5, 1.5],
-      ["G5", 3, 3],
+      ["C4", 0, 0.5],
+      ["D4", 0.5, 0.5],
+      ["E4", 1, 0.5],
+      ["F4", 1.5, 1.5],
+      ["G4", 3, 3],
     ])
   })
 
@@ -395,10 +395,10 @@ describe("musicxml", function() {
     let song = parseMusicXML(xml)
     expect(song.metadata.measureStarts).toEqual([0, 4, 8])
     expect(tuples(song.tracks[0])).toEqual([
-      ["C5", 0, 1],
-      ["E5", 2, 0.5],
-      ["G5", 3, 1],
-      ["C6", 8, 4],
+      ["C4", 0, 1],
+      ["E4", 2, 0.5],
+      ["G4", 3, 1],
+      ["C5", 8, 4],
     ])
   })
 
@@ -422,12 +422,12 @@ describe("musicxml", function() {
     let song = parseMusicXML(xml)
     expect(song.tracks.length).toEqual(1)
     expect(tuples(song.tracks[0])).toEqual([
-      ["C5", 0, 1],
-      ["D5", 1, 1],
-      ["E5", 2, 1],
-      ["F5", 3, 1],
-      ["G4", 1, 2],
-      ["A4", 3.5, 0.5],
+      ["C4", 0, 1],
+      ["D4", 1, 1],
+      ["E4", 2, 1],
+      ["F4", 3, 1],
+      ["G3", 1, 2],
+      ["A3", 3.5, 0.5],
     ])
   })
 
@@ -442,8 +442,8 @@ describe("musicxml", function() {
     `)
 
     expect(tuples(parseMusicXML(xml).tracks[0])).toEqual([
-      ["C5", 0, 2],
-      ["D5", 2, 2],
+      ["C4", 0, 2],
+      ["D4", 2, 2],
     ])
   })
 
@@ -469,10 +469,10 @@ describe("musicxml", function() {
     expect(song.metadata.beatsPerMeasure).toEqual(4)
     expect(song.metadata.measureStarts).toEqual([0, 1, 5, 8])
     expect(tuples(song.tracks[0])).toEqual([
-      ["G4", 0, 1],
-      ["C5", 1, 4],
-      ["D5", 5, 3],
-      ["E5", 8, 3],
+      ["G3", 0, 1],
+      ["C4", 1, 4],
+      ["D4", 5, 3],
+      ["E4", 8, 3],
     ])
   })
 
@@ -560,16 +560,16 @@ describe("musicxml", function() {
     expect(song.tracks[0].trackName).toEqual("Flute")
     expect(song.tracks[0].cleffs).toEqual([[0, "g"]])
     expect(tuples(song.tracks[0])).toEqual([
-      ["C6", 0, 4],
-      ["D6", 4, 4],
+      ["C5", 0, 4],
+      ["D5", 4, 4],
     ])
 
     expect(song.tracks[1].trackName).toEqual("Cello")
     expect(song.tracks[1].cleffs).toEqual([[0, "f"]])
     expect(tuples(song.tracks[1])).toEqual([
-      ["C4", 0, 4],
-      ["G3", 4, 2],
-      ["G3", 6, 2],
+      ["C3", 0, 4],
+      ["G2", 4, 2],
+      ["G2", 6, 2],
     ])
   })
 
@@ -613,12 +613,12 @@ describe("musicxml", function() {
     let song = parseMusicXML(xml)
     expect(song.metadata.measureStarts).toEqual([0, 4])
     expect(tuples(song.tracks[0])).toEqual([
-      ["C5", 0, 4],
-      ["D5", 4, 4],
-    ])
-    expect(tuples(song.tracks[1])).toEqual([
       ["C4", 0, 4],
       ["D4", 4, 4],
+    ])
+    expect(tuples(song.tracks[1])).toEqual([
+      ["C3", 0, 4],
+      ["D3", 4, 4],
     ])
   })
 
@@ -645,7 +645,7 @@ describe("musicxml", function() {
 
     let song = parseMusicXML(xml)
     expect(song.tracks.length).toEqual(1)
-    expect(tuples(song.tracks[0])).toEqual([["C5", 0, 4]])
+    expect(tuples(song.tracks[0])).toEqual([["C4", 0, 4]])
   })
 
   it("refuses compressed .mxl content", function() {

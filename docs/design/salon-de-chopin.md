@@ -122,7 +122,7 @@ Main: `max-width: 1060px`, `grid-template-columns: minmax(0,1fr) 260px`, `gap: 2
 - **Keyboard footer:** `#ece3d2` band with a 10px rosewood piano-lid gradient
   (`#4a2c1c → #2f1b11`, `box-shadow: 0 1px 0 #a8824a`) above a 116px keyboard well
   (`1px solid #cdbfa4`, `inset 0 2px 5px rgba(36,31,24,.18)`) holding the real `Keyboard`
-  component, `C4`–`C7`.
+  component, `C3`–`C6`.
 
 **Feedback states (new, "gentle"):**
 - *Correct note:* a gilt wash over the plate — `radial-gradient(70% 60% at 50% 45%,

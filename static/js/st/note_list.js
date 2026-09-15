@@ -66,7 +66,7 @@ export default class NoteList extends Array {
     const maxJump = 4
 
     // the center between the treble and bass cleffs
-    const middleC = noteStaffOffset("C5")
+    const middleC = noteStaffOffset("C4")
 
     this.forEach((column, idx) => {
       if (typeof column == "string") {

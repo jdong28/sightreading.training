@@ -45,7 +45,7 @@ export default class MelodyPlaybackExercise extends React.Component {
       continuousMelody: false,
       melodyDirection: "any",
 
-      melodyRange: ["C4", "C6"],
+      melodyRange: ["C3", "C5"],
       melodyScaleRoot: "random",
 
       rand: new MersenneTwister(),
@@ -206,7 +206,7 @@ export default class MelodyPlaybackExercise extends React.Component {
     let ranges = [
       {
         name: "singing",
-        range: ["C4", "C6"]
+        range: ["C3", "C5"]
       },
       ...STAVES.filter(s => s.mode == "notes")
     ]

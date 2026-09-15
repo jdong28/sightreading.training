@@ -39,26 +39,5 @@
             margin-top: 4px;
         }
     }
-
-    .form_tools {
-        display: flex;
-        align-items:  center;
-
-        .select_component {
-            height: 28px;
-            padding: 0 10px;
-            display: flex;
-            box-sizing: border-box;
-        }
-
-        > * {
-            margin-left: 5px;
-        }
-
-        > :first-child {
-            margin-left: 0;
-            flex: 1;
-        }
-    }
 }
 

@@ -17,44 +17,44 @@ import NoteList from "st/note_list"
 describe("song sections", function() {
   // two measures of 4/4, two tracks
   const twoHands = `
-    t0 m0 c5 e5 g5 c6
-    t1 m0 c3.2 g3.2
-    t0 m1 d5 f5 a5 d6
-    t1 m1 d3.4
+    t0 m0 c4 e4 g4 c5
+    t1 m0 c2.2 g2.2
+    t0 m1 d4 f4 a4 d5
+    t1 m1 d2.4
   `
 
-  const staff = {name: "grand", range: ["C3", "C7"]}
+  const staff = {name: "grand", range: ["C2", "C6"]}
 
   it("groups notes with equal onsets into one ascending column", function() {
     let song = SongNoteList.newSong([
-      ["G5", 0, 1],
-      ["C5", 0, 1],
-      ["E5", 0, 1],
-      ["D5", 1, 1],
+      ["G4", 0, 1],
+      ["C4", 0, 1],
+      ["E4", 0, 1],
+      ["D4", 1, 1],
     ])
 
     song.metadata = {beatsPerMeasure: 4}
 
     expect(extractSectionColumns(song, {startMeasure: 1, endMeasure: 1})).toEqual([
-      ["C5", "E5", "G5"],
-      ["D5"],
+      ["C4", "E4", "G4"],
+      ["D4"],
     ])
   })
 
   it("quantizes near equal onsets and dedupes pitches", function() {
     let song = SongNoteList.newSong([
-      ["C5", 0, 1],
-      ["E5", 0.0001, 1],
-      ["C5", 0, 2], // duplicate pitch
-      ["Db5", 1/3 + 2/3, 1], // floating error lands on beat 1
-      ["C#5", 1, 1], // same pitch, different spelling
+      ["C4", 0, 1],
+      ["E4", 0.0001, 1],
+      ["C4", 0, 2], // duplicate pitch
+      ["Db4", 1/3 + 2/3, 1], // floating error lands on beat 1
+      ["C#4", 1, 1], // same pitch, different spelling
     ])
 
     song.metadata = {beatsPerMeasure: 4}
 
     expect(extractSectionColumns(song, {startMeasure: 1, endMeasure: 1})).toEqual([
-      ["C5", "E5"],
-      ["Db5"],
+      ["C4", "E4"],
+      ["Db4"],
     ])
   })
 
@@ -63,17 +63,17 @@ describe("song sections", function() {
     expect(song.metadata.beatsPerMeasure).toEqual(4)
 
     expect(extractSectionColumns(song, {startMeasure: 2, endMeasure: 2})).toEqual([
-      ["D3", "D5"],
-      ["F5"],
-      ["A5"],
-      ["D6"],
+      ["D2", "D4"],
+      ["F4"],
+      ["A4"],
+      ["D5"],
     ])
 
     expect(extractSectionColumns(song, {startMeasure: 1, endMeasure: 1})).toEqual([
-      ["C3", "C5"],
-      ["E5"],
-      ["G3", "G5"],
-      ["C6"],
+      ["C2", "C4"],
+      ["E4"],
+      ["G2", "G4"],
+      ["C5"],
     ])
 
     // ranges past the end of the song yield nothing
@@ -87,13 +87,13 @@ describe("song sections", function() {
     let song = SongParser.load(twoHands)
 
     expect(extractSectionColumns(song, {startMeasure: 1, endMeasure: 2, track: 1})).toEqual([
-      ["C3"],
-      ["G3"],
-      ["D3"],
+      ["C2"],
+      ["G2"],
+      ["D2"],
     ])
 
     expect(extractSectionColumns(song, {startMeasure: 1, endMeasure: 1, track: 0})).toEqual([
-      ["C5"], ["E5"], ["G5"], ["C6"],
+      ["C4"], ["E4"], ["G4"], ["C5"],
     ])
 
     // missing track has no notes
@@ -108,9 +108,9 @@ describe("song sections", function() {
 
   it("uses explicit measure starts when present", function() {
     let song = SongNoteList.newSong([
-      ["C5", 0, 1],
-      ["D5", 3, 1],
-      ["E5", 7, 1],
+      ["C4", 0, 1],
+      ["D4", 3, 1],
+      ["E4", 7, 1],
     ])
 
     // measures of 3 then 4 beats
@@ -120,14 +120,14 @@ describe("song sections", function() {
     expect(measureBeatRange(song, 2, 3)).toEqual([3, Infinity])
     expect(countMeasures(song)).toEqual(3)
 
-    expect(extractSectionColumns(song, {startMeasure: 2, endMeasure: 2})).toEqual([["D5"]])
+    expect(extractSectionColumns(song, {startMeasure: 2, endMeasure: 2})).toEqual([["D4"]])
   })
 
   it("counts measures", function() {
     let song = SongParser.load(twoHands)
     expect(countMeasures(song)).toEqual(2)
 
-    let partial = SongParser.load("ts3/4 c5 d5 e5 f5")
+    let partial = SongParser.load("ts3/4 c4 d4 e4 f4")
     expect(countMeasures(partial)).toEqual(2)
 
     expect(countMeasures(new MultiTrackSong())).toEqual(0)
@@ -135,36 +135,36 @@ describe("song sections", function() {
 
   it("filters columns to a pitch range", function() {
     let [columns, dropped] = filterColumnsToRange([
-      ["C3", "C5"],
-      ["A2"],
-      ["E5"],
-    ], "C4", "C7")
+      ["C2", "C4"],
+      ["A1"],
+      ["E4"],
+    ], "C3", "C6")
 
-    expect(columns).toEqual([["C5"], ["E5"]])
+    expect(columns).toEqual([["C4"], ["E4"]])
     expect(dropped).toEqual(2)
   })
 
   it("parses song text and reports errors", function() {
     expect(parseSongText("").song).toBeNull()
-    expect(parseSongText("c5 d5").song.length).toEqual(2)
+    expect(parseSongText("c4 d4").song.length).toEqual(2)
 
-    let bad = parseSongText("c5 ??")
+    let bad = parseSongText("c4 ??")
     expect(bad.song).toBeNull()
     expect(bad.error).toBeTruthy()
   })
 
   describe("generator", function() {
     it("emits columns in order and wraps around", function() {
-      let g = new SheetMusicGenerator([["C5"], ["D5", "F5"], ["E5"]])
+      let g = new SheetMusicGenerator([["C4"], ["D4", "F4"], ["E4"]])
       let seen = []
       for (let i = 0; i < 7; i++) {
         seen.push(g.nextNote())
       }
 
       expect(seen).toEqual([
-        ["C5"], ["D5", "F5"], ["E5"],
-        ["C5"], ["D5", "F5"], ["E5"],
-        ["C5"],
+        ["C4"], ["D4", "F4"], ["E4"],
+        ["C4"], ["D4", "F4"], ["E4"],
+        ["C4"],
       ])
     })
 
@@ -178,8 +178,8 @@ describe("song sections", function() {
       notes.fillBuffer(3)
       expect(notes.length).toEqual(3)
       expect(notes.currentColumn()).toEqual([])
-      expect(notes.matchesHead(["C5"])).toBe(false)
-      expect(notes.inHead("C5")).toBe(false)
+      expect(notes.matchesHead(["C4"])).toBe(false)
+      expect(notes.inHead("C4")).toBe(false)
     })
   })
 
@@ -189,28 +189,28 @@ describe("song sections", function() {
         song: twoHands, startMeasure: 1, endMeasure: 2, track: "track t1",
       })
 
-      expect(columns).toEqual([["C3"], ["G3"], ["D3"]])
+      expect(columns).toEqual([["C2"], ["G2"], ["D2"]])
       expect(status).toContain("Song has 2 measures")
       expect(status).toContain("section has 3 columns")
     })
 
     it("falls back to all tracks when the song has no such track", function() {
-      let oneHand = "c5 e5 g5 c6"
+      let oneHand = "c4 e4 g4 c5"
 
       let {columns} = sheetMusicSection(staff, {
         song: oneHand, startMeasure: 1, endMeasure: 1, track: "track t1",
       })
 
-      expect(columns).toEqual([["C5"], ["E5"], ["G5"], ["C6"]])
+      expect(columns).toEqual([["C4"], ["E4"], ["G4"], ["C5"]])
     })
 
     it("ignores accompaniment generated for chord macros", function() {
       let {columns} = sheetMusicSection(staff, {
-        song: "t0 m0 c5 e5 g5 c6 $C", startMeasure: 1, endMeasure: 1, track: "all",
+        song: "t0 m0 c4 e4 g4 c5 $C", startMeasure: 1, endMeasure: 1, track: "all",
       })
 
-      expect(columns).toEqual([["C5"], ["E5"], ["G5"], ["C6"]])
-      expect(parseSongText("t0 m0 c5 e5 g5 c6 $C").song.tracks.length).toEqual(1)
+      expect(columns).toEqual([["C4"], ["E4"], ["G4"], ["C5"]])
+      expect(parseSongText("t0 m0 c4 e4 g4 c5 $C").song.tracks.length).toEqual(1)
     })
 
     it("reports an empty section", function() {

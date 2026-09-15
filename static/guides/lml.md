@@ -13,21 +13,22 @@ how a particular song is written.
 A note can be added to a song by writing the note's name followed by the
 octave. Notes are placed after the last note added, or the beginning of an
 empty song. Notes must be separated by white space (new lines, spaces, tabs,
-etc.).
+etc.). Octaves are numbered like MusicXML and MIDI: middle C is `c4`, and the B
+just below it is `b3`.
 
-    c5 d5 e5
+    c4 d4 e4
 
 A duration can be specified by appending a period and the multiplier to the end of
 a note. The default duration multiplier is `1`, and the default base duration is 1 beat.
 
-    c5.2 d5 d5 e5.4
+    c4.2 d4 d4 e4.4
 
 You can change the base duration using the `dt` (double time), `ht` (half
 time), or `tt` (triple time) commands. These take effect until the end of the
 song (or block). For example, we can easily write 8th notes with `dt`:
 
     dt
-    c5 d5 c5 d5 c5 d5 e5.2
+    c4 d4 c4 d4 c4 d4 e4.2
 
 You can use multiple `dt` (or `ht`) commands to reduce (or increase) duration
 even more.
@@ -35,24 +36,24 @@ even more.
 You can move the current position back using the `|` character. This will write
 a C Major chord.
 
-    c5 | d5 | e5
+    c4 | d4 | e4
 
 Here's how you might write two voices:
 
-    c5 g5 e5.2
+    c4 g4 e4.2
     | 
-    c4.2 f4.2
+    c3.2 f3.2
 
 Putting a `|` the beginning of the song (or block) has no effect, so another
 way to write the above might be:
 
-    | c5 g5 e5.2
-    | c4.2 f4.2
+    | c4 g4 e4.2
+    | c3.2 f3.2
 
 A note can be made sharp with `+`, flat with `-`, and natural with `=`. These
 note modifiers appear after the note's name, but before the octave.
 
-    c+5 c-5
+    c+4 c-4
 
 ## Rests
 
@@ -61,8 +62,8 @@ multiplier by including a number after the `r` command. The duration of rests
 works the same as notes, their base duration is affected by `dt` and `ht`, and
 they have a default base duration of 1 beat.
 
-    c5 r d5.2
-    d5 r2 a4
+    c4 r d4.2
+    d4 r2 a3
 
 ## Blocks
 
@@ -79,10 +80,10 @@ Example:
     {
       {
         dt
-        c5 { dt e5 f5 } d5.2 e5 g5 a5 c6
+        c4 { dt e4 f4 } d4.2 e4 g4 a4 c5
       }
       |
-      { ht g4 f4 }
+      { ht g3 f3 }
     }
 
 ## Measure movements
@@ -93,13 +94,13 @@ organize a piece:
 
 
     m0 {
-      | c5 c5 a5 g5
-      | g4.4
+      | c4 c4 a4 g4
+      | g3.4
     }
 
     m1 {
-      | d5 d5 a5 e5
-      | f4.4
+      | d4 d4 a4 e4
+      | f3.4
     }
 
 ## Key Signature
@@ -110,7 +111,7 @@ be sharp or flat as required by the key signature. You can use the `=` natural
 modifier to remove the sharp or flat.
 
     ks-2
-    b5 c5 b=5
+    b4 c4 b=4
 
 ## Time Signature
 
@@ -118,7 +119,7 @@ Set the time signature using the `ts` command. This will set `3/4` time.
 
     ts3/4
 
-    c5 g5 g5
+    c4 g4 g4
 
 The time signature will change where measure lines appear, and affect how many
 *beats* fill up an entire measure. The time signature also affects where
@@ -158,8 +159,8 @@ chord generator if enabled.
 
 The following is a short melody over a G Major and D Minor chord progression.
 
-    {$g c5.2 a5 d5}
-    {$dm e5 f5 g5.2}
+    {$g c4.2 a4 d4}
+    {$dm e4 f4 g4.2}
 
 ## Comments
 
@@ -175,8 +176,8 @@ written into the last set track. Note that changing the track does not change
 the position cursor, so in this example the notes will appear sequentially, not
 at the same time.
 
-    t0 g5
-    t1 a5
+    t0 g4
+    t1 a4
 
 A `{}` block will reset the track back to what it was after the closing `}` if
 a track has been set inside of the block.

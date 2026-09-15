@@ -2,85 +2,85 @@ ts2/4
 ks1
 
 m0 {
-  dt r3 g5
+  dt r3 g4
 }
 
 m1 {
   $g
-  { dt g5 g5 {dt g5 g5.2 e5}}
+  { dt g4 g4 {dt g4 g4.2 e4}}
 }
 
 m2 {
   $g
-  {dt g5 g5 g5.2}
+  {dt g4 g4 g4.2}
 }
 
 m3 {
   $g
-  {dt g5 g5 a5 { dt b5 b5 }}
+  {dt g4 g4 a4 { dt b4 b4 }}
 }
 
 m4 {
   $d7
-  {dt d5 d5 e5 g5}
+  {dt d4 d4 e4 g4}
 }
 
 m5 {
   $g
-  {dt g5 g5 g5 {dt e5 e5}}
+  {dt g4 g4 g4 {dt e4 e4}}
 }
 
 m6 {
   $g
-  {dt g5 g5 g5 e5}
+  {dt g4 g4 g4 e4}
 }
 
 m7 {
   $g
-  {dt g5 {dt g5 g5} a5 b5}
+  {dt g4 {dt g4 g4} a4 b4}
 }
 
 m8 {
   $d7
-  {dt {dt d5 d5.3}} e5
+  {dt {dt d4 d4.3}} e4
 }
 
 m9 {
   $g
-  { dt dt b5 b5.2 b5 } b5
+  { dt dt b4 b4.2 b4 } b4
 }
 
 m10 {
   $c
-  { dt a5 g5 {dt e5 g5.3}}
+  { dt a4 g4 {dt e4 g4.3}}
 }
 
 m11 {
   $d7
-  {dt a5 a5 {dt a5.3 b5}}
+  {dt a4 a4 {dt a4.3 b4}}
 }
 
 m12 {
   $g
-  { dt d5  d5 {dt e5 g5.3}}
+  { dt d4  d4 {dt e4 g4.3}}
 }
 
 m13 {
   $g
-  { dt dt b5 b5.2 b5 } d6
+  { dt dt b4 b4.2 b4 } d5
 }
 
 m14 {
   $c
-  { dt b5 a5 {dt g5 e5.3}}
+  { dt b4 a4 {dt g4 e4.3}}
 }
 
 m15 {
   $d7
-  {dt a5 a5 {dt a5.3 b5}}
+  {dt a4 a4 {dt a4.3 b4}}
 }
 
 m16 {
   $g
-  {dt d5 d5 {dt e5 g5.3}}
+  {dt d4 d4 {dt e4 g4.3}}
 }

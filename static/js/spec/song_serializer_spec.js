@@ -39,9 +39,9 @@ let roundTrip = song => {
 describe("song serializer", function() {
   it("writes a simple melody as one voice", function() {
     let song = buildSong([[
-      ["C5", 0, 1],
-      ["D5", 1, 1],
-      ["E5", 2, 2],
+      ["C4", 0, 1],
+      ["D4", 1, 1],
+      ["E4", 2, 2],
     ]])
 
     let {code} = roundTrip(song)
@@ -51,7 +51,7 @@ describe("song serializer", function() {
       "",
       "t0 m0",
       "{",
-      "    c=5.12 d=5.12 e=5.24",
+      "    c=4.12 d=4.12 e=4.24",
       "}",
       "",
     ].join("\n"))
@@ -59,44 +59,44 @@ describe("song serializer", function() {
 
   it("writes explicit accidentals regardless of key signature", function() {
     let song = buildSong([[
-      ["F#5", 0, 1],
-      ["Bb4", 1, 1],
-      ["F5", 2, 1],
+      ["F#4", 0, 1],
+      ["Bb3", 1, 1],
+      ["F4", 2, 1],
     ]], {keySignature: 2})
 
     let {code} = roundTrip(song)
     expect(code).toContain("ks2 ts4/4")
-    expect(code).toContain("f+5.12 b-4.12 f=5.12")
+    expect(code).toContain("f+4.12 b-3.12 f=4.12")
   })
 
   it("writes rests for gaps and chords for simultaneous notes", function() {
     let song = buildSong([[
-      ["C5", 1, 1],
-      ["E5", 1, 1],
-      ["G5", 1, 1],
-      ["A5", 3, 0.5],
+      ["C4", 1, 1],
+      ["E4", 1, 1],
+      ["G4", 1, 1],
+      ["A4", 3, 0.5],
     ]])
 
     let {code} = roundTrip(song)
-    expect(code).toContain("r12 {c=5.12 | e=5.12 | g=5.12} r12 a=5.6")
+    expect(code).toContain("r12 {c=4.12 | e=4.12 | g=4.12} r12 a=4.6")
   })
 
   it("splits overlapping notes into voices", function() {
     let song = buildSong([[
-      ["C4", 0, 4], // held bass note
-      ["E5", 0, 1],
-      ["F5", 1, 1],
-      ["G5", 2, 2],
+      ["C3", 0, 4], // held bass note
+      ["E4", 0, 1],
+      ["F4", 1, 1],
+      ["G4", 2, 2],
     ]])
 
     let {code} = roundTrip(song)
-    expect(code).toContain("    e=5.12 f=5.12 g=5.24\n  | c=4.48")
+    expect(code).toContain("    e=4.12 f=4.12 g=4.24\n  | c=3.48")
   })
 
   it("writes each track with its clef", function() {
     let song = buildSong([
-      [["C5", 0, 4], ["D5", 4, 4]],
-      [["C4", 0, 4], ["G3", 4, 2], ["G3", 6, 2]],
+      [["C4", 0, 4], ["D4", 4, 4]],
+      [["C3", 0, 4], ["G2", 4, 2], ["G2", 6, 2]],
     ])
     song.tracks[0].cleffs = [[0, "g"]]
     song.tracks[1].cleffs = [[0, "f"]]
@@ -158,47 +158,47 @@ describe("song serializer", function() {
 
   it("round trips triplets and sixteenths at 1/12 beat resolution", function() {
     let song = buildSong([[
-      ["C5", 0, 1/3],
-      ["D5", 1/3, 1/3],
-      ["E5", 2/3, 1/3],
-      ["F5", 1, 0.25],
-      ["G5", 1.25, 0.25],
-      ["A5", 1.5, 0.5],
+      ["C4", 0, 1/3],
+      ["D4", 1/3, 1/3],
+      ["E4", 2/3, 1/3],
+      ["F4", 1, 0.25],
+      ["G4", 1.25, 0.25],
+      ["A4", 1.5, 0.5],
     ]])
 
     let {code} = roundTrip(song)
     expect(code).toContain("tt dt dt\n")
-    expect(code).toContain("c=5.4 d=5.4 e=5.4 f=5.3 g=5.3 a=5.6")
+    expect(code).toContain("c=4.4 d=4.4 e=4.4 f=4.3 g=4.3 a=4.6")
   })
 
   it("uses a finer grid for 32nd notes", function() {
     let song = buildSong([[
-      ["C5", 0, 0.125],
-      ["D5", 0.125, 0.125],
-      ["E5", 0.25, 0.75],
+      ["C4", 0, 0.125],
+      ["D4", 0.125, 0.125],
+      ["E4", 0.25, 0.75],
     ]])
 
     let {code} = roundTrip(song)
     expect(code).toContain("tt dt dt dt\n")
-    expect(code).toContain("c=5.3 d=5.3 e=5.18")
+    expect(code).toContain("c=4.3 d=4.3 e=4.18")
   })
 
   it("writes 3/4 and 6/8 time signatures", function() {
-    let waltz = buildSong([[["C5", 0, 1], ["E5", 1, 1], ["G5", 2, 1]]], {beatsPerMeasure: 3})
+    let waltz = buildSong([[["C4", 0, 1], ["E4", 1, 1], ["G4", 2, 1]]], {beatsPerMeasure: 3})
     expect(roundTrip(waltz).code).toContain("ks0 ts3/4")
 
-    let jig = buildSong([[["C5", 0, 0.5], ["E5", 0.5, 0.5], ["G5", 1, 0.5], ["C6", 1.5, 1.5]]],
+    let jig = buildSong([[["C4", 0, 0.5], ["E4", 0.5, 0.5], ["G4", 1, 0.5], ["C5", 1.5, 1.5]]],
       {beatsPerMeasure: 3, keySignature: -1})
     expect(roundTrip(jig).code).toContain("ks-1 ts3/4")
 
-    let five8 = buildSong([[["C5", 0, 1.5], ["E5", 1.5, 1]]], {beatsPerMeasure: 2.5})
+    let five8 = buildSong([[["C4", 0, 1.5], ["E4", 1.5, 1]]], {beatsPerMeasure: 2.5})
     let {code} = roundTrip(five8)
     expect(code).toContain("ts5/8")
     expect(code).toContain("tt dt\n")
   })
 
   it("refuses rhythms the notation can't express", function() {
-    let quintuplet = buildSong([[["C5", 0, 0.2], ["D5", 0.2, 0.2]]])
+    let quintuplet = buildSong([[["C4", 0, 0.2], ["D4", 0.2, 0.2]]])
     expect(() => serializeSong(quintuplet)).toThrowError(SerializeError)
 
     let tooHigh = buildSong([[["C10", 0, 1]]])
