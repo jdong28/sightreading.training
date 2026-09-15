@@ -9,9 +9,6 @@ import {Plate, Pill, DoubleRule, FleuronRule} from "st/components/salon"
 
 import styles from "./onboarding_page.module.css"
 
-// /setup does not exist yet (a parallel wave 2 task); update once it lands
-const PRIMARY_DESTINATION = "/"
-
 const STEPS = [
   ["I", "Connect your instrument by USB or MIDI", "The app listens for the keys you actually play"],
   ["II", "Choose a clef, a key and a tempo", "Or accept the programme set for you"],
@@ -128,7 +125,7 @@ export default class OnboardingPage extends React.Component {
         {this.renderDeviceStrip()}
 
         <div className={styles.actions}>
-          <Pill variant="primary" to={PRIMARY_DESTINATION} onClick={markOnboarded}>
+          <Pill variant="primary" to="/setup" onClick={markOnboarded}>
             Take your seat
           </Pill>
           <Pill variant="ghost" to="/" onClick={markOnboarded}>

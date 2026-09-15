@@ -49,6 +49,7 @@ describe("onboarding page", function() {
       root.render(React.createElement(MemoryRouter, {initialEntries: ["/welcome"]},
         React.createElement(Routes, {},
           React.createElement(Route, {path: "/welcome", element: React.createElement(OnboardingPage, props)}),
+          React.createElement(Route, {path: "/setup", element: React.createElement("div", {id: "target-setup"}, "setup")}),
           React.createElement(Route, {path: "/", element: React.createElement("div", {id: "target-trainer"}, "trainer")}))))
     })
     return container
@@ -136,15 +137,15 @@ describe("onboarding page", function() {
     expect(strip(el).classList.contains(styles.none)).toBe(true)
   })
 
-  it("marks the flag and takes 'Take your seat' to the trainer (no /setup route yet)", function() {
+  it("marks the flag and takes 'Take your seat' to setup", function() {
     let el = renderPage({})
     let primary = [...el.querySelectorAll("a")].find(a => a.textContent == "Take your seat")
-    expect(primary.getAttribute("href")).toEqual("/")
+    expect(primary.getAttribute("href")).toEqual("/setup")
 
     flushSync(() => primary.click())
 
     expect(window.localStorage.getItem(ONBOARDED_KEY)).toBeTruthy()
-    expect(el.querySelector("#target-trainer")).not.toBe(null)
+    expect(el.querySelector("#target-setup")).not.toBe(null)
   })
 
   it("marks the flag and takes 'Use the on-screen keys' to the trainer", function() {
