@@ -16,14 +16,11 @@ import DevicePickerLightbox from "st/components/device_picker_lightbox"
 
 import {dispatch, trigger} from "st/events"
 import {readConfig, writeConfig} from "st/config"
-import {csrfToken} from "st/globals"
 
 import * as React from "react"
 import {BrowserRouter, Route, Routes, Navigate} from "react-router-dom"
 
 import {SampleOutput} from "st/sample_output"
-
-import {init as initApp} from "st/app"
 
 class Layout extends React.Component {
   constructor(props) {
@@ -167,24 +164,8 @@ class Layout extends React.Component {
     return lb
   }
 
-  doLogout() {
-    let request = new XMLHttpRequest()
-    request.open("POST", "/logout.json")
-    let data = new FormData()
-    data.append("csrf_token", csrfToken())
-    request.send(data)
-
-    request.onload = (e) => {
-      let res = JSON.parse(request.responseText)
-      initApp(res)
-    }
-  }
-
   renderHeader() {
-    return <Header
-      midiInput={this.state.midiInput}
-      doLogout={this.doLogout.bind(this)}
-      />
+    return <Header midiInput={this.state.midiInput} />
   }
 
   midiInputs() {

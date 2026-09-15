@@ -99,6 +99,7 @@
         button  {
             &.active {
                 background-color: color-mix(in oklab, var(--button-color), white 10%);
+                color: var(--salon-paper);
                 box-shadow: 0 0 0 2px color-mix(in oklab, var(--border-color), black 20%);
             }
         }

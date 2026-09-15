@@ -38,7 +38,7 @@
     .settings_header {
         padding: 15px 20px;
         background: var(--border-color);
-        color: white;
+        color: var(--salon-ink);
         display: flex;
         align-items: center;
 

@@ -1,19 +1,31 @@
 import * as React from "react"
 import * as ReactDOM from "react-dom"
+import * as types from "prop-types"
 import classNames from "classnames"
-import {Link, NavLink} from "react-router-dom"
+import {Link, NavLink, useMatch} from "react-router-dom"
 
 import {trigger} from "st/events"
-import MidiButton from "st/components/midi_button"
-import {IconDownArrow} from "st/components/icons"
 
 import Lightbox from "st/components/lightbox"
 
-import {getSession} from "st/app"
-
-import {toggleActive} from "st/components/util"
-
 import styles from "./header.module.css"
+
+// below this nav row width the links collapse into the menu
+const COLLAPSE_NAV_WIDTH = 700
+
+export const NAV_LINKS = [
+  {to: "/", label: "Sight reading", end: true},
+  {to: "/play-along", label: "Play along"},
+  {to: "/ear-training/interval-melodies", section: "/ear-training", label: "Ear training"},
+  {to: "/flash-cards/note-math", section: "/flash-cards", label: "Flash cards"},
+  {to: "/stats", label: "Statistics", end: true},
+  {to: "/about", label: "Guide", end: true},
+]
+
+function NavItem({to, section, end, label}) {
+  let active = useMatch({path: section || to, end: !!end})
+  return <NavLink to={to} end={end} className={() => active ? "active" : ""}>{label}</NavLink>
+}
 
 class SizedElement extends React.Component {
   constructor(props) {
@@ -24,16 +36,10 @@ class SizedElement extends React.Component {
   componentDidMount() {
     this.refreshWidth()
 
-    let timeout = null
     this.resizeCallback = e => {
-      if (timeout) {
-        window.clearTimeout(timeout)
-        timeout = null
-      }
-
-      timeout = window.setTimeout(() => {
+      window.clearTimeout(this.resizeTimeout)
+      this.resizeTimeout = window.setTimeout(() => {
         this.refreshWidth()
-        timeout = null
       }, 100)
     }
 
@@ -43,6 +49,7 @@ class SizedElement extends React.Component {
 
   componentWillUnmount() {
     window.removeEventListener("resize", this.resizeCallback)
+    window.clearTimeout(this.resizeTimeout)
   }
 
   refreshWidth() {
@@ -66,7 +73,34 @@ class SizedElement extends React.Component {
   }
 }
 
+export function InstrumentStatus({midiInput, pickMidi}) {
+  return <button
+    type="button"
+    className={styles.instrument_status}
+    title={midiInput ? "Change MIDI device" : "Select a MIDI device"}
+    onClick={e => {
+      e.preventDefault()
+      pickMidi()
+    }}>
+    <span className={classNames(styles.instrument_dot, {
+      [styles.connected]: !!midiInput
+    })} aria-hidden="true" />
+    <span className={styles.instrument_name}>
+      {midiInput ? midiInput.name : "No instrument"}
+    </span>
+  </button>
+}
+
+InstrumentStatus.propTypes = {
+  midiInput: types.shape({name: types.string}),
+  pickMidi: types.func.isRequired,
+}
+
 export default class Header extends React.Component {
+  static propTypes = {
+    midiInput: types.object,
+  }
+
   constructor(props) {
     super(props)
     this.state = {
@@ -74,31 +108,16 @@ export default class Header extends React.Component {
     }
   }
 
+  getPageLinks() {
+    return NAV_LINKS.map(link =>
+      <NavItem key={link.to} {...link} />
+    )
+  }
+
   renderNavigationMenu() {
-    let userLinks = this.getPageLinks()
-
     let menu = null
-    let showMidiButton = !this.state.width || this.state.width < 450
-
 
     if (this.state.menuOpen) {
-      let accountArea = null
-      const session = getSession()
-
-      if (session.currentUser) {
-        accountArea = <div className={classNames(styles.account_area, styles.logged_in)}>
-          <span className={styles.username}>
-            {session.currentUser.username}
-          </span>
-          <a href="#" onClick={this.props.doLogout}>Log out</a>
-        </div>
-      } else {
-        accountArea = <div className={classNames(styles.account_area, styles.logged_out)}>
-          <NavLink to="/login" {...toggleActive}>Log in</NavLink>
-          <NavLink to="/register" {...toggleActive}>Register</NavLink>
-        </div>
-      }
-
       menu = <Lightbox
         key="navigation_menu"
         className={styles.navigation_menu}
@@ -111,97 +130,47 @@ export default class Header extends React.Component {
           this.setState({ menuOpen: false })
         }}
       >
-        {accountArea}
-        {showMidiButton ? <div className={styles.midi_button_wrapper}>{this.renderMidiButton()}</div> : null}
         <ul>
-          {userLinks.map((link, i) => <li key={i}>{link}</li>)}
+          {this.getPageLinks().map((link, i) => <li key={i}>{link}</li>)}
         </ul>
       </Lightbox>
     }
 
     return <div className={styles.menu_toggle}>
-      <button type="button" onClick={e => {
+      <button type="button" aria-expanded={this.state.menuOpen} onClick={e => {
         this.setState({ menuOpen: !this.state.menuOpen })
-      }}>Menu {<IconDownArrow width={12}/>}</button>
-      {menu ? <div
-        onClick={e => this.setState({ menuOpen: false })}
-        className={styles.menu_shroud}></div> : null}
+      }}><span className={styles.menu_glyph} aria-hidden="true">❧</span>Menu</button>
       {menu}
     </div>
   }
 
-  renderHorizontalNavigation() {
-    let userPanel = null
-    let userLinks = this.getPageLinks()
-
-    const session = getSession()
-
-    if (session.currentUser) {
-      userPanel = <div className={styles.right_section} key="user_in">
-        {session.currentUser.username}
-        {" " }
-        <a href="#" onClick={this.props.doLogout}>Log out</a>
-      </div>
-
-    } else {
-      userPanel = <div className={styles.right_section} key="user_out">
-        <NavLink to="/login" {...toggleActive}>Log in</NavLink>
-        {" or "}
-        <NavLink to="/register" {...toggleActive}>Register</NavLink>
-      </div>
-    }
-
-    return [
-      ...userLinks,
-      userPanel,
-    ]
-  }
-
-  getPageLinks() {
-    let links = [
-      <NavLink end key="root" to="/" {...toggleActive}>Staff</NavLink>,
-      <NavLink end key="ear-training" to="/ear-training/interval-melodies" {...toggleActive}>Ear Training</NavLink>,
-      <NavLink end key="flash-cards" to="/flash-cards/note-math" {...toggleActive}>Flash Cards</NavLink>,
-      <NavLink key="play-along" to="/play-along" {...toggleActive}>Play Along</NavLink>,
-      <NavLink end key="about" to="/about" {...toggleActive}>Guide</NavLink>,
-    ]
-
-    const session = getSession()
-
-    if (session.currentUser) {
-      links.push(<NavLink end key="stats" to="/stats" {...toggleActive}>Stats</NavLink>)
-    }
-
-    return links
-  }
-
-  renderMidiButton() {
-    return <MidiButton
-      midiInput={this.props.midiInput}
-      pickMidi={() => {
-        trigger(this, "pickMidi")
-      }} />
-  }
-
   render() {
-    let userPanel = null
-    let enableDropdown = this.state.width && this.state.width < 700
-    let hideMidiButton = !this.state.width || this.state.width < 450
+    let enableDropdown = this.state.width && this.state.width < COLLAPSE_NAV_WIDTH
 
-    return <div className={styles.header}>
-      <Link to="/" className={styles.logo_link}>
-        <img className={styles.logo} src="/static/img/logo.svg" height="35" alt="" />
-        <img className={styles.logo_small} src="/static/img/logo-small.svg" height="35" alt="" />
-      </Link>
+    return <header className={styles.header}>
+      <div className={styles.top_row}>
+        <Link to="/" className={styles.wordmark}>
+          <span className={styles.wordmark_glyph} aria-hidden="true">❧</span>
+          <span className={styles.wordmark_text}>
+            Sight<span className={styles.wordmark_italic}>reading</span>
+          </span>
+          <span className={styles.wordmark_glyph} aria-hidden="true">❧</span>
+        </Link>
 
-      <SizedElement className={styles.user_links} onWidth={(w) => {
-        this.setState({ width: w })
-      }}>
-        {enableDropdown ? this.renderNavigationMenu() : this.renderHorizontalNavigation()}
-      </SizedElement>
+        <InstrumentStatus
+          midiInput={this.props.midiInput}
+          pickMidi={() => {
+            trigger(this, "pickMidi")
+          }} />
+      </div>
 
-      {hideMidiButton ? null : this.renderMidiButton()}
-    </div>
-
+      <nav className={styles.nav}>
+        <SizedElement className={styles.nav_links} onWidth={(w) => {
+          this.setState({ width: w })
+        }}>
+          {enableDropdown ? this.renderNavigationMenu() : this.getPageLinks()}
+        </SizedElement>
+      </nav>
+    </header>
   }
 }
