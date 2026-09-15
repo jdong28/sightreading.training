@@ -58,6 +58,8 @@ Use **Import MusicXML** to load an uncompressed MusicXML file (`.musicxml` or `.
 
 Picking or importing a piece with both a treble and a bass staff while a single staff is selected switches to the grand staff, so neither hand is skipped.
 
+A piece is drawn in the score's key signature at the start measure, so the key buttons are disabled while it is picked, and your own key returns when you pick something other than a piece. A score key without its own key signature on the trainer (more than 5 sharps or 6 flats) leaves your key in place. A piece imported before the trainer followed score keys shows "Re-import to follow the score key"; importing the same score again (same title, tracks and measure numbers) updates that piece in place and keeps its stats, while a different score with the same title is added as a new piece.
+
 Alternatively, pick **Pasted song notation** and paste song notation in the play along format, or pick a song from the play along library when logged in. Measures of pasted notation count from 1, and **Track** limits the section to one track of the song, or uses all tracks.
 
 Notes that start on the same beat are shown together as one column, and the section loops once you reach its end. Rhythm is ignored. Notes outside the range of the chosen staff are skipped, and the programme drawer reports how many. Generated accompaniment from chord symbols is not included. The piece or song, section, hand or track, staff and generator are saved in your browser, so reloading the page returns to the same drill.
