@@ -13,7 +13,7 @@ import styles from "./play_along_page.module.css"
 import Lightbox from "st/components/lightbox"
 import SongEditor from "st/components/song_editor"
 
-import SongParser from "st/song_parser"
+import SongParser, {shiftNotationOctaves} from "st/song_parser"
 import SongTimer from "st/song_timer"
 import {clickStartsMeasure} from "st/song_note_list"
 import {KeySignature, noteName, parseNote} from "st/music"
@@ -278,7 +278,7 @@ export class PlayAlongPage extends React.Component {
         let res = JSON.parse(request.responseText)
         this.setState({
           songModel: res.song,
-          currentSongCode: res.song.song,
+          currentSongCode: shiftNotationOctaves(res.song.song, -1),
         })
 
         this.stats.setTimerUrl(`/songs/${res.song.id}/stats.json`)

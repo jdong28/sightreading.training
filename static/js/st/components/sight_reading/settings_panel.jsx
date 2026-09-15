@@ -11,6 +11,7 @@ import {
 import styles from "./programme_drawer.module.css"
 
 import {noteName, parseNote} from "st/music"
+import {shiftNotationOctaves} from "st/song_parser"
 import * as types from "prop-types"
 
 import {ENABLE_PRESETS, FRONTEND_ONLY} from "st/globals"
@@ -778,7 +779,7 @@ export class GeneratorSettings extends React.PureComponent {
           request.open("GET", `/songs/${songId}.lml`)
           request.onload = () => {
             if (request.status == 200) {
-              this.updateInputValue(input, request.responseText)
+              this.updateInputValue(input, shiftNotationOctaves(request.responseText, -1))
             }
           }
           request.send()

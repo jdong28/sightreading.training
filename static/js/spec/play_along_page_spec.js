@@ -1,5 +1,6 @@
 import {PlayAlongPage} from "st/components/pages/play_along_page"
 import {parseMusicXML} from "st/musicxml"
+import {parseNote} from "st/music"
 
 let quintupletXML = `<?xml version="1.0" encoding="UTF-8"?>
 <score-partwise version="4.0">
@@ -54,6 +55,30 @@ describe("play along page", function() {
     expect(page.state.importedSong).toBe(null)
     expect(page.importUnsaveable()).toBe(false)
     expect(page.state.song.length).toEqual(2)
+  })
+
+  it("plays a song from the server library, written with middle C as c5, at its pitches", function() {
+    let realRequest = window.XMLHttpRequest
+    window.XMLHttpRequest = class {
+      open(method, url) { this.url = url }
+      send() {
+        expect(this.url).toEqual("/songs/7.json")
+        this.responseText = JSON.stringify({song: {id: 7, song: "c5 e5 g5"}})
+        this.onload()
+      }
+    }
+
+    try {
+      let page = songPage()
+      page.props = {params: {song_id: "7"}}
+      page.stats = {setTimerUrl: () => {}}
+      page.loadSong()
+      page.refreshSong()
+
+      expect([...page.state.song].map(note => parseNote(note.note))).toEqual([60, 64, 67])
+    } finally {
+      window.XMLHttpRequest = realRequest
+    }
   })
 
   it("doesn't block saving an import the code expresses", function() {

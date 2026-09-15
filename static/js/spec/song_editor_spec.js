@@ -2,7 +2,7 @@ import * as React from "react"
 import {flushSync} from "react-dom"
 
 import {getRoot} from "spec/helpers"
-import SongEditor from "st/components/song_editor"
+import SongEditor, {SONG_DRAFT_KEY} from "st/components/song_editor"
 import styles from "st/components/song_editor.module.css"
 import {COMPRESSED_MESSAGE} from "st/musicxml"
 
@@ -84,6 +84,53 @@ describe("song editor", function() {
     renderEditor({code: "c4 d4 e4", importUnsaveable: false})
     expect(saveButton().disabled).toBe(false)
     expect(importNotice()).toBe(null)
+  })
+
+  describe("new song draft", function() {
+    let saved
+
+    beforeEach(function() {
+      saved = window.localStorage.getItem(SONG_DRAFT_KEY)
+    })
+
+    afterEach(function() {
+      if (saved == null) {
+        window.localStorage.removeItem(SONG_DRAFT_KEY)
+      } else {
+        window.localStorage.setItem(SONG_DRAFT_KEY, saved)
+      }
+    })
+
+    let storedDraft = () => JSON.parse(window.localStorage.getItem(SONG_DRAFT_KEY))
+
+    it("renumbers a draft written when middle C was c5 once", function() {
+      window.localStorage.setItem(SONG_DRAFT_KEY, JSON.stringify({title: "Old", code: "c5 e5 g5"}))
+
+      let editor = renderEditor({song: null})
+      expect(editor.state.code).toEqual("c4 e4 g4")
+      expect(storedDraft()).toEqual({title: "Old", code: "c4 e4 g4", middleC: "c4"})
+
+      editor = renderEditor({song: null})
+      expect(editor.state.code).toEqual("c4 e4 g4")
+    })
+
+    it("leaves a draft saved in the current numbering as it is", function() {
+      window.localStorage.setItem(SONG_DRAFT_KEY, JSON.stringify({title: "New", code: "c5 e5", middleC: "c4"}))
+
+      let editor = renderEditor({song: null})
+      expect(editor.state.code).toEqual("c5 e5")
+      expect(storedDraft()).toEqual({title: "New", code: "c5 e5", middleC: "c4"})
+    })
+
+    it("saves new drafts in the current numbering", function() {
+      window.localStorage.removeItem(SONG_DRAFT_KEY)
+
+      let editor = renderEditor({song: null})
+      editor.updateCode("c4 d4")
+      expect(storedDraft()).toEqual({code: "c4 d4", middleC: "c4"})
+
+      expect(renderEditor({song: null}).state.code).toEqual("c4 d4")
+    })
   })
 
   it("reports compressed files from their content", async function() {

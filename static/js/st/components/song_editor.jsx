@@ -1,5 +1,5 @@
 import * as React from "react"
-import SongParser from "st/song_parser"
+import SongParser, {shiftNotationOctaves} from "st/song_parser"
 import {trigger} from "st/events"
 
 import {JsonForm, TextInputRow} from "st/components/forms"
@@ -14,6 +14,25 @@ import { KeySignature } from "st/music"
 import {readConfig, writeConfig} from "st/config"
 import {parseMusicXML, MusicXMLError} from "st/musicxml"
 import {serializeSong, SerializeError} from "st/song_serializer"
+
+export const SONG_DRAFT_KEY = "wip:newSong"
+
+// The unsaved new song, in the current numbering. Drafts without middleC were
+// written with middle C as c5 and are renumbered, and saved, the first time
+// they're read
+export function readSongDraft() {
+  let draft = readConfig(SONG_DRAFT_KEY)
+  if (draft && draft.middleC != "c4") {
+    draft = {
+      ...draft,
+      middleC: "c4",
+      code: typeof draft.code == "string" ? shiftNotationOctaves(draft.code, -1) : draft.code,
+    }
+    writeConfig(SONG_DRAFT_KEY, draft)
+  }
+
+  return draft
+}
 
 const DeleteSongForm = React.memo(function DeleteSongForm(props) {
   const navigate = useNavigate()
@@ -98,7 +117,7 @@ export default class SongEditor extends React.Component {
 
     let initial = song
     if (!song) {
-      initial = readConfig("wip:newSong")
+      initial = readSongDraft()
       // render the initial song
       if (initial) {
         window.setTimeout(() => {
@@ -162,7 +181,7 @@ export default class SongEditor extends React.Component {
         newSong: false,
         song: res.song
       })
-      writeConfig("wip:newSong", undefined)
+      writeConfig(SONG_DRAFT_KEY, undefined)
     }
   }
 
@@ -223,9 +242,8 @@ export default class SongEditor extends React.Component {
       return false
     }
 
-    let wip = readConfig("wip:newSong") || {}
-    wip = Object.assign({}, wip, update)
-    writeConfig("wip:newSong", wip)
+    let wip = {...readSongDraft(), ...update, middleC: "c4"}
+    writeConfig(SONG_DRAFT_KEY, wip)
     return true
   }
 
