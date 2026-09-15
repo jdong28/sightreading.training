@@ -16,16 +16,18 @@
 .grand_staff {
     .staff {
         &:first-child {
-            margin-bottom: 70px;
+            margin-bottom: calc(70px * var(--staff-scale, 1));
         }
     }
 }
 
+/* The fixed offsets scale with --staff-scale, set by the Staff component
+   (st/components/staves) from its scale prop along with its height */
 .staff {
     position: relative;
     height: calc(var(--line-spacing) * 4);
-    border-left: 6px solid black;
-    margin: calc(var(--line-spacing) * 2) 0 calc(var(--line-spacing) * 2) 0;
+    border-left: calc(6px * var(--staff-scale, 1)) solid black;
+    margin: calc(var(--line-spacing) * 2 * var(--staff-scale, 1)) 0;
 
     .cleff {
         z-index: 1;
@@ -36,7 +38,7 @@
     &.g_staff {
         .cleff {
             position: absolute;
-            left: 14px;
+            left: calc(14px * var(--staff-scale, 1));
             height: 165%;
             top: -28%;
         }
@@ -45,7 +47,7 @@
     &.f_staff {
         .cleff {
             position: absolute;
-            left: 8px;
+            left: calc(8px * var(--staff-scale, 1));
             height: 82%;
         }
     }
@@ -95,7 +97,7 @@
 
     .key_signature {
         position: absolute;
-        left: 100px;
+        left: calc(100px * var(--staff-scale, 1));
         top: 0;
         bottom: 0;
 
@@ -198,9 +200,32 @@
     .staff_notes {
         position: absolute;
         top: 0;
-        left: 120px;
+        left: calc(120px * var(--staff-scale, 1));
         right: 0;
         bottom: 0;
+
+        /* where a measure starts, see StaffNotes#renderBarLines */
+        .bar_line {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background: #666;
+
+            &[data-label]::before {
+                content: attr(data-label);
+                position: absolute;
+                bottom: 100%;
+                left: 50%;
+                transform: translate(-50%, 0);
+                padding-bottom: calc(10px * var(--staff-scale, 1));
+                font-family: var(--font-display);
+                font-size: 13px;
+                font-style: italic;
+                line-height: 1;
+                color: var(--salon-ink-muted, #888);
+            }
+        }
 
         .annotation {
             background: gray;
@@ -252,7 +277,7 @@
             }
 
             &.group_offset {
-                margin-left: 30px;
+                margin-left: calc(30px * var(--staff-scale, 1));
             }
 
             &.held {

@@ -4,8 +4,14 @@ import {flushSync} from "react-dom"
 import {MemoryRouter} from "react-router-dom"
 
 import SightReadingPage, {
-  formatElapsed, accuracyPercent, romanNumeral
+  formatElapsed, accuracyPercent, romanNumeral, MIN_FIT_SCALE, PLATE_STAFF_SCALE
 } from "st/components/pages/sight_reading_page"
+import {GStaff} from "st/components/staves"
+import NoteList from "st/note_list"
+import {
+  fitNoteWidth, fitStaffScale, minNoteWidth, NOTE_HEAD_WIDTH, GROUP_OFFSET, ACCIDENTAL_WIDTH
+} from "st/components/staff_notes"
+import staffStyles from "st/components/staff.module.css"
 import drawerStyles from "st/components/sight_reading/programme_drawer.module.css"
 import {setAppStore} from "st/storage"
 import {importMusicXMLPiece} from "st/sheet_music_deck"
@@ -13,7 +19,8 @@ import {SHEET_MUSIC_STORAGE_KEY, BOTH_HANDS} from "st/data"
 import {DRILL_STORAGE_KEY} from "st/generators"
 import {scopeEvent} from "st/events"
 import NoteStats from "st/note_stats"
-import {openTestStore} from "spec/helpers"
+import {KeySignature} from "st/music"
+import {openTestStore, noteXML} from "spec/helpers"
 
 // a two staff 3/4 piece, measures 1 and 2
 let minuetXML = `<?xml version="1.0" encoding="UTF-8"?>
@@ -38,6 +45,53 @@ let minuetXML = `<?xml version="1.0" encoding="UTF-8"?>
       <backup><duration>3</duration></backup>
       <note><pitch><step>C</step><octave>3</octave></pitch><duration>3</duration><staff>2</staff></note>
     </measure>
+  </part>
+</score-partwise>`
+
+// a two staff 3/4 piece of eight measures, each a treble and a bass note
+let octetXML = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <work><work-title>Salon Octet</work-title></work>
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    ${Array.from({length: 8}, (_, idx) => `
+    <measure number="${idx + 1}">
+      ${idx == 0 ? `<attributes>
+        <divisions>1</divisions>
+        <time><beats>3</beats><beat-type>4</beat-type></time>
+        <staves>2</staves>
+        <clef number="1"><sign>G</sign><line>2</line></clef>
+        <clef number="2"><sign>F</sign><line>4</line></clef>
+      </attributes>` : ""}
+      ${noteXML("CDEFGAB"[idx % 7], 5, 3, 1)}
+      <backup><duration>3</duration></backup>
+      ${noteXML("CDEFGAB"[idx % 7], 3, 3, 2)}
+    </measure>`).join("")}
+  </part>
+</score-partwise>`
+
+// a two staff 3/4 piece of eight measures, each a treble E4 (with the F4 above
+// it as a stacked second when second) over a bass C3, then a treble G#4
+let secondsXML = (title, second) => `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <work><work-title>${title}</work-title></work>
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    ${Array.from({length: 8}, (_, idx) => `
+    <measure number="${idx + 1}">
+      ${idx == 0 ? `<attributes>
+        <divisions>1</divisions>
+        <time><beats>3</beats><beat-type>4</beat-type></time>
+        <staves>2</staves>
+        <clef number="1"><sign>G</sign><line>2</line></clef>
+        <clef number="2"><sign>F</sign><line>4</line></clef>
+      </attributes>` : ""}
+      ${noteXML("E", 4, 1, 1)}
+      ${second ? noteXML("F", 4, 1, 1, "<chord/>") : ""}
+      <note><pitch><step>G</step><alter>1</alter><octave>4</octave></pitch><duration>2</duration><staff>1</staff></note>
+      <backup><duration>3</duration></backup>
+      ${noteXML("C", 3, 3, 2)}
+    </measure>`).join("")}
   </part>
 </score-partwise>`
 
@@ -144,6 +198,157 @@ describe("sight reading page", function() {
     expect(accuracyPercent(0, 0)).toBe(null)
     expect(accuracyPercent(3, 1)).toEqual(75)
     expect(["I", "II", "III", "IV", "IX"]).toEqual([1, 2, 3, 4, 9].map(romanNumeral))
+  })
+
+  it("fits a card's columns to the staff width", function() {
+    let opts = {scale: 0.8, maxWidth: 100, minWidth: 48}
+
+    // 805 unscaled pixels, less the clef, the last note and a stacked second
+    expect(fitNoteWidth(644, 10, opts)).toEqual(60)
+    // a key signature takes room before the first column
+    expect(fitNoteWidth(644, 10, {...opts, keySignature: new KeySignature(3)})).toEqual(52)
+    // never wider than the default columns, nor narrower than the minimum
+    expect(fitNoteWidth(644, 5, opts)).toEqual(100)
+    expect(fitNoteWidth(644, 20, opts)).toEqual(48)
+    // before the plate is measured, or for a single column
+    expect(fitNoteWidth(null, 10, opts)).toEqual(100)
+    expect(fitNoteWidth(644, 0, opts)).toEqual(100)
+
+    // the staff shrinks when the columns don't fit at the minimum width
+    let scaleOpts = {scale: 0.8, minWidth: 48, minScale: 0.5}
+    expect(fitStaffScale(644, 10, scaleOpts)).toEqual(0.8)
+    expect(fitStaffScale(644, 20, scaleOpts)).toBeCloseTo(0.555, 3)
+    expect(fitStaffScale(644, 100, scaleOpts)).toEqual(0.5)
+    expect(fitStaffScale(644, 20, {...scaleOpts, scale: 0.4})).toEqual(0.4)
+  })
+
+  it("keeps an accidental clear of the previous note head at the narrowest fitted columns", async function() {
+    container = document.createElement("div")
+    container.style.width = "800px"
+    document.body.appendChild(container)
+    root = createRoot(container)
+
+    let cases = [
+      [new KeySignature(-1), [["A5"], ["Eb5"]], staffStyles.flat],
+      [new KeySignature(1), [["A5"], ["C#5"]], staffStyles.sharp],
+      // the F5 of the second is pushed right of the E5
+      [new KeySignature(0), [["E5", "F5"], ["G#5"]], staffStyles.sharp],
+    ]
+
+    for (let scale of [MIN_FIT_SCALE, PLATE_STAFF_SCALE]) {
+      for (let [keySignature, columns, accidentalClass] of cases) {
+        flushSync(() => root.render(React.createElement(GStaff, {
+          notes: new NoteList(columns),
+          heldNotes: {},
+          keySignature,
+          noteWidth: minNoteWidth(columns, keySignature),
+          scale,
+        })))
+
+        await Promise.all([...container.querySelectorAll("img")].map(img => img.decode()))
+
+        let notes = [...container.querySelectorAll(`.${staffStyles.whole_note}`)]
+        let next = notes.pop()
+        let headsRight = Math.max(...notes.map(note =>
+          note.querySelector(`.${staffStyles.primary}`).getBoundingClientRect().right))
+        let accidental = next.querySelector(`.${accidentalClass}`).getBoundingClientRect()
+
+        expect(accidental.width).toBeGreaterThan(0)
+        expect(accidental.left).toBeGreaterThanOrEqual(headsRight)
+      }
+    }
+  })
+
+  it("fits a unit with a stacked second at the wider minimum column width", async function() {
+    let {piece: seconds} = await importMusicXMLPiece("seconds.musicxml", secondsXML("Seconds", true), store)
+    let {piece: singles} = await importMusicXMLPiece("singles.musicxml", secondsXML("Singles", false), store)
+
+    window.localStorage.setItem(DRILL_STORAGE_KEY, JSON.stringify({staff: "grand", generator: "sheet music"}))
+    window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+      piece: seconds.id, startMeasure: 1, endMeasure: 8, hand: BOTH_HANDS, measuresPerCard: "all",
+    }))
+
+    renderPage()
+    // a plate too narrow for the section's columns at any allowed width
+    flushSync(() => page.setState({staffWidth: 400}))
+
+    let headAndAccidental = NOTE_HEAD_WIDTH + ACCIDENTAL_WIDTH
+    let layout = page.staffLayout()
+    expect([...page.state.notes.currentColumn()]).toEqual(["C4", "E5", "F5"])
+    expect(layout.scale).toEqual(MIN_FIT_SCALE)
+    expect(layout.noteWidth).toBeGreaterThanOrEqual(headAndAccidental + GROUP_OFFSET)
+
+    flushSync(() => page.setGenerator(page.state.currentGenerator, {
+      ...page.state.currentGeneratorSettings, piece: singles.id,
+    }))
+
+    layout = page.staffLayout()
+    expect([...page.state.notes.currentColumn()]).toEqual(["C4", "E5"])
+    expect(layout.scale).toEqual(MIN_FIT_SCALE)
+    expect(layout.noteWidth).toBeGreaterThanOrEqual(headAndAccidental)
+    expect(layout.noteWidth).toBeLessThan(headAndAccidental + GROUP_OFFSET)
+  })
+
+  it("shows the measure card on the staff and in the plate header", async function() {
+    let {piece} = await importMusicXMLPiece("salon_octet.musicxml", octetXML, store)
+
+    window.localStorage.setItem(DRILL_STORAGE_KEY, JSON.stringify({staff: "grand", generator: "sheet music"}))
+    window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+      piece: piece.id, startMeasure: 1, endMeasure: 8, hand: BOTH_HANDS, measuresPerCard: "2",
+    }))
+
+    let el = renderPage()
+    let plateLabel = () => el.querySelector("[aria-live]").previousElementSibling.textContent
+    // bar lines with their numbers, on the upper staff of the grand staff
+    let numberedBarLines = () =>
+      [...el.querySelectorAll(`.${staffStyles.bar_line}[data-label]`)].map(line => line.dataset.label)
+
+    expect(plateLabel()).toEqual("3 ♩ a bar · Card 1 · measures 1–2 of 1–8")
+    expect(numberedBarLines()).toEqual(["1", "2"])
+    expect(el.querySelectorAll(`.${staffStyles.bar_line}`).length).toEqual(4)
+
+    let upperNotes = () => el.querySelector(`.${staffStyles.staff_notes}`)
+    let noteLefts = () => [...upperNotes().querySelectorAll(`.${staffStyles.whole_note}`)]
+      .map(note => parseFloat(note.style.left)).sort((a, b) => a - b)
+    let barLineLeft = measure =>
+      parseFloat(upperNotes().querySelector(`.${staffStyles.bar_line}[data-measure="${measure}"]`).style.left)
+    // the slide of the notes, see Staff#setOffset
+    let offset = () => {
+      let match = upperNotes().style.transform.match(/translate3d\(([-\d.]+)px/)
+      return match ? parseFloat(match[1]) : 0
+    }
+
+    // evenly spaced columns, with the bar lines on their boundaries a column apart
+    let [head, next] = noteLefts()
+    let columnWidth = next - head
+    expect(columnWidth).toBeGreaterThan(0)
+    expect(barLineLeft(2) - barLineLeft(1)).toBeCloseTo(columnWidth, 3)
+    let nextOnStaff = next + offset()
+    let barLineOnStaff = barLineLeft(2) + offset()
+
+    click(buttonNamed(el, "Begin"))
+    play(page.state.notes.currentColumn())
+    expect(plateLabel()).toEqual("3 ♩ a bar · Card 1 · measures 1–2 of 1–8")
+
+    // the second measure's column becomes the head exactly one column along,
+    // so its note and bar line slide from where they were without a jump
+    expect(noteLefts()[0]).toEqual(head)
+    expect(Math.abs(offset() - columnWidth)).toBeLessThan(1)
+    expect(Math.abs(noteLefts()[0] + offset() - nextOnStaff)).toBeLessThan(1)
+    expect(Math.abs(barLineLeft(2) + offset() - barLineOnStaff)).toBeLessThan(1.5)
+
+    play(page.state.notes.currentColumn())
+
+    expect(plateLabel()).toEqual("3 ♩ a bar · Card 2 · measures 3–4 of 1–8")
+    expect(numberedBarLines()).toEqual(["3", "4"])
+
+    // the whole section loops without a card number, its start coming round
+    // again after its last measure
+    flushSync(() => page.setGenerator(page.state.currentGenerator, {
+      ...page.state.currentGeneratorSettings, measuresPerCard: "all",
+    }))
+    expect(plateLabel()).toEqual("3 ♩ a bar · measures 1–8")
+    expect(numberedBarLines()).toEqual(["1", "2", "3", "4", "5", "6", "7", "8", "1", "2"])
   })
 
   it("opens, closes and applies the programme drawer", function() {

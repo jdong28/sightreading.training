@@ -14,8 +14,8 @@ import {
 } from "st/song_sections"
 
 import {
-  MeasureCardDeck, MeasureCardGenerator, measureCards, IN_ORDER, RANDOM_ORDER,
-  MAX_MEASURES_PER_CARD
+  MeasureCardDeck, MeasureCardGenerator, measureCards, sectionCard, cardColumn,
+  IN_ORDER, RANDOM_ORDER, MAX_MEASURES_PER_CARD
 } from "st/measure_cards"
 
 import {
@@ -176,6 +176,23 @@ export function pieceSection(staff, settings, song) {
   })
 }
 
+// The measures of an imported piece's section with the columns of each on the
+// staff, the pool of st/measure_cards
+function pieceSectionMeasures(staff, settings, song) {
+  let tracks = handTracks(song, settings.hand)
+  let [firstMeasure] = measureNumberRange(song)
+  let start = Math.max(firstMeasure, Math.floor(settings.startMeasure) || 0)
+  let end = Math.floor(settings.endMeasure)
+
+  return measureNumberList(song)
+    .filter(number => number >= start && number <= end)
+    .map(number => {
+      let columns = extractSectionColumns(song, {startMeasure: number, endMeasure: number, track: tracks})
+      let [visible] = filterColumnsToRange(columns, staff.range[0], staff.range[1])
+      return {number, columns: visible}
+    })
+}
+
 // The measures of the piece section as flashcards (see st/measure_cards),
 // or null for pasted notation, the whole section drill or a section without
 // notes on the staff. The deck of the latest settings is kept so a rebuilt
@@ -197,20 +214,7 @@ export function measureCardDeck(staff, settings) {
     return cardDeck.deck
   }
 
-  let song = pieceSong(piece)
-  let tracks = handTracks(song, settings.hand)
-  let [firstMeasure] = measureNumberRange(song)
-  let start = Math.max(firstMeasure, Math.floor(settings.startMeasure) || 0)
-  let end = Math.floor(settings.endMeasure)
-
-  let measures = measureNumberList(song)
-    .filter(number => number >= start && number <= end)
-    .map(number => {
-      let columns = extractSectionColumns(song, {startMeasure: number, endMeasure: number, track: tracks})
-      let [visible] = filterColumnsToRange(columns, staff.range[0], staff.range[1])
-      return {number, columns: visible}
-    })
-
+  let measures = pieceSectionMeasures(staff, settings, pieceSong(piece))
   let deck = new MeasureCardDeck(measureCards(measures, settings.measuresPerCard), {
     pieceId: piece.id,
     order: settings.order,
@@ -643,6 +647,15 @@ export const GENERATORS = [
       if (deck) {
         let recordNotes = settings.startMeasure != settings.endMeasure
         return new MeasureCardGenerator(deck, {recordNotes})
+      }
+
+      // the whole section of a piece loops as one card, its measures marked
+      let piece = sheetMusicPiece(settings)
+      let measures = piece ? pieceSectionMeasures(staff, settings, pieceSong(piece)) : []
+      if (measures.length) {
+        let card = sectionCard(measures)
+        let columns = card.columns.map((column, idx) => cardColumn(card, idx))
+        return new SheetMusicGenerator(columns, {card})
       }
 
       let {columns} = sheetMusicSection(staff, settings)

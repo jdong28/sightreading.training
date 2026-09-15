@@ -9,7 +9,7 @@ import ChordList from "st/chord_list"
 
 import {parseNote, noteStaffOffset, MIDDLE_C_PITCH} from "st/music"
 
-import StaffNotes from "st/components/staff_notes"
+import StaffNotes, {KEY_SIGNATURE_SPACING} from "st/components/staff_notes"
 import StaffSongNotes from "st/components/staff_song_notes"
 import styles from "st/components/staff.module.css"
 
@@ -86,7 +86,8 @@ export class Staff extends React.PureComponent {
       staffNotes = <StaffSongNotes ref="notes" {...this.props}></StaffSongNotes>
     }
 
-    let height = DEFAULT_HEIGHT * (this.props.scale || 1)
+    let scale = this.props.scale || 1
+    let height = DEFAULT_HEIGHT * scale
 
     let noteHeight = height * 0.2 // height of 1 bar
 
@@ -97,7 +98,7 @@ export class Staff extends React.PureComponent {
     if (minRow != null && minRow < this.props.lowerRow) {
       marginBottom = noteHeight * (this.props.lowerRow - minRow) / 2 + noteHeight
 
-      if (marginBottom < DEFAULT_MARGIN) {
+      if (marginBottom < DEFAULT_MARGIN * scale) {
         marginBottom = null
       }
     }
@@ -105,13 +106,15 @@ export class Staff extends React.PureComponent {
     if (maxRow != null && maxRow > this.props.upperRow) {
       marginTop = noteHeight * (maxRow - this.props.upperRow) / 2 + noteHeight
 
-      if (marginTop < DEFAULT_MARGIN) {
+      if (marginTop < DEFAULT_MARGIN * scale) {
         marginTop = null
       }
     }
 
+    // the fixed offsets of staff.module.css scale with --staff-scale
     return <div
       style={{
+        "--staff-scale": scale,
         height: `${height}px`,
         marginTop: marginTop ? `${marginTop}px` : null,
         marginBottom: marginBottom ? `${marginBottom}px` : null,
@@ -161,7 +164,7 @@ export class Staff extends React.PureComponent {
         let fromTop = topOffset - noteStaffOffset(n);
         let style = {
           top: `${Math.floor(fromTop * 25/2)}%`,
-          left: `${i * 20}px`
+          left: `${i * KEY_SIGNATURE_SPACING * (this.props.scale || 1)}px`
         }
 
         return <img

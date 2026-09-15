@@ -5,6 +5,9 @@ import {noteStaffOffset} from "st/music"
 import * as types from "prop-types"
 import styles from "st/components/staff.module.css"
 
+// how far a ledger line reaches past its note on each side, unscaled
+export const LEDGER_OVERHANG = 10
+
 export default class LedgerLines extends React.PureComponent {
   static propTypes = {
     notes: types.array.isRequired,
@@ -12,6 +15,7 @@ export default class LedgerLines extends React.PureComponent {
     lowerRow: types.number,
     pixelsPerBeat: types.number,
     offsetLeft: types.number,
+    scale: types.number,
   }
 
   render() {
@@ -62,8 +66,9 @@ export default class LedgerLines extends React.PureComponent {
 
     let offsetLeft = props.offsetLeft || 0
 
-    let left = offsetLeft + note.getStart() * props.pixelsPerBeat - 10
-    let right = offsetLeft + note.getStop() * props.pixelsPerBeat + 10
+    let overhang = LEDGER_OVERHANG * (props.scale || 1)
+    let left = offsetLeft + note.getStart() * props.pixelsPerBeat - overhang
+    let right = offsetLeft + note.getStop() * props.pixelsPerBeat + overhang
 
     for (let i = 0; i < numLines; i++) {
       let style = {
