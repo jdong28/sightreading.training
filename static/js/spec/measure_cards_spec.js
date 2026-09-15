@@ -23,7 +23,7 @@ const pickupMeasures = () => [
   {number: 2, columns: [["C4", "E4", "G4", "C6"]]},
 ]
 
-const emptyStore = {sectionStats: () => []}
+const emptyStore = {sectionStats: () => [], recordSectionPractice: async () => {}}
 
 // plays the head column like the sight reading page does on a hit
 let hit = (notes, stats) => {
@@ -213,7 +213,7 @@ describe("measure cards", function() {
       })
 
       let stats = new NoteStats()
-      let notes = new NoteList([], {generator: track(new MeasureCardGenerator(deck, {recordMeasures: false}))})
+      let notes = new NoteList([], {generator: track(new MeasureCardGenerator(deck))})
       notes.fillBuffer(6)
 
       expect([...notes]).toEqual([["D6"], ["G4", "G5"], ["A5"], ["B5"], [], []])
@@ -237,7 +237,7 @@ describe("measure cards", function() {
         pieceId: "p", order: IN_ORDER, store: emptyStore,
       })
 
-      let cardNotes = new NoteList([], {generator: track(new MeasureCardGenerator(deck, {recordMeasures: false}))})
+      let cardNotes = new NoteList([], {generator: track(new MeasureCardGenerator(deck))})
       let plainNotes = new NoteList([], {generator: new SheetMusicGenerator(deck.card.columns)})
       cardNotes.fillBuffer(10)
       plainNotes.fillBuffer(10)
@@ -264,12 +264,12 @@ describe("measure cards", function() {
         await store.close()
       })
 
-      let generatorFor = (opts={}) => {
+      let generatorFor = () => {
         let deck = new MeasureCardDeck(measureCards(pickupMeasures(), 2), {
           pieceId: "p", order: IN_ORDER, store,
         })
 
-        let generator = track(new MeasureCardGenerator(deck, {now: () => time, ...opts}))
+        let generator = track(new MeasureCardGenerator(deck, {now: () => time}))
         let notes = new NoteList([], {generator})
         notes.fillBuffer(6)
         return {generator, notes}
@@ -300,7 +300,7 @@ describe("measure cards", function() {
 
         let byMeasure = s => s.startMeasure
         expect(store.sectionStats("p").sort((a, b) => byMeasure(a) - byMeasure(b))).toEqual([
-          {pieceId: "p", startMeasure: 0, endMeasure: 0, hits: 1, misses: 1, attempts: 1, lastPracticed: 4000, elapsedMs: 500},
+          {pieceId: "p", startMeasure: 0, endMeasure: 0, hits: 1, misses: 1, attempts: 1, lastPracticed: 4000, elapsedMs: 1500},
           {pieceId: "p", startMeasure: 1, endMeasure: 1, hits: 3, misses: 1, attempts: 1, lastPracticed: 4000, elapsedMs: 2500},
         ])
 
@@ -332,16 +332,28 @@ describe("measure cards", function() {
         expect(store.sectionStats("p")).toEqual([])
       })
 
-      it("leaves the measure stats alone when told to", async function() {
-        let {generator, notes} = generatorFor({recordMeasures: false})
+      it("times the first column from when it is shown, a single measure section too", async function() {
+        let deck = new MeasureCardDeck(measureCards([pickupMeasures()[1]], 1), {
+          pieceId: "p", order: IN_ORDER, store,
+        })
+
+        let generator = track(new MeasureCardGenerator(deck, {now: () => time}))
+        let notes = new NoteList([], {generator})
         let stats = new NoteStats()
 
-        for (let i = 0; i < 4; i++) {
-          notes = hit(notes, stats)
-        }
+        time = 1000
+        notes.fillBuffer(6)
+        time = 1600
+        notes = hit(notes, stats)
+        time = 2000
+        notes = hit(notes, stats)
+        time = 3000
+        notes = hit(notes, stats)
         await generator.finishing
 
-        expect(store.sectionStats("p")).toEqual([])
+        expect(store.sectionStats("p")).toEqual([
+          {pieceId: "p", startMeasure: 1, endMeasure: 1, hits: 3, misses: 0, attempts: 1, lastPracticed: 3000, elapsedMs: 2000},
+        ])
       })
     })
   })

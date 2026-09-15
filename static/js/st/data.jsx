@@ -638,9 +638,7 @@ export const GENERATORS = [
     create: function(staff, keySignature, settings) {
       let deck = measureCardDeck(staff, settings)
       if (deck) {
-        // a single measure section's stats are already recorded by the page
-        let recordMeasures = settings.startMeasure != settings.endMeasure
-        return new MeasureCardGenerator(deck, {recordMeasures})
+        return new MeasureCardGenerator(deck)
       }
 
       let {columns} = sheetMusicSection(staff, settings)

@@ -229,14 +229,10 @@ export class MeasureCardGenerator {
   /**
    * @param {MeasureCardDeck} deck
    * @param {Object} [opts]
-   * @param {boolean} [opts.recordMeasures] false leaves the measure stats
-   * alone, eg. when the section is a single measure whose stats the page
-   * already records
    * @param {function(): number} [opts.now]
    */
-  constructor(deck, {recordMeasures=true, now=Date.now}={}) {
+  constructor(deck, {now=Date.now}={}) {
     this.deck = deck
-    this.recordMeasures = recordMeasures
     this.now = now
     this.loop = deck.playableCount <= 1
 
@@ -269,6 +265,10 @@ export class MeasureCardGenerator {
       return []
     }
 
+    if (this.columnStartedAt == null) {
+      this.columnStartedAt = this.now()
+    }
+
     let columns = card.columns
     if (this.loop) {
       return [...columns[this.emitted++ % columns.length]]
@@ -292,9 +292,7 @@ export class MeasureCardGenerator {
     let time = this.now()
     let tally = this.headTally()
 
-    if (this.columnStartedAt != null) {
-      tally.elapsedMs += Math.min(MAX_COLUMN_MS, Math.max(0, time - this.columnStartedAt))
-    }
+    tally.elapsedMs += Math.min(MAX_COLUMN_MS, Math.max(0, time - this.columnStartedAt))
     this.columnStartedAt = time
 
     // the hit is counted after the column is removed, see notePlayed
@@ -341,11 +339,6 @@ export class MeasureCardGenerator {
       this.headTally().misses += 1
       this.lastDone = null
     }
-
-    // the first column is timed from the first note played on it
-    if (this.columnStartedAt == null) {
-      this.columnStartedAt = this.now()
-    }
   }
 
   // Adds the card's measure tallies to the store once the hit for its last
@@ -355,8 +348,6 @@ export class MeasureCardGenerator {
     let at = this.now()
 
     this.finishing = Promise.resolve().then(() => {
-      if (!this.recordMeasures) { return }
-
       let store = this.deck.getStore()
       return Promise.all(card.measures.map((measure, idx) => {
         let {hits, misses, elapsedMs} = tally[idx]
