@@ -1,5 +1,5 @@
 
-import {parseNote, noteName, MajorScale, Chord} from "st/music"
+import {parseNote, noteName, MajorScale, Chord, KeySignature, ChromaticKeySignature} from "st/music"
 import MersenneTwister from "mersennetwister"
 
 import {shuffled} from "st/util"
@@ -64,8 +64,9 @@ export function storeGeneratorSettings(storageKey, settings) {
   }
 }
 
-// the staff and generator picked in the settings panel are kept in browser
-// storage so a reload lands back on the same drill (eg. the sheet music deck)
+// the staff, generator, key signature, mode and scroll speed picked in the
+// trainer or on the setup page are kept in browser storage so a reload lands
+// back on the same drill (eg. the sheet music deck)
 export const DRILL_STORAGE_KEY = "st:drill"
 
 export function storeCurrentDrill(update) {
@@ -86,6 +87,40 @@ export function currentGeneratorFor(generators, mode) {
   let {generator} = loadGeneratorSettings(DRILL_STORAGE_KEY)
   return generators.find(g => g.mode == mode && g.name == generator) ||
     generators.find(g => g.mode == mode)
+}
+
+// the key signatures the trainer offers, the chromatic option last
+export function allKeySignatures() {
+  return KeySignature.allKeySignatures().concat([new ChromaticKeySignature()])
+}
+
+// the stored key signature, or C major
+export function currentKeySignature() {
+  let {key} = loadGeneratorSettings(DRILL_STORAGE_KEY)
+  return allKeySignatures().find(k => k.name() == key) || allKeySignatures()[0]
+}
+
+export const DRILL_MODES = ["wait", "scroll"]
+
+// the stored trainer mode: wait for each note, or scroll at the speed
+export function currentDrillMode() {
+  let {mode} = loadGeneratorSettings(DRILL_STORAGE_KEY)
+  return DRILL_MODES.includes(mode) ? mode : DRILL_MODES[0]
+}
+
+export const SCROLL_SPEED_RANGE = [50, 300]
+export const DEFAULT_SCROLL_SPEED = 100
+
+// the stored scroll speed, the trainer's speed slider value
+export function currentScrollSpeed() {
+  let {speed} = loadGeneratorSettings(DRILL_STORAGE_KEY)
+  let [min, max] = SCROLL_SPEED_RANGE
+
+  if (typeof speed != "number" || !isFinite(speed)) {
+    return DEFAULT_SCROLL_SPEED
+  }
+
+  return Math.round(Math.min(max, Math.max(min, speed)))
 }
 
 // strip any values that don't make sense

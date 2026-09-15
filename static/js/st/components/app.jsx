@@ -1,4 +1,5 @@
 import SightReadingPage from "st/components/pages/sight_reading_page"
+import SetupPage from "st/components/pages/setup_page"
 import LoginPage from "st/components/pages/login_page"
 import RegisterPage from "st/components/pages/register_page"
 import {guideRoutes} from "st/components/pages/guide_pages"
@@ -115,6 +116,7 @@ class Layout extends React.Component {
       <Routes>
         <Route path="/" element={<SightReadingPage {...pageProps} />} />
         <Route path="/staff2" element={<SightReadingPage useStaffTwo={true} {...pageProps} />} />
+        <Route path="/setup" element={<SetupPage />} />
         <Route path="/login" element={<LoginPage/>} />
         <Route path="/register" element={<RegisterPage/>} />
 

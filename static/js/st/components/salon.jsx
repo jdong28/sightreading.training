@@ -30,8 +30,9 @@ SectionLabel.propTypes = {
   children: types.node,
 }
 
-export function Plate({header, headerAside, className, children}) {
-  return <div className={classNames(styles.plate, className)}>
+// compact is the smaller plate of a side column (5px lozenges, lighter shadow)
+export function Plate({header, headerAside, compact=false, className, children}) {
+  return <div className={classNames(styles.plate, {[styles.compact]: compact}, className)}>
     <span className={classNames(styles.lozenge, styles.top_left)} aria-hidden="true" />
     <span className={classNames(styles.lozenge, styles.top_right)} aria-hidden="true" />
     <span className={classNames(styles.lozenge, styles.bottom_left)} aria-hidden="true" />
@@ -47,6 +48,7 @@ export function Plate({header, headerAside, className, children}) {
 Plate.propTypes = {
   header: types.node,
   headerAside: types.node,
+  compact: types.bool,
   className: types.string,
   children: types.node,
 }

@@ -7,7 +7,7 @@ This file is the project's committed home for project-intrinsic agent knowledge:
 - Lint JS with `make lint_js` (some pre-existing quote and unreachable-code errors exist in untouched files).
 - Browser data (imported pieces, per-section stats, practice sessions) lives in the IndexedDB local store `static/js/st/storage.js`; `initStorage()` runs in `static/js/st/app.jsx` before the app renders. Reads are synchronous over its cache (generators and settings inputs read on every render); mutations are async and write the database before the cache. Specs use `openTestStore` from `static/js/spec/helpers.js`, never the real database.
 - The UI follows the "Salon de Chopin" design spec in `docs/design/salon-de-chopin.md`: use the `--salon-*` and `--font-display` tokens in `static/js/st/global.css` and the primitives in `static/js/st/components/salon.jsx` rather than raw values. The header is fixed; offset content with `var(--header-height)`, never a hard-coded height.
-- Staff mode generators live in the `GENERATORS` registry in `static/js/st/data.jsx`; the settings panel renders their declarative `inputs` (`static/js/st/components/sight_reading/settings_panel.jsx`).
+- Staff mode generators live in the `GENERATORS` registry in `static/js/st/data.jsx`; the settings panel renders their declarative `inputs` (`static/js/st/components/sight_reading/settings_panel.jsx`). The trainer's programme (staff, generator, key, mode, scroll speed) is stored under `DRILL_STORAGE_KEY` through the helpers in `static/js/st/generators.js`: the `/setup` page (`setup_page.jsx`) writes it and the trainer reads it at mount, so add new programme fields there, not in component state alone.
 
 ## Sharp edges
 
