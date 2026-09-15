@@ -179,8 +179,8 @@ export function pieceSection(staff, settings, song) {
 // The measures of the piece section as flashcards (see st/measure_cards),
 // or null for pasted notation, the whole section drill or a section without
 // notes on the staff. The
-// deck of the latest settings is kept so the status line and the generator
-// share the card being shown
+// deck of the latest settings is kept so a rebuilt generator carries on from
+// the card being shown
 let cardDeck = null
 
 export function measureCardDeck(staff, settings) {
@@ -637,9 +637,7 @@ export const GENERATORS = [
     ],
     // shown under the inputs in the settings panel
     status: function(staff, settings) {
-      let {status} = sheetMusicSection(staff, settings)
-      let deck = measureCardDeck(staff, settings)
-      return deck ? `${deck.status()}. ${status}` : status
+      return sheetMusicSection(staff, settings).status
     },
     create: function(staff, keySignature, settings) {
       let deck = measureCardDeck(staff, settings)

@@ -139,11 +139,8 @@ export function nextCardIndex(cards, previous, {order, weights, random=Math.rand
   return candidates[candidates.length - 1]
 }
 
-const measuresLabel = (first, last) =>
-  first == last ? `measure ${first}` : `measures ${first}–${last}`
-
 // The cards of a piece section and the one being shown, kept while the
-// section settings stay the same so the card count carries on when the staff
+// section settings stay the same so the drill carries on when the staff
 // is rebuilt (eg. a new key signature)
 export class MeasureCardDeck {
   /**
@@ -162,7 +159,6 @@ export class MeasureCardDeck {
     this.store = store
 
     this.index = null
-    this.cardNumber = 0
     this.advance()
   }
 
@@ -193,24 +189,6 @@ export class MeasureCardDeck {
     this.index = nextCardIndex(this.cards, this.index, {
       order: this.order, weights, random: this.random,
     })
-
-    if (this.index != null) {
-      this.cardNumber += 1
-    }
-  }
-
-  /** @returns {string} eg. "Card 3 · measures 5–6 of 1–16" */
-  status() {
-    let card = this.card
-    if (!card) {
-      return null
-    }
-
-    let first = this.cards[0].startMeasure
-    let last = this.cards[this.cards.length - 1].endMeasure
-    let pool = first == last ? `${first}` : `${first}–${last}`
-
-    return `Card ${this.cardNumber} · ${measuresLabel(card.startMeasure, card.endMeasure)} of ${pool}`
   }
 }
 
@@ -309,7 +287,6 @@ export class MeasureCardGenerator {
     if (this.loop) {
       if (this.done % card.columns.length == 0) {
         this.finishCard(card)
-        this.deck.cardNumber += 1
         this.tally = card.measures.map(() => ({hits: 0, misses: 0, elapsedMs: 0}))
       }
       return

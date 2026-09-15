@@ -181,16 +181,16 @@ describe("measure cards", function() {
   })
 
   describe("deck", function() {
-    it("describes the card being shown", function() {
+    it("walks the cards in order and wraps", function() {
       let deck = new MeasureCardDeck(measureCards(pickupMeasures(), 2), {
         pieceId: "p", order: IN_ORDER, store: emptyStore,
       })
 
-      expect(deck.status()).toEqual("Card 1 · measures 0–1 of 0–2")
+      expect(deck.card.measures).toEqual([0, 1])
       deck.advance()
-      expect(deck.status()).toEqual("Card 2 · measure 2 of 0–2")
+      expect(deck.card.measures).toEqual([2])
       deck.advance()
-      expect(deck.status()).toEqual("Card 3 · measures 0–1 of 0–2")
+      expect(deck.card.measures).toEqual([0, 1])
     })
   })
 
@@ -226,11 +226,11 @@ describe("measure cards", function() {
       expect([...notes]).toEqual([["B5"], [], [], [], [], []])
 
       notes = hit(notes, stats)
-      expect(deck.status()).toEqual("Card 2 · measure 2 of 0–2")
+      expect(deck.card.measures).toEqual([2])
       expect([...notes]).toEqual([["C4", "E4", "G4", "C6"], [], [], [], [], []])
 
       notes = hit(notes, stats)
-      expect(deck.status()).toEqual("Card 3 · measures 0–1 of 0–2")
+      expect(deck.card.measures).toEqual([0, 1])
       expect([...notes]).toEqual([["D6"], ["G4", "G5"], ["A5"], ["B5"], [], []])
     })
 
@@ -251,7 +251,7 @@ describe("measure cards", function() {
         plainNotes = skip(plainNotes)
       }
 
-      expect(deck.status()).toEqual("Card 3 · measures 0–2 of 0–2")
+      expect(deck.card.measures).toEqual([0, 1, 2])
     })
 
     describe("measure stats", function() {
@@ -330,7 +330,7 @@ describe("measure cards", function() {
         }
         await generator.finishing
 
-        expect(generator.deck.status()).toEqual("Card 2 · measure 2 of 0–2")
+        expect(generator.deck.card.measures).toEqual([2])
         expect(store.sectionStats("p")).toEqual([])
       })
 
@@ -464,20 +464,33 @@ describe("measure cards", function() {
 
     it("drills a piece section as measure cards", function() {
       let settings = settingsFor()
-      expect(sheetMusic.status(grand, settings)).toEqual(
-        "Card 1 · measures 0–1 of 0–2. Score has measures 0–2 (0 is the pickup), section has 5 columns")
-
       generator = sheetMusic.create(grand, null, settings)
       expect(generator instanceof MeasureCardGenerator).toBe(true)
       expect([generator.nextNote(), generator.nextNote(), generator.nextNote(), generator.nextNote(), generator.nextNote()])
         .toEqual([["D6"], ["G4", "G5"], ["A5"], ["B5"], []])
     })
 
-    it("draws the pool from the start and end measures and the hand", function() {
-      let settings = settingsFor({startMeasure: 1, endMeasure: 2, measuresPerCard: 1, hand: "left hand (bass staff)"})
-      expect(sheetMusic.status(grand, settings)).toMatch(/^Card 1 · measure 1 of 1–2\. /)
+    it("keeps the settings status the same as cards advance", function() {
+      let settings = settingsFor()
+      let status = sheetMusic.status(grand, settings)
+      expect(status).toEqual("Score has measures 0–2 (0 is the pickup), section has 5 columns")
 
       generator = sheetMusic.create(grand, null, settings)
+      let stats = new NoteStats()
+      let notes = new NoteList([], {generator})
+      notes.fillBuffer(6)
+      for (let i = 0; i < 4; i++) {
+        notes = hit(notes, stats)
+      }
+
+      expect(generator.deck.card.measures).toEqual([2])
+      expect(sheetMusic.status(grand, settings)).toEqual(status)
+    })
+
+    it("draws the pool from the start and end measures and the hand", function() {
+      let settings = settingsFor({startMeasure: 1, endMeasure: 2, measuresPerCard: 1, hand: "left hand (bass staff)"})
+      generator = sheetMusic.create(grand, null, settings)
+      expect(generator.deck.card.measures).toEqual([1])
       expect(generator.nextNote()).toEqual(["G4"])
       expect(generator.nextNote()).toEqual([])
     })
