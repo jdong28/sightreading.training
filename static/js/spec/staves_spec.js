@@ -4,7 +4,7 @@ import {flushSync} from "react-dom"
 
 import {GStaff, FStaff, GrandStaff} from "st/components/staves"
 import staffStyles from "st/components/staff.module.css"
-import {minNoteWidth, ACCIDENTAL_WIDTH, NOTE_HEAD_WIDTH} from "st/components/staff_notes"
+import {minNoteWidth, ACCIDENTAL_WIDTH, NOTE_HEAD_WIDTH, GROUP_OFFSET} from "st/components/staff_notes"
 import NoteList from "st/note_list"
 import {KeySignature, noteName, parseNote} from "st/music"
 import {parseMusicXML} from "st/musicxml"
@@ -17,7 +17,7 @@ import {pieceSectionMeasures, BOTH_HANDS, RIGHT_HAND, LEFT_HAND} from "st/data"
 import {reverieOpening, clefChangeScore, midMeasureClefScore} from "spec/helpers"
 
 // MIDI pitches, so the specs don't depend on the octave numbering of names
-const G2 = 43, C3 = 48, E3 = 52, Bb3 = 58, C4 = 60, D4 = 62, G4 = 67, D5 = 74, G5 = 79
+const G2 = 43, C3 = 48, E3 = 52, F3 = 53, G3 = 55, Bb3 = 58, C4 = 60, D4 = 62, G4 = 67, D5 = 74, G5 = 79
 
 const GRAND = {name: "grand", range: ["C2", "C6"]}
 
@@ -72,11 +72,30 @@ describe("staves", function() {
     return {left, right: left + width, top, bottom: top + height}
   }
   let headBoxes = el => notesOn(el).map(note => {
-    let left = parseFloat(note.style.left)
+    let left = parseFloat(note.style.left) +
+      (note.classList.contains(staffStyles.group_offset) ? GROUP_OFFSET : 0)
     let center = parseFloat(note.style.top) / 100 * 120
     return {left, right: left + NOTE_HEAD_WIDTH, top: center - 12, bottom: center + 12}
   })
   let overlaps = (a, b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom
+
+  // the lower staff's clef change ends before the accidental of the note
+  // after it and covers no note head
+  let expectClefChangeClear = nextPitch => {
+    let lower = staffEl("lower")
+    let [change] = clefChanges(lower)
+    expect(clefBox(change).right).toBeLessThan(noteLeft(lower, nextPitch) - ACCIDENTAL_WIDTH)
+    for (let head of headBoxes(lower)) {
+      expect(overlaps(clefBox(change), head)).toBe(false)
+    }
+  }
+
+  // the columns of the four measures of a clefChangeScore as one card
+  let clefChangeCard = opts => {
+    let song = parseMusicXML(clefChangeScore(opts))
+    let [card] = measureCards(pieceSectionMeasures(GRAND, {startMeasure: 1, endMeasure: 4, hand: BOTH_HANDS}, song), 4)
+    return card.columns.map((column, idx) => cardColumn(card, idx))
+  }
 
   describe("score staves of imported columns", function() {
     it("carries the grand staff of each note of the Rêverie opening", function() {
@@ -288,25 +307,32 @@ describe("staves", function() {
     })
 
     it("fits a clef change clear of the note heads and the next accidental", function() {
-      let song = parseMusicXML(clefChangeScore())
-      let [card] = measureCards(pieceSectionMeasures(GRAND, {startMeasure: 1, endMeasure: 4, hand: BOTH_HANDS}, song), 4)
-      let columns = card.columns.map((column, idx) => cardColumn(card, idx))
+      // C4 before the change sits above the bass staff, on a ledger line
+      let columns = clefChangeCard({notes: [["C", 3], ["C", 4], ["D", 4], ["E", 4]]})
 
       for (let noteWidth of [minNoteWidth(columns, new KeySignature(-1)), 100]) {
         renderStaff(GrandStaff, columns, {noteWidth})
-
-        let lower = staffEl("lower")
-        let [change] = clefChanges(lower)
-        expect(clefBox(change).right).toBeLessThan(noteLeft(lower, C4) - ACCIDENTAL_WIDTH)
-        for (let head of headBoxes(lower)) {
-          expect(overlaps(clefBox(change), head)).toBe(false)
-        }
+        expectClefChangeClear(D4)
       }
 
       // a wide column has room for it on the staff, smaller than the heading clef
       let box = clefBox(clefChanges(staffEl("lower"))[0])
       expect(box.top).toBeGreaterThanOrEqual(0)
       expect(box.bottom - box.top).toBeLessThan(120 * 1.15)
+    })
+
+    it("fits a clef change clear of a stacked second before it", function() {
+      let columns = clefChangeCard({notes: [["C", 3], [["F", 3], ["G", 3]], ["C", 4], ["E", 4]]})
+
+      for (let noteWidth of [minNoteWidth(columns, new KeySignature(-1)), 130]) {
+        renderStaff(GrandStaff, columns, {noteWidth})
+
+        let lower = staffEl("lower")
+        expect(notePitches(lower)).toContain(F3)
+        expect(notesOn(lower).filter(note => note.classList.contains(staffStyles.group_offset))
+          .map(note => +note.dataset.midiNote)).toEqual([G3])
+        expectClefChangeClear(C4)
+      }
     })
 
     it("draws a clef change inside a measure before the column it starts at", function() {

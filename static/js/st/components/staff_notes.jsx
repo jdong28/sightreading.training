@@ -129,7 +129,7 @@ export default class StaffNotes extends React.Component {
     heldSongNotes.forEach(note => group(note, "held"))
 
     return <div ref="notes" className={this.classNames()}>
-      {this.renderClefChanges(offsetLeft)}
+      {this.renderClefChanges(offsetLeft, songNotes.concat(heldSongNotes), noteClasses)}
       {[...byClef.values()].map(({clef, notes, held}, idx) => [
         <LedgerLines key={`ledger_lines-${idx}`}
           offsetLeft={offsetLeft}
@@ -317,10 +317,12 @@ export default class StaffNotes extends React.Component {
 
   // A small clef where the clef of the staff changes, beneath the notes in
   // the gap before the column that changes it: between the note heads of the
-  // column before and the room for an accidental of the column, and no
-  // bigger than the clef heading the staff. A gap too narrow for it draws a
-  // smaller one above the staff, ending where the accidental's room starts
-  renderClefChanges(offsetLeft) {
+  // column before (pushed right by a stacked second's offset) and the room
+  // for an accidental of the column, and no bigger than the clef heading the
+  // staff. A gap too narrow for it draws a smaller one above the staff and
+  // the note heads of the column before, ending where the accidental's room
+  // starts. notes are the song notes drawn, noteClasses their classes
+  renderClefChanges(offsetLeft, notes, noteClasses) {
     let scale = this.props.scale || 1
     let noteWidth = this.props.noteWidth
     let staffHeight = STAFF_HEIGHT * scale
@@ -332,23 +334,34 @@ export default class StaffNotes extends React.Component {
       let clef = this.columnClef(idx)
       if (idx == 0 || clef.cleffImage == this.columnClef(idx - 1).cleffImage) { return }
 
+      let before = notes.filter(note => note.getStart() == idx - 1)
+      let offset = before.some(note => (noteClasses[note.id] || []).includes(styles.group_offset)) ?
+        GROUP_OFFSET * scale : 0
+
       let glyph = clef.changeGlyph
-      let start = offsetLeft + (idx - 1) * noteWidth + NOTE_HEAD_WIDTH * scale + margin
+      let start = offsetLeft + (idx - 1) * noteWidth + NOTE_HEAD_WIDTH * scale + offset + margin
+      let space = room - offset
       let fullHeight = glyph.height * staffHeight
-      let width = Math.min(fullHeight * glyph.aspect, room)
+      let width = Math.min(fullHeight * glyph.aspect, space)
 
       let box
       if (width >= MIN_CLEF_CHANGE_WIDTH * scale) {
         let height = width / glyph.aspect
         box = {
-          left: start + (room - width) / 2,
+          left: start + (space - width) / 2,
           top: glyph.line * staffHeight - glyph.anchor * height,
           width, height,
         }
       } else {
+        let beforeClef = this.columnClef(idx - 1)
+        let headsTop = Math.min(0, ...before.map(note => {
+          let row = noteStaffOffset(this.props.keySignature.enharmonic(note.note))
+          return (beforeClef.upperRow - row) * staffHeight / 8 - NOTE_HEAD_HEIGHT * scale / 2
+        }))
+
         let height = fullHeight * ABOVE_STAFF_CLEF_CHANGE
         width = height * glyph.aspect
-        box = {left: start + room - width, top: -height - margin, width, height}
+        box = {left: start + space - width, top: headsTop - margin - height, width, height}
       }
 
       out.push(<img
