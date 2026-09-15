@@ -137,6 +137,20 @@ describe("onboarding page", function() {
     expect(strip(el).classList.contains(styles.none)).toBe(true)
   })
 
+  it("stops listening to an input unplugged before the page closes", function() {
+    let input = new FakeInput("Roland FP-30")
+    let midi = new FakeMidiAccess([input])
+    let onSelectInput = jasmine.createSpy("onSelectInput")
+    renderPage({midi, onSelectInput})
+
+    flushSync(() => midi.removeInput("0"))
+    flushSync(() => root.unmount())
+    midi.addInput(input)
+    input.sendNoteOn()
+
+    expect(onSelectInput).not.toHaveBeenCalled()
+  })
+
   it("marks the flag and takes 'Take your seat' to setup", function() {
     let el = renderPage({})
     let primary = [...el.querySelectorAll("a")].find(a => a.textContent == "Take your seat")

@@ -25,6 +25,7 @@ export default class OnboardingPage extends React.Component {
   constructor(props) {
     super(props)
     this.midiMessageListener = this.handleMidiMessage.bind(this)
+    this.attachedInputs = new Set()
     this.stateChangeListener = () => {
       this.attachInputs()
       this.forceUpdate()
@@ -57,9 +58,10 @@ export default class OnboardingPage extends React.Component {
   detachMidi(midi) {
     if (!midi) return
     midi.removeEventListener("statechange", this.stateChangeListener)
-    for (let input of midi.inputs.values()) {
+    for (let input of this.attachedInputs) {
       input.removeEventListener("midimessage", this.midiMessageListener)
     }
+    this.attachedInputs.clear()
   }
 
   // addEventListener is used so the selected device's onmidimessage handler
@@ -69,6 +71,7 @@ export default class OnboardingPage extends React.Component {
     if (!this.props.midi) return
     for (let input of this.props.midi.inputs.values()) {
       input.addEventListener("midimessage", this.midiMessageListener)
+      this.attachedInputs.add(input)
     }
   }
 
