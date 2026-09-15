@@ -38,7 +38,9 @@ import {isMobile} from "st/browser"
 import {getSession} from "st/app"
 
 import {StaffTwo} from "st/components/staff_two"
-import {fitNoteWidth, fitStaffScale} from "st/components/staff_notes"
+import {
+  fitNoteWidth, fitStaffScale, NOTE_HEAD_WIDTH, ACCIDENTAL_WIDTH
+} from "st/components/staff_notes"
 
 const DEFAULT_NOTE_WIDTH = 100
 const DEFAULT_SPEED = 4
@@ -50,10 +52,11 @@ const STAFF_TWO_HEIGHT = 150
 export const PLATE_STAFF_SCALE = 0.8
 
 // A piece's card (or whole section) is fitted to the plate: its columns are
-// squeezed down to this width (unscaled like noteWidth), a note head and a
-// little space, then the staff shrinks down to MIN_FIT_SCALE. A card that
-// still doesn't fit runs on past the plate's edge
-export const MIN_FIT_NOTE_WIDTH = 48
+// squeezed down to this width (unscaled like noteWidth), a note head and the
+// next column's accidental with a little space between, then the staff
+// shrinks down to MIN_FIT_SCALE. A card that still doesn't fit runs on past
+// the plate's edge
+export const MIN_FIT_NOTE_WIDTH = Math.ceil(NOTE_HEAD_WIDTH + ACCIDENTAL_WIDTH + 4)
 export const MIN_FIT_SCALE = 0.5
 
 // the distance in columns from a card's first column to its last

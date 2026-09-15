@@ -14,7 +14,11 @@ import styles from "st/components/staff.module.css"
 export const STAFF_NOTES_LEFT = 120
 export const KEY_SIGNATURE_SPACING = 20
 // a whole note head is 20% of the 120px staff, noteheads.s0.svg is 1.69:1
-export const NOTE_HEAD_WIDTH = 120 * 0.2 * 1.69
+const NOTE_HEAD_HEIGHT = 120 * 0.2
+export const NOTE_HEAD_WIDTH = NOTE_HEAD_HEIGHT * 1.69
+// how far a sharp, the widest accidental, reaches left of its note head: it
+// ends 10% of a head short of it and is three heads tall, sharp.svg is 245:1024
+export const ACCIDENTAL_WIDTH = NOTE_HEAD_WIDTH * 0.1 + NOTE_HEAD_HEIGHT * 3 * 245 / 1024
 // how far right a note a second away from the one below it in its column sits
 export const GROUP_OFFSET = 30
 

@@ -4,8 +4,10 @@ import {flushSync} from "react-dom"
 import {MemoryRouter} from "react-router-dom"
 
 import SightReadingPage, {
-  formatElapsed, accuracyPercent, romanNumeral
+  formatElapsed, accuracyPercent, romanNumeral, MIN_FIT_NOTE_WIDTH, MIN_FIT_SCALE, PLATE_STAFF_SCALE
 } from "st/components/pages/sight_reading_page"
+import {GStaff} from "st/components/staves"
+import NoteList from "st/note_list"
 import {fitNoteWidth, fitStaffScale} from "st/components/staff_notes"
 import staffStyles from "st/components/staff.module.css"
 import drawerStyles from "st/components/sight_reading/programme_drawer.module.css"
@@ -191,6 +193,39 @@ describe("sight reading page", function() {
     expect(fitStaffScale(644, 20, scaleOpts)).toBeCloseTo(0.555, 3)
     expect(fitStaffScale(644, 100, scaleOpts)).toEqual(0.5)
     expect(fitStaffScale(644, 20, {...scaleOpts, scale: 0.4})).toEqual(0.4)
+  })
+
+  it("keeps an accidental clear of the previous note head at the narrowest fitted columns", async function() {
+    container = document.createElement("div")
+    container.style.width = "800px"
+    document.body.appendChild(container)
+    root = createRoot(container)
+
+    let cases = [
+      [new KeySignature(-1), [["A5"], ["Eb5"]], staffStyles.flat],
+      [new KeySignature(1), [["A5"], ["C#5"]], staffStyles.sharp],
+    ]
+
+    for (let scale of [MIN_FIT_SCALE, PLATE_STAFF_SCALE]) {
+      for (let [keySignature, columns, accidentalClass] of cases) {
+        flushSync(() => root.render(React.createElement(GStaff, {
+          notes: new NoteList(columns),
+          heldNotes: {},
+          keySignature,
+          noteWidth: MIN_FIT_NOTE_WIDTH,
+          scale,
+        })))
+
+        await Promise.all([...container.querySelectorAll("img")].map(img => img.decode()))
+
+        let [previous, next] = container.querySelectorAll(`.${staffStyles.whole_note}`)
+        let head = previous.querySelector(`.${staffStyles.primary}`).getBoundingClientRect()
+        let accidental = next.querySelector(`.${accidentalClass}`).getBoundingClientRect()
+
+        expect(accidental.width).toBeGreaterThan(0)
+        expect(accidental.left).toBeGreaterThanOrEqual(head.right)
+      }
+    }
   })
 
   it("shows the measure card on the staff and in the plate header", async function() {
