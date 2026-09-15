@@ -80,11 +80,17 @@ describe("staves", function() {
   let overlaps = (a, b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom
 
   // the lower staff's clef change ends before the accidental of the note
-  // after it and covers no note head
+  // after it and the bar line of its measure, and covers no note head
   let expectClefChangeClear = nextPitch => {
     let lower = staffEl("lower")
     let [change] = clefChanges(lower)
-    expect(clefBox(change).right).toBeLessThan(noteLeft(lower, nextPitch) - ACCIDENTAL_WIDTH)
+    let next = noteLeft(lower, nextPitch)
+    let barLine = [...lower.querySelectorAll(`.${staffStyles.bar_line}`)]
+      .map(bar => parseFloat(bar.style.left))
+      .filter(left => left < next)
+      .pop()
+    expect(clefBox(change).right).toBeLessThan(next - ACCIDENTAL_WIDTH)
+    expect(clefBox(change).right).toBeLessThan(barLine)
     for (let head of headBoxes(lower)) {
       expect(overlaps(clefBox(change), head)).toBe(false)
     }

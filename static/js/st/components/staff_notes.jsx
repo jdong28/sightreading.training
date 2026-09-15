@@ -295,9 +295,6 @@ export default class StaffNotes extends React.Component {
   // moves with its column. The bar number is written above it, on the upper
   // staff only of a grand staff
   renderBarLines(offsetLeft) {
-    let noteWidth = this.props.noteWidth
-    let headWidth = NOTE_HEAD_WIDTH * (this.props.scale || 1)
-    let before = (noteWidth - headWidth) / 2
     let showNumbers = this.props.showAnnotations !== false
 
     let out = []
@@ -307,7 +304,7 @@ export default class StaffNotes extends React.Component {
       out.push(<div
         key={`bar-line-${idx}`}
         className={styles.bar_line}
-        style={{left: `${Math.round(offsetLeft + idx * noteWidth - before)}px`}}
+        style={{left: `${this.barLineLeft(offsetLeft, idx)}px`}}
         data-measure={column.measure}
         data-label={showNumbers ? column.measure : null} />)
     })
@@ -315,13 +312,21 @@ export default class StaffNotes extends React.Component {
     return out
   }
 
+  // where the bar line before the column at idx is drawn
+  barLineLeft(offsetLeft, idx) {
+    let noteWidth = this.props.noteWidth
+    let headWidth = NOTE_HEAD_WIDTH * (this.props.scale || 1)
+    return Math.round(offsetLeft + idx * noteWidth - (noteWidth - headWidth) / 2)
+  }
+
   // A small clef where the clef of the staff changes, beneath the notes in
   // the gap before the column that changes it: between the note heads of the
   // column before (pushed right by a stacked second's offset) and the room
-  // for an accidental of the column, and no bigger than the clef heading the
-  // staff. A gap too narrow for it draws a smaller one above the staff and
-  // the note heads of the column before, ending where the accidental's room
-  // starts. notes are the song notes drawn, noteClasses their classes
+  // for an accidental of the column, or the column's bar line, and no bigger
+  // than the clef heading the staff. A gap too narrow for it draws a smaller
+  // one above the staff and the note heads of the column before, ending
+  // where the gap does. notes are the song notes drawn, noteClasses their
+  // classes
   renderClefChanges(offsetLeft, notes, noteClasses) {
     let scale = this.props.scale || 1
     let noteWidth = this.props.noteWidth
@@ -341,6 +346,9 @@ export default class StaffNotes extends React.Component {
       let glyph = clef.changeGlyph
       let start = offsetLeft + (idx - 1) * noteWidth + NOTE_HEAD_WIDTH * scale + offset + margin
       let space = room - offset
+      if (column.measure != null) {
+        space = Math.min(space, this.barLineLeft(offsetLeft, idx) - margin - start)
+      }
       let fullHeight = glyph.height * staffHeight
       let width = Math.min(fullHeight * glyph.aspect, space)
 
