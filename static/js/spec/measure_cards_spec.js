@@ -521,7 +521,11 @@ describe("measure cards", function() {
       let settings = settingsFor({startMeasure: 1, endMeasure: 2, measuresPerCard: 1, hand: "left hand (bass staff)"})
       generator = sheetMusic.create(grand, null, settings)
       expect(generator.deck.card.measures).toEqual([1])
-      expect(generator.nextNote()).toEqual(["G3"])
+      let column = generator.nextNote()
+      expect([...column]).toEqual(["G3"])
+      // drawn on the score's lower staff, in the clefs the card opens with
+      expect(column.staves).toEqual([{track: 1, staff: "lower", clef: "f"}])
+      expect(column.clefs).toEqual({upper: "g", lower: "f"})
       expect(generator.nextNote()).toEqual([])
     })
 

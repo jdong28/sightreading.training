@@ -146,16 +146,47 @@ export default class StaffNotes extends React.Component {
     }
 
     let notes = new SongNoteList()
+    let placed = []
     let dur = 40 / this.props.noteWidth
 
     // notes that are held down but aren't correct
     Object.keys(this.props.heldNotes)
       .filter((note) => !this.props.notes.inHead(note))
       .forEach((note, idx) => {
-        notes.push(new SongNote(note, 0, dur))
+        let staff = this.heldNoteStaff(note)
+        if (staff == null) {
+          notes.push(new SongNote(note, 0, dur))
+        } else if (staff == this.props.staff) {
+          placed.push(new SongNote(note, 0, dur))
+        }
       })
 
-    return this.filterVisibleNotes(notes)
+    let visible = this.filterVisibleNotes(notes)
+    placed.forEach(n => visible.push(n))
+    return visible
+  }
+
+  // The score staff to draw a wrong held note on when the head column
+  // carries the score staff of its notes: the staff of the head note nearest
+  // to it, or null to split it by pitch like the columns without staves
+  heldNoteStaff(note) {
+    let head = this.props.notes[0]
+    if (!this.props.staff || !Array.isArray(head) || !head.staves || !head.length) {
+      return null
+    }
+
+    let row = noteStaffOffset(note)
+    let nearest = null
+    let nearestDistance = null
+    head.forEach((headNote, idx) => {
+      let distance = Math.abs(noteStaffOffset(headNote) - row)
+      if (nearestDistance == null || distance < nearestDistance) {
+        nearest = head.staves[idx]
+        nearestDistance = distance
+      }
+    })
+
+    return nearest ? nearest.staff : null
   }
 
   // filter notes so only the ones visible for this staff returned
@@ -195,6 +226,10 @@ export default class StaffNotes extends React.Component {
       }
     }
 
+    // notes of columns that carry their score staff, drawn on this staff when
+    // it is theirs rather than split by pitch
+    let placed = []
+
     this.props.notes.forEach((column, columnIdx) => {
       let withClasses = (note) => {
         if (columnIdx == 0) {
@@ -210,7 +245,20 @@ export default class StaffNotes extends React.Component {
         return note
       }
 
-      if (Array.isArray(column)) {
+      if (Array.isArray(column) && column.staves && this.props.staff) {
+        let onStaff = column.filter((n, idx) =>
+          column.staves[idx] && column.staves[idx].staff == this.props.staff)
+        let offsets = groupOffsets(onStaff, this.props.keySignature)
+        onStaff.forEach((n, idx) => {
+          let sNote = new SongNote(n, beat, dur)
+
+          if (offsets[idx]) {
+            appendClass(sNote, "group_offset")
+          }
+
+          placed.push(withClasses(sNote))
+        })
+      } else if (Array.isArray(column)) {
         let offsets = groupOffsets(column, this.props.keySignature)
         column.forEach((n, idx) => {
           let sNote = new SongNote(n, beat, dur)
@@ -229,7 +277,9 @@ export default class StaffNotes extends React.Component {
       beat += 1
     })
 
-    return [this.filterVisibleNotes(notes), noteClasses]
+    let visible = this.filterVisibleNotes(notes)
+    placed.forEach(n => visible.push(n))
+    return [visible, noteClasses]
   }
 
   classNames()  {

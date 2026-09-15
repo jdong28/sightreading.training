@@ -20,7 +20,10 @@ export const MAX_MEASURES_PER_CARD = 8
  * The notes of one measure of the pool.
  * @typedef {Object} PoolMeasure
  * @property {number} number the score's bar number
- * @property {string[][]} columns
+ * @property {string[][]} columns each may carry `staves`, the score staff of
+ * its notes (see extractSectionColumns in st/song_sections)
+ * @property {{upper: ?string, lower: ?string}} [clefs] the clef signs the
+ * grand staff opens the measure with (see grandStaffClefs)
  */
 
 /**
@@ -30,6 +33,8 @@ export const MAX_MEASURES_PER_CARD = 8
  * @property {number[]} measures bar numbers, in order
  * @property {string[][]} columns the columns of every measure, in order
  * @property {number[]} columnMeasures index into measures for each column
+ * @property {{upper: ?string, lower: ?string}} [clefs] the clefs of its first
+ * measure, which the staff draws the whole card in
  */
 
 /**
@@ -66,26 +71,40 @@ export function sectionCard(measures) {
     }
   })
 
-  return {
+  let card = {
     startMeasure: measures[0].number,
     endMeasure: measures[measures.length - 1].number,
     measures: measures.map(measure => measure.number),
     columns,
     columnMeasures,
   }
+
+  if (measures[0].clefs) {
+    card.clefs = measures[0].clefs
+  }
+
+  return card
 }
 
 /**
  * A copy of the card's column for the staff. When the card has more than
  * one measure, the first column of each measure carries its bar number as
- * `measure`, where the staff draws a bar line.
+ * `measure`, where the staff draws a bar line. The score staff of its notes
+ * are kept as `staves`, and the card's clefs as `clefs`, for a staff that
+ * draws them on the score's staves (st/components/staves)
  * @param {MeasureCard} card
  * @param {number} idx
  * @returns {string[]}
  */
 export function cardColumn(card, idx) {
-  let column = [...card.columns[idx]]
+  let source = card.columns[idx]
+  let column = [...source]
   let measureIdx = card.columnMeasures[idx]
+
+  if (source.staves) {
+    column.staves = source.staves
+    column.clefs = card.clefs || {upper: null, lower: null}
+  }
 
   if (card.measures.length > 1 && (idx == 0 || card.columnMeasures[idx - 1] != measureIdx)) {
     column.measure = card.measures[measureIdx]

@@ -16,6 +16,41 @@ import styles from "st/components/staff.module.css"
 const DEFAULT_HEIGHT = 120
 const DEFAULT_MARGIN = 60
 
+// the props that draw a staff in a clef, by the clef sign of st/musicxml
+export const CLEF_PROPS = {
+  g: {
+    // where the key signature is centered around
+    keySignatureCenter: "F5",
+    upperRow: 45,
+    lowerRow: 37,
+    cleffImage: "/static/svg/clefs.G.svg",
+    staffClass: styles.g_staff,
+  },
+  f: {
+    keySignatureCenter: "F3",
+    upperRow: 33,
+    lowerRow: 25,
+    cleffImage: "/static/svg/clefs.F_change.svg",
+    staffClass: styles.f_staff,
+  },
+}
+
+// The first column of notes that carries the score staff of its notes and
+// the clefs to draw them in (see cardColumn in st/measure_cards), or null
+// when the notes are split between the staves by pitch
+export function scoreStaffColumn(notes) {
+  if (!(notes instanceof NoteList)) {
+    return null
+  }
+
+  return notes.find(column => Array.isArray(column) && column.clefs) || null
+}
+
+// the props of a clef sign, or of fallback when the sign isn't drawn
+function clefProps(sign, fallback) {
+  return CLEF_PROPS[sign] || CLEF_PROPS[fallback]
+}
+
 export class Staff extends React.PureComponent {
   static propTypes = {
     // rendering props
@@ -33,6 +68,34 @@ export class Staff extends React.PureComponent {
     heldNotes: types.object.isRequired,
     inGrand: types.bool,
     scale: types.number,
+    // the grand staff this staff is ("upper" or "lower"), which draws the
+    // notes of that score staff when the columns carry it
+    staff: types.string,
+  }
+
+  // The props with the clef the score uses on this staff: a staff on its own
+  // showing the notes of a single score staff (eg. one hand of a piece), or
+  // of staves that share a clef, is drawn in that clef. The grand staff
+  // passes the clefs of its own staves
+  clefProps() {
+    let column = this.props.staff == null && scoreStaffColumn(this.props.notes)
+    if (!column) {
+      return this.props
+    }
+
+    let signs = new Set()
+    for (let col of this.props.notes) {
+      for (let staff of (Array.isArray(col) && col.staves) || []) {
+        signs.add(column.clefs[staff.staff])
+      }
+    }
+
+    let [sign] = signs
+    if (signs.size != 1 || !CLEF_PROPS[sign]) {
+      return this.props
+    }
+
+    return {...this.props, ...CLEF_PROPS[sign]}
   }
 
   // skips react for performance
@@ -74,16 +137,17 @@ export class Staff extends React.PureComponent {
   }
 
   render() {
+    let props = this.clefProps()
     let staffNotes = null
 
-    if (this.props.notes instanceof NoteList) {
-      let scale = this.props.scale || 1
-      let noteWidth = Math.floor(this.props.noteWidth * scale)
-      staffNotes = <StaffNotes ref="notes" {...this.props} noteWidth={noteWidth}></StaffNotes>
+    if (props.notes instanceof NoteList) {
+      let scale = props.scale || 1
+      let noteWidth = Math.floor(props.noteWidth * scale)
+      staffNotes = <StaffNotes ref="notes" {...props} noteWidth={noteWidth}></StaffNotes>
     }
 
-    if (this.props.notes instanceof SongNoteList) {
-      staffNotes = <StaffSongNotes ref="notes" {...this.props}></StaffSongNotes>
+    if (props.notes instanceof SongNoteList) {
+      staffNotes = <StaffSongNotes ref="notes" {...props}></StaffSongNotes>
     }
 
     let scale = this.props.scale || 1
@@ -95,16 +159,16 @@ export class Staff extends React.PureComponent {
 
     let marginTop, marginBottom
 
-    if (minRow != null && minRow < this.props.lowerRow) {
-      marginBottom = noteHeight * (this.props.lowerRow - minRow) / 2 + noteHeight
+    if (minRow != null && minRow < props.lowerRow) {
+      marginBottom = noteHeight * (props.lowerRow - minRow) / 2 + noteHeight
 
       if (marginBottom < DEFAULT_MARGIN * scale) {
         marginBottom = null
       }
     }
 
-    if (maxRow != null && maxRow > this.props.upperRow) {
-      marginTop = noteHeight * (maxRow - this.props.upperRow) / 2 + noteHeight
+    if (maxRow != null && maxRow > props.upperRow) {
+      marginTop = noteHeight * (maxRow - props.upperRow) / 2 + noteHeight
 
       if (marginTop < DEFAULT_MARGIN * scale) {
         marginTop = null
@@ -119,9 +183,10 @@ export class Staff extends React.PureComponent {
         marginTop: marginTop ? `${marginTop}px` : null,
         marginBottom: marginBottom ? `${marginBottom}px` : null,
       }}
-      className={classNames(styles.staff, this.props.staffClass)}
+      className={classNames(styles.staff, props.staffClass)}
+      data-staff={props.staff}
     >
-      <img className={styles.cleff} src={this.props.cleffImage} />
+      <img className={styles.cleff} src={props.cleffImage} />
 
       <div className={styles.lines}>
         <div className={classNames(styles.line1, styles.line)}></div>
@@ -131,14 +196,14 @@ export class Staff extends React.PureComponent {
         <div className={classNames(styles.line5, styles.line)}></div>
       </div>
 
-      {this.renderKeySignature()}
+      {this.renderKeySignature(props)}
       {staffNotes}
       {this.props.children}
     </div>
   }
 
-  renderKeySignature() {
-    let keySignature = this.props.keySignature
+  renderKeySignature(props) {
+    let keySignature = props.keySignature
 
     if (!keySignature) {
       return;
@@ -148,12 +213,12 @@ export class Staff extends React.PureComponent {
       return;
     }
 
-    let ksCenter = parseNote(this.props.keySignatureCenter)
+    let ksCenter = parseNote(props.keySignatureCenter)
     if (keySignature.isFlat()) { ksCenter -= 2 }
 
     let sigNotes = keySignature.notesInRange(ksCenter - 10, ksCenter + 2)
 
-    let topOffset = this.props.upperRow
+    let topOffset = props.upperRow
 
     let sigClass = keySignature.isFlat() ? styles.flat : styles.sharp;
 
@@ -164,7 +229,7 @@ export class Staff extends React.PureComponent {
         let fromTop = topOffset - noteStaffOffset(n);
         let style = {
           top: `${Math.floor(fromTop * 25/2)}%`,
-          left: `${i * KEY_SIGNATURE_SPACING * (this.props.scale || 1)}px`
+          left: `${i * KEY_SIGNATURE_SPACING * (props.scale || 1)}px`
         }
 
         return <img
@@ -179,24 +244,11 @@ export class Staff extends React.PureComponent {
 }
 
 export class GStaff extends Staff {
-  static defaultProps = {
-    // where the key signature is centered around
-    keySignatureCenter: "F5",
-    upperRow: 45,
-    lowerRow: 37,
-    cleffImage: "/static/svg/clefs.G.svg",
-    staffClass: styles.g_staff,
-  }
+  static defaultProps = CLEF_PROPS.g
 }
 
 export class FStaff extends Staff {
-  static defaultProps = {
-    keySignatureCenter: "F3",
-    upperRow: 33,
-    lowerRow: 25,
-    cleffImage: "/static/svg/clefs.F_change.svg",
-    staffClass: styles.f_staff,
-  }
+  static defaultProps = CLEF_PROPS.f
 }
 
 export class GrandStaff extends React.PureComponent {
@@ -236,17 +288,28 @@ export class GrandStaff extends React.PureComponent {
     return true
   }
 
+  // Notes of columns that carry their score staff (an imported piece) go on
+  // the staff of the score, each staff drawn in the clef the score uses for
+  // it at the card; other notes are split at middle C, treble over bass
   render() {
+    let column = scoreStaffColumn(this.props.notes)
+    let upperClef = column ? clefProps(column.clefs.upper, "g") : null
+    let lowerClef = column ? clefProps(column.clefs.lower, "f") : null
+
     return <div className={styles.grand_staff}>
       <GStaff
         ref={this.gstaff}
         filterPitch={this.filterGStaff}
-        {...this.props} />
+        {...this.props}
+        {...upperClef}
+        staff="upper" />
       <FStaff
         ref={this.fstaff}
         filterPitch={this.filterFStaff}
         showAnnotations={false}
-        {...this.props} />
+        {...this.props}
+        {...lowerClef}
+        staff="lower" />
     </div>;
   }
 }

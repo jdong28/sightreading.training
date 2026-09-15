@@ -809,8 +809,10 @@ export class SheetMusicGenerator {
     this.position += 1
 
     let copy = [...column]
-    if (column.measure != null) {
-      copy.measure = column.measure
+    for (let key of ["measure", "staves", "clefs"]) {
+      if (column[key] != null) {
+        copy[key] = column[key]
+      }
     }
     return copy
   }
