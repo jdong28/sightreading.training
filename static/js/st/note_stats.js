@@ -1,20 +1,65 @@
 
 import {csrfToken} from "st/globals"
 
+// generator settings worth keeping with a session: numbers, booleans, short
+// strings and short lists of those, leaving out eg. pasted song notation
+export function settingsSummary(settings) {
+  let scalar = value => ["number", "boolean"].includes(typeof value) ||
+    (typeof value == "string" && value.length <= 80)
+
+  let summary = {}
+  for (let [key, value] of Object.entries(settings || {})) {
+    if (scalar(value) || (Array.isArray(value) && value.length <= 16 && value.every(scalar))) {
+      summary[key] = value
+    }
+  }
+  return summary
+}
+
 export default class NoteStats {
   static TIMER_SIZE = 30*1000
 
+  // a note played this long after the one before ends the session and starts
+  // a new one
+  static SESSION_GAP = 30*60*1000
+
+  // opts.onSessionEnd(stats) is called before a note played after a pause of
+  // SESSION_GAP starts a new session in these stats
   constructor(currentUser, opts={}) {
     this.currentUser = currentUser
+    this.onSessionEnd = opts.onSessionEnd
+    this.startSession()
+    this.resetBuffer()
+  }
+
+  startSession() {
+    this.id = `s${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
     this.noteHitStats = {}
     this.streak = 0
+    this.bestStreak = 0
     this.hits = 0
     this.misses = 0
 
+    // times of the first and last note played
+    this.startedAt = undefined
+    this.endedAt = undefined
+
+    // milliseconds between notes, leaving out gaps of TIMER_SIZE or more
+    this.activeTime = 0
+
     this.lastHitTime = undefined
     this.averageHitTime = 0
+  }
 
-    this.resetBuffer()
+  endSessionAfterPause(time) {
+    if (this.endedAt == null || time - this.endedAt < NoteStats.SESSION_GAP) {
+      return
+    }
+
+    if (this.onSessionEnd) {
+      this.onSessionEnd(this)
+    }
+    this.startSession()
   }
 
   resetBuffer() {
@@ -58,11 +103,12 @@ export default class NoteStats {
 
 
   hitNotes(notes) {
+    let now = +new Date;
+    this.endSessionAfterPause(now)
+
     for (let note of notes) {
       this.incrementNote(note, 1);
     }
-
-    let now = +new Date;
 
     this.startTimer()
 
@@ -79,24 +125,67 @@ export default class NoteStats {
     }
 
     this.lastHitTime = now
+    this.markActivity(now)
 
     this.streak += 1;
+    this.bestStreak = Math.max(this.bestStreak, this.streak)
     this.hits += 1;
     this.buffer.hits += 1;
     this.flushLater()
   }
 
   missNotes(notes) {
+    let now = +new Date
+    this.endSessionAfterPause(now)
+
     for (let note of notes) {
       this.incrementNote(note, -1);
     }
 
     this.startTimer()
+    this.markActivity(now)
 
     this.streak = 0;
     this.misses += 1;
     this.buffer.misses += 1;
     this.flushLater()
+  }
+
+  markActivity(time) {
+    if (this.startedAt == null) {
+      this.startedAt = time
+    } else if (time - this.endedAt < NoteStats.TIMER_SIZE) {
+      this.activeTime += time - this.endedAt
+    }
+    this.endedAt = time
+  }
+
+  // The session record for the local store (see putSession in st/storage),
+  // or null before any note is played. The record keeps this object's id, so
+  // writing it again as the session grows replaces the earlier one
+  sessionRecord({staff, generator, settings}={}) {
+    if (!this.hits && !this.misses) {
+      return null
+    }
+
+    let notes = {}
+    for (let [note, stats] of Object.entries(this.noteHitStats)) {
+      notes[note] = {hits: stats.hits || 0, misses: stats.misses || 0}
+    }
+
+    return {
+      id: this.id,
+      startedAt: this.startedAt,
+      endedAt: this.endedAt,
+      activeSeconds: Math.round(this.activeTime / 1000),
+      staff: staff || null,
+      generator: generator || null,
+      settings: settingsSummary(settings),
+      notesRead: this.hits,
+      misses: this.misses,
+      bestStreak: this.bestStreak,
+      notes,
+    }
   }
 
   incrementNote(note, val) {

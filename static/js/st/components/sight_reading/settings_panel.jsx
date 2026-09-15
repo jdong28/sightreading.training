@@ -418,10 +418,11 @@ export class GeneratorSettings extends React.PureComponent {
   }
 
   // A picker of the pieces imported into a deck (see st/sheet_music_deck),
-  // with a MusicXML file import and removal of the picked piece. Picking an
-  // empty value leaves the deck, eg. for the sheet music generator's pasted
-  // notation. The input provides the deck through pieces, importFile,
-  // removePiece and pick functions.
+  // with a MusicXML file import, removal of the picked piece, and export and
+  // import of the whole library. Picking an empty value leaves the deck, eg.
+  // for the sheet music generator's pasted notation. The input provides the
+  // deck through a synchronous pieces function, the async importFile,
+  // removePiece, exportLibrary and importLibrary functions, and pick.
   renderDeck(input, idx) {
     let pieces = input.pieces()
     let currentValue = this.cachedSettings[input.name] || ""
@@ -451,13 +452,14 @@ export class GeneratorSettings extends React.PureComponent {
             type="button"
             onClick={() => {
               let piece = pieces.find(piece => piece.id == currentValue)
-              let result = input.removePiece(currentValue)
-              if (result.error) {
-                this.setState({deckMessage: {error: true, text: result.error}})
-                return
-              }
-              this.setState({deckMessage: {text: `Removed "${piece.title}" from the deck`}})
-              this.pickPiece(input, "")
+              input.removePiece(currentValue).then(result => {
+                if (result.error) {
+                  this.setState({deckMessage: {error: true, text: result.error}})
+                  return
+                }
+                this.setState({deckMessage: {text: `Removed "${piece.title}" from the deck`}})
+                this.pickPiece(input, "")
+              })
             }}>Remove</button> : null}
       </div>
       <label className={styles.file_input}>
@@ -467,6 +469,20 @@ export class GeneratorSettings extends React.PureComponent {
           accept=".musicxml,.xml,.mxl,application/vnd.recordare.musicxml+xml,application/xml,text/xml"
           onChange={e => this.importPiece(input, e)} />
       </label>
+      {input.exportLibrary ?
+        <div className={styles.deck_row}>
+          <button
+            type="button"
+            onClick={() => this.exportLibrary(input)}>Export library</button>
+        </div> : null}
+      {input.importLibrary ?
+        <label className={styles.file_input}>
+          <span>Import library</span>
+          <input
+            type="file"
+            accept=".json,application/json"
+            onChange={e => this.importLibrary(input, e)} />
+        </label> : null}
       {message ?
         <div className={message.error ? styles.input_error : styles.input_notice}>{message.text}</div> : null}
       {input.hint ? <div className={styles.input_hint}>{input.hint}</div> : null}
@@ -483,14 +499,61 @@ export class GeneratorSettings extends React.PureComponent {
     this.setState({deckMessage: {text: `Importing ${file.name}…`}})
 
     return file.text().then(text => {
-      let result = input.importFile(file.name, text)
+      return input.importFile(file.name, text).then(result => {
+        if (result.error) {
+          this.setState({deckMessage: {error: true, text: result.error}})
+          return
+        }
+
+        let text = `"${result.piece.title}" is in the deck`
+        this.setState({deckMessage: {text: result.warning ? `${text}. ${result.warning}` : text}})
+        this.pickPiece(input, result.piece.id)
+      })
+    }, err => {
+      this.setState({deckMessage: {error: true, text: `Couldn't read ${file.name}: ${err.message || err}`}})
+    })
+  }
+
+  // downloads the library file, see exportLibraryFile in st/sheet_music_deck
+  exportLibrary(input) {
+    return input.exportLibrary().then(result => {
       if (result.error) {
         this.setState({deckMessage: {error: true, text: result.error}})
         return
       }
 
-      this.setState({deckMessage: {text: `"${result.piece.title}" is in the deck`}})
-      this.pickPiece(input, result.piece.id)
+      let url = URL.createObjectURL(new Blob([result.text], {type: "application/json"}))
+      let link = document.createElement("a")
+      link.href = url
+      link.download = result.fileName
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 1000)
+
+      this.setState({deckMessage: {text: `Exported ${result.pieces} piece${result.pieces == 1 ? "" : "s"} to ${result.fileName}`}})
+    })
+  }
+
+  importLibrary(input, e) {
+    let file = e.target.files && e.target.files[0]
+    if (!file) { return }
+
+    // let the same file be picked again
+    e.target.value = ""
+
+    this.setState({deckMessage: {text: `Importing ${file.name}…`}})
+
+    return file.text().then(text => {
+      return input.importLibrary(text).then(result => {
+        if (result.error) {
+          this.setState({deckMessage: {error: true, text: result.error}})
+          return
+        }
+
+        let text = result.warning ? `${result.message}. ${result.warning}` : result.message
+        this.setState({deckMessage: {text}})
+      })
     }, err => {
       this.setState({deckMessage: {error: true, text: `Couldn't read ${file.name}: ${err.message || err}`}})
     })

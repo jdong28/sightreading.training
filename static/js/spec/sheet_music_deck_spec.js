@@ -7,7 +7,7 @@ import {
 
 import {
   songToJSON, songFromJSON, loadDeck, findPiece, pieceSong, addPiece,
-  removePiece, importMusicXMLPiece, MAX_PIECES, DECK_STORAGE_KEY
+  removePiece, importMusicXMLPiece, MAX_PIECES
 } from "st/sheet_music_deck"
 
 import {
@@ -15,31 +15,8 @@ import {
   measuresDescription, BOTH_HANDS, RIGHT_HAND, LEFT_HAND
 } from "st/data"
 
-// localStorage stand in, so the specs never touch the real deck
-class MemoryStorage {
-  constructor() {
-    this.items = {}
-  }
-
-  getItem(key) {
-    return key in this.items ? this.items[key] : null
-  }
-
-  setItem(key, value) {
-    this.items[key] = String(value)
-  }
-
-  removeItem(key) {
-    delete this.items[key]
-  }
-}
-
-// storage that has reached its quota
-class FullStorage extends MemoryStorage {
-  setItem() {
-    throw new DOMException("The quota has been exceeded.", "QuotaExceededError")
-  }
-}
+import {setAppStore} from "st/storage"
+import {openTestStore} from "spec/helpers"
 
 let tuples = notes => [...notes]
   .map(n => [n.note, n.start, n.duration])
@@ -296,35 +273,42 @@ describe("sheet music deck", function() {
   })
 
   describe("deck", function() {
-    let storage
-    beforeEach(function() {
-      storage = new MemoryStorage()
+    // a store on the specs' own database, so the specs never touch the real
+    // deck
+    let store
+    beforeEach(async function() {
+      store = await openTestStore()
     })
 
-    it("adds, selects, and removes pieces", function() {
-      expect(loadDeck(storage).pieces).toEqual([])
+    afterEach(async function() {
+      await store.close()
+    })
 
-      let {piece, error} = importMusicXMLPiece("minuet.musicxml", pickupScore(), storage)
+    it("adds, selects, and removes pieces", async function() {
+      expect(loadDeck(store).pieces).toEqual([])
+
+      let {piece, error} = await importMusicXMLPiece("minuet.musicxml", pickupScore(), store)
       expect(error).toBeUndefined()
       expect(piece.title).toEqual("Pickup Minuet")
+      expect(piece.fileName).toEqual("minuet.musicxml")
+      expect(typeof piece.importedAt).toEqual("number")
 
       // stored as song JSON, not MusicXML
-      let raw = storage.getItem(DECK_STORAGE_KEY)
-      expect(raw).not.toContain("score-partwise")
-      expect(loadDeck(storage).pieces.map(p => p.title)).toEqual(["Pickup Minuet"])
+      expect(JSON.stringify(await store.backend.getAll("pieces"))).not.toContain("score-partwise")
+      expect(loadDeck(store).pieces.map(p => p.title)).toEqual(["Pickup Minuet"])
 
       // importing the same score again picks the stored piece
-      let again = importMusicXMLPiece("minuet.musicxml", pickupScore(), storage)
+      let again = await importMusicXMLPiece("minuet.musicxml", pickupScore(), store)
       expect(again.piece.id).toEqual(piece.id)
-      expect(loadDeck(storage).pieces.length).toEqual(1)
+      expect(loadDeck(store).pieces.length).toEqual(1)
 
       // a score without a work title is named by its file
-      let untitled = importMusicXMLPiece("Waltz_in_A.xml", pickupScore({title: null}), storage)
+      let untitled = await importMusicXMLPiece("Waltz_in_A.xml", pickupScore({title: null}), store)
       expect(untitled.piece.title).toEqual("Waltz in A")
-      expect(loadDeck(storage).pieces.map(p => p.title)).toEqual(["Pickup Minuet", "Waltz in A"])
+      expect(loadDeck(store).pieces.map(p => p.title)).toEqual(["Pickup Minuet", "Waltz in A"])
 
       // select
-      let selected = findPiece(piece.id, storage)
+      let selected = findPiece(piece.id, store)
       let song = pieceSong(selected)
       expect(song.metadata.measureNumbers).toEqual([0, 1, 2])
 
@@ -333,70 +317,92 @@ describe("sheet music deck", function() {
       expect(pieceSection(grand, settings, song).columns.length).toEqual(4)
 
       // remove
-      expect(removePiece(piece.id, storage)).toEqual({})
-      expect(findPiece(piece.id, storage)).toBe(null)
-      expect(loadDeck(storage).pieces.map(p => p.title)).toEqual(["Waltz in A"])
+      expect(await removePiece(piece.id, store)).toEqual({})
+      expect(findPiece(piece.id, store)).toBe(null)
+      expect(loadDeck(store).pieces.map(p => p.title)).toEqual(["Waltz in A"])
     })
 
-    it("refuses compressed and broken files", function() {
-      expect(importMusicXMLPiece("nocturne.mxl", "whatever", storage).error).toEqual(COMPRESSED_MESSAGE)
-      expect(importMusicXMLPiece("nocturne.xml", "PKzipdata", storage).error).toEqual(COMPRESSED_MESSAGE)
-      expect(importMusicXMLPiece("broken.xml", "<score-partwise>", storage).error).toContain("well-formed")
-      expect(loadDeck(storage).pieces).toEqual([])
+    it("keeps the import order of pieces imported within a millisecond", async function() {
+      spyOn(Date, "now").and.returnValue(1000)
+      let song = parseMusicXML(pickupScore())
+      for (let title of ["C", "A", "B", "D"]) {
+        await addPiece(title, song, store)
+      }
+      expect(loadDeck(store).pieces.map(p => p.title)).toEqual(["C", "A", "B", "D"])
     })
 
-    it("keeps the deck bounded", function() {
+    it("keeps the deck object while the pieces are unchanged", async function() {
+      let deck = loadDeck(store)
+      expect(loadDeck(store)).toBe(deck)
+
+      await importMusicXMLPiece("minuet.musicxml", pickupScore(), store)
+      expect(loadDeck(store)).not.toBe(deck)
+      expect(loadDeck(store)).toBe(loadDeck(store))
+    })
+
+    it("refuses compressed and broken files", async function() {
+      expect((await importMusicXMLPiece("nocturne.mxl", "whatever", store)).error).toEqual(COMPRESSED_MESSAGE)
+      expect((await importMusicXMLPiece("nocturne.xml", "PK\u0003\u0004zipdata", store)).error).toEqual(COMPRESSED_MESSAGE)
+      expect((await importMusicXMLPiece("broken.xml", "<score-partwise>", store)).error).toContain("well-formed")
+      expect(loadDeck(store).pieces).toEqual([])
+    })
+
+    it("keeps the deck bounded", async function() {
+      // in memory, the bound doesn't depend on where the deck is kept
+      let memory = await openTestStore({persist: false})
       let song = parseMusicXML(pickupScore())
 
       for (let i = 0; i < MAX_PIECES; i++) {
-        expect(addPiece(`Piece ${i}`, song, storage).error).toBeUndefined()
+        expect((await addPiece(`Piece ${i}`, song, memory)).error).toBeUndefined()
       }
 
-      let {piece, error} = addPiece("One too many", song, storage)
+      let {piece, error} = await addPiece("One too many", song, memory)
       expect(piece).toBeUndefined()
       expect(error).toContain("The deck is full")
-      expect(loadDeck(storage).pieces.length).toEqual(MAX_PIECES)
+      expect(loadDeck(memory).pieces.length).toEqual(MAX_PIECES)
     })
 
-    it("reports a full browser storage and keeps the stored deck", function() {
-      importMusicXMLPiece("Waltz in A.xml", pickupScore({title: null}), storage)
+    it("warns when the deck is kept in memory only", async function() {
+      let memory = await openTestStore({persist: false})
+      let {piece, warning} = await importMusicXMLPiece("minuet.musicxml", pickupScore(), memory)
+      expect(piece.title).toEqual("Pickup Minuet")
+      expect(warning).toContain("kept only until the page closes")
+    })
 
-      let full = new FullStorage()
-      full.items[DECK_STORAGE_KEY] = storage.getItem(DECK_STORAGE_KEY)
+    it("reports a full browser storage and keeps the stored deck", async function() {
+      await importMusicXMLPiece("Waltz in A.xml", pickupScore({title: null}), store)
 
-      let {piece, error} = importMusicXMLPiece("minuet.musicxml", pickupScore(), full)
+      spyOn(store.backend, "write").and.rejectWith(
+        new DOMException("The quota has been exceeded.", "QuotaExceededError"))
+
+      let {piece, error} = await importMusicXMLPiece("minuet.musicxml", pickupScore(), store)
       expect(piece).toBeUndefined()
       expect(error).toEqual("\"Pickup Minuet\" wasn't added to the deck. Browser storage is full. Remove a piece from the deck and try again.")
-      expect(loadDeck(full).pieces.map(p => p.title)).toEqual(["Waltz in A"])
-    })
+      expect(loadDeck(store).pieces.map(p => p.title)).toEqual(["Waltz in A"])
 
-    it("ignores a malformed stored deck", function() {
-      storage.setItem(DECK_STORAGE_KEY, "not json")
-      expect(loadDeck(storage).pieces).toEqual([])
-
-      storage.setItem(DECK_STORAGE_KEY, JSON.stringify({pieces: [{id: 5}, null]}))
-      expect(loadDeck(storage).pieces).toEqual([])
+      // nor is it in the database
+      store.backend.write.and.callThrough()
+      let reopened = await openTestStore({keep: true})
+      expect(loadDeck(reopened).pieces.map(p => p.title)).toEqual(["Waltz in A"])
+      await reopened.close()
     })
   })
 
   describe("sheet music generator", function() {
-    // the generator reads the app's deck, so put back whatever the user had
-    let saved
-    beforeEach(function() {
-      saved = window.localStorage.getItem(DECK_STORAGE_KEY)
-      window.localStorage.removeItem(DECK_STORAGE_KEY)
+    // the generator reads the app's store, so swap in the specs' one
+    let store, appStore
+    beforeEach(async function() {
+      store = await openTestStore()
+      appStore = setAppStore(store)
     })
 
-    afterEach(function() {
-      if (saved == null) {
-        window.localStorage.removeItem(DECK_STORAGE_KEY)
-      } else {
-        window.localStorage.setItem(DECK_STORAGE_KEY, saved)
-      }
+    afterEach(async function() {
+      setAppStore(appStore)
+      await store.close()
     })
 
-    it("drills the picked piece and falls back to the notation once it's removed", function() {
-      let {piece} = importMusicXMLPiece("minuet.musicxml", pickupScore())
+    it("drills the picked piece and falls back to the notation once it's removed", async function() {
+      let {piece} = await importMusicXMLPiece("minuet.musicxml", pickupScore())
 
       let settings = {
         piece: piece.id, song: "c5 d5", startMeasure: 0, endMeasure: 0,
@@ -405,7 +411,7 @@ describe("sheet music deck", function() {
 
       expect(sheetMusicSection(grand, settings).columns).toEqual([["D6"]])
 
-      removePiece(piece.id)
+      await removePiece(piece.id)
       expect(sheetMusicSection(grand, {...settings, endMeasure: 1}).columns).toEqual([["C5"], ["D5"]])
     })
   })

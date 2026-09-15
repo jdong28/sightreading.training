@@ -14,7 +14,8 @@ import {
 } from "st/song_sections"
 
 import {
-  loadDeck, findPiece, pieceSong, removePiece, importMusicXMLPiece
+  loadDeck, findPiece, pieceSong, removePiece, importMusicXMLPiece,
+  exportLibraryFile, importLibraryFile
 } from "st/sheet_music_deck"
 
 import {ChordGenerator, MultiKeyChordGenerator} from "st/chord_generators"
@@ -479,6 +480,8 @@ export const GENERATORS = [
         pieces: () => loadDeck().pieces,
         importFile: (fileName, text) => importMusicXMLPiece(fileName, text),
         removePiece: id => removePiece(id),
+        exportLibrary: () => exportLibraryFile(),
+        importLibrary: text => importLibraryFile(text),
         // settings and staff for drilling a piece that was just picked
         pick: (settings, id) => {
           let piece = findPiece(id)
@@ -492,7 +495,7 @@ export const GENERATORS = [
             staff: sheetMusicStaffFor(song),
           }
         },
-        hint: "Import an uncompressed MusicXML file (.musicxml or .xml). Imported pieces stay in this browser's deck.",
+        hint: "Import an uncompressed MusicXML file (.musicxml or .xml). Imported pieces stay in this browser's library; export it to keep a copy or move it to another browser.",
       },
       {
         name: "song",
