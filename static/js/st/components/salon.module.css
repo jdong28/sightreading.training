@@ -215,7 +215,7 @@
     .hairline {
         display: block;
         height: 1px;
-        width: 110px;
+        width: var(--salon-fleuron-width, 110px);
         max-width: 30%;
         background: linear-gradient(90deg, transparent, var(--salon-gilt-light));
 
