@@ -57,10 +57,14 @@ let statValue = (el, label) => {
 
 let plateStatus = el => [...el.querySelectorAll("[aria-live]")][0].textContent
 
+// the real timer, so waits still run under jasmine's mock clock, which keeps
+// its mocked date and so the evening list's "today"
+const realSetTimeout = window.setTimeout.bind(window)
+
 let waitFor = async (fn, message) => {
   for (let i = 0; i < 100; i++) {
     if (fn()) { return }
-    await new Promise(resolve => setTimeout(resolve, 10))
+    await new Promise(resolve => realSetTimeout(resolve, 10))
   }
   fail(`timed out waiting for ${message}`)
 }
@@ -300,9 +304,6 @@ describe("sight reading page", function() {
 
     click(buttonNamed(el, "Rest"))
 
-    jasmine.clock().uninstall()
-    clockInstalled = false
-
     await waitFor(() => el.querySelectorAll("ol li").length == 1, "the saved session")
     let sessions = store.recentSessions()
     expect(sessions.length).toEqual(1)
@@ -350,9 +351,6 @@ describe("sight reading page", function() {
 
     click(buttonNamed(el, "Rest"))
     expect(buttonNamed(el, "Begin")).toBeDefined()
-
-    jasmine.clock().uninstall()
-    clockInstalled = false
 
     await waitFor(() => el.querySelectorAll("ol li").length == 2, "the saved sessions")
     expect(store.recentSessions().map(s => s.notesRead)).toEqual([2, 1])
