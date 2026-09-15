@@ -706,6 +706,17 @@ describe("sight reading page", function() {
     let drawer = el.querySelector(`.${drawerStyles.drawer}`)
     expect(page.state.keySignature.name()).toEqual("C")
     expect(buttonNamed(drawer, "C").disabled).toBe(false)
+
+    // a picked key sticks even when it can't be stored
+    spyOn(Storage.prototype, "setItem").and.throwError(new DOMException("blocked", "SecurityError"))
+    click(buttonNamed(drawer, "D"))
+    expect(page.state.keySignature.name()).toEqual("D")
+
+    let endMeasure = [...drawer.querySelectorAll("input[type=number]")][1]
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(endMeasure, "3")
+    flushSync(() => endMeasure.dispatchEvent(new Event("input", {bubbles: true})))
+    expect(page.state.keySignature.name()).toEqual("D")
+    Storage.prototype.setItem.and.callThrough()
   })
 
   it("keeps the sheet music deck, measure range and hand in the drawer", async function() {

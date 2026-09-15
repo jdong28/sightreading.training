@@ -81,6 +81,19 @@ function beatsPerMeasureFor(timeEl) {
   return parseBeats(beats) * 4 / +beatType
 }
 
+// The app only knows key signatures from 6 flats to 5 sharps
+// (KeySignature.allKeySignatures), so spell the remaining ones
+// enharmonically. Note names are unaffected since they come from <alter>.
+function normalizeFifths(fifths) {
+  if (fifths > 5) {
+    return fifths - 12
+  }
+  if (fifths < -6) {
+    return fifths + 12
+  }
+  return fifths
+}
+
 // pitch element -> app note name like "C#5", or null if it can't be named
 function pitchToNoteName(pitchEl) {
   let step = childText(pitchEl, "step")
@@ -404,18 +417,18 @@ export function parseMusicXML(text) {
   // the key signature in fifths as the score writes it (the trainer only
   // draws -6 to 5), in effect at each measure
   let keyPart = parts.find(p => p.fifths != null)
-  let keySignature = keyPart ? keyPart.fifths : 0
+  let firstFifths = keyPart ? keyPart.fifths : 0
   let measureKeySignatures = []
 
   for (let i = 0; i < measureCount; i++) {
     let atMeasure = keyPart && keyPart.fifthsAt[i]
     measureKeySignatures.push(atMeasure != null ? atMeasure :
-      (i > 0 ? measureKeySignatures[i - 1] : keySignature))
+      (i > 0 ? measureKeySignatures[i - 1] : firstFifths))
   }
 
   let song = new MultiTrackSong()
   song.metadata = {
-    keySignature,
+    keySignature: normalizeFifths(firstFifths),
     beatsPerMeasure,
     measureStarts,
     measureNumbers: measureNumbersFor(rawParts[0].measures, measureCount),

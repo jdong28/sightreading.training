@@ -255,7 +255,8 @@ describe("sheet music deck", function() {
 
     it("has no key for a score in a key the trainer lacks", function() {
       let song = parseMusicXML(keyChangeScore({keys: [6]}))
-      expect(song.metadata.keySignature).toEqual(6)
+      expect(song.metadata.keySignature).toEqual(-6)
+      expect(song.metadata.measureKeySignatures).toEqual([6, 6, 6, 6])
       expect(sheetMusicKeyFor(song, 1)).toBe(null)
     })
   })

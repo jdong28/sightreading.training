@@ -309,7 +309,7 @@ describe("musicxml", function() {
     ])
   })
 
-  it("keeps key signatures as the score writes them, by measure", function() {
+  it("maps key signatures the app can't show to their enharmonic key, keeping the score's by measure", function() {
     let xml = fifths => partwise(`
       <measure number="1">
         ${attributes({divisions: 1, fifths})}
@@ -317,9 +317,9 @@ describe("musicxml", function() {
       </measure>
     `)
 
-    for (let fifths of [6, 7, -7, 5, -6]) {
+    for (let [fifths, shown] of [[6, -6], [7, -5], [-7, 5], [5, 5], [-6, -6]]) {
       let {metadata} = parseMusicXML(xml(fifths))
-      expect(metadata.keySignature).toEqual(fifths)
+      expect(metadata.keySignature).toEqual(shown)
       expect(metadata.measureKeySignatures).toEqual([fifths])
     }
   })
