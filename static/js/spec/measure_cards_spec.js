@@ -306,13 +306,13 @@ describe("measure cards", function() {
           {pieceId: "p", startMeasure: 1, endMeasure: 1, hits: 3, misses: 1, attempts: 1, lastPracticed: 4000, elapsedMs: 2500},
         ])
 
-        // a long pause on a column only counts up to the idle limit
+        // a long pause on a column isn't counted
         time = 4000 + 10 * 60 * 1000
         notes = hit(notes, stats)
         await generator.finishing
 
         expect(store.sectionStats("p").find(s => s.startMeasure == 2)).toEqual(
-          {pieceId: "p", startMeasure: 2, endMeasure: 2, hits: 1, misses: 0, attempts: 1, lastPracticed: time, elapsedMs: NoteStats.TIMER_SIZE}
+          {pieceId: "p", startMeasure: 2, endMeasure: 2, hits: 1, misses: 0, attempts: 1, lastPracticed: time, elapsedMs: 0}
         )
 
         // the reloaded store has them too

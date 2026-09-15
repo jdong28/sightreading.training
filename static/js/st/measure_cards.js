@@ -296,7 +296,10 @@ export class MeasureCardGenerator {
     let time = this.now()
     let tally = this.headTally()
 
-    tally.elapsedMs += Math.min(MAX_COLUMN_MS, Math.max(0, time - this.columnStartedAt))
+    let elapsed = Math.max(0, time - this.columnStartedAt)
+    if (elapsed < MAX_COLUMN_MS) {
+      tally.elapsedMs += elapsed
+    }
     this.columnStartedAt = time
 
     // the hit is counted after the column is removed, see notePlayed
