@@ -108,6 +108,18 @@ export default class NoteList extends Array {
     return [trebleNotes, bassNotes]
   }
 
+  // Removes the head column once the player is done with it (played,
+  // skipped or scrolled past). A generator with a columnDone method is told,
+  // along with this list so it may replace the columns still to come, eg. the
+  // measure flashcards (st/measure_cards) swapping in the next card
+  shift() {
+    let column = super.shift()
+    if (this.generator && this.generator.columnDone) {
+      this.generator.columnDone(column, this)
+    }
+    return column
+  }
+
   // TODO: there's no point in having this array hold the generator, this
   // method should just take a generator instance
   pushRandom() {

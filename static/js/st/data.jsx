@@ -10,8 +10,13 @@ import {
 
 import {
   extractSectionColumns, filterColumnsToRange, parseSongText, countMeasures,
-  measureNumberRange, staffTracks
+  measureNumberRange, measureNumberList, staffTracks
 } from "st/song_sections"
+
+import {
+  MeasureCardDeck, MeasureCardGenerator, measureCards, IN_ORDER, RANDOM_ORDER,
+  MAX_MEASURES_PER_CARD
+} from "st/measure_cards"
 
 import {
   loadDeck, findPiece, pieceSong, removePiece, importMusicXMLPiece,
@@ -49,6 +54,9 @@ const ALL_TRACKS = "all"
 export const BOTH_HANDS = "both hands"
 export const RIGHT_HAND = "right hand (treble staff)"
 export const LEFT_HAND = "left hand (bass staff)"
+
+// the measures per card that drills the whole section as one looping card
+export const WHOLE_SECTION = "all"
 
 // track option names use the notation's own 0-based track index (t0, t1...)
 function sheetMusicTrackName(idx) {
@@ -166,6 +174,54 @@ export function pieceSection(staff, settings, song) {
   return sectionResult(staff, columns, parts, {
     suggestGrand: twoStaves && !tracks,
   })
+}
+
+// The measures of the piece section as flashcards (see st/measure_cards),
+// or null for pasted notation, the whole section drill or a section without
+// notes on the staff. The deck of the latest settings is kept so a rebuilt
+// generator carries on from the card being shown
+let cardDeck = null
+
+export function measureCardDeck(staff, settings) {
+  let piece = sheetMusicPiece(settings)
+  if (!piece || !(Number(settings.measuresPerCard) >= 1)) {
+    return null
+  }
+
+  let key = JSON.stringify([
+    piece.id, staff.name, staff.range, settings.startMeasure, settings.endMeasure,
+    settings.hand, settings.measuresPerCard, settings.order,
+  ])
+
+  if (cardDeck && cardDeck.key == key && cardDeck.piece == piece) {
+    return cardDeck.deck
+  }
+
+  let song = pieceSong(piece)
+  let tracks = handTracks(song, settings.hand)
+  let [firstMeasure] = measureNumberRange(song)
+  let start = Math.max(firstMeasure, Math.floor(settings.startMeasure) || 0)
+  let end = Math.floor(settings.endMeasure)
+
+  let measures = measureNumberList(song)
+    .filter(number => number >= start && number <= end)
+    .map(number => {
+      let columns = extractSectionColumns(song, {startMeasure: number, endMeasure: number, track: tracks})
+      let [visible] = filterColumnsToRange(columns, staff.range[0], staff.range[1])
+      return {number, columns: visible}
+    })
+
+  let deck = new MeasureCardDeck(measureCards(measures, settings.measuresPerCard), {
+    pieceId: piece.id,
+    order: settings.order,
+  })
+
+  if (!deck.playable) {
+    deck = null
+  }
+
+  cardDeck = {key, piece, deck}
+  return deck
 }
 
 // columns for the current sheet music settings on the given staff, plus a
@@ -554,12 +610,41 @@ export const GENERATORS = [
         ],
         visible: settings => !!sheetMusicPiece(settings),
       },
+      {
+        name: "measuresPerCard",
+        label: "measures per card",
+        type: "select",
+        default: WHOLE_SECTION,
+        values: [
+          {name: WHOLE_SECTION},
+          ...Array.from({length: MAX_MEASURES_PER_CARD}, (_, idx) => ({name: `${idx + 1}`})),
+        ],
+        hint: "All loops the whole section. A number shows that many measures of the section at a time, like a flashcard.",
+        visible: settings => !!sheetMusicPiece(settings),
+      },
+      {
+        name: "order",
+        type: "select",
+        default: IN_ORDER,
+        values: [
+          {name: IN_ORDER},
+          {name: RANDOM_ORDER},
+        ],
+        hint: "Random picks the measures you miss most more often.",
+        visible: settings => !!sheetMusicPiece(settings),
+      },
     ],
     // shown under the inputs in the settings panel
     status: function(staff, settings) {
       return sheetMusicSection(staff, settings).status
     },
     create: function(staff, keySignature, settings) {
+      let deck = measureCardDeck(staff, settings)
+      if (deck) {
+        let recordNotes = settings.startMeasure != settings.endMeasure
+        return new MeasureCardGenerator(deck, {recordNotes})
+      }
+
       let {columns} = sheetMusicSection(staff, settings)
       return new SheetMusicGenerator(columns)
     }

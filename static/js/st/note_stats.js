@@ -16,6 +16,23 @@ export function settingsSummary(settings) {
   return summary
 }
 
+// told about every hit and miss counted by any stats, see addNoteListener
+const noteListeners = new Set()
+
+// Calls fn({type: "hit" or "miss", time}) after every hit and miss counted by
+// any NoteStats, eg. so the measure flashcards (st/measure_cards) can tell
+// which measure the player got wrong. Returns a function that removes it
+export function addNoteListener(fn) {
+  noteListeners.add(fn)
+  return () => noteListeners.delete(fn)
+}
+
+function notifyNoteListeners(event) {
+  for (let fn of noteListeners) {
+    fn(event)
+  }
+}
+
 export default class NoteStats {
   static TIMER_SIZE = 30*1000
 
@@ -134,6 +151,7 @@ export default class NoteStats {
     this.hits += 1;
     this.buffer.hits += 1;
     this.flushLater()
+    notifyNoteListeners({type: "hit", time: now})
   }
 
   missNotes(notes) {
@@ -151,6 +169,7 @@ export default class NoteStats {
     this.misses += 1;
     this.buffer.misses += 1;
     this.flushLater()
+    notifyNoteListeners({type: "miss", time: now})
   }
 
   markActivity(time) {
