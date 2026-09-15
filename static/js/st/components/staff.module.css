@@ -230,20 +230,8 @@
         /* where the clef changes, see StaffNotes#renderClefChanges */
         .clef_change {
             position: absolute;
-            z-index: 1;
-            transform: translate(-50%, 0);
             user-select: none;
             -webkit-user-drag: none;
-
-            &.g_staff {
-                height: 115%;
-                top: 3%;
-            }
-
-            &.f_staff {
-                height: 58%;
-                top: 7%;
-            }
         }
 
         .annotation {

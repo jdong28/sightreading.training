@@ -1,6 +1,5 @@
 import * as React from "react"
 
-import classNames from "classnames"
 import * as types from "prop-types"
 import {parseNote, noteStaffOffset, MIDDLE_C_PITCH} from "st/music"
 
@@ -14,8 +13,9 @@ import styles from "st/components/staff.module.css"
 // .group_offset in staff.module.css
 export const STAFF_NOTES_LEFT = 120
 export const KEY_SIGNATURE_SPACING = 20
-// a whole note head is 20% of the 120px staff, noteheads.s0.svg is 1.69:1
-const NOTE_HEAD_HEIGHT = 120 * 0.2
+const STAFF_HEIGHT = 120
+// a whole note head is 20% of the staff, noteheads.s0.svg is 1.69:1
+const NOTE_HEAD_HEIGHT = STAFF_HEIGHT * 0.2
 export const NOTE_HEAD_WIDTH = NOTE_HEAD_HEIGHT * 1.69
 // how far a sharp, the widest accidental, reaches left of its note head: it
 // ends 10% of a head short of it and is three heads tall, sharp.svg is 245:1024
@@ -25,6 +25,13 @@ export const GROUP_OFFSET = 30
 
 // the space between an accidental and the note heads of the column before it
 const ACCIDENTAL_GAP = 4
+
+// the space a clef change keeps from the note heads and accidentals around it
+const CLEF_CHANGE_MARGIN = 2
+// the narrowest clef change drawn on the staff, else a small one goes above it
+const MIN_CLEF_CHANGE_WIDTH = 10
+// the size of a clef change above the staff, as a share of its full size
+const ABOVE_STAFF_CLEF_CHANGE = 0.3
 
 // room right of the last column: its note head, a stacked second's offset and
 // the ledger lines' overhang
@@ -122,6 +129,7 @@ export default class StaffNotes extends React.Component {
     heldSongNotes.forEach(note => group(note, "held"))
 
     return <div ref="notes" className={this.classNames()}>
+      {this.renderClefChanges(offsetLeft)}
       {[...byClef.values()].map(({clef, notes, held}, idx) => [
         <LedgerLines key={`ledger_lines-${idx}`}
           offsetLeft={offsetLeft}
@@ -154,7 +162,6 @@ export default class StaffNotes extends React.Component {
       ])}
 
       {this.renderBarLines(offsetLeft)}
-      {this.renderClefChanges(offsetLeft)}
       {this.renderAnnotations()}
     </div>
   }
@@ -308,22 +315,51 @@ export default class StaffNotes extends React.Component {
     return out
   }
 
-  // A small clef where the clef of the staff changes, on the boundary before
-  // the column that changes it, where a new measure's bar line is
+  // A small clef where the clef of the staff changes, beneath the notes in
+  // the gap before the column that changes it: between the note heads of the
+  // column before and the room for an accidental of the column, and no
+  // bigger than the clef heading the staff. A gap too narrow for it draws a
+  // smaller one above the staff, ending where the accidental's room starts
   renderClefChanges(offsetLeft) {
+    let scale = this.props.scale || 1
     let noteWidth = this.props.noteWidth
-    let headWidth = NOTE_HEAD_WIDTH * (this.props.scale || 1)
-    let before = (noteWidth - headWidth) / 2
+    let staffHeight = STAFF_HEIGHT * scale
+    let margin = CLEF_CHANGE_MARGIN * scale
+    let room = noteWidth - (NOTE_HEAD_WIDTH + ACCIDENTAL_WIDTH) * scale - 2 * margin
 
     let out = []
     this.props.notes.forEach((column, idx) => {
       let clef = this.columnClef(idx)
       if (idx == 0 || clef.cleffImage == this.columnClef(idx - 1).cleffImage) { return }
 
+      let glyph = clef.changeGlyph
+      let start = offsetLeft + (idx - 1) * noteWidth + NOTE_HEAD_WIDTH * scale + margin
+      let fullHeight = glyph.height * staffHeight
+      let width = Math.min(fullHeight * glyph.aspect, room)
+
+      let box
+      if (width >= MIN_CLEF_CHANGE_WIDTH * scale) {
+        let height = width / glyph.aspect
+        box = {
+          left: start + (room - width) / 2,
+          top: glyph.line * staffHeight - glyph.anchor * height,
+          width, height,
+        }
+      } else {
+        let height = fullHeight * ABOVE_STAFF_CLEF_CHANGE
+        width = height * glyph.aspect
+        box = {left: start + room - width, top: -height - margin, width, height}
+      }
+
       out.push(<img
         key={`clef-change-${idx}`}
-        className={classNames(styles.clef_change, clef.staffClass)}
-        style={{left: `${Math.round(offsetLeft + idx * noteWidth - before)}px`}}
+        className={styles.clef_change}
+        style={{
+          left: `${box.left}px`,
+          top: `${box.top}px`,
+          width: `${box.width}px`,
+          height: `${box.height}px`,
+        }}
         src={clef.cleffImage} />)
     })
 

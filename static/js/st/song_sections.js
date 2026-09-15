@@ -156,7 +156,8 @@ function groupByOnset(entries, clefsAt) {
 // null/undefined for all tracks
 // opts.staves: when set, each column carries column.staves, the grand staff
 // ("upper" or "lower", see staffTracks) each of its notes is written on, and
-// column.clefs, the clef sign of each staff at its onset (see grandStaffClefs)
+// column.clefs, the clef sign at its onset of each staff the tracks are on
+// (see grandStaffClefs)
 // returns array of columns, each an ascending array of note names
 export function extractSectionColumns(song, opts={}) {
   let [firstMeasure] = measureNumberRange(song)
@@ -195,7 +196,7 @@ export function extractSectionColumns(song, opts={}) {
     note.start < endBeat - ONSET_EPSILON / 2
   )
 
-  return groupByOnset(inRange, grand && grandStaffClefs(song, grand))
+  return groupByOnset(inRange, grand && grandStaffClefs(song, grand, trackIndices))
 }
 
 // Drops notes that fall outside [min, max] pitch (note names), removing
@@ -239,17 +240,18 @@ function openingClef(track) {
   return sign
 }
 
-// The clef signs each staff of the grand staff grand (see staffTracks) is
-// drawn in, from the clefs of the first track on it: a function of beat,
-// called with beats in order, giving {upper, lower}, each the last clef
-// starting by then, else the clef the staff opens with, or null for a staff
-// without clefs
-function grandStaffClefs(song, grand) {
-  let staves = [["upper", grand.treble], ["lower", grand.bass]].map(([name, tracks]) => {
-    let track = tracks.length ? song.tracks[tracks[0]] : null
-    let clefs = [...((track && track.cleffs) || [])].sort((a, b) => a[0] - b[0])
-    return {name, clefs, idx: 0}
-  })
+// The clef signs the staves of the grand staff grand (see staffTracks) that
+// trackIndices are on are drawn in, from the clefs of the first track on
+// each: a function of beat, called with beats in order, giving eg. {upper,
+// lower}, each the last clef starting by then, else the clef the staff opens
+// with, or null for a staff without clefs
+function grandStaffClefs(song, grand, trackIndices) {
+  let staves = [["upper", grand.treble], ["lower", grand.bass]]
+    .filter(([, tracks]) => tracks.some(idx => trackIndices.includes(idx)))
+    .map(([name, tracks]) => {
+      let clefs = [...(song.tracks[tracks[0]].cleffs || [])].sort((a, b) => a[0] - b[0])
+      return {name, clefs, idx: 0}
+    })
 
   return beat => {
     let out = {}

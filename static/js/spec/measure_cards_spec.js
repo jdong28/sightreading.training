@@ -525,7 +525,7 @@ describe("measure cards", function() {
       expect([...column]).toEqual(["G3"])
       // drawn on the score's lower staff, in the clefs at its onset
       expect(column.staves).toEqual(["lower"])
-      expect(column.clefs).toEqual({upper: "g", lower: "f"})
+      expect(column.clefs).toEqual({lower: "f"})
       expect(generator.nextNote()).toEqual([])
     })
 

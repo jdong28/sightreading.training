@@ -25,6 +25,10 @@ export const CLEF_PROPS = {
     lowerRow: 37,
     cleffImage: "/static/svg/clefs.G.svg",
     staffClass: styles.g_staff,
+    // the clef drawn where the clef changes: at full size its height, in
+    // staff heights, and width:height, and the line it curls around, as a
+    // share of the staff and of the clef's height from the top
+    changeGlyph: {height: 1.15, aspect: 332.166 / 912.17, line: 0.75, anchor: 0.626},
   },
   f: {
     keySignatureCenter: "F3",
@@ -32,26 +36,8 @@ export const CLEF_PROPS = {
     lowerRow: 25,
     cleffImage: "/static/svg/clefs.F_change.svg",
     staffClass: styles.f_staff,
+    changeGlyph: {height: 0.58, aspect: 541.731 / 653.875, line: 0.25, anchor: 0.31},
   },
-}
-
-// The grand staves a staff draws the notes of when the columns carry their
-// staff and clefs (an imported piece, see cardColumn in st/measure_cards):
-// its own staff of a grand staff, or every staff of the columns for a staff
-// on its own. null when the notes are split between the staves by pitch
-function scoreStaves(notes, staff) {
-  if (!(notes instanceof NoteList)) {
-    return null
-  }
-
-  let staves = new Set()
-  for (let column of notes) {
-    if (!Array.isArray(column) || !column.clefs) { continue }
-    if (staff) { return [staff] }
-    column.staves.forEach(s => staves.add(s))
-  }
-
-  return staves.size ? [...staves] : null
 }
 
 export class Staff extends React.PureComponent {
@@ -77,25 +63,27 @@ export class Staff extends React.PureComponent {
   }
 
   // The props with the clef the score uses on this staff at its first
-  // column, and columnClefs, the clef props each column is drawn in: the
-  // clef the staves shown share at the column (eg. one hand of a piece on a
-  // staff on its own), else the staff's own. A column without clefs, eg. the
-  // gap after a card, keeps the clef of the column before it, or of the
-  // first column with clefs when it leads
+  // column, and columnClefs, the clef props each column is drawn in, when
+  // the columns carry the clefs of the score's staves (an imported piece,
+  // see cardColumn in st/measure_cards): the clef of this staff of a grand
+  // staff, or for a staff on its own the clef of the one staff the drill's
+  // hand is on, else the staff's own. A column without clefs, eg. the gap
+  // after a card, keeps the clef of the column before it, or of the first
+  // column with clefs when it leads
   clefProps() {
-    let staves = scoreStaves(this.props.notes, this.props.staff)
-    if (!staves) {
+    let notes = this.props.notes
+    let signs = notes instanceof NoteList ? notes.map(column => {
+      if (!column.clefs) { return undefined }
+      if (this.props.staff) { return column.clefs[this.props.staff] }
+      let staves = Object.keys(column.clefs)
+      return staves.length == 1 ? column.clefs[staves[0]] : null
+    }) : []
+
+    let sign = signs.find(s => s !== undefined)
+    if (sign === undefined) {
       return this.props
     }
 
-    let signs = this.props.notes.map(column => {
-      if (!column.clefs) { return undefined }
-      let shared = new Set(staves.map(staff => column.clefs[staff]))
-      let [sign] = shared
-      return shared.size == 1 ? sign : null
-    })
-
-    let sign = signs.find(s => s !== undefined)
     let columnClefs = signs.map(columnSign => {
       if (columnSign !== undefined) { sign = columnSign }
       return CLEF_PROPS[sign] || this.props
