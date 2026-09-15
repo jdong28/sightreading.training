@@ -1,6 +1,9 @@
 import NoteList from "st/note_list"
 import {StaffTwo} from "st/components/staff_two"
 import {render} from "spec/helpers"
+import {createRoot} from "react-dom/client"
+import {flushSync} from "react-dom"
+import Two from "two.js"
 
 import {GStaff, FStaff, GrandStaff, ChordStaff} from "st/components/staves"
 
@@ -357,4 +360,110 @@ describe("staff two", function() {
   })
 
 
+})
+
+// these specs mount into their own isolated root (rather than the shared
+// helper root) so each test has direct control over unmount timing
+describe("staff two mount/unmount race", function() {
+  let container
+
+  beforeEach(function() {
+    container = document.createElement("div")
+    document.body.appendChild(container)
+  })
+
+  afterEach(function() {
+    document.body.removeChild(container)
+  })
+
+  it("does not throw when unmounted before Two.js setup has assigned state.two", function() {
+    const root = createRoot(container)
+
+    let instance
+    flushSync(() => {
+      root.render(React.createElement(StaffTwo, {
+        ref: inst => { instance = inst },
+        type: "treble",
+        keySignature: new KeySignature(0)
+      }))
+    })
+
+    // simulate an unmount landing before the Two.js setup triggered by mount
+    // has assigned state.two (e.g. mount and unmount in the same tick)
+    instance.state = {...instance.state, two: undefined}
+
+    expect(() => instance.componentWillUnmount()).not.toThrow()
+  })
+
+  it("paints the scene (flushes to Two#update) when notes/type/keySignature are already set on the first render", function() {
+    const root = createRoot(container)
+    const updateSpy = spyOn(Two.prototype, "update").and.callThrough()
+
+    flushSync(() => {
+      root.render(React.createElement(StaffTwo, {
+        type: "treble",
+        keySignature: new KeySignature(0),
+        notes: new NoteList([["C5"]])
+      }))
+    })
+
+    // componentDidMount always does one initial (empty) update() before the
+    // staff/notes exist; the scene must be painted again once they're added,
+    // without requiring a later, separate prop change to trigger it
+    expect(updateSpy.calls.count()).toBeGreaterThan(1)
+
+    flushSync(() => root.unmount())
+  })
+
+  it("waits for asset refs to attach before rendering the staves", function() {
+    const root = createRoot(container)
+
+    let instance
+    flushSync(() => {
+      root.render(React.createElement(StaffTwo, {
+        ref: inst => { instance = inst },
+        type: "treble",
+        keySignature: new KeySignature(0),
+        notes: new NoteList([["C5"]])
+      }))
+    })
+
+    // swap in a fresh, unattached ref so the next render mounts a staff that
+    // needs it before React commits and attaches it
+    instance.assets.fclef = React.createRef()
+    instance.assetCache = {}
+
+    expect(() => flushSync(() => {
+      root.render(React.createElement(StaffTwo, {
+        ref: inst => { instance = inst },
+        type: "bass",
+        keySignature: new KeySignature(0),
+        notes: new NoteList([["C5"]])
+      }))
+    })).not.toThrow()
+    expect(instance.assets.fclef.current).toBeTruthy()
+    expect(instance.bassStaffRef.current).toBeTruthy()
+
+    flushSync(() => root.unmount())
+  })
+
+  it("throws a clear error when an asset is genuinely missing", function() {
+    const root = createRoot(container)
+
+    let instance
+    flushSync(() => {
+      root.render(React.createElement(StaffTwo, {
+        ref: inst => { instance = inst },
+        type: "treble",
+        keySignature: new KeySignature(0)
+      }))
+    })
+
+    instance.assets.gclef = {current: null}
+    instance.assetCache = {}
+
+    expect(() => instance.getAsset("gclef")).toThrowError("Failed to find asset by name: gclef")
+
+    flushSync(() => root.unmount())
+  })
 })

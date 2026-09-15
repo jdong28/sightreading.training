@@ -15,6 +15,7 @@ This file is the project's committed home for project-intrinsic agent knowledge:
 - The old localStorage deck (`st:sheet_music_pieces:v1`) is migrated into the pieces store once; the `legacyDeckMigrated` record in the `meta` store stops it re-running, and the old key is left in place. Schema changes bump `DB_VERSION` with a new `upgradeSchema` step.
 - Song beats are quarter notes everywhere (`beatsPerMeasure` for 6/8 is 3). `static/js/st/song_parser.js` is the reference for how notation becomes the `MultiTrackSong` model.
 - Diatonic (7-step) scale notes are spelled by letter (`letterNoteName` in `static/js/st/music.js`), not by `noteName`'s pitch-based enharmonic guess, so each letter name appears exactly once (e.g. Gb major's degree is Cb, not B). Chords and the chromatic scale still use pitch-based spelling.
+- `StaffTwo` (`static/js/st/components/staff_two.jsx`) paints its Two.js scene via `flush()`, gated by `this.flushChanges`. That flag is normally set by memoized watcher components (`RefreshNotes`/`RefreshStaves`) that only re-run on a prop *change* — so any code path that needs a repaint without a subsequent prop change (e.g. the post-mount flush in `componentDidMount`) must set `this.flushChanges` and call `this.flush()` directly. Don't assume asset refs or `state.two` exist yet: `renderStaves()` waits on `assetsReady()`, and `componentWillUnmount()` tolerates an unset `state.two`.
 
 ## Maintaining this file
 
