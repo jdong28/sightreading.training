@@ -563,7 +563,7 @@ export class LocalStore {
       ...current,
       hits: current.hits + hits,
       misses: current.misses + misses,
-      attempts: current.attempts + 1,
+      attempts: current.attempts + (hits || misses ? 1 : 0),
       lastPracticed: Math.max(current.lastPracticed, at),
     }
 

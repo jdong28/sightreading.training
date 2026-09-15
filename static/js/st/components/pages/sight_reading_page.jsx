@@ -775,8 +775,6 @@ export default class SightReadingPage extends React.Component {
     if (!hits && !misses) { return null }
 
     let {pieceId, startMeasure, endMeasure} = mark.section
-    if (startMeasure == endMeasure) { return null }
-
     return {pieceId, startMeasure, endMeasure, hits, misses, at: mark.stats.endedAt}
   }
 

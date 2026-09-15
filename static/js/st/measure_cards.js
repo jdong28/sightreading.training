@@ -229,10 +229,14 @@ export class MeasureCardGenerator {
   /**
    * @param {MeasureCardDeck} deck
    * @param {Object} [opts]
+   * @param {boolean} [opts.recordNotes] false records only the time on the
+   * measures, eg. when the section is a single measure whose hits and misses
+   * the page already records
    * @param {function(): number} [opts.now]
    */
-  constructor(deck, {now=Date.now}={}) {
+  constructor(deck, {recordNotes=true, now=Date.now}={}) {
     this.deck = deck
+    this.recordNotes = recordNotes
     this.now = now
     this.loop = deck.playableCount <= 1
 
@@ -357,7 +361,9 @@ export class MeasureCardGenerator {
           pieceId: this.deck.pieceId,
           startMeasure: measure,
           endMeasure: measure,
-          hits, misses, elapsedMs, at,
+          hits: this.recordNotes ? hits : 0,
+          misses: this.recordNotes ? misses : 0,
+          elapsedMs, at,
         }).catch(err => console.warn("Couldn't save the measure stats", err))
       }))
     })

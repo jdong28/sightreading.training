@@ -332,12 +332,15 @@ describe("measure cards", function() {
         expect(store.sectionStats("p")).toEqual([])
       })
 
-      it("times the first column from when it is shown, a single measure section too", async function() {
+      it("times the first column from when it is shown, only the time for a single measure section", async function() {
         let deck = new MeasureCardDeck(measureCards([pickupMeasures()[1]], 1), {
           pieceId: "p", order: IN_ORDER, store,
         })
 
-        let generator = track(new MeasureCardGenerator(deck, {now: () => time}))
+        // the page records the section's hits and misses
+        await store.recordSectionPractice({pieceId: "p", startMeasure: 1, endMeasure: 1, hits: 2, misses: 1, at: 500})
+
+        let generator = track(new MeasureCardGenerator(deck, {recordNotes: false, now: () => time}))
         let notes = new NoteList([], {generator})
         let stats = new NoteStats()
 
@@ -345,6 +348,8 @@ describe("measure cards", function() {
         notes.fillBuffer(6)
         time = 1600
         notes = hit(notes, stats)
+        time = 1800
+        stats.missNotes(["A5"])
         time = 2000
         notes = hit(notes, stats)
         time = 3000
@@ -352,7 +357,7 @@ describe("measure cards", function() {
         await generator.finishing
 
         expect(store.sectionStats("p")).toEqual([
-          {pieceId: "p", startMeasure: 1, endMeasure: 1, hits: 3, misses: 0, attempts: 1, lastPracticed: 3000, elapsedMs: 2000},
+          {pieceId: "p", startMeasure: 1, endMeasure: 1, hits: 2, misses: 1, attempts: 1, lastPracticed: 3000, elapsedMs: 2000},
         ])
       })
     })

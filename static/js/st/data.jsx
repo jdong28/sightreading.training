@@ -638,7 +638,8 @@ export const GENERATORS = [
     create: function(staff, keySignature, settings) {
       let deck = measureCardDeck(staff, settings)
       if (deck) {
-        return new MeasureCardGenerator(deck)
+        let recordNotes = settings.startMeasure != settings.endMeasure
+        return new MeasureCardGenerator(deck, {recordNotes})
       }
 
       let {columns} = sheetMusicSection(staff, settings)
