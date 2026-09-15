@@ -45,7 +45,7 @@ export class SampleOutput extends BaseOutputChannel {
       return
     }
 
-    let note = noteName(pitch - 12)
+    let note = noteName(pitch)
     this.noteOff(pitch)
 
     if (velocity == 0) { return }

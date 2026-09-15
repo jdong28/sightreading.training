@@ -11,10 +11,9 @@ import {
 import styles from "./programme_drawer.module.css"
 
 import {noteName, parseNote} from "st/music"
-import {shiftNotationOctaves} from "st/song_parser"
 import * as types from "prop-types"
 
-import {ENABLE_PRESETS, FRONTEND_ONLY} from "st/globals"
+import {ENABLE_PRESETS} from "st/globals"
 
 import {getSession} from "st/app"
 
@@ -367,18 +366,6 @@ export class GeneratorSettings extends React.PureComponent {
   // this panel's styles for any class name the passed classes don't define
   get styles() {
     return this.props.classes ? {...styles, ...this.props.classes} : styles
-  }
-
-  componentDidMount() {
-    // text inputs flagged with library can be filled from the play along
-    // song library, which needs a backend and a logged in user
-    if (FRONTEND_ONLY) { return }
-    const session = getSession()
-    if (!session || !session.currentUser) { return }
-
-    if ((this.props.generator.inputs || []).some(input => input.library)) {
-      this.loadSongLibrary()
-    }
   }
 
   render() {
@@ -737,7 +724,6 @@ export class GeneratorSettings extends React.PureComponent {
     let currentValue = this.cachedSettings[input.name] || ""
 
     return <div className={this.styles.text_input_row}>
-      {input.library ? this.renderSongLibrary(input) : null}
       <textarea
         className={this.styles.text_input}
         aria-label={input.label || input.name}
@@ -747,61 +733,6 @@ export class GeneratorSettings extends React.PureComponent {
         onChange={e => this.updateInputValue(input, e.target.value)} />
       {input.hint ? <div className={this.styles.input_hint}>{input.hint}</div> : null}
     </div>
-  }
-
-  // pick a song from the play along library to fill the text input, see
-  // componentDidMount for when the library is loaded. The public list is the
-  // library's first page only (its newest songs)
-  renderSongLibrary(input) {
-    let library = this.state.songLibrary
-    if (!library) { return }
-
-    let groups = [
-      ["your songs", library.mySongs],
-      ["recent public songs", library.publicSongs],
-    ]
-
-    return groups.map(([label, songs]) => {
-      if (!songs.length) { return }
-
-      let options = [{name: `Load from ${label}…`, value: ""}].concat(
-        songs.map(song => ({name: song.title, value: String(song.id)}))
-      )
-
-      return <Select
-        key={label}
-        className={this.styles.select_component}
-        value=""
-        options={options}
-        onChange={songId => {
-          if (!songId) { return }
-          let request = new XMLHttpRequest()
-          request.open("GET", `/songs/${songId}.lml`)
-          request.onload = () => {
-            if (request.status == 200) {
-              this.updateInputValue(input, shiftNotationOctaves(request.responseText, -1))
-            }
-          }
-          request.send()
-        }} />
-    })
-  }
-
-  loadSongLibrary() {
-    let request = new XMLHttpRequest()
-    request.open("GET", "/songs.json")
-    request.onload = () => {
-      try {
-        let res = JSON.parse(request.responseText)
-        this.setState({songLibrary: {
-          mySongs: res.my_songs || [],
-          publicSongs: res.songs || [],
-        }})
-      } catch (e) {
-        this.setState({songLibrary: null})
-      }
-    }
-    request.send()
   }
 
   renderNote(input, idx) {

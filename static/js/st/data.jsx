@@ -46,9 +46,8 @@ let noteRangeInput = {
 }
 
 // browser storage for the sheet music section being drilled (piece or song
-// text, measure range, hand or track) so a reload in frontend-only mode (no
-// server side song library) restores it. Imported pieces themselves live in
-// the deck, see st/sheet_music_deck
+// text, measure range, hand or track) so a reload restores it. Imported
+// pieces themselves live in the deck, see st/sheet_music_deck
 export const SHEET_MUSIC_STORAGE_KEY = "st:sheet_music_deck:v2"
 
 // where the section was kept while note names put middle C at "C5" (song
@@ -594,7 +593,6 @@ export const GENERATORS = [
         name: "song",
         label: "song notation",
         type: "text",
-        library: true, // offer play along library songs when logged in
         default: "",
         hint: "Paste song notation (the play along format). Notes at the same beat become one column.",
         visible: settings => !sheetMusicPiece(settings),

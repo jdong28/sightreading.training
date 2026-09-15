@@ -7,7 +7,7 @@ import {guideRoutes} from "st/components/pages/guide_pages"
 import StatsPage from "st/components/pages/stats"
 import FlashCardPage from "st/components/pages/flash_card_page"
 import EarTrainingPage from "st/components/pages/ear_training_page"
-import {PlayAlongPageWithParams as PlayAlongPage} from "st/components/pages/play_along_page"
+import {PlayAlongPage} from "st/components/pages/play_along_page"
 import LatencyPage from "st/components/pages/latency"
 import MidiMonitorPage from "st/components/pages/midi_monitor"
 import SongsPage from "st/components/pages/songs"
@@ -166,9 +166,7 @@ class Layout extends React.Component {
         <Route path="/stats" element={<StatsPage {...pageProps} />} />
         <Route path="/latency" element={<LatencyPage {...pageProps} />} />
         <Route path="/midi-monitor" element={<MidiMonitorPage {...pageProps} />} />
-        <Route path="/new-song" element={<PlayAlongPage newSong={true} editorOpen={true} {...pageProps} />} />
-
-        <Route path="/song/:song_id/:song_slug" element={<PlayAlongPage {...pageProps} />} />
+        <Route path="/new-song" element={<PlayAlongPage editorOpen={true} {...pageProps} />} />
 
         {guideRoutes()}
 
