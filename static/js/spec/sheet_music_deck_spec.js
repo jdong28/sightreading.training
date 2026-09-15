@@ -318,8 +318,9 @@ describe("sheet music deck", function() {
 
       await store.recordSectionPractice({pieceId: old.id, startMeasure: 2, endMeasure: 2, hits: 3, misses: 1})
 
-      let {piece, error} = await importMusicXMLPiece("reverie.musicxml", reverieOpening(), store)
+      let {piece, error, updated, sameTitle} = await importMusicXMLPiece("reverie.musicxml", reverieOpening(), store)
       expect(error).toBeUndefined()
+      expect([updated, sameTitle]).toEqual([true, undefined])
       expect(piece.id).toEqual(old.id)
       expect(piece.importedAt).toEqual(old.importedAt)
       expect(piece.fileName).toEqual("reverie.musicxml")
@@ -330,6 +331,21 @@ describe("sheet music deck", function() {
       let reopened = await openTestStore({keep: true})
       expect(pieceSong(findPiece(old.id, reopened)).metadata.measureKeySignatures).toEqual([-1, -1, -1, -1])
       await reopened.close()
+    })
+
+    it("adds a different score under a stored title as a new piece", async function() {
+      let prelude = (await addPiece("Prelude", parseMusicXML(pickupScore()), store)).piece
+      await store.recordSectionPractice({pieceId: prelude.id, startMeasure: 1, endMeasure: 1, hits: 2, misses: 0})
+
+      let {piece, error, updated, sameTitle} = await addPiece("Prelude", parseMusicXML(reverieOpening()), store)
+      expect(error).toBeUndefined()
+      expect([updated, sameTitle]).toEqual([undefined, true])
+      expect(piece.id).not.toEqual(prelude.id)
+      expect(loadDeck(store).pieces.map(p => [p.id, p.title])).toEqual([[prelude.id, "Prelude"], [piece.id, "Prelude"]])
+
+      expect(pieceSong(findPiece(prelude.id, store)).metadata.measureNumbers).toEqual([0, 1, 2])
+      expect(store.sectionStats(prelude.id).map(s => [s.startMeasure, s.hits, s.misses])).toEqual([[1, 2, 0]])
+      expect(store.sectionStats(piece.id)).toEqual([])
     })
 
     it("keeps the import order of pieces imported within a millisecond", async function() {

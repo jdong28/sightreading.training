@@ -155,11 +155,25 @@ function newPieceId() {
   return `p${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
 }
 
+// whether two stored songs are the same score: the same tracks and printed
+// measures, so a stored piece's per-measure stats still fit the other song
+function sameScore(a, b) {
+  let measures = song => {
+    let metadata = (song && song.metadata) || {}
+    return JSON.stringify([(metadata.measureStarts || []).length, metadata.measureNumbers || null])
+  }
+
+  return !!(a && b && Array.isArray(a.tracks) && Array.isArray(b.tracks)) &&
+    a.tracks.length == b.tracks.length && measures(a) == measures(b)
+}
+
 // Adds a song to the deck. Resolves to {piece} or {error}, with a warning
 // when the deck won't outlive the page. Adding the same title and notes
-// again resolves to the stored piece instead of a duplicate, and a new song
-// under a stored title replaces that piece's song, keeping its id so its
-// stats and sessions carry over.
+// again resolves to the stored piece instead of a duplicate. A new version of
+// the same score under a stored title replaces that piece's song, keeping its
+// id so its stats and sessions carry over, and resolves with updated. A
+// different score under a stored title is added as a new piece and resolves
+// with sameTitle.
 export async function addPiece(title, song, store=getAppStore(), {fileName}={}) {
   await store.init()
 
@@ -175,7 +189,8 @@ export async function addPiece(title, song, store=getAppStore(), {fileName}={}) 
     return {piece: existing, ...warning}
   }
 
-  let replaced = deck.pieces.find(piece => piece.title == title)
+  let titled = deck.pieces.filter(piece => piece.title == title)
+  let replaced = titled.find(piece => sameScore(piece.song, songData))
 
   if (!replaced && deck.pieces.length >= MAX_PIECES) {
     return {error: `The deck is full (${MAX_PIECES} pieces). Remove a piece before importing another.`}
@@ -190,8 +205,10 @@ export async function addPiece(title, song, store=getAppStore(), {fileName}={}) 
     record.fileName = fileName
   }
 
+  let outcome = replaced ? {updated: true} : titled.length ? {sameTitle: true} : {}
+
   try {
-    return {piece: await store.putPiece(record), ...warning}
+    return {piece: await store.putPiece(record), ...outcome, ...warning}
   } catch (e) {
     return {error: `"${title}" wasn't added to the deck. ${storageErrorMessage(e)}`}
   }

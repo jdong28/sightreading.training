@@ -658,7 +658,10 @@ export class GeneratorSettings extends React.PureComponent {
           return
         }
 
-        let text = `"${result.piece.title}" is in the deck`
+        let title = result.piece.title
+        let text = result.updated ? `"${title}" was updated in the deck` :
+          result.sameTitle ? `"${title}" was added as a new piece (another "${title}" is already in the deck)` :
+          `"${title}" is in the deck`
         this.setState({deckMessage: {text: result.warning ? `${text}. ${result.warning}` : text}})
         this.pickPiece(input, result.piece.id)
       })
