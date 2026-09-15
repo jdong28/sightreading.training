@@ -109,7 +109,9 @@ Main: `max-width: 1060px`, `grid-template-columns: minmax(0,1fr) 260px`, `gap: 2
   tempo (live `♩ = n`), key, and a "Take your seat" apply button that closes and regenerates.
 - **Staff plate:** engraved figure (paper, `1px solid #cdbfa4`, the double-inset shadow, four
   lozenges), header row `4/4 · ♩ = n` left and status right in `#7d2c2c`, then the real
-  `StaffTwo` component at `height: 150`, `maxScale: .3`, `min-height: 150px` reserved.
+  `StaffTwo` component at `height: 150`, `maxScale: .3`, `min-height: 150px` reserved. The
+  implementation draws both staff renderers smaller on the plate (`PLATE_STAFF_SCALE` in
+  `sight_reading_page.jsx`).
 - **Transport row:** primary pill toggling **Begin / Rest**; ghost pill "New passage"; right-aligned
   tempo term + bpm in Bodoni `16px`.
 - **Live stat cards:** four cards, `repeat(auto-fit, minmax(130px,1fr))`, `gap: 14px`, same
