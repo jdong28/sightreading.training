@@ -178,9 +178,8 @@ export function pieceSection(staff, settings, song) {
 
 // The measures of the piece section as flashcards (see st/measure_cards),
 // or null for pasted notation, the whole section drill or a section without
-// notes on the staff. The
-// deck of the latest settings is kept so a rebuilt generator carries on from
-// the card being shown
+// notes on the staff. The deck of the latest settings is kept so a rebuilt
+// generator carries on from the card being shown
 let cardDeck = null
 
 export function measureCardDeck(staff, settings) {
