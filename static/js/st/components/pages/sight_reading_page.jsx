@@ -25,7 +25,7 @@ import {dispatch, trigger} from "st/events"
 import {NOTE_EVENTS} from "st/midi"
 import {
   generatorDefaultSettings, storeCurrentDrill, currentStaffFor, currentGeneratorFor,
-  currentKeySignature, currentDrillMode, currentScrollSpeed
+  currentKeySignature, currentDrillMode, currentScrollSpeed, scoreKeySignature
 } from "st/generators"
 
 import * as React from "react"
@@ -200,7 +200,13 @@ export default class SightReadingPage extends React.Component {
         prevState.currentGeneratorSettings != this.state.currentGeneratorSettings ||
         prevState.keySignature != this.state.keySignature)
     {
-      this.refreshNoteList()
+      // an imported piece is drawn in the score's key
+      let scoreKey = scoreKeySignature(this.state.currentGenerator, this.state.currentStaff, this.state.currentGeneratorSettings)
+      if (scoreKey && scoreKey.name() != this.state.keySignature.name()) {
+        this.setKeySignature(scoreKey)
+      } else {
+        this.refreshNoteList()
+      }
     }
 
     if (prevState.currentStaff != this.state.currentStaff ||

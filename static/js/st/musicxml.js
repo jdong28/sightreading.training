@@ -81,19 +81,6 @@ function beatsPerMeasureFor(timeEl) {
   return parseBeats(beats) * 4 / +beatType
 }
 
-// The app only knows key signatures from 6 flats to 5 sharps
-// (KeySignature.allKeySignatures), so spell the remaining ones
-// enharmonically. Note names are unaffected since they come from <alter>.
-function normalizeFifths(fifths) {
-  if (fifths > 5) {
-    return fifths - 12
-  }
-  if (fifths < -6) {
-    return fifths + 12
-  }
-  return fifths
-}
-
 // pitch element -> app note name like "C#5", or null if it can't be named
 function pitchToNoteName(pitchEl) {
   let step = childText(pitchEl, "step")
@@ -158,6 +145,7 @@ function walkPart(measures, partName) {
     staves: new Set(),
     measureDurations: [], // beats, by measure index
     beatsPerMeasureAt: [], // active time signature by measure index
+    fifthsAt: [], // active key signature by measure index
     events: [],
     clefs: [],
     fifths: null,
@@ -166,6 +154,7 @@ function walkPart(measures, partName) {
 
   let divisions = 1
   let beatsPerMeasure = null
+  let fifths = null
 
   measures.forEach((measureEl, measureIdx) => {
     let position = 0 // in divisions, relative to measure start
@@ -182,9 +171,12 @@ function walkPart(measures, partName) {
 
           let key = childEl(el, "key")
           if (key) {
-            let fifths = childText(key, "fifths")
-            if (fifths != null && fifths !== "" && part.fifths == null) {
-              part.fifths = normalizeFifths(+fifths)
+            let text = childText(key, "fifths")
+            if (text != null && text !== "" && isFinite(+text)) {
+              fifths = +text
+              if (part.fifths == null) {
+                part.fifths = fifths
+              }
             }
           }
 
@@ -274,6 +266,7 @@ function walkPart(measures, partName) {
 
     part.measureDurations[measureIdx] = maxPosition / divisions
     part.beatsPerMeasureAt[measureIdx] = beatsPerMeasure
+    part.fifthsAt[measureIdx] = fifths
   })
 
   if (part.staves.size == 0) {
@@ -408,13 +401,25 @@ export function parseMusicXML(text) {
     start += length
   }
 
+  // the key signature in fifths as the score writes it (the trainer only
+  // draws -6 to 5), in effect at each measure
+  let keyPart = parts.find(p => p.fifths != null)
+  let keySignature = keyPart ? keyPart.fifths : 0
+  let measureKeySignatures = []
+
+  for (let i = 0; i < measureCount; i++) {
+    let atMeasure = keyPart && keyPart.fifthsAt[i]
+    measureKeySignatures.push(atMeasure != null ? atMeasure :
+      (i > 0 ? measureKeySignatures[i - 1] : keySignature))
+  }
+
   let song = new MultiTrackSong()
   song.metadata = {
-    keySignature: firstPart.fifths != null ? firstPart.fifths :
-      (parts.map(p => p.fifths).find(f => f != null) || 0),
+    keySignature,
     beatsPerMeasure,
     measureStarts,
     measureNumbers: measureNumbersFor(rawParts[0].measures, measureCount),
+    measureKeySignatures,
     measuresEnd: start,
   }
 

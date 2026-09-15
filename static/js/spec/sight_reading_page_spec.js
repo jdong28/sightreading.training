@@ -20,7 +20,7 @@ import {DRILL_STORAGE_KEY} from "st/generators"
 import {scopeEvent} from "st/events"
 import NoteStats from "st/note_stats"
 import {KeySignature} from "st/music"
-import {openTestStore, noteXML, reverieOpening} from "spec/helpers"
+import {openTestStore, noteXML, reverieOpening, keyChangeScore} from "spec/helpers"
 
 // a two staff 3/4 piece, measures 1 and 2
 let minuetXML = `<?xml version="1.0" encoding="UTF-8"?>
@@ -591,17 +591,43 @@ describe("sight reading page", function() {
     expect(el.textContent).toContain("Nothing played yet")
   })
 
-  it("draws a picked piece in the score's key signature until another key is picked", async function() {
+  it("draws a stored piece in the score's key signature, not the stored key", async function() {
     let {piece} = await importMusicXMLPiece("reverie.musicxml", reverieOpening(), store)
 
-    window.localStorage.setItem(DRILL_STORAGE_KEY, JSON.stringify({staff: "grand", generator: "sheet music", key: "D"}))
+    window.localStorage.setItem(DRILL_STORAGE_KEY, JSON.stringify({staff: "grand", generator: "sheet music", key: "C"}))
+    window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+      piece: piece.id, startMeasure: 1, endMeasure: 4, hand: BOTH_HANDS,
+    }))
 
     let el = renderPage()
     click(buttonLabelled(el, "Programme"))
 
     let drawer = el.querySelector(`.${drawerStyles.drawer}`)
     let keyPill = name => buttonNamed(drawer, name)
-    let staffNote = name => el.querySelector(`.${staffStyles.staff_notes} [data-note="${name}"]`)
+
+    // F major: Bb3 is drawn as the score spells it, without an accidental
+    expect(page.state.keySignature.name()).toEqual("F")
+    let flat = el.querySelector(`.${staffStyles.staff_notes} [data-note="Bb4"]`)
+    expect(flat).not.toBe(null)
+    expect(flat.classList).not.toContain(staffStyles.is_flat)
+    expect(flat.classList).not.toContain(staffStyles.is_sharp)
+
+    expect(keyPill("F").getAttribute("aria-pressed")).toEqual("true")
+    expect(keyPill("F").disabled).toBe(true)
+    expect(keyPill("C").disabled).toBe(true)
+    expect(drawer.textContent).toContain("Set by the score")
+  })
+
+  it("follows the score's key as the piece and its start measure change", async function() {
+    let {piece} = await importMusicXMLPiece("key_change.musicxml", keyChangeScore(), store)
+
+    window.localStorage.setItem(DRILL_STORAGE_KEY, JSON.stringify({staff: "treble", generator: "sheet music", key: "D"}))
+
+    let el = renderPage()
+    click(buttonLabelled(el, "Programme"))
+
+    let drawer = el.querySelector(`.${drawerStyles.drawer}`)
+    let keyPill = name => buttonNamed(drawer, name)
     let pickPiece = id => {
       let select = drawer.querySelector(`.${drawerStyles.exercise}.${drawerStyles.selected} select`)
       Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(select, id)
@@ -609,31 +635,45 @@ describe("sight reading page", function() {
       flushSync(() => {})
     }
 
-    expect(keyPill("D").getAttribute("aria-pressed")).toEqual("true")
+    // pasted notation keeps the programme's key
+    expect(page.state.keySignature.name()).toEqual("D")
+    expect(keyPill("D").disabled).toBe(false)
 
     pickPiece(piece.id)
-
-    // F major: Bb3 is drawn as the score spells it, without an accidental
     expect(page.state.keySignature.name()).toEqual("F")
     expect(keyPill("F").getAttribute("aria-pressed")).toEqual("true")
-    expect(JSON.parse(window.localStorage.getItem(DRILL_STORAGE_KEY)).key).toEqual("F")
-    let flat = staffNote("Bb4")
-    expect(flat).not.toBe(null)
-    expect(flat.classList).not.toContain(staffStyles.is_flat)
-    expect(flat.classList).not.toContain(staffStyles.is_sharp)
+    expect(keyPill("D").disabled).toBe(true)
 
-    // a key picked afterwards is kept while the piece stays
+    // the E major section
+    let startMeasure = [...drawer.querySelectorAll("input[type=number]")][0]
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(startMeasure, "3")
+    flushSync(() => startMeasure.dispatchEvent(new Event("input", {bubbles: true})))
+    flushSync(() => {})
+    expect(page.state.keySignature.name()).toEqual("E")
+    expect(keyPill("E").getAttribute("aria-pressed")).toEqual("true")
+
+    // back to pasted notation, the pills pick the key again
+    pickPiece("")
+    expect(keyPill("D").disabled).toBe(false)
+    expect(drawer.textContent).not.toContain("Set by the score")
     click(keyPill("D"))
     expect(page.state.keySignature.name()).toEqual("D")
-    let endMeasure = [...drawer.querySelectorAll("input[type=number]")][1]
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(endMeasure, "3")
-    flushSync(() => endMeasure.dispatchEvent(new Event("input", {bubbles: true})))
-    expect(page.state.keySignature.name()).toEqual("D")
+  })
 
-    // picking the piece again goes back to the score's key
-    pickPiece("")
-    pickPiece(piece.id)
-    expect(page.state.keySignature.name()).toEqual("F")
+  it("keeps the programme's key for a score in a key the trainer lacks", async function() {
+    let {piece} = await importMusicXMLPiece("f_sharp.musicxml", keyChangeScore({keys: [6]}), store)
+
+    window.localStorage.setItem(DRILL_STORAGE_KEY, JSON.stringify({staff: "treble", generator: "sheet music", key: "C"}))
+    window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+      piece: piece.id, startMeasure: 1, endMeasure: 4, hand: BOTH_HANDS,
+    }))
+
+    let el = renderPage()
+    click(buttonLabelled(el, "Programme"))
+
+    let drawer = el.querySelector(`.${drawerStyles.drawer}`)
+    expect(page.state.keySignature.name()).toEqual("C")
+    expect(buttonNamed(drawer, "C").disabled).toBe(false)
   })
 
   it("keeps the sheet music deck, measure range and hand in the drawer", async function() {

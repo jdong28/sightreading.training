@@ -16,7 +16,7 @@ import {
 } from "st/data"
 
 import {setAppStore} from "st/storage"
-import {openTestStore, pickupScore, noteXML, reverieOpening} from "spec/helpers"
+import {openTestStore, pickupScore, noteXML, reverieOpening, keyChangeScore} from "spec/helpers"
 
 let tuples = notes => [...notes]
   .map(n => [n.note, n.start, n.duration])
@@ -227,16 +227,33 @@ describe("sheet music deck", function() {
 
   describe("key signature", function() {
     it("follows the score's key, and leaves a song without one alone", function() {
-      expect(sheetMusicKeyFor(parseMusicXML(reverieOpening())).name()).toEqual("F")
-      expect(sheetMusicKeyFor(parseMusicXML(pickupScore())).name()).toEqual("G")
+      expect(sheetMusicKeyFor(parseMusicXML(reverieOpening()), 1).name()).toEqual("F")
+      expect(sheetMusicKeyFor(parseMusicXML(pickupScore()), 0).name()).toEqual("G")
 
       let song = new MultiTrackSong()
       song.pushWithTrack(new SongNote("C5", 0, 1), 0)
-      expect(sheetMusicKeyFor(song)).toBe(null)
+      expect(sheetMusicKeyFor(song, 1)).toBe(null)
 
       song.metadata = {keySignature: -1}
-      expect(sheetMusicKeyFor(song).name()).toEqual("F")
-      expect(sheetMusicKeyFor(null)).toBe(null)
+      expect(sheetMusicKeyFor(song, 1).name()).toEqual("F")
+    })
+
+    it("takes the key in effect at the section's start measure", function() {
+      let song = parseMusicXML(keyChangeScore())
+      expect(song.metadata.measureKeySignatures).toEqual([-1, -1, 4, 4])
+
+      let restored = songFromJSON(JSON.parse(JSON.stringify(songToJSON(song))))
+      expect(restored.metadata.measureKeySignatures).toEqual([-1, -1, 4, 4])
+
+      expect(sheetMusicKeyFor(restored, 2).name()).toEqual("F")
+      expect(sheetMusicKeyFor(restored, 3).name()).toEqual("E")
+      expect(sheetMusicKeyFor(restored, 4).name()).toEqual("E")
+    })
+
+    it("has no key for a score in a key the trainer lacks", function() {
+      let song = parseMusicXML(keyChangeScore({keys: [6]}))
+      expect(song.metadata.keySignature).toEqual(6)
+      expect(sheetMusicKeyFor(song, 1)).toBe(null)
     })
   })
 
@@ -386,16 +403,22 @@ describe("sheet music deck", function() {
       ])
     })
 
-    it("picks a piece in the score's key signature", async function() {
-      let pieceInput = GENERATORS.find(g => g.name == "sheet music").inputs.find(i => i.name == "piece")
+    it("draws a picked piece in the score's key at its start measure", async function() {
+      let generator = GENERATORS.find(g => g.name == "sheet music")
+      let pieceInput = generator.inputs.find(i => i.name == "piece")
 
       let {piece} = await importMusicXMLPiece("reverie.musicxml", reverieOpening())
-      let {settings, staff, key} = pieceInput.pick({}, piece.id)
+      let {settings, staff} = pieceInput.pick({}, piece.id)
       expect([settings.piece, settings.startMeasure, settings.endMeasure, settings.hand]).toEqual([piece.id, 1, 4, BOTH_HANDS])
       expect(staff).toEqual("grand")
-      expect(key.name()).toEqual("F")
+      expect(generator.keySignature(settings).name()).toEqual("F")
 
-      expect(pieceInput.pick({}, "missing").key).toBe(null)
+      let changing = (await importMusicXMLPiece("key_change.musicxml", keyChangeScore())).piece
+      let changingSettings = pieceInput.pick({}, changing.id).settings
+      expect(generator.keySignature(changingSettings).name()).toEqual("F")
+      expect(generator.keySignature({...changingSettings, startMeasure: 3}).name()).toEqual("E")
+
+      expect(generator.keySignature({piece: "missing"})).toBe(null)
     })
 
     it("drills the picked piece and falls back to the notation once it's removed", async function() {

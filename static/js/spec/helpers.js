@@ -171,3 +171,21 @@ export const reverieOpening = () => `<?xml version="1.0" encoding="UTF-8"?>
     </measure>
   </part>
 </score-partwise>`
+
+// A 4/4 single staff piece of four whole notes in the given key signatures
+// (in fifths): the first key from measure 1, the second, if any, from
+// measure 3
+export const keyChangeScore = ({title="Key Change", keys=[-1, 4]}={}) => `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <work><work-title>${title}</work-title></work>
+  <part-list>
+    <score-part id="P1"><part-name>Piano</part-name></score-part>
+  </part-list>
+  <part id="P1">
+    ${[1, 2, 3, 4].map(number => `<measure number="${number}">
+      ${number == 1 ? `<attributes><divisions>1</divisions><key><fifths>${keys[0]}</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>` : ""}
+      ${number == 3 && keys.length > 1 ? `<attributes><key><fifths>${keys[1]}</fifths></key></attributes>` : ""}
+      ${noteXML("A", 5, 4, 1)}
+    </measure>`).join("\n    ")}
+  </part>
+</score-partwise>`

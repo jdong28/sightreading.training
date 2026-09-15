@@ -11,7 +11,7 @@ import {
 
 import {
   extractSectionColumns, filterColumnsToRange, parseSongText, countMeasures,
-  measureNumberRange, measureNumberList, staffTracks
+  measureNumberRange, measureNumberList, measureKeySignature, staffTracks
 } from "st/song_sections"
 
 import {
@@ -266,11 +266,11 @@ export function sheetMusicPieceSettings(settings, song) {
   return {...settings, startMeasure, endMeasure, hand: BOTH_HANDS}
 }
 
-// the trainer's key signature for the score's key (metadata.keySignature, in
-// fifths), so its notes are drawn with the score's accidentals rather than
-// the programme's; null for a song without a key or one the trainer lacks
-export function sheetMusicKeyFor(song) {
-  let fifths = song && song.metadata && song.metadata.keySignature
+// the trainer's key signature for the score's key at the start measure, so
+// its notes are drawn with the score's accidentals rather than the
+// programme's; null for a song without a key or one the trainer lacks
+export function sheetMusicKeyFor(song, startMeasure) {
+  let fifths = measureKeySignature(song, startMeasure)
   if (typeof fifths != "number") {
     return null
   }
@@ -565,19 +565,17 @@ export const GENERATORS = [
         removePiece: id => removePiece(id),
         exportLibrary: () => exportLibraryFile(),
         importLibrary: text => importLibraryFile(text),
-        // settings, staff and key signature for drilling a piece that was
-        // just picked
+        // settings and staff for drilling a piece that was just picked
         pick: (settings, id) => {
           let piece = findPiece(id)
           let song = piece && pieceSong(piece)
           if (!song) {
-            return {settings: {...settings, piece: ""}, staff: null, key: null}
+            return {settings: {...settings, piece: ""}, staff: null}
           }
 
           return {
             settings: sheetMusicPieceSettings({...settings, piece: id}, song),
             staff: sheetMusicStaffFor(song),
-            key: sheetMusicKeyFor(song),
           }
         },
         hint: "Import an uncompressed MusicXML file (.musicxml or .xml). Imported pieces stay in this browser's library; export it to keep a copy or move it to another browser.",
@@ -656,6 +654,11 @@ export const GENERATORS = [
     // shown under the inputs in the settings panel
     status: function(staff, settings) {
       return sheetMusicSection(staff, settings).status
+    },
+    // an imported piece is drawn in the score's key, see scoreKeySignature
+    keySignature: function(settings) {
+      let piece = sheetMusicPiece(settings)
+      return piece ? sheetMusicKeyFor(pieceSong(piece), settings.startMeasure) : null
     },
     create: function(staff, keySignature, settings) {
       let deck = measureCardDeck(staff, settings)

@@ -24,7 +24,7 @@ const SONG_FORMAT = 1
 // metadata copied into a stored piece, see parseMusicXML
 const METADATA_FIELDS = [
   "title", "keySignature", "beatsPerMeasure", "measureStarts",
-  "measureNumbers", "measuresEnd",
+  "measureNumbers", "measureKeySignatures", "measuresEnd",
 ]
 
 // beats are rounded so float noise from uneven divisions doesn't bloat the

@@ -46,6 +46,7 @@ describe("musicxml", function() {
     // measure 1 holds only two beats of hidden rests
     expect(song.metadata.measureStarts).toEqual([0, 2, 6, 10])
     expect(song.metadata.measureNumbers).toEqual([1, 2, 3, 4])
+    expect(song.metadata.measureKeySignatures).toEqual([-1, -1, -1, -1])
     expect(song.metadata.measuresEnd).toEqual(14)
 
     expect(song.tracks.map(t => t.cleffs)).toEqual([[[0, "g"]], [[0, "g"]]])
@@ -308,7 +309,7 @@ describe("musicxml", function() {
     ])
   })
 
-  it("maps key signatures the app can't show to their enharmonic key", function() {
+  it("keeps key signatures as the score writes them, by measure", function() {
     let xml = fifths => partwise(`
       <measure number="1">
         ${attributes({divisions: 1, fifths})}
@@ -316,11 +317,11 @@ describe("musicxml", function() {
       </measure>
     `)
 
-    expect(parseMusicXML(xml(6)).metadata.keySignature).toEqual(-6)
-    expect(parseMusicXML(xml(7)).metadata.keySignature).toEqual(-5)
-    expect(parseMusicXML(xml(-7)).metadata.keySignature).toEqual(5)
-    expect(parseMusicXML(xml(5)).metadata.keySignature).toEqual(5)
-    expect(parseMusicXML(xml(-6)).metadata.keySignature).toEqual(-6)
+    for (let fifths of [6, 7, -7, 5, -6]) {
+      let {metadata} = parseMusicXML(xml(fifths))
+      expect(metadata.keySignature).toEqual(fifths)
+      expect(metadata.measureKeySignatures).toEqual([fifths])
+    }
   })
 
   it("converts a 3/4 piece", function() {
