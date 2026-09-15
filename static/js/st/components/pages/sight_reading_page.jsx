@@ -38,9 +38,7 @@ import {isMobile} from "st/browser"
 import {getSession} from "st/app"
 
 import {StaffTwo} from "st/components/staff_two"
-import {
-  fitNoteWidth, fitStaffScale, NOTE_HEAD_WIDTH, ACCIDENTAL_WIDTH
-} from "st/components/staff_notes"
+import {fitNoteWidth, fitStaffScale, minNoteWidth} from "st/components/staff_notes"
 
 const DEFAULT_NOTE_WIDTH = 100
 const DEFAULT_SPEED = 4
@@ -52,11 +50,8 @@ const STAFF_TWO_HEIGHT = 150
 export const PLATE_STAFF_SCALE = 0.8
 
 // A piece's card (or whole section) is fitted to the plate: its columns are
-// squeezed down to this width (unscaled like noteWidth), a note head and the
-// next column's accidental with a little space between, then the staff
-// shrinks down to MIN_FIT_SCALE. A card that still doesn't fit runs on past
-// the plate's edge
-export const MIN_FIT_NOTE_WIDTH = Math.ceil(NOTE_HEAD_WIDTH + ACCIDENTAL_WIDTH + 4)
+// squeezed down to the card's minNoteWidth, then the staff shrinks down to
+// MIN_FIT_SCALE. A card that still doesn't fit runs on past the plate's edge
 export const MIN_FIT_SCALE = 0.5
 
 // the distance in columns from a card's first column to its last
@@ -386,8 +381,8 @@ export default class SightReadingPage extends React.Component {
 
   // The legacy staff's scale and column width. In wait mode a piece's card
   // (or whole section) is fitted to the plate so every note of it shows: the
-  // scale fits the widest card of the drill, so the staff keeps its size from
-  // card to card, and the columns fit the card on the staff
+  // scale fits every card of the drill, so the staff keeps its size from card
+  // to card, and the columns fit the card on the staff
   staffLayout() {
     let {scale, noteWidth, staffWidth, keySignature} = this.state
     let current = this.state.mode == "wait" && this.currentCard()
@@ -395,13 +390,13 @@ export default class SightReadingPage extends React.Component {
       return {scale, noteWidth}
     }
 
-    let widest = Math.max(...this.state.notes.generator.cards.map(cardSpan))
-    scale = fitStaffScale(staffWidth, widest, {
-      scale, keySignature, minWidth: MIN_FIT_NOTE_WIDTH, minScale: MIN_FIT_SCALE,
-    })
+    scale = Math.min(...this.state.notes.generator.cards.map(card =>
+      fitStaffScale(staffWidth, cardSpan(card), {
+        scale, keySignature, minWidth: minNoteWidth(card.columns, keySignature), minScale: MIN_FIT_SCALE,
+      })))
 
     noteWidth = fitNoteWidth(staffWidth, cardSpan(current.card), {
-      scale, keySignature, maxWidth: noteWidth, minWidth: MIN_FIT_NOTE_WIDTH,
+      scale, keySignature, maxWidth: noteWidth, minWidth: minNoteWidth(current.card.columns, keySignature),
     })
 
     return {scale, noteWidth}

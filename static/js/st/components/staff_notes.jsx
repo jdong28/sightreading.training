@@ -22,6 +22,9 @@ export const ACCIDENTAL_WIDTH = NOTE_HEAD_WIDTH * 0.1 + NOTE_HEAD_HEIGHT * 3 * 2
 // how far right a note a second away from the one below it in its column sits
 export const GROUP_OFFSET = 30
 
+// the space between an accidental and the note heads of the column before it
+const ACCIDENTAL_GAP = 4
+
 // room right of the last column: its note head, a stacked second's offset and
 // the ledger lines' overhang
 const LAST_COLUMN_WIDTH = NOTE_HEAD_WIDTH + GROUP_OFFSET + LEDGER_OVERHANG
@@ -30,6 +33,28 @@ const LAST_COLUMN_WIDTH = NOTE_HEAD_WIDTH + GROUP_OFFSET + LEDGER_OVERHANG
 export function keySignatureWidth(keySignature) {
   let count = Math.abs(keySignature ? keySignature.count : 0)
   return count > 0 ? (count + 1) * KEY_SIGNATURE_SPACING : 0
+}
+
+// Whether each note of a column is pushed right by the group offset: the
+// upper note of a second stacked on the note before it
+export function groupOffsets(column, keySignature) {
+  let lastRow = null
+  let offset = false
+  return column.map(note => {
+    let row = noteStaffOffset(keySignature.enharmonic(note))
+    offset = lastRow && Math.abs(lastRow - row) == 1 ? !offset : false
+    lastRow = row
+    return offset
+  })
+}
+
+// The narrowest column, unscaled like the staff's noteWidth, that keeps an
+// accidental clear of the note heads of the column before it: a head, pushed
+// right by the group offset when any column has a stacked second, then the
+// accidental and a little space
+export function minNoteWidth(columns, keySignature) {
+  let stacked = columns.some(column => groupOffsets(column, keySignature).includes(true))
+  return Math.ceil(NOTE_HEAD_WIDTH + (stacked ? GROUP_OFFSET : 0) + ACCIDENTAL_WIDTH + ACCIDENTAL_GAP)
 }
 
 // the unscaled width a staff wrapper needs besides the span of the columns
@@ -161,9 +186,6 @@ export default class StaffNotes extends React.Component {
 
     let noteClasses = {}
 
-    let toRow = n =>
-      noteStaffOffset(this.props.keySignature.enharmonic(n))
-
     let appendClass = (note, cls) => {
       let mappedClass = styles[cls] || cls
       if (noteClasses[note.id]) {
@@ -189,30 +211,14 @@ export default class StaffNotes extends React.Component {
       }
 
       if (Array.isArray(column)) {
-        let tuples = column.map(n =>
-          [toRow(n), n]
-        )
-
-        let lastRow = null
-        let offset = 0
-        tuples.forEach(([row, n]) => {
-          if (lastRow && Math.abs(lastRow - row) == 1) {
-            if (offset == 0) {
-              offset = 1
-            } else {
-              offset = 0
-            }
-          } else {
-            offset = 0
-          }
-
+        let offsets = groupOffsets(column, this.props.keySignature)
+        column.forEach((n, idx) => {
           let sNote = new SongNote(n, beat, dur)
 
-          if (offset == 1) {
+          if (offsets[idx]) {
             appendClass(sNote, "group_offset")
           }
 
-          lastRow = row
           notes.push(withClasses(sNote))
         })
 
