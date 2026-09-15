@@ -113,16 +113,16 @@ export default class StaffNotes extends React.Component {
     let byClef = new Map()
     let group = (note, key) => {
       let clef = this.columnClef(note.getStart())
-      if (!byClef.has(clef)) {
-        byClef.set(clef, {notes: [], held: []})
+      if (!byClef.has(clef.cleffImage)) {
+        byClef.set(clef.cleffImage, {clef, notes: [], held: []})
       }
-      byClef.get(clef)[key].push(note)
+      byClef.get(clef.cleffImage)[key].push(note)
     }
     songNotes.forEach(note => group(note, "notes"))
     heldSongNotes.forEach(note => group(note, "held"))
 
     return <div ref="notes" className={this.classNames()}>
-      {[...byClef].map(([clef, {notes, held}], idx) => [
+      {[...byClef.values()].map(({clef, notes, held}, idx) => [
         <LedgerLines key={`ledger_lines-${idx}`}
           offsetLeft={offsetLeft}
           upperRow={clef.upperRow}
@@ -318,7 +318,7 @@ export default class StaffNotes extends React.Component {
     let out = []
     this.props.notes.forEach((column, idx) => {
       let clef = this.columnClef(idx)
-      if (idx == 0 || clef == this.columnClef(idx - 1)) { return }
+      if (idx == 0 || clef.cleffImage == this.columnClef(idx - 1).cleffImage) { return }
 
       out.push(<img
         key={`clef-change-${idx}`}

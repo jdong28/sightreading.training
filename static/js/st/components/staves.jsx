@@ -79,17 +79,26 @@ export class Staff extends React.PureComponent {
   // The props with the clef the score uses on this staff at its first
   // column, and columnClefs, the clef props each column is drawn in: the
   // clef the staves shown share at the column (eg. one hand of a piece on a
-  // staff on its own), else the staff's own
+  // staff on its own), else the staff's own. A column without clefs, eg. the
+  // gap after a card, keeps the clef of the column before it, or of the
+  // first column with clefs when it leads
   clefProps() {
     let staves = scoreStaves(this.props.notes, this.props.staff)
     if (!staves) {
       return this.props
     }
 
-    let columnClefs = this.props.notes.map(column => {
-      let signs = new Set(staves.map(staff => column.clefs && column.clefs[staff]))
-      let [sign] = signs
-      return (signs.size == 1 && CLEF_PROPS[sign]) || this.props
+    let signs = this.props.notes.map(column => {
+      if (!column.clefs) { return undefined }
+      let shared = new Set(staves.map(staff => column.clefs[staff]))
+      let [sign] = shared
+      return shared.size == 1 ? sign : null
+    })
+
+    let sign = signs.find(s => s !== undefined)
+    let columnClefs = signs.map(columnSign => {
+      if (columnSign !== undefined) { sign = columnSign }
+      return CLEF_PROPS[sign] || this.props
     })
 
     return {...this.props, ...columnClefs[0], columnClefs}

@@ -8,7 +8,9 @@ import NoteList from "st/note_list"
 import {KeySignature, noteName, parseNote} from "st/music"
 import {parseMusicXML} from "st/musicxml"
 import {extractSectionColumns} from "st/song_sections"
-import {sectionCard, cardColumn, measureCards} from "st/measure_cards"
+import {
+  sectionCard, cardColumn, measureCards, MeasureCardDeck, MeasureCardGenerator, IN_ORDER
+} from "st/measure_cards"
 import {SheetMusicGenerator} from "st/generators"
 import {pieceSectionMeasures, BOTH_HANDS, RIGHT_HAND, LEFT_HAND} from "st/data"
 import {reverieOpening, clefChangeScore, midMeasureClefScore} from "spec/helpers"
@@ -131,6 +133,28 @@ describe("staves", function() {
         let flat = el.querySelector(`.${staffStyles.key_signature} [data-note]`)
         expect(flat.style.top).toEqual("50%")
       }
+    })
+
+    it("draws no clef changes at the gaps between the cards of a drill", function() {
+      let song = parseMusicXML(reverieOpening())
+      let measures = pieceSectionMeasures(GRAND, {startMeasure: 2, endMeasure: 4, hand: BOTH_HANDS}, song)
+      let deck = new MeasureCardDeck(measureCards(measures, 1), {pieceId: "p", order: IN_ORDER})
+      let generator = new MeasureCardGenerator(deck)
+      let notes = new NoteList([], {generator})
+      notes.fillBuffer(10)
+      generator.stop()
+
+      expect(notes.slice(7).map(column => column.length)).toEqual([0, 0, 0])
+
+      renderStaff(GrandStaff, notes)
+      for (let staff of ["upper", "lower"]) {
+        expect(clefChanges(staffEl(staff)).length).toEqual(0)
+      }
+
+      // a gap at the head keeps the clef of the card after it
+      renderStaff(GrandStaff, [[], ...notes.slice(0, 7)])
+      expect(clefImage(staffEl("lower"))).toContain("clefs.G")
+      expect(clefChanges(staffEl("lower")).length).toEqual(0)
     })
 
     it("draws measure 4's right hand on the upper staff with bar lines on both", function() {
