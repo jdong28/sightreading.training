@@ -18,6 +18,7 @@ import {GeneratorSettings} from "st/components/sight_reading/settings_panel"
 import {Plate, Pill, PullQuote, SectionLabel, TitleBlock, DoubleRule} from "st/components/salon"
 
 import styles from "./setup_page.module.css"
+import inputStyles from "./setup_generator_inputs.module.css"
 
 // [plain, italic] title and short qualifier of each exercise, by mode and name
 const EXERCISES = {
@@ -267,6 +268,7 @@ export default function SetupPage({staves=STAVES, generators=GENERATORS}) {
                       currentStaff={staff}
                       currentSettings={settings}
                       staves={staves}
+                      classes={inputStyles}
                       setStaff={chooseStaff}
                       setGenerator={(_, newSettings) => setSettings(newSettings)} />
                   </div> : null}

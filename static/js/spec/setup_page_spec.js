@@ -5,6 +5,7 @@ import {MemoryRouter, Routes, Route} from "react-router-dom"
 
 import SetupPage, {exercisesFor, exerciseTitle, exerciseQualifier} from "st/components/pages/setup_page"
 import styles from "st/components/pages/setup_page.module.css"
+import inputStyles from "st/components/pages/setup_generator_inputs.module.css"
 import {STAVES, GENERATORS, SHEET_MUSIC_STORAGE_KEY} from "st/data"
 import {
   DRILL_STORAGE_KEY, currentStaffFor, currentGeneratorFor, currentKeySignature,
@@ -187,6 +188,42 @@ describe("setup page", function() {
     el = rerender()
     expect(selectedPills(el)).toEqual(["Grand", "E♭", "Open sevenths", "Scroll"])
     expect(summary(el).rows[1]).toEqual(["Tempo", "Scroll · speed 175"])
+  })
+
+  it("renders the sheet music inputs under the sheet music row in the salon's style", function() {
+    let el = renderSetup()
+    expect(el.querySelector(`.${styles.exercise_inputs}`)).toBe(null)
+
+    click(findButton(el, "Sheet music"))
+
+    let inputs = el.querySelectorAll(`.${styles.exercise_inputs}`)
+    expect(inputs.length).toEqual(1)
+
+    let row = findButton(el, "Sheet music")
+    expect(row.getAttribute("aria-pressed")).toEqual("true")
+    expect(inputs[0].parentElement).toBe(row.parentElement)
+    expect(row.nextElementSibling).toBe(inputs[0])
+
+    let form = inputs[0].querySelector(`.${inputStyles.generator_inputs}`)
+    expect(form).not.toBe(null)
+    expect(getComputedStyle(form).display).toEqual("flex")
+
+    let labels = [...form.querySelectorAll(`.${inputStyles.input_label}`)]
+    expect(labels.length).toBeGreaterThan(0)
+    labels.forEach(label => {
+      expect(getComputedStyle(label).textTransform).toEqual("uppercase")
+    })
+
+    let pieceSelect = form.querySelector(`.${inputStyles.deck_row} > .${inputStyles.select_component}`)
+    expect(pieceSelect).not.toBe(null)
+    expect(getComputedStyle(pieceSelect).flexBasis).toEqual("180px")
+
+    let fileLabel = form.querySelector(`.${inputStyles.file_input} > span`)
+    expect(fileLabel.textContent).toEqual("Import MusicXML")
+    expect(getComputedStyle(fileLabel).textTransform).toEqual("uppercase")
+
+    click(findButton(el, "Random notes"))
+    expect(el.querySelector(`.${styles.exercise_inputs}`)).toBe(null)
   })
 
   it("sets up a drill of an imported piece with the sheet music inputs", async function() {
