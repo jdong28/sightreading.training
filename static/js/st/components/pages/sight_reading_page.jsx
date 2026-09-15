@@ -38,8 +38,7 @@ import {isMobile} from "st/browser"
 import {getSession} from "st/app"
 
 import {StaffTwo} from "st/components/staff_two"
-import {fitNoteWidth, fitStaffScale, columnSpan} from "st/components/staff_notes"
-import {cardColumn} from "st/measure_cards"
+import {fitNoteWidth, fitStaffScale} from "st/components/staff_notes"
 
 const DEFAULT_NOTE_WIDTH = 100
 const DEFAULT_SPEED = 4
@@ -57,13 +56,9 @@ export const PLATE_STAFF_SCALE = 0.8
 export const MIN_FIT_NOTE_WIDTH = 48
 export const MIN_FIT_SCALE = 0.5
 
-// the span in columns of each card, see columnSpan
-const cardSpans = new WeakMap()
+// the distance in columns from a card's first column to its last
 function cardSpan(card) {
-  if (!cardSpans.has(card)) {
-    cardSpans.set(card, columnSpan(card.columns.map((column, idx) => cardColumn(card, idx))))
-  }
-  return cardSpans.get(card)
+  return card.columns.length - 1
 }
 
 // the legacy renderer's scale for the window's width

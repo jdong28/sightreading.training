@@ -6,7 +6,7 @@ import {MemoryRouter} from "react-router-dom"
 import SightReadingPage, {
   formatElapsed, accuracyPercent, romanNumeral
 } from "st/components/pages/sight_reading_page"
-import {fitNoteWidth, fitStaffScale, columnSpan} from "st/components/staff_notes"
+import {fitNoteWidth, fitStaffScale} from "st/components/staff_notes"
 import staffStyles from "st/components/staff.module.css"
 import drawerStyles from "st/components/sight_reading/programme_drawer.module.css"
 import {setAppStore} from "st/storage"
@@ -191,11 +191,6 @@ describe("sight reading page", function() {
     expect(fitStaffScale(644, 20, scaleOpts)).toBeCloseTo(0.555, 3)
     expect(fitStaffScale(644, 100, scaleOpts)).toEqual(0.5)
     expect(fitStaffScale(644, 20, {...scaleOpts, scale: 0.4})).toEqual(0.4)
-
-    // a measure's first column after the first sits past a bar gap
-    let second = ["D5"]
-    second.measure = 2
-    expect(columnSpan([["C5"], ["E5"], second, ["F5"]])).toBeCloseTo(3.6, 5)
   })
 
   it("shows the measure card on the staff and in the plate header", async function() {
@@ -216,9 +211,36 @@ describe("sight reading page", function() {
     expect(numberedBarLines()).toEqual(["1", "2"])
     expect(el.querySelectorAll(`.${staffStyles.bar_line}`).length).toEqual(4)
 
+    let upperNotes = () => el.querySelector(`.${staffStyles.staff_notes}`)
+    let noteLefts = () => [...upperNotes().querySelectorAll(`.${staffStyles.whole_note}`)]
+      .map(note => parseFloat(note.style.left)).sort((a, b) => a - b)
+    let barLineLeft = measure =>
+      parseFloat(upperNotes().querySelector(`.${staffStyles.bar_line}[data-measure="${measure}"]`).style.left)
+    // the slide of the notes, see Staff#setOffset
+    let offset = () => {
+      let match = upperNotes().style.transform.match(/translate3d\(([-\d.]+)px/)
+      return match ? parseFloat(match[1]) : 0
+    }
+
+    // evenly spaced columns, with the bar lines on their boundaries a column apart
+    let [head, next] = noteLefts()
+    let columnWidth = next - head
+    expect(columnWidth).toBeGreaterThan(0)
+    expect(barLineLeft(2) - barLineLeft(1)).toBeCloseTo(columnWidth, 3)
+    let nextOnStaff = next + offset()
+    let barLineOnStaff = barLineLeft(2) + offset()
+
     click(buttonNamed(el, "Begin"))
     play(page.state.notes.currentColumn())
     expect(plateLabel()).toEqual("3 ♩ a bar · Card 1 · measures 1–2 of 1–8")
+
+    // the second measure's column becomes the head exactly one column along,
+    // so its note and bar line slide from where they were without a jump
+    expect(noteLefts()[0]).toEqual(head)
+    expect(Math.abs(offset() - columnWidth)).toBeLessThan(1)
+    expect(Math.abs(noteLefts()[0] + offset() - nextOnStaff)).toBeLessThan(1)
+    expect(Math.abs(barLineLeft(2) + offset() - barLineOnStaff)).toBeLessThan(1.5)
+
     play(page.state.notes.currentColumn())
 
     expect(plateLabel()).toEqual("3 ♩ a bar · Card 2 · measures 3–4 of 1–8")

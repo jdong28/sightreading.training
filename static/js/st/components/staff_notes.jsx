@@ -17,11 +17,6 @@ export const KEY_SIGNATURE_SPACING = 20
 export const NOTE_HEAD_WIDTH = 120 * 0.2 * 1.69
 // how far right a note a second away from the one below it in its column sits
 export const GROUP_OFFSET = 30
-// an accidental reaches this far left of its note head
-export const ACCIDENTAL_WIDTH = 22
-// the space before a column that starts a measure, in columns, where its bar
-// line goes
-export const BAR_GAP = 0.6
 
 // room right of the last column: its note head, a stacked second's offset and
 // the ledger lines' overhang
@@ -33,32 +28,13 @@ export function keySignatureWidth(keySignature) {
   return count > 0 ? (count + 1) * KEY_SIGNATURE_SPACING : 0
 }
 
-// The position of each column in columns: one apart, plus a bar gap before a
-// column that starts a measure (see cardColumn in st/measure_cards) unless it
-// is the first
-export function columnBeats(columns) {
-  let beat = 0
-  return columns.map((column, idx) => {
-    if (idx > 0) {
-      beat += column.measure == null ? 1 : 1 + BAR_GAP
-    }
-    return beat
-  })
-}
-
-// the distance in columns from the first column to the last
-export function columnSpan(columns) {
-  let beats = columnBeats(columns)
-  return beats.length ? beats[beats.length - 1] : 0
-}
-
 // the unscaled width a staff wrapper needs besides the span of the columns
 function fixedWidth(keySignature) {
   return STAFF_NOTES_LEFT + keySignatureWidth(keySignature) + LAST_COLUMN_WIDTH
 }
 
 // The width of a column, unscaled like the staff's noteWidth, that fits
-// columns spanning span (see columnSpan) in a staff wrapper of staffWidth
+// columns spanning span columns in a staff wrapper of staffWidth
 // pixels drawn at scale. No wider than maxWidth, and no narrower than
 // minWidth, when the columns run on past the edge
 export function fitNoteWidth(staffWidth, span, {scale=1, keySignature=null, maxWidth, minWidth}) {
@@ -176,7 +152,7 @@ export default class StaffNotes extends React.Component {
 
   convertToSongNotes() {
     let notes = new SongNoteList()
-    let beats = columnBeats(this.props.notes)
+    let beat = 0
     let dur = 40 / this.props.noteWidth
 
     let noteClasses = {}
@@ -194,7 +170,6 @@ export default class StaffNotes extends React.Component {
     }
 
     this.props.notes.forEach((column, columnIdx) => {
-      let beat = beats[columnIdx]
       let withClasses = (note) => {
         if (columnIdx == 0) {
           if (this.props.noteShaking) {
@@ -240,6 +215,8 @@ export default class StaffNotes extends React.Component {
       } else {
         notes.push(withClasses(new SongNote(column, beat, dur)))
       }
+
+      beat += 1
     })
 
     return [this.filterVisibleNotes(notes), noteClasses]
@@ -253,31 +230,24 @@ export default class StaffNotes extends React.Component {
     this.refs.notes.style.transform = `translate3d(${amount}px, 0, 0)`;
   }
 
-  // A bar line before each column that starts a measure, halfway between the
-  // previous column's note head and the accidentals of the column. The bar
-  // number is written above it, on the upper staff only of a grand staff
+  // A bar line before each column that starts a measure, on the boundary
+  // halfway between the previous column's note head and the column, so it
+  // moves with its column. The bar number is written above it, on the upper
+  // staff only of a grand staff
   renderBarLines(offsetLeft) {
     let noteWidth = this.props.noteWidth
-    let scale = this.props.scale || 1
-    let headWidth = NOTE_HEAD_WIDTH * scale
-    let accidentalWidth = ACCIDENTAL_WIDTH * scale
+    let headWidth = NOTE_HEAD_WIDTH * (this.props.scale || 1)
+    let before = (noteWidth - headWidth) / 2
     let showNumbers = this.props.showAnnotations !== false
-    let beats = columnBeats(this.props.notes)
 
     let out = []
     this.props.notes.forEach((column, idx) => {
       if (column.measure == null) { return }
 
-      let right = beats[idx] * noteWidth - accidentalWidth
-      let left = right - 4 * scale
-      if (idx > 0) {
-        left = (beats[idx - 1] * noteWidth + headWidth + right) / 2
-      }
-
       out.push(<div
         key={`bar-line-${idx}`}
         className={styles.bar_line}
-        style={{left: `${Math.round(offsetLeft + left)}px`}}
+        style={{left: `${Math.round(offsetLeft + idx * noteWidth - before)}px`}}
         data-measure={column.measure}
         data-label={showNumbers ? column.measure : null} />)
     })
@@ -291,12 +261,11 @@ export default class StaffNotes extends React.Component {
     }
 
     let out = []
-    let beats = columnBeats(this.props.notes)
     this.props.notes.forEach((column, idx) => {
       if (column.annotation) {
         let style = {
           top: "-60%",
-          left: `${beats[idx] * this.props.noteWidth}px`
+          left: `${idx * this.props.noteWidth}px`
         }
         out.push(<div
           style={style}
