@@ -98,12 +98,6 @@ export default class SightReadingPage extends React.Component {
     this.releaseNote = this.releaseNote.bind(this)
     this.onFullscreenChange = this.onFullscreenChange.bind(this)
     this.onPageHide = () => this.recordSession()
-    this.onSessionEnd = () => {
-      this.recordSession()
-      // the stats start counting the next session from zero
-      this.sectionMark = {...this.sectionMark, hits: 0, misses: 0}
-    }
-
     this.openSettings = () => this.setState({settingsOpen: true})
     this.closeSettings = () => this.setState({settingsOpen: false})
     this.applySettings = () => {
@@ -648,16 +642,10 @@ export default class SightReadingPage extends React.Component {
   setGenerator(generator, settings) {
     storeCurrentDrill({generator: generator.name})
 
-    let update = {
+    this.setState({
       currentGenerator: generator,
       currentGeneratorSettings: settings,
-    }
-
-    if (generator != this.state.currentGenerator) {
-      update.stats = this.closeSession()
-    }
-
-    this.setState(update)
+    })
   }
 
   setStaff(staff, callback) {
@@ -670,7 +658,6 @@ export default class SightReadingPage extends React.Component {
     let update = {
       currentStaff: staff,
       notes: null,
-      stats: this.closeSession(),
     }
 
     // if the current generator is not compatible with new staff change it
@@ -809,7 +796,7 @@ export default class SightReadingPage extends React.Component {
 
   newStats() {
     let session = getSession()
-    return new NoteStats(session && session.currentUser, {onSessionEnd: this.onSessionEnd})
+    return new NoteStats(session && session.currentUser, {sessionGap: Infinity})
   }
 
   // Records the session played on the current staff and generator, returning
@@ -883,7 +870,8 @@ export default class SightReadingPage extends React.Component {
     </div>;
   }
 
-  // in the header's top row, or atop the trainer when there's no header
+  // in the header's top row, or atop the trainer when there's no header or
+  // the trainer is fullscreen
   renderProgrammeButton() {
     let pill = <Pill
       variant="ghost"
@@ -895,7 +883,7 @@ export default class SightReadingPage extends React.Component {
       <span className={styles.programme_label}>Programme</span>
     </Pill>
 
-    if (this.state.headerActions) {
+    if (this.state.headerActions && !this.state.fullscreen) {
       return createPortal(pill, this.state.headerActions)
     }
 
@@ -938,7 +926,7 @@ export default class SightReadingPage extends React.Component {
       let song = pieceSong(sheetMusicPiece(this.currentSettings()))
       let beats = song && song.metadata && song.metadata.beatsPerMeasure
       let measures = measuresLabel(section.startMeasure, section.endMeasure)
-      return beats ? `${beats} beats a bar · ${measures}` : measures
+      return beats ? `${beats} ♩ a bar · ${measures}` : measures
     }
 
     let staff = this.state.currentStaff
@@ -1084,9 +1072,11 @@ export default class SightReadingPage extends React.Component {
     </div>
   }
 
-  // the last sessions saved to the local store, newest first
+  // the last sessions started today saved to the local store, newest last
   eveningSessions() {
-    return getAppStore().recentSessions().slice(-3).reverse()
+    let now = new Date()
+    let today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+    return getAppStore().recentSessions().filter(s => s.startedAt >= today).slice(-3)
   }
 
   renderRail() {

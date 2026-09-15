@@ -24,7 +24,7 @@
         background-image: var(--salon-wallpaper-image);
         background-size: var(--salon-wallpaper-size);
 
-        .title, .rail, .programme_row {
+        .title, .rail {
             display: none;
         }
 

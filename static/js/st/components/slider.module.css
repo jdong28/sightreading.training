@@ -7,17 +7,7 @@
 
     &.disabled {
         opacity: 0.5;
-        /* hidden unless a slider className styles it, see the programme drawer */
-    .slider_fill {
-        display: none;
-        position: absolute;
-        left: 0;
-        top: 0;
-        bottom: 0;
-        border-radius: 999px;
-    }
-
-    .slider_nub {
+        .slider_nub {
             cursor: default;
         }
     }
@@ -47,6 +37,16 @@
             box-shadow: 0 0 0 2px color-mix(in oklab, var(--blue), white 20%);
         }
     }
+}
+
+/* hidden unless a slider className styles it, see the programme drawer */
+.slider_fill {
+    display: none;
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    border-radius: 999px;
 }
 
 .slider_input {

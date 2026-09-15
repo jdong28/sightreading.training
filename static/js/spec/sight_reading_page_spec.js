@@ -12,6 +12,7 @@ import {importMusicXMLPiece} from "st/sheet_music_deck"
 import {SHEET_MUSIC_STORAGE_KEY, BOTH_HANDS} from "st/data"
 import {DRILL_STORAGE_KEY} from "st/generators"
 import {scopeEvent} from "st/events"
+import NoteStats from "st/note_stats"
 import {openTestStore} from "spec/helpers"
 
 // a two staff 3/4 piece, measures 1 and 2
@@ -266,6 +267,80 @@ describe("sight reading page", function() {
     expect(store.recentSessions()[0].notesRead).toEqual(2)
   })
 
+  it("keeps one session running from Begin to Rest across a staff change and a long pause", async function() {
+    jasmine.clock().install()
+    clockInstalled = true
+    jasmine.clock().mockDate(new Date(2026, 8, 14, 20))
+
+    let el = renderPage()
+    let tick = ms => flushSync(() => jasmine.clock().tick(ms))
+
+    click(buttonNamed(el, "Begin"))
+    let stats = page.state.stats
+
+    play(page.state.notes.currentColumn())
+    play([WRONG_NOTE])
+    tick(90000)
+
+    click(buttonLabelled(el, "Programme"))
+    let drawer = el.querySelector(`.${drawerStyles.drawer}`)
+    click(buttonNamed(drawer, "Bass"))
+    expect(page.state.currentStaff.name).toEqual("bass")
+
+    expect(page.state.stats).toBe(stats)
+    expect(statValue(el, "Notes read")).toEqual("1")
+    expect(statValue(el, "Accuracy")).toEqual("50%")
+    expect(statValue(el, "Elapsed")).toEqual("1:30")
+
+    tick(NoteStats.SESSION_GAP)
+    play(page.state.notes.currentColumn())
+    expect(page.state.stats).toBe(stats)
+    expect(statValue(el, "Notes read")).toEqual("2")
+    expect(statValue(el, "Best streak")).toEqual("1")
+
+    click(buttonNamed(el, "Rest"))
+
+    jasmine.clock().uninstall()
+    clockInstalled = false
+
+    await waitFor(() => el.querySelectorAll("ol li").length == 1, "the saved session")
+    let sessions = store.recentSessions()
+    expect(sessions.length).toEqual(1)
+    expect(sessions[0].staff).toEqual("bass")
+    expect(sessions[0].notesRead).toEqual(2)
+    expect(sessions[0].misses).toEqual(1)
+  })
+
+  it("lists only the sessions started today in the evening list", async function() {
+    let session = (id, startedAt, staff) => ({
+      id, startedAt, endedAt: startedAt + 60000, staff, generator: "random",
+      notesRead: 3, misses: 1, bestStreak: 3, notes: {},
+    })
+
+    await store.putSession(session("yesterday", +new Date(2026, 8, 13, 21), "bass"))
+    await store.putSession(session("today", +new Date(2026, 8, 14, 19), "treble"))
+
+    jasmine.clock().install()
+    clockInstalled = true
+    jasmine.clock().mockDate(new Date(2026, 8, 14, 20))
+
+    let el = renderPage()
+    let rows = [...el.querySelectorAll("ol li")].map(li => li.textContent)
+    expect(rows).toEqual(["ITreble staff, Random notes75% accuracy"])
+  })
+
+  it("shows nothing played yet when no session started today", async function() {
+    await store.putSession({id: "yesterday", startedAt: +new Date(2026, 8, 13, 21), notesRead: 1, misses: 0})
+
+    jasmine.clock().install()
+    clockInstalled = true
+    jasmine.clock().mockDate(new Date(2026, 8, 14, 20))
+
+    let el = renderPage()
+    expect(el.querySelector("ol")).toBe(null)
+    expect(el.textContent).toContain("Nothing played yet")
+  })
+
   it("keeps the sheet music deck, measure range and hand in the drawer", async function() {
     let {piece} = await importMusicXMLPiece("salon_minuet.musicxml", minuetXML, store)
 
@@ -293,6 +368,6 @@ describe("sight reading page", function() {
     expect([...selected.querySelectorAll("input[type=number]")].map(input => input.value)).toEqual(["1", "2"])
 
     expect(el.querySelector("h1").textContent).toEqual("Salon Minuet measures 1–2, both hands")
-    expect(el.textContent).toContain("3 beats a bar · measures 1–2")
+    expect(el.textContent).toContain("3 ♩ a bar · measures 1–2")
   })
 })
