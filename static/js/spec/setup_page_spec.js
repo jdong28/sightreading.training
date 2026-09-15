@@ -255,8 +255,9 @@ describe("setup page", function() {
     expect(findButton(el, "D").disabled).toBe(true)
     expect(el.querySelector(`.${styles.key_note}`).textContent).toEqual("Set by the score")
 
+    // Begin stores the programme's own key; the trainer follows the score
     click(findButton(el, "Begin reading"))
-    expect(currentKeySignature().name()).toEqual("F")
+    expect(currentKeySignature().name()).toEqual("D")
   })
 
   it("keeps the programme's key for a score in a key the trainer lacks", async function() {

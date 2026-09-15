@@ -14,7 +14,8 @@ import {
 import staffStyles from "st/components/staff.module.css"
 import drawerStyles from "st/components/sight_reading/programme_drawer.module.css"
 import {setAppStore} from "st/storage"
-import {importMusicXMLPiece} from "st/sheet_music_deck"
+import {importMusicXMLPiece, addPiece} from "st/sheet_music_deck"
+import {parseMusicXML} from "st/musicxml"
 import {SHEET_MUSIC_STORAGE_KEY, BOTH_HANDS} from "st/data"
 import {DRILL_STORAGE_KEY} from "st/generators"
 import {scopeEvent} from "st/events"
@@ -616,6 +617,33 @@ describe("sight reading page", function() {
     expect(keyPill("F").disabled).toBe(true)
     expect(keyPill("C").disabled).toBe(true)
     expect(drawer.textContent).toContain("Set by the score")
+
+    // the score's key isn't stored as the programme's
+    expect(JSON.parse(window.localStorage.getItem(DRILL_STORAGE_KEY)).key).toEqual("C")
+  })
+
+  it("leaves the key alone for a piece stored without per-measure keys", async function() {
+    let legacy = parseMusicXML(reverieOpening())
+    delete legacy.metadata.measureKeySignatures
+    let {piece} = await addPiece("Rêverie", legacy, store)
+
+    window.localStorage.setItem(DRILL_STORAGE_KEY, JSON.stringify({staff: "grand", generator: "sheet music", key: "D"}))
+    window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+      piece: piece.id, startMeasure: 1, endMeasure: 4, hand: BOTH_HANDS,
+    }))
+
+    let el = renderPage()
+    click(buttonLabelled(el, "Programme"))
+
+    let drawer = el.querySelector(`.${drawerStyles.drawer}`)
+    expect(page.state.keySignature.name()).toEqual("D")
+    expect(buttonNamed(drawer, "D").getAttribute("aria-pressed")).toEqual("true")
+    expect(buttonNamed(drawer, "F").disabled).toBe(false)
+    expect(drawer.textContent).toContain("Re-import to follow the score key")
+    expect(drawer.textContent).not.toContain("Set by the score")
+
+    click(buttonNamed(drawer, "F"))
+    expect(page.state.keySignature.name()).toEqual("F")
   })
 
   it("follows the score's key as the piece and its start measure change", async function() {
@@ -652,12 +680,16 @@ describe("sight reading page", function() {
     expect(page.state.keySignature.name()).toEqual("E")
     expect(keyPill("E").getAttribute("aria-pressed")).toEqual("true")
 
-    // back to pasted notation, the pills pick the key again
+    expect(JSON.parse(window.localStorage.getItem(DRILL_STORAGE_KEY)).key).toEqual("D")
+
+    // back to pasted notation, the programme's own key comes back
     pickPiece("")
+    expect(page.state.keySignature.name()).toEqual("D")
+    expect(keyPill("D").getAttribute("aria-pressed")).toEqual("true")
     expect(keyPill("D").disabled).toBe(false)
     expect(drawer.textContent).not.toContain("Set by the score")
-    click(keyPill("D"))
-    expect(page.state.keySignature.name()).toEqual("D")
+    click(keyPill("A"))
+    expect(page.state.keySignature.name()).toEqual("A")
   })
 
   it("keeps the programme's key for a score in a key the trainer lacks", async function() {

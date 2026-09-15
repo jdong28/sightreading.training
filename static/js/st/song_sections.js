@@ -54,20 +54,18 @@ export function measureNumberRange(song) {
 }
 
 // the score's key signature in fifths at the given measure number, from
-// metadata.measureKeySignatures (imported MusicXML), or metadata.keySignature
-// for a song without them; null for a song without a key
+// metadata.measureKeySignatures (imported MusicXML); null for a song without
+// them, eg. a piece imported before they were recorded
 export function measureKeySignature(song, measure) {
-  let metadata = song.metadata
-  let keys = metadata && metadata.measureKeySignatures
+  let keys = song.metadata && song.metadata.measureKeySignatures
   let numbers = measureNumbers(song)
 
-  if (numbers && Array.isArray(keys) && keys.length == numbers.length) {
-    let idx = numbers.findIndex(n => n >= measure)
-    return keys[idx < 0 ? keys.length - 1 : idx]
+  if (!numbers || !Array.isArray(keys) || keys.length != numbers.length) {
+    return null
   }
 
-  let fifths = metadata && metadata.keySignature
-  return typeof fifths == "number" ? fifths : null
+  let idx = numbers.findIndex(n => n >= measure)
+  return keys[idx < 0 ? keys.length - 1 : idx]
 }
 
 // beat range [start, end) covered by the inclusive measure range. Measures

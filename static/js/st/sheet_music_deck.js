@@ -157,7 +157,9 @@ function newPieceId() {
 
 // Adds a song to the deck. Resolves to {piece} or {error}, with a warning
 // when the deck won't outlive the page. Adding the same title and notes
-// again resolves to the stored piece instead of a duplicate.
+// again resolves to the stored piece instead of a duplicate, and a new song
+// under a stored title replaces that piece's song, keeping its id so its
+// stats and sessions carry over.
 export async function addPiece(title, song, store=getAppStore(), {fileName}={}) {
   await store.init()
 
@@ -173,7 +175,9 @@ export async function addPiece(title, song, store=getAppStore(), {fileName}={}) 
     return {piece: existing, ...warning}
   }
 
-  if (deck.pieces.length >= MAX_PIECES) {
+  let replaced = deck.pieces.find(piece => piece.title == title)
+
+  if (!replaced && deck.pieces.length >= MAX_PIECES) {
     return {error: `The deck is full (${MAX_PIECES} pieces). Remove a piece before importing another.`}
   }
 
@@ -181,7 +185,7 @@ export async function addPiece(title, song, store=getAppStore(), {fileName}={}) 
   // keep their order
   let last = deck.pieces[deck.pieces.length - 1]
   let importedAt = Math.max(Date.now(), last ? last.importedAt + 1 : 0)
-  let record = {id: newPieceId(), title, song: songData, importedAt}
+  let record = replaced ? {...replaced, song: songData} : {id: newPieceId(), title, song: songData, importedAt}
   if (fileName) {
     record.fileName = fileName
   }

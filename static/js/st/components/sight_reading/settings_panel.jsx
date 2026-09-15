@@ -314,10 +314,16 @@ export class ProgrammeDrawer extends React.PureComponent {
 
   renderKeys() {
     let keys = allKeySignatures()
+    let generator = this.props.currentGenerator
     let scoreKey = scoreKeySignature(
-      this.props.currentGenerator, this.props.currentStaff, this.props.currentGeneratorSettings
+      generator, this.props.currentStaff, this.props.currentGeneratorSettings
     )
     let currentKey = scoreKey || this.props.currentKey
+    let hint = scoreKey ? "Set by the score" : generator && generator.keyHint ?
+      generator.keyHint({
+        ...generatorDefaultSettings(generator, this.props.currentStaff),
+        ...this.props.currentGeneratorSettings,
+      }) : null
 
     return <>
       <div className={styles.pills}>
@@ -333,7 +339,7 @@ export class ProgrammeDrawer extends React.PureComponent {
           )
         }
       </div>
-      {scoreKey ? <div className={styles.input_hint}>Set by the score</div> : null}
+      {hint ? <div className={styles.input_hint}>{hint}</div> : null}
     </>
   }
 }

@@ -200,10 +200,11 @@ export default class SightReadingPage extends React.Component {
         prevState.currentGeneratorSettings != this.state.currentGeneratorSettings ||
         prevState.keySignature != this.state.keySignature)
     {
-      // an imported piece is drawn in the score's key
-      let scoreKey = scoreKeySignature(this.state.currentGenerator, this.state.currentStaff, this.state.currentGeneratorSettings)
-      if (scoreKey && scoreKey.name() != this.state.keySignature.name()) {
-        this.setKeySignature(scoreKey)
+      // an imported piece is drawn in the score's key, which isn't stored
+      let key = scoreKeySignature(this.state.currentGenerator, this.state.currentStaff, this.state.currentGeneratorSettings) ||
+        currentKeySignature()
+      if (key.name() != this.state.keySignature.name()) {
+        this.setState({keySignature: key, notes: null})
       } else {
         this.refreshNoteList()
       }

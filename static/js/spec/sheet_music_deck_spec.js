@@ -226,7 +226,7 @@ describe("sheet music deck", function() {
   })
 
   describe("key signature", function() {
-    it("follows the score's key, and leaves a song without one alone", function() {
+    it("follows the score's key, and leaves a song without per-measure keys alone", function() {
       expect(sheetMusicKeyFor(parseMusicXML(reverieOpening()), 1).name()).toEqual("F")
       expect(sheetMusicKeyFor(parseMusicXML(pickupScore()), 0).name()).toEqual("G")
 
@@ -234,8 +234,11 @@ describe("sheet music deck", function() {
       song.pushWithTrack(new SongNote("C5", 0, 1), 0)
       expect(sheetMusicKeyFor(song, 1)).toBe(null)
 
-      song.metadata = {keySignature: -1}
-      expect(sheetMusicKeyFor(song, 1).name()).toEqual("F")
+      // a piece stored before per-measure keys were recorded
+      let legacy = parseMusicXML(reverieOpening())
+      delete legacy.metadata.measureKeySignatures
+      expect(legacy.metadata.keySignature).toEqual(-1)
+      expect(sheetMusicKeyFor(legacy, 1)).toBe(null)
     })
 
     it("takes the key in effect at the section's start measure", function() {
@@ -305,6 +308,27 @@ describe("sheet music deck", function() {
       expect(await removePiece(piece.id, store)).toEqual({})
       expect(findPiece(piece.id, store)).toBe(null)
       expect(loadDeck(store).pieces.map(p => p.title)).toEqual(["Waltz in A"])
+    })
+
+    it("replaces a piece imported again under its title, keeping its id and stats", async function() {
+      let legacy = parseMusicXML(reverieOpening())
+      delete legacy.metadata.measureKeySignatures
+      let old = (await addPiece("Rêverie", legacy, store, {fileName: "old.musicxml"})).piece
+
+      await store.recordSectionPractice({pieceId: old.id, startMeasure: 2, endMeasure: 2, hits: 3, misses: 1})
+
+      let {piece, error} = await importMusicXMLPiece("reverie.musicxml", reverieOpening(), store)
+      expect(error).toBeUndefined()
+      expect(piece.id).toEqual(old.id)
+      expect(piece.importedAt).toEqual(old.importedAt)
+      expect(piece.fileName).toEqual("reverie.musicxml")
+      expect(loadDeck(store).pieces.map(p => p.id)).toEqual([old.id])
+      expect(pieceSong(findPiece(old.id, store)).metadata.measureKeySignatures).toEqual([-1, -1, -1, -1])
+      expect(store.sectionStats(old.id).map(s => [s.startMeasure, s.hits, s.misses])).toEqual([[2, 3, 1]])
+
+      let reopened = await openTestStore({keep: true})
+      expect(pieceSong(findPiece(old.id, reopened)).metadata.measureKeySignatures).toEqual([-1, -1, -1, -1])
+      await reopened.close()
     })
 
     it("keeps the import order of pieces imported within a millisecond", async function() {

@@ -199,7 +199,7 @@ export default function SetupPage({staves=STAVES, generators=GENERATORS}) {
     storeCurrentDrill({
       staff: staff.name,
       generator: generator.name,
-      key: key.name(),
+      key: storedKey.name(),
       mode,
       speed,
     })

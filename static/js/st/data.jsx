@@ -660,6 +660,13 @@ export const GENERATORS = [
       let piece = sheetMusicPiece(settings)
       return piece ? sheetMusicKeyFor(pieceSong(piece), settings.startMeasure) : null
     },
+    // shown under the key pills when the key can't follow the score
+    keyHint: function(settings) {
+      let piece = sheetMusicPiece(settings)
+      let metadata = piece && pieceSong(piece).metadata
+      return metadata && !Array.isArray(metadata.measureKeySignatures) ?
+        "Re-import to follow the score key" : null
+    },
     create: function(staff, keySignature, settings) {
       let deck = measureCardDeck(staff, settings)
       if (deck) {
