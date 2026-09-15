@@ -9,6 +9,7 @@ import classNames from "classnames"
 import {STAVES, GENERATORS, sheetMusicPiece, BOTH_HANDS} from "st/data"
 import {noteName} from "st/music"
 import {setTitle} from "st/globals"
+import {markOnboarded} from "st/onboarding"
 import {
   generatorDefaultSettings, storeCurrentDrill, storeGeneratorSettings,
   currentStaffFor, currentGeneratorFor, currentKeySignature, currentDrillMode,
@@ -203,6 +204,8 @@ export default function SetupPage({staves=STAVES, generators=GENERATORS}) {
     if (generator.storageKey) {
       storeGeneratorSettings(generator.storageKey, fullSettings)
     }
+
+    markOnboarded()
   }
 
   let summary = programmeSummary({staff, generator, settings: fullSettings, key, mode, speed})
