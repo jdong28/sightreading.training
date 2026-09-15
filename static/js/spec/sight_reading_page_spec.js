@@ -311,6 +311,53 @@ describe("sight reading page", function() {
     expect(sessions[0].misses).toEqual(1)
   })
 
+  it("restarts a running session, clock included, on clear stats", async function() {
+    jasmine.clock().install()
+    clockInstalled = true
+    jasmine.clock().mockDate(new Date(2026, 8, 14, 20))
+
+    let el = renderPage()
+    let tick = ms => flushSync(() => jasmine.clock().tick(ms))
+
+    let lightbox
+    container.addEventListener(scopeEvent("showLightbox"), e => lightbox = e.detail[0])
+
+    click(buttonNamed(el, "Begin"))
+    play(page.state.notes.currentColumn())
+    play(page.state.notes.currentColumn())
+    tick(45000)
+    expect(statValue(el, "Notes read")).toEqual("2")
+    expect(statValue(el, "Elapsed")).toEqual("0:45")
+
+    flushSync(() => el.querySelector("[role=button]").click())
+    let lightboxContainer = document.createElement("div")
+    document.body.appendChild(lightboxContainer)
+    let lightboxRoot = createRoot(lightboxContainer)
+    flushSync(() => lightboxRoot.render(lightbox))
+    click(buttonNamed(lightboxContainer, "Clear stats"))
+    flushSync(() => lightboxRoot.unmount())
+    lightboxContainer.remove()
+
+    expect(buttonNamed(el, "Rest")).toBeDefined()
+    expect(statValue(el, "Notes read")).toEqual("0")
+    expect(statValue(el, "Best streak")).toEqual("0")
+    expect(statValue(el, "Elapsed")).toEqual("0:00")
+
+    tick(3000)
+    expect(statValue(el, "Elapsed")).toEqual("0:03")
+    play(page.state.notes.currentColumn())
+    expect(statValue(el, "Notes read")).toEqual("1")
+
+    click(buttonNamed(el, "Rest"))
+    expect(buttonNamed(el, "Begin")).toBeDefined()
+
+    jasmine.clock().uninstall()
+    clockInstalled = false
+
+    await waitFor(() => el.querySelectorAll("ol li").length == 2, "the saved sessions")
+    expect(store.recentSessions().map(s => s.notesRead)).toEqual([2, 1])
+  })
+
   it("lists only the sessions started today in the evening list", async function() {
     let session = (id, startedAt, staff) => ({
       id, startedAt, endedAt: startedAt + 60000, staff, generator: "random",

@@ -295,17 +295,33 @@ export default class SightReadingPage extends React.Component {
   beginSession() {
     if (this.state.session) { return }
 
+    this.restartSession({
+      session: true,
+      heldNotes: {},
+      touchedNotes: {},
+    })
+  }
+
+  // saves the stats so far and counts afresh from now, clock included
+  restartSession(update) {
     let now = Date.now()
     this.startClock()
 
     this.setState({
-      session: true,
+      ...update,
       sessionStartedAt: now,
       clockNow: now,
       stats: this.closeSession(),
-      heldNotes: {},
-      touchedNotes: {},
     })
+  }
+
+  // Clear stats: a running session restarts, at rest the stats start over
+  clearStats() {
+    if (this.state.session) {
+      this.restartSession()
+    } else {
+      this.setState({stats: this.closeSession()})
+    }
   }
 
   // Rest: stops the clock and saves the session, keeping its figures on the
@@ -809,7 +825,7 @@ export default class SightReadingPage extends React.Component {
   openStatsLightbox() {
     trigger(this, "showLightbox",
       <StatsLightbox
-        resetStats={() => this.setState({stats: this.closeSession()})}
+        resetStats={() => this.clearStats()}
         stats={this.state.stats} />)
   }
 
