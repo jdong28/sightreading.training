@@ -2,31 +2,74 @@ import * as React from "react"
 import classNames from "classnames"
 import Slider from "st/components/slider"
 import Select from "st/components/select"
+import {Pill} from "st/components/salon"
 import {trigger} from "st/events"
 import {
-  generatorDefaultSettings, fixGeneratorSettings, storeGeneratorSettings
+  generatorDefaultSettings, fixGeneratorSettings, storeGeneratorSettings, allKeySignatures
 } from "st/generators"
-import styles from "st/components/settings_panel.module.css"
+import styles from "./programme_drawer.module.css"
 
-import {KeySignature, ChromaticKeySignature, noteName, parseNote} from "st/music"
+import {noteName, parseNote} from "st/music"
 import * as types from "prop-types"
 
 import {ENABLE_PRESETS, FRONTEND_ONLY} from "st/globals"
 
 import {getSession} from "st/app"
 
-export class SettingsPanel extends React.PureComponent {
+// select inputs with at most this many short options render as choice pills
+const MAX_PILL_OPTIONS = 4
+const MAX_PILL_LABEL = 16
+
+// eg. "Bb" -> "B♭"
+export function keyLabel(key) {
+  return key.isChromatic() ? key.name() : key.name().replace(/b$/, "♭")
+}
+
+export function generatorLabel(generator) {
+  return generator.label || generator.name
+}
+
+export function staffLabel(staff) {
+  return staff.name.charAt(0).toUpperCase() + staff.name.slice(1)
+}
+
+function SettingsGroup({label, aside, className, children}) {
+  return <section className={classNames(styles.group, className)}>
+    <div className={styles.group_header}>
+      <span className={styles.group_label}>{label}</span>
+      {aside != null ? <span className={styles.group_aside}>{aside}</span> : null}
+    </div>
+    {children}
+  </section>
+}
+
+// The programme drawer: the settings for the sight reading trainer, sliding
+// in from the left over a scrim. Settings apply as they are picked; "Take
+// your seat" closes the drawer and regenerates the passage
+export class ProgrammeDrawer extends React.PureComponent {
   static propTypes = {
+    open: types.bool,
     close: types.func.isRequired,
+    apply: types.func.isRequired,
     staves: types.array.isRequired,
     generators: types.array.isRequired,
+    currentStaff: types.object,
+    currentGenerator: types.object,
+    currentGeneratorSettings: types.object,
+    currentKey: types.object.isRequired,
     setStaff: types.func.isRequired,
     setGenerator: types.func.isRequired,
+    setKeySignature: types.func.isRequired,
+    mode: types.oneOf(["wait", "scroll"]),
+    setMode: types.func.isRequired,
+    scrollSpeed: types.number.isRequired,
+    setScrollSpeed: types.func.isRequired,
   }
 
   constructor(props) {
     super(props)
     this.state = {}
+    this.closeButton = React.createRef()
   }
 
   componentDidMount() {
@@ -35,32 +78,76 @@ export class SettingsPanel extends React.PureComponent {
     }
   }
 
+  componentDidUpdate(prevProps) {
+    if (this.props.open && !prevProps.open && this.closeButton.current) {
+      this.closeButton.current.focus({preventScroll: true})
+    }
+  }
+
   render() {
-    return <section className={styles.settings_panel}>
-      <div className={styles.settings_header}>
-        <h3>Settings</h3>
-        <button onClick={this.props.close}>Close</button>
-      </div>
+    let open = !!this.props.open
 
-      {this.renderPresets()}
+    return <>
+      <div
+        className={classNames(styles.scrim, {[styles.open]: open})}
+        aria-hidden="true"
+        onClick={this.props.close} />
 
-      <section className={styles.settings_group}>
-        <h4>Staff</h4>
-        {this.renderStaves()}
-      </section>
+      <aside
+        className={classNames(styles.drawer, {[styles.open]: open})}
+        aria-label="Programme"
+        aria-hidden={!open}
+        onKeyDown={e => {
+          if (e.key == "Escape") {
+            this.props.close()
+          }
+        }}>
+        <div className={styles.drawer_header}>
+          <span className={styles.drawer_title}>
+            Programme<span className={styles.drawer_ornament} aria-hidden="true">❧</span>
+          </span>
+          <button
+            type="button"
+            ref={this.closeButton}
+            className={styles.close_button}
+            aria-label="Close the programme"
+            onClick={this.props.close}>×</button>
+        </div>
 
-      <section className={styles.settings_group}>
-        <h4>Generator</h4>
-        {this.renderGenerators()}
-      </section>
+        <div className={styles.drawer_rule} />
 
-      {this.renderGeneratorInputs()}
+        <div className={styles.drawer_body}>
+          {this.renderPresets()}
 
-      <section className={styles.settings_group}>
-        <h4>Key</h4>
-        {this.renderKeys()}
-      </section>
-    </section>
+          <SettingsGroup label="Clef">
+            {this.renderStaves()}
+          </SettingsGroup>
+
+          {this.props.currentStaff ?
+            <SettingsGroup label="Exercise" className={styles.exercise_group}>
+              {this.renderGenerators()}
+            </SettingsGroup> : null}
+
+          <SettingsGroup label="Tempo" aside={this.props.scrollSpeed}>
+            {this.renderTempo()}
+          </SettingsGroup>
+
+          <SettingsGroup label="Key">
+            {this.renderKeys()}
+          </SettingsGroup>
+
+          <Pill
+            variant="primary"
+            className={styles.apply_button}
+            onClick={this.props.apply}>Take your seat</Pill>
+
+          <Pill
+            variant="ghost"
+            className={styles.apply_button}
+            to="/setup">Set programme</Pill>
+        </div>
+      </aside>
+    </>
   }
 
   savePreset(e) {
@@ -70,7 +157,7 @@ export class SettingsPanel extends React.PureComponent {
 
   loadPresets() {
     const session = getSession()
-    if (!session.currentUser) { return }
+    if (!session || !session.currentUser) { return }
 
     this.setState({
       loadingPresets: true
@@ -98,7 +185,7 @@ export class SettingsPanel extends React.PureComponent {
 
     const session = getSession()
 
-    if (!session.currentUser) { return }
+    if (!session || !session.currentUser) { return }
 
     var presetsPicker
 
@@ -116,7 +203,7 @@ export class SettingsPanel extends React.PureComponent {
       </div>
     }
 
-    return <div className={styles.settings_group}>
+    return <SettingsGroup label="Presets">
       {presetsPicker}
       <form onSubmit={this.savePreset.bind(this)} ref="presetForm">
         <label>
@@ -125,95 +212,118 @@ export class SettingsPanel extends React.PureComponent {
         </label>
         <button disabled={this.props.savePreset || false}>Save preset</button>
       </form>
-    </div>
+    </SettingsGroup>
   }
 
   renderStaves() {
-    return <div className={styles.button_group}>
+    return <div className={styles.pills}>
       {
-        this.props.staves.map((staff, i) => {
-          return <button
-            type="button"
+        this.props.staves.map(staff =>
+          <Pill
+            variant="choice"
             key={staff.name}
-            onClick={(e) => {
-              e.preventDefault();
-              this.props.setStaff(staff);
-            }}
-            className={classNames(styles.toggle_option, {
-              [styles.active]: this.props.currentStaff == staff
-            })}>
-            {staff.name}</button>;
-        })
+            selected={this.props.currentStaff == staff}
+            onClick={e => {
+              e.preventDefault()
+              this.props.setStaff(staff)
+            }}>{staffLabel(staff)}</Pill>
+        )
       }
     </div>
   }
 
   renderGenerators() {
-    return <div className={styles.button_group}>
+    let generators = this.props.generators.filter(generator =>
+      !generator.debug && generator.mode == this.props.currentStaff.mode
+    )
+
+    return <ul className={styles.exercise_list}>
       {
-        this.props.generators.map((generator, i) => {
-          if (generator.debug) {
-            return
-          }
+        generators.map(generator => {
+          let selected = this.props.currentGenerator == generator
 
-          if (generator.mode != this.props.currentStaff.mode) {
-            return
-          }
-
-
-          return <button
+          return <li
             key={generator.name}
-            onClick={(e) => {
-              e.preventDefault();
-              this.props.setGenerator(
-                generator,
-                fixGeneratorSettings(generator, this.props.currentGeneratorSettings)
-              )
-            }}
-
-            className={classNames(styles.toggle_option, {
-              [styles.active]: this.props.currentGenerator == generator
-            })}>
-            {generator.name}</button>;
+            className={classNames(styles.exercise, {[styles.selected]: selected})}>
+            <button
+              type="button"
+              className={styles.exercise_row}
+              aria-pressed={selected}
+              onClick={e => {
+                e.preventDefault()
+                this.props.setGenerator(
+                  generator,
+                  fixGeneratorSettings(generator, this.props.currentGeneratorSettings)
+                )
+              }}>
+              <span className={styles.exercise_name}>{generatorLabel(generator)}</span>
+              {selected ? <span className={styles.exercise_mark} aria-hidden="true">❖</span> : null}
+            </button>
+            {selected ? this.renderGeneratorInputs() : null}
+          </li>
         })
       }
-    </div>
+    </ul>
   }
 
   renderGeneratorInputs() {
     let g = this.props.currentGenerator
     if (!g.inputs || !g.inputs.length) return
-    return <div className={styles.settings_group}>
-      <GeneratorSettings
-        key={`${g.name}-${g.mode}`}
-        generator={g}
-        currentKey={this.props.currentKey}
-        currentStaff={this.props.currentStaff}
-        currentSettings={this.props.currentGeneratorSettings}
-        staves={this.props.staves}
-        setStaff={this.props.setStaff}
-        setGenerator={this.props.setGenerator} />
-    </div>
+    return <GeneratorSettings
+      key={`${g.name}-${g.mode}`}
+      generator={g}
+      currentKey={this.props.currentKey}
+      currentStaff={this.props.currentStaff}
+      currentSettings={this.props.currentGeneratorSettings}
+      staves={this.props.staves}
+      setStaff={this.props.setStaff}
+      setGenerator={this.props.setGenerator} />
+  }
+
+  // the page's wait or scroll mode and scroll speed. The speed applies when
+  // scroll mode is entered, so it is fixed while scrolling
+  renderTempo() {
+    return <>
+      <div className={styles.pills}>
+        {[["wait", "Wait"], ["scroll", "Scroll"]].map(([mode, label]) =>
+          <Pill
+            variant="choice"
+            key={mode}
+            selected={this.props.mode == mode}
+            onClick={() => this.props.setMode(mode)}>{label}</Pill>
+        )}
+      </div>
+
+      <div className={styles.tempo_track}>
+        <Slider
+          className={styles.gilt_slider}
+          min={50}
+          max={300}
+          disabled={this.props.mode == "scroll"}
+          onChange={value => this.props.setScrollSpeed(Math.round(value))}
+          value={+this.props.scrollSpeed} />
+      </div>
+
+      <div className={styles.tempo_legend} aria-hidden="true">
+        <span>Largo</span>
+        <span>Presto</span>
+      </div>
+    </>
   }
 
   renderKeys() {
-    let keyButton = (key) =>
-      <button
-        onClick={(e) => {
-          this.props.setKeySignature(key)
-        }}
-        className={classNames(styles.toggle_option, {
-          [styles.active]: this.props.currentKey.name() == key.name()
-        })}
-        key={key.name()}>
-          {key.name()}
-        </button>
+    let keys = allKeySignatures()
 
-    return <div className={styles.button_group}>
+    return <div className={styles.pills}>
       {
-        KeySignature.allKeySignatures().concat([
-          new ChromaticKeySignature()
-        ]).map(key => keyButton(key))
+        keys.map(key =>
+          <Pill
+            variant="choice"
+            key={key.name()}
+            className={classNames(styles.key_pill, {[styles.chromatic]: key.isChromatic()})}
+            selected={this.props.currentKey.name() == key.name()}
+            onClick={() => this.props.setKeySignature(key)}>{keyLabel(key)}</Pill>
+        )
       }
     </div>
   }
@@ -238,8 +348,9 @@ export class GeneratorSettings extends React.PureComponent {
     this.state = {}
   }
 
+  // this panel's styles for any class name the passed classes don't define
   get styles() {
-    return this.props.classes || styles
+    return this.props.classes ? {...styles, ...this.props.classes} : styles
   }
 
   componentDidMount() {
@@ -310,7 +421,7 @@ export class GeneratorSettings extends React.PureComponent {
 
         // multi control inputs are not wrapped in a label so clicking the
         // label text does not focus an arbitrary control
-        let el = ["toggles", "text", "deck"].includes(input.type) ? "div" : "label"
+        let el = ["toggles", "text", "deck", "select", "noteRange"].includes(input.type) ? "div" : "label"
 
         let inside = React.createElement(el, null, ...[
           <div className={this.styles.input_label}>{input.label || input.name}</div>,
@@ -371,6 +482,24 @@ export class GeneratorSettings extends React.PureComponent {
 
     if (!options.some(o => o.value == currentValue)) {
       currentValue = options[0].value
+    }
+
+    // a few short choices are pills, longer lists keep the select
+    if (options.length <= MAX_PILL_OPTIONS && options.every(o => o.name.length <= MAX_PILL_LABEL)) {
+      return <div className={this.styles.pills} role="group" aria-label={input.label || input.name}>
+        {options.map(option =>
+          <Pill
+            variant="choice"
+            key={option.value}
+            className={this.styles.small_pill}
+            selected={option.value == currentValue}
+            onClick={() => {
+              if (option.value != currentValue) {
+                this.updateInputValue(input, option.value)
+              }
+            }}>{option.name}</Pill>
+        )}
+      </div>
     }
 
     return <Select
@@ -455,8 +584,9 @@ export class GeneratorSettings extends React.PureComponent {
             this.pickPiece(input, id)
           }} />
         {currentValue ?
-          <button
-            type="button"
+          <Pill
+            variant="ghost"
+            className={this.styles.small_pill}
             onClick={() => {
               let piece = pieces.find(piece => piece.id == currentValue)
               input.removePiece(currentValue).then(result => {
@@ -467,29 +597,30 @@ export class GeneratorSettings extends React.PureComponent {
                 this.setState({deckMessage: {text: `Removed "${piece.title}" from the deck`}})
                 this.pickPiece(input, "")
               })
-            }}>Remove</button> : null}
+            }}>Remove</Pill> : null}
       </div>
-      <label className={this.styles.file_input}>
-        <span>Import MusicXML</span>
-        <input
-          type="file"
-          accept=".musicxml,.xml,.mxl,application/vnd.recordare.musicxml+xml,application/xml,text/xml"
-          onChange={e => this.importPiece(input, e)} />
-      </label>
-      {input.exportLibrary ?
-        <div className={this.styles.deck_row}>
-          <button
-            type="button"
-            onClick={() => this.exportLibrary(input)}>Export library</button>
-        </div> : null}
-      {input.importLibrary ?
+      <div className={this.styles.deck_actions}>
         <label className={this.styles.file_input}>
-          <span>Import library</span>
+          <span className={this.styles.file_pill}>Import MusicXML</span>
           <input
             type="file"
-            accept=".json,application/json"
-            onChange={e => this.importLibrary(input, e)} />
-        </label> : null}
+            accept=".musicxml,.xml,.mxl,application/vnd.recordare.musicxml+xml,application/xml,text/xml"
+            onChange={e => this.importPiece(input, e)} />
+        </label>
+        {input.exportLibrary ?
+          <Pill
+            variant="ghost"
+            className={this.styles.small_pill}
+            onClick={() => this.exportLibrary(input)}>Export library</Pill> : null}
+        {input.importLibrary ?
+          <label className={this.styles.file_input}>
+            <span className={this.styles.file_pill}>Import library</span>
+            <input
+              type="file"
+              accept=".json,application/json"
+              onChange={e => this.importLibrary(input, e)} />
+          </label> : null}
+      </div>
       {message ?
         <div className={message.error ? this.styles.input_error : this.styles.input_notice}>{message.text}</div> : null}
       {input.hint ? <div className={this.styles.input_hint}>{input.hint}</div> : null}
@@ -590,6 +721,7 @@ export class GeneratorSettings extends React.PureComponent {
       {input.library ? this.renderSongLibrary(input) : null}
       <textarea
         className={this.styles.text_input}
+        aria-label={input.label || input.name}
         rows={8}
         spellCheck={false}
         value={currentValue}
@@ -662,20 +794,14 @@ export class GeneratorSettings extends React.PureComponent {
       options.push(noteName(i))
     }
 
-    return <div className={this.styles.note_range_row}>
-      <label>
-        Note
-        <Select
-          className={this.styles.select_component}
-          onChange={value => {
-            this.updateInputValue(input, parseNote(value))
-          }}
-          value={noteName(currentValue)}
-          options={options.map(name => ({ value: name, name }))}
-        />
-      </label>
-    </div>
-
+    return <Select
+      className={this.styles.select_component}
+      onChange={value => {
+        this.updateInputValue(input, parseNote(value))
+      }}
+      value={noteName(currentValue)}
+      options={options.map(name => ({ value: name, name }))}
+    />
   }
 
   renderNoteRange(input, idx) {
@@ -710,7 +836,7 @@ export class GeneratorSettings extends React.PureComponent {
 
     return <div className={this.styles.note_range_row}>
       <label>
-        Min
+        <span className={this.styles.sub_label}>Min</span>
         <Select
           className={this.styles.select_component}
           onChange={value => {
@@ -725,7 +851,7 @@ export class GeneratorSettings extends React.PureComponent {
       </label>
 
       <label>
-        Max
+        <span className={this.styles.sub_label}>Max</span>
         <Select
           className={this.styles.select_component}
           onChange={value => {
@@ -746,6 +872,7 @@ export class GeneratorSettings extends React.PureComponent {
 
     return <div className={this.styles.slider_row}>
       <Slider
+        className={this.styles.gilt_slider}
         min={input.min}
         max={input.max}
         onChange={(value) => this.updateInputValue(input, value)}
@@ -757,7 +884,7 @@ export class GeneratorSettings extends React.PureComponent {
   renderBool(input, idx) {
     let currentValue = !!this.cachedSettings[input.name]
 
-    return <div className="bool_row">
+    return <div className={this.styles.bool_row}>
       <input
         type="checkbox"
         checked={currentValue}
@@ -769,18 +896,16 @@ export class GeneratorSettings extends React.PureComponent {
   renderToggles(input, idx) {
     let currentValue = this.cachedSettings[input.name] || {}
 
-    return <div className="toggles">
+    return <div className={this.styles.pills} role="group" aria-label={input.label || input.name}>
       {input.options.map(subName =>
-        <label className="toggle" key={subName}>
-          <input
-            onChange={e => 
-              this.updateInputValue(input, {...currentValue, [subName]: e.target.checked})
-            }
-            checked={currentValue[subName] || false}
-            type="checkbox" />
-          {" "}
-          {subName}
-        </label>
+        <Pill
+          variant="choice"
+          key={subName}
+          className={this.styles.small_pill}
+          selected={!!currentValue[subName]}
+          onClick={() =>
+            this.updateInputValue(input, {...currentValue, [subName]: !currentValue[subName]})
+          }>{subName}</Pill>
       )}
     </div>
   }

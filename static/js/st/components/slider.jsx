@@ -11,6 +11,7 @@ export default class Slider extends React.PureComponent {
     value: types.number,
     onChange: types.func,
     disabled: types.bool,
+    className: types.string,
   }
 
   constructor(props) {
@@ -96,12 +97,15 @@ export default class Slider extends React.PureComponent {
           this.onChange(newValue)
         }
       }}
-      className={classNames(styles.slider_component, "slider_component", {
+      className={classNames(styles.slider_component, "slider_component", this.props.className, {
         [styles.disabled]: this.props.disabled,
         disabled: this.props.disabled
       })}
     >
       <div ref="track" className={classNames(styles.slider_track, "slider_track")}>
+        <div
+          className={classNames(styles.slider_fill, "slider_fill")}
+          style={{width: this.percent() * 100 + "%"}} />
         <button
           ref="sliderNub"
           onMouseDown={(e) => this.startDrag(e.pageX, e.pageY)}

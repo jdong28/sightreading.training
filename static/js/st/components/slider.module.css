@@ -7,7 +7,17 @@
 
     &.disabled {
         opacity: 0.5;
-        .slider_nub {
+        /* hidden unless a slider className styles it, see the programme drawer */
+    .slider_fill {
+        display: none;
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        border-radius: 999px;
+    }
+
+    .slider_nub {
             cursor: default;
         }
     }

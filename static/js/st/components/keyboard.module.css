@@ -12,10 +12,6 @@
     height: var(--keyboard-height);
     z-index: 1;
 
-    :global(.settings_open) & {
-        left: var(--settings-panel-width);
-    }
-
     background: #D6D6D6;
     overflow: auto;
     border-top: 1px solid #D6D6D6;

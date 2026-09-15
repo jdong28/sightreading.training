@@ -32,6 +32,11 @@
         gap: 18px;
     }
 
+    /* no box of its own, so an empty slot adds no gap */
+    .page_actions {
+        display: contents;
+    }
+
     .wordmark {
         display: flex;
         align-items: center;
