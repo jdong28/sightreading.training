@@ -523,7 +523,7 @@ describe("measure cards", function() {
       expect(generator.deck.card.measures).toEqual([1])
       let column = generator.nextNote()
       expect([...column]).toEqual(["G3"])
-      // drawn on the score's lower staff, in the clefs of its measure
+      // drawn on the score's lower staff, in the clefs at its onset
       expect(column.staves).toEqual(["lower"])
       expect(column.clefs).toEqual({upper: "g", lower: "f"})
       expect(generator.nextNote()).toEqual([])

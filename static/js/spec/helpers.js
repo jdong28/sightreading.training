@@ -193,6 +193,23 @@ export const keyChangeScore = ({title="Key Change", keys=[-1, 4]}={}) => `<?xml 
 const clefXML = (staff, sign, line) =>
   `<clef number="${staff}"><sign>${sign}</sign><line>${line}</line></clef>`
 
+// A one measure 4/4 piano piece: the upper staff in treble clef holds E5, and
+// the lower staff, opening in bass clef, plays a quarter note [step, octave]
+// on each beat of lower, where a ["clef", sign, line] entry changes its clef
+export const midMeasureClefScore = lower => `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <work><work-title>Mid-Measure Clef</work-title></work>
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes><divisions>1</divisions><time><beats>4</beats><beat-type>4</beat-type></time><staves>2</staves>${clefXML(1, "G", 2)}${clefXML(2, "F", 4)}</attributes>
+      ${noteXML("E", 5, 4, 1)}
+      <backup><duration>4</duration></backup>
+      ${lower.map(([a, b, c]) => a == "clef" ? `<attributes>${clefXML(2, b, c)}</attributes>` : noteXML(a, b, 1, 2)).join("")}
+    </measure>
+  </part>
+</score-partwise>`
+
 // A 4/4 piano piece of four measures, each a whole note on both staves: the
 // upper staff in treble clef plays E5; the lower staff plays notes, one a
 // measure, opening in clefs[0] and changing to clefs[1] from measure 3. By

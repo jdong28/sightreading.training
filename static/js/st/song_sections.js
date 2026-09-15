@@ -112,9 +112,10 @@ export function countMeasures(song) {
 }
 
 // group notes by quantized onset into pitch sorted, deduplicated columns.
-// Each entry is [note, staff]; withStaves the column carries the staves as
-// column.staves, one per note (the first of notes sharing a pitch)
-function groupByOnset(entries, withStaves) {
+// Each entry is [note, staff]; given clefsAt (see grandStaffClefs) the column
+// carries the staves as column.staves, one per note (the first of notes
+// sharing a pitch), and the clefs at its onset as column.clefs
+function groupByOnset(entries, clefsAt) {
   let byOnset = new Map()
 
   for (let entry of entries) {
@@ -140,8 +141,9 @@ function groupByOnset(entries, withStaves) {
 
     notes.sort((a, b) => a.pitch - b.pitch)
     let column = notes.map(note => note.name)
-    if (withStaves) {
+    if (clefsAt) {
       column.staves = notes.map(note => note.staff)
+      column.clefs = clefsAt(byOnset.get(key)[0][0].start)
     }
     return column
   })
@@ -153,7 +155,8 @@ function groupByOnset(entries, withStaves) {
 // opts.track: track index, or array of track indices, to keep, or
 // null/undefined for all tracks
 // opts.staves: when set, each column carries column.staves, the grand staff
-// ("upper" or "lower", see staffTracks) each of its notes is written on
+// ("upper" or "lower", see staffTracks) each of its notes is written on, and
+// column.clefs, the clef sign of each staff at its onset (see grandStaffClefs)
 // returns array of columns, each an ascending array of note names
 export function extractSectionColumns(song, opts={}) {
   let [firstMeasure] = measureNumberRange(song)
@@ -173,9 +176,10 @@ export function extractSectionColumns(song, opts={}) {
     trackIndices = (song.tracks || []).map((track, idx) => idx)
   }
 
+  let grand = opts.staves ? staffTracks(song) : null
+
   let entries
   if (trackIndices) {
-    let grand = opts.staves ? staffTracks(song) : null
     entries = trackIndices.flatMap(idx => {
       let staff = grand ? (grand.bass.includes(idx) ? "lower" : "upper") : null
       return [...((song.tracks && song.tracks[idx]) || [])].map(note => [note, staff])
@@ -191,7 +195,7 @@ export function extractSectionColumns(song, opts={}) {
     note.start < endBeat - ONSET_EPSILON / 2
   )
 
-  return groupByOnset(inRange, !!opts.staves)
+  return groupByOnset(inRange, grand && grandStaffClefs(song, grand))
 }
 
 // Drops notes that fall outside [min, max] pitch (note names), removing
@@ -213,6 +217,7 @@ export function filterColumnsToRange(columns, min, max) {
     let kept = column.filter((note, idx) => keep[idx])
     if (column.staves) {
       kept.staves = column.staves.filter((staff, idx) => keep[idx])
+      kept.clefs = column.clefs
     }
 
     if (kept.length) {
@@ -234,31 +239,28 @@ function openingClef(track) {
   return sign
 }
 
-// the clef sign of a track in effect at beat: its last clef entry starting
-// by then, else the clef it opens with. null without clefs
-function trackClefAt(track, beat) {
-  let clefs = track && track.cleffs
-  if (!Array.isArray(clefs) || !clefs.length) {
-    return null
-  }
+// The clef signs each staff of the grand staff grand (see staffTracks) is
+// drawn in, from the clefs of the first track on it: a function of beat,
+// called with beats in order, giving {upper, lower}, each the last clef
+// starting by then, else the clef the staff opens with, or null for a staff
+// without clefs
+function grandStaffClefs(song, grand) {
+  let staves = [["upper", grand.treble], ["lower", grand.bass]].map(([name, tracks]) => {
+    let track = tracks.length ? song.tracks[tracks[0]] : null
+    let clefs = [...((track && track.cleffs) || [])].sort((a, b) => a[0] - b[0])
+    return {name, clefs, idx: 0}
+  })
 
-  let current = null
-  for (let clef of clefs) {
-    if (clef[0] <= beat + ONSET_EPSILON / 2 && (!current || clef[0] >= current[0])) {
-      current = clef
+  return beat => {
+    let out = {}
+    for (let staff of staves) {
+      while (staff.idx + 1 < staff.clefs.length && staff.clefs[staff.idx + 1][0] <= beat + ONSET_EPSILON / 2) {
+        staff.idx += 1
+      }
+      out[staff.name] = staff.clefs.length ? staff.clefs[staff.idx][1] : null
     }
+    return out
   }
-
-  return current ? current[1] : openingClef(track)
-}
-
-// The clef sign each staff of the grand staff is drawn in at beat, eg. the
-// start of a measure: {upper, lower}, taken from the first track on
-// that staff (see staffTracks), null for a staff without clefs
-export function grandStaffClefs(song, beat) {
-  let grand = staffTracks(song)
-  let clefOf = tracks => tracks.length ? trackClefAt(song.tracks[tracks[0]], beat) : null
-  return {upper: clefOf(grand.treble), lower: clefOf(grand.bass)}
 }
 
 // Splits the song's tracks into the staves of a grand staff:

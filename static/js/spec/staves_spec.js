@@ -7,14 +7,14 @@ import staffStyles from "st/components/staff.module.css"
 import NoteList from "st/note_list"
 import {KeySignature, noteName, parseNote} from "st/music"
 import {parseMusicXML} from "st/musicxml"
-import {extractSectionColumns, grandStaffClefs} from "st/song_sections"
+import {extractSectionColumns} from "st/song_sections"
 import {sectionCard, cardColumn, measureCards} from "st/measure_cards"
 import {SheetMusicGenerator} from "st/generators"
 import {pieceSectionMeasures, BOTH_HANDS, RIGHT_HAND, LEFT_HAND} from "st/data"
-import {reverieOpening, clefChangeScore} from "spec/helpers"
+import {reverieOpening, clefChangeScore, midMeasureClefScore} from "spec/helpers"
 
 // MIDI pitches, so the specs don't depend on the octave numbering of names
-const G2 = 43, Bb3 = 58, C4 = 60, D4 = 62, G4 = 67, D5 = 74, G5 = 79
+const G2 = 43, C3 = 48, E3 = 52, Bb3 = 58, C4 = 60, D4 = 62, G4 = 67, D5 = 74, G5 = 79
 
 const GRAND = {name: "grand", range: ["C2", "C6"]}
 
@@ -79,7 +79,7 @@ describe("staves", function() {
       expect(columns[18].staves).toEqual(["upper"])
 
       // both staves open in treble clef
-      expect(grandStaffClefs(song, 0)).toEqual({upper: "g", lower: "g"})
+      expect(columns.every(column => column.clefs.upper == "g" && column.clefs.lower == "g")).toBe(true)
 
       // other sections are still bare note names
       let plain = extractSectionColumns(song, {startMeasure: 2, endMeasure: 4})
@@ -87,10 +87,9 @@ describe("staves", function() {
       expect(plain.some(column => column.staves)).toBe(false)
     })
 
-    it("keeps the staves and measure clefs through the sheet music generators", function() {
+    it("keeps the staves and clefs through the sheet music generators", function() {
       let song = parseMusicXML(reverieOpening())
       let measures = pieceSectionMeasures(GRAND, {startMeasure: 2, endMeasure: 4, hand: BOTH_HANDS}, song)
-      expect(measures.map(m => m.clefs)).toEqual(Array(3).fill({upper: "g", lower: "g"}))
 
       let [card] = measureCards(measures, 3)
       let generator = new SheetMusicGenerator(card.columns.map((column, idx) => cardColumn(card, idx)), {card})
@@ -104,6 +103,7 @@ describe("staves", function() {
         {startMeasure: 2, endMeasure: 2, hand: BOTH_HANDS}, song)
       expect(narrow[0].columns.every(column => column.length == column.staves.length)).toBe(true)
       expect(narrow[0].columns.map(pitches)[0]).toEqual([C4])
+      expect(narrow[0].columns[0].clefs).toEqual({upper: "g", lower: "g"})
     })
 
     it("draws the Rêverie ostinato on the lower staff in treble clef", function() {
@@ -208,9 +208,9 @@ describe("staves", function() {
       expect(noteTop(lower, C4)).toEqual("125%")
       expect(clefChanges(staffEl("upper")).length).toEqual(0)
 
-      // each measure keeps the clefs it is written in
-      let measures = pieceSectionMeasures(GRAND, {startMeasure: 1, endMeasure: 4, hand: BOTH_HANDS}, song)
-      expect(measures.map(measure => measure.clefs.lower)).toEqual(["f", "f", "g", "g"])
+      // each column keeps the clefs at its onset
+      let columns = extractSectionColumns(song, {startMeasure: 1, endMeasure: 4, staves: true})
+      expect(columns.map(column => column.clefs.lower)).toEqual(["f", "f", "g", "g"])
     })
 
     it("draws a clef change inside a card at its bar line", function() {
@@ -235,6 +235,42 @@ describe("staves", function() {
       // without the ledger lines the treble clef would need
       expect(noteTop(lower, G2)).toEqual("100%")
       expect(ledgerLines(lower)).toEqual(1) // the C4 of measure 1, in treble clef
+    })
+
+    it("draws a clef change inside a measure before the column it starts at", function() {
+      let song = parseMusicXML(midMeasureClefScore([["C", 3], ["E", 3], ["clef", "G", 2], ["C", 4], ["E", 4]]))
+      renderStaff(GrandStaff, sectionColumns(song, 1, 1))
+
+      let lower = staffEl("lower")
+      expect(clefImage(lower)).toContain("clefs.F")
+
+      let changes = clefChanges(lower)
+      expect(changes.map(clef => clef.getAttribute("src"))).toEqual(["/static/svg/clefs.G.svg"])
+      let left = pitch => parseFloat(notesOn(lower).find(note => +note.dataset.midiNote == pitch).style.left)
+      let changeLeft = parseFloat(changes[0].style.left)
+      expect(changeLeft).toBeGreaterThan(left(E3))
+      expect(changeLeft).toBeLessThan(left(C4))
+
+      // beats 3 and 4 are placed and ledgered in treble clef: only C4 needs a
+      // ledger line, where the bass clef would put both above the staff
+      expect(noteTop(lower, C3)).toEqual("62%")
+      expect(noteTop(lower, C4)).toEqual("125%")
+      expect(noteTop(lower, C4 + 4)).toEqual("100%")
+      expect(ledgerLines(lower)).toEqual(1)
+    })
+
+    it("draws both clef changes of a switch and back inside a measure", function() {
+      let song = parseMusicXML(midMeasureClefScore([
+        ["C", 3], ["clef", "G", 2], ["C", 4], ["clef", "F", 4], ["E", 3], ["G", 3],
+      ]))
+      renderStaff(GrandStaff, sectionColumns(song, 1, 1))
+
+      let lower = staffEl("lower")
+      expect(clefImage(lower)).toContain("clefs.F")
+      expect(clefChanges(lower).map(clef => clef.getAttribute("src")))
+        .toEqual(["/static/svg/clefs.G.svg", "/static/svg/clefs.F_change.svg"])
+      expect(noteTop(lower, C4)).toEqual("125%")
+      expect(noteTop(lower, E3)).toEqual("37%")
     })
   })
 

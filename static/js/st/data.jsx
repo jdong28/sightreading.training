@@ -12,8 +12,7 @@ import {
 
 import {
   extractSectionColumns, filterColumnsToRange, parseSongText, countMeasures,
-  measureNumberRange, measureNumberList, measureKeySignature, measureBeatRange,
-  staffTracks, grandStaffClefs
+  measureNumberRange, measureNumberList, measureKeySignature, staffTracks
 } from "st/song_sections"
 
 import {
@@ -184,8 +183,8 @@ export function pieceSection(staff, settings, song) {
 
 // The measures of an imported piece's section with the columns of each on the
 // staff, the pool of st/measure_cards. Columns carry the grand staff of their
-// notes and each measure the clefs the grand staff draws it in, so the staff
-// draws the piece on the score's own staves and clefs
+// notes and the clefs at their onset, so the staff draws the piece on the
+// score's own staves and clefs
 export function pieceSectionMeasures(staff, settings, song) {
   let tracks = handTracks(song, settings.hand)
   let [firstMeasure] = measureNumberRange(song)
@@ -199,8 +198,7 @@ export function pieceSectionMeasures(staff, settings, song) {
         startMeasure: number, endMeasure: number, track: tracks, staves: true,
       })
       let [visible] = filterColumnsToRange(columns, staff.range[0], staff.range[1])
-      let [startBeat] = measureBeatRange(song, number, number)
-      return {number, columns: visible, clefs: grandStaffClefs(song, startBeat)}
+      return {number, columns: visible}
     })
 }
 
