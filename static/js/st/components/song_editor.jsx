@@ -1,13 +1,8 @@
 import * as React from "react"
-import SongParser, {shiftNotationOctaves} from "st/song_parser"
-import {trigger} from "st/events"
+import {shiftNotationOctaves} from "st/song_parser"
 
-import {JsonForm, TextInputRow} from "st/components/forms"
-import {useNavigate} from "react-router-dom"
+import {TextInputRow} from "st/components/forms"
 
-import Lightbox from "st/components/lightbox"
-import Tabs from "st/components/tabs"
-import Select from "st/components/select"
 import styles from "st/components/song_editor.module.css"
 
 import { KeySignature } from "st/music"
@@ -17,9 +12,9 @@ import {serializeSong, SerializeError} from "st/song_serializer"
 
 export const SONG_DRAFT_KEY = "wip:newSong"
 
-// The unsaved new song, in the current numbering. Drafts without middleC were
-// written with middle C as c5 and are renumbered, and saved, the first time
-// they're read
+// The song being written in the editor, in the current numbering. Drafts
+// without middleC were written with middle C as c5 and are renumbered, and
+// saved, the first time they're read
 export function readSongDraft() {
   let draft = readConfig(SONG_DRAFT_KEY)
   if (draft && draft.middleC != "c4") {
@@ -34,79 +29,10 @@ export function readSongDraft() {
   return draft
 }
 
-const DeleteSongForm = React.memo(function DeleteSongForm(props) {
-  const navigate = useNavigate()
-
-  function afterSubmit(res) {
-    props.lightbox.close()
-    if (res.redirect_to) {
-      navigate(res.redirect_to)
-    }
-  }
-
-  return <JsonForm
-    method="DELETE"
-    action={props.action}
-    afterSubmit={afterSubmit}
-    className="delete_song_form">
-      <p>Are you sure you want to delete this song? You can't un-delete</p>
-      <button>Delete</button>
-  </JsonForm>
-})
-
-class SongDetailsLightbox extends Lightbox {
-  constructor(opts) {
-    super(opts)
-    this.state = { tab: "details" }
-  }
-
-  renderContent() {
-    return <React.Fragment>
-      <h2>More options</h2>
-      <Tabs
-        currentTab={this.state.tab}
-        onChangeTab={t => this.setState({tab: t.name})}
-        tabs={[
-          {name: "details", label: "Details"},
-          {name: "delete", label: "Delete"},
-        ]}
-      />
-      {this.renderCurrentTab()}
-    </React.Fragment>
-  }
-
-  renderCurrentTab() {
-    switch (this.state.tab) {
-      case "details":
-        return this.renderDetails()
-      case "delete":
-        return <DeleteSongForm lightbox={this} action={this.props.action}/>
-    }
-  }
-
-  renderDetails() {
-    return<div>
-      <p>
-        <strong>Created at: </strong>
-        {this.props.song.created_at}
-      </p>
-
-      <p>
-        <strong>Updated at: </strong>
-        {this.props.song.updated_at}
-      </p>
-    </div>
-  }
-}
-
 export default class SongEditor extends React.Component {
   constructor(props) {
     super(props)
 
-    let song = this.props.song
-
-    this.notesCountInputRef = React.createRef()
-    this.beatsLengthInputRef = React.createRef()
     this.codeInputRef = React.createRef()
 
     this.fieldUpdaters = {
@@ -115,32 +41,24 @@ export default class SongEditor extends React.Component {
 
     this.importFile = this.importFile.bind(this)
 
-    let initial = song
-    if (!song) {
-      initial = readSongDraft()
-      // render the initial song
-      if (initial) {
-        window.setTimeout(() => {
-          if (this.state.code == initial.code) {
-            if (this.props.onCode) {
-              this.props.onCode(initial.code)
-            }
+    let initial = readSongDraft()
+    // render the initial song
+    if (initial) {
+      window.setTimeout(() => {
+        if (this.state.code == initial.code) {
+          if (this.props.onCode) {
+            this.props.onCode(initial.code)
           }
-        }, 0)
-      }
+        }
+      }, 0)
     }
 
     this.state = {
-      song,
-      newSong: !song,
-      loading: false,
-
       title: initial ? initial.title : "",
       code: this.props.code || (initial ? initial.code : null) || "",
       source: initial ? initial.source : "",
       album: initial ? initial.album : "",
       artist: initial ? initial.artist : "",
-      publishStatus: initial ? initial.publish_status : undefined,
     }
   }
 
@@ -153,41 +71,9 @@ export default class SongEditor extends React.Component {
     }
   }
 
-  beforeSubmit() {
-    let songNotes = null
-    try {
-      songNotes = SongParser.load(this.state.code)
-    } catch (e) {
-      songNotes = null
-    }
-
-    this.notesCountInputRef.current.value = songNotes ? songNotes.length : ""
-    this.beatsLengthInputRef.current.value = songNotes ? songNotes.getStopInBeats() : ""
-
-    this.setState({
-      errors: null,
-    })
-  }
-
-  afterSubmit(res) {
-    if (res.errors) {
-      this.setState({
-        errors: res.errors
-      })
-    }
-
-    if (res.song) {
-      this.setState({
-        newSong: false,
-        song: res.song
-      })
-      writeConfig(SONG_DRAFT_KEY, undefined)
-    }
-  }
-
   // Loads a MusicXML file into the player. When the imported rhythm can be
   // written in the editor's notation the generated code replaces the editor
-  // contents so the song can be saved; otherwise the song is only played.
+  // contents so the song can be edited; otherwise the song is only played.
   importFile(e) {
     let file = e.target.files && e.target.files[0]
     if (!file) {
@@ -238,134 +124,40 @@ export default class SongEditor extends React.Component {
   }
 
   updateWip(update) {
-    if (!this.state.newSong) {
-      return false
-    }
-
-    let wip = {...readSongDraft(), ...update, middleC: "c4"}
-    writeConfig(SONG_DRAFT_KEY, wip)
-    return true
+    writeConfig(SONG_DRAFT_KEY, {...readSongDraft(), ...update, middleC: "c4"})
   }
 
   render() {
-    let action = "/songs.json"
-    if (this.state.song && this.state.song.allowed_to_edit) {
-      action = `/songs/${this.state.song.id}.json`
-    }
-
-    let errors
-
-    if (this.state.errors) {
-      errors = <ul>{this.state.errors.map(e => <li key={e}>{e}</li>)}</ul>
-    }
-
-    let moreButton, saveButton
-
-    if (this.state.song && this.state.song.allowed_to_edit) {
-      moreButton = <button
-        onClick={e => {
-          trigger(this, "showLightbox",
-            <SongDetailsLightbox action={action} song={this.state.song}/>)
-        }}
-        type="button" className="outline">More...</button>
-    }
-
-    let saveDisabled = !!this.props.importUnsaveable
-
-    if (this.state.song && !this.state.song.allowed_to_edit) {
-      saveButton = <button disabled={saveDisabled}>Save copy</button>
-    } else if (this.state.song) {
-      saveButton = <button disabled={saveDisabled}>Save</button>
-    } else {
-      saveButton = <button disabled={saveDisabled}>Save new song</button>
-    }
-
-    let originalSongIdInput
-
-    if (this.state.song && !this.state.song.allowed_to_edit) {
-      originalSongIdInput = <input type="hidden" name="song[original_song_id]" value={this.state.song.id} />
-    }
-
-    let songVisibility
-
-    if (!this.state.song || this.state.song.allowed_to_edit) {
-      songVisibility = <Select
-        className={styles.select_component}
-        name="song[publish_status]"
-        value={this.state.publishStatus}
-        onChange={value => {
-          this.setState({
-            publishStatus: value
-          })
-        }}
-        options={[
-          {value: "draft", name: "Unlisted"},
-          {value: "public", name: "Public"},
-        ]}
-      />
-    }
-
-
-    let hasAutochords = false
-
-    if (this.props.songNotes && this.props.songNotes.autoChords) {
-      hasAutochords = true
-    }
-
-    return <JsonForm
-      action={action}
-      beforeSubmit={this.beforeSubmit.bind(this)}
-      afterSubmit={this.afterSubmit.bind(this)}
-      className={styles.song_editor}>
-      <input type="hidden" ref={this.notesCountInputRef} name="song[notes_count]" />
-      <input type="hidden" ref={this.beatsLengthInputRef} name="song[beats_duration]" />
-      <input type="hidden" value={hasAutochords ? "true" : ""} name="song[has_autochords]" />
-      {originalSongIdInput}
-
+    return <div className={styles.song_editor}>
       <textarea
         ref={this.codeInputRef}
         placeholder="Type some LML"
-        disabled={this.state.loading}
-        name="song[song]"
         value={this.state.code}
         onChange={this.fieldUpdaters.code}></textarea>
 
       <div className={styles.song_editor_tools}>
-        {errors}
         <div className={styles.import_row}>
           <label>
             <div className={styles.import_label}>Import MusicXML</div>
             <input
               type="file"
               accept=".xml,.musicxml,.mxl,application/vnd.recordare.musicxml+xml,application/xml,text/xml"
-              disabled={this.state.loading}
               onChange={this.importFile} />
           </label>
           {this.state.importError ?
             <div className={styles.import_error}>{this.state.importError}</div> : null}
           {this.props.importUnsaveable ?
-            <div className={styles.import_notice}>This piece uses rhythms the editor's notation can't express, so it can be played but not saved. Saving is disabled until you edit the notation.</div> : null}
+            <div className={styles.import_notice}>This piece uses rhythms the editor's notation can't express, so it plays from the imported file until you edit the notation.</div> : null}
         </div>
-        {this.textInput("Title", "title", {
-          required: true
-        })}
+        {this.textInput("Title", "title")}
         {this.textInput("Source", "source")}
         {this.textInput("Artist", "artist")}
         {this.textInput("Album", "album")}
-
-        <div className={styles.form_tools}>
-          {saveButton}
-          {" "}
-          {songVisibility}
-          {" "}
-          {moreButton}
-        </div>
       </div>
-
-    </JsonForm>
+    </div>
   }
 
-  textInput(title, field, opts={}) {
+  textInput(title, field) {
     if (!this.fieldUpdaters[field]) {
       this.fieldUpdaters[field] = e => {
         let update = {
@@ -377,11 +169,9 @@ export default class SongEditor extends React.Component {
     }
 
     return <TextInputRow
-      required={opts.required}
-      disabled={this.state.loading}
       onChange={this.fieldUpdaters[field]}
       value={this.state[field] || ""}
-      name={`song[${field}]`}
+      name={field}
       >{title}</TextInputRow>
   }
 

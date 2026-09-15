@@ -157,11 +157,7 @@ class Layout extends React.Component {
           <Route index element={<Navigate replace to="/flash-cards/note-math" />} />
         </Route>
 
-        <Route path="/play-along">
-          <Route index element={<SongsPage {...pageProps} />} />
-          <Route path="recent" element={<SongsPage filter="recent" {...pageProps} />} />
-          <Route path="*" element={<SongsPage filter="invalid" {...pageProps} />} />
-        </Route>
+        <Route path="/play-along" element={<SongsPage />} />
 
         <Route path="/stats" element={<StatsPage {...pageProps} />} />
         <Route path="/latency" element={<LatencyPage {...pageProps} />} />
