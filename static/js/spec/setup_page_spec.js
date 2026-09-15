@@ -14,13 +14,15 @@ import {
 import {setAppStore} from "st/storage"
 import {addPiece} from "st/sheet_music_deck"
 import {parseSongText} from "st/song_sections"
+import {HomeGate} from "st/components/app"
+import {ONBOARDED_KEY} from "st/onboarding"
 
 import {openTestStore} from "spec/helpers"
 
 describe("setup page", function() {
   // the keys are shared with the app on this origin, so put back whatever
   // the user was drilling once the specs are done
-  const STORAGE_KEYS = [DRILL_STORAGE_KEY, SHEET_MUSIC_STORAGE_KEY]
+  const STORAGE_KEYS = [DRILL_STORAGE_KEY, SHEET_MUSIC_STORAGE_KEY, ONBOARDED_KEY, "defaults:midiIn"]
 
   let container, root, saved, store, appStore
 
@@ -52,7 +54,7 @@ describe("setup page", function() {
     await store.close()
   })
 
-  let renderSetup = () => {
+  let renderSetup = (home=React.createElement("div", {id: "trainer"}, "trainer")) => {
     container = document.createElement("div")
     container.style.cssText = "position: relative; width: 1240px"
     document.body.appendChild(container)
@@ -61,7 +63,8 @@ describe("setup page", function() {
       root.render(React.createElement(MemoryRouter, {initialEntries: ["/setup"]},
         React.createElement(Routes, {},
           React.createElement(Route, {path: "/setup", element: React.createElement(SetupPage)}),
-          React.createElement(Route, {path: "/", element: React.createElement("div", {id: "trainer"}, "trainer")}),
+          React.createElement(Route, {path: "/", element: home}),
+          React.createElement(Route, {path: "/welcome", element: React.createElement("div", {id: "welcome"}, "welcome")}),
         )))
     })
     return container
@@ -188,6 +191,17 @@ describe("setup page", function() {
     el = rerender()
     expect(selectedPills(el)).toEqual(["Grand", "E♭", "Open sevenths", "Scroll"])
     expect(summary(el).rows[1]).toEqual(["Tempo", "Scroll · speed 175"])
+  })
+
+  it("counts beginning from setup as onboarded, so a fresh browser lands on the trainer", async function() {
+    let el = renderSetup(React.createElement(HomeGate, {}, React.createElement("div", {id: "trainer"}, "trainer")))
+
+    click(findButton(el, "Begin reading"))
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    expect(el.querySelector("#trainer")).not.toBe(null)
+    expect(el.querySelector("#welcome")).toBe(null)
+    expect(window.localStorage.getItem(ONBOARDED_KEY)).toBeTruthy()
   })
 
   it("renders the sheet music inputs under the sheet music row in the salon's style", function() {

@@ -1,0 +1,186 @@
+/* Onboarding (first run), see docs/design/salon-de-chopin.md */
+
+.page {
+    box-sizing: border-box;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 48px 24px;
+}
+
+.card {
+    width: 100%;
+    max-width: 620px;
+    /* overrides the shared Plate's default padding for this card's own spec */
+    padding: 42px 46px 38px !important;
+}
+
+.intro {
+    text-align: center;
+}
+
+.eyebrow {
+    font-family: var(--font-ui);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .26em;
+    text-transform: uppercase;
+    color: var(--salon-ink-muted);
+}
+
+.title {
+    margin: 14px 0 0;
+    font-family: var(--font-display);
+    font-size: 42px;
+    font-weight: 400;
+    line-height: 1.05;
+    letter-spacing: -.01em;
+    color: var(--salon-ink);
+
+    .title_italic {
+        font-style: italic;
+    }
+}
+
+.fleuron {
+    margin-top: 16px;
+}
+
+.lede {
+    margin: 16px auto 0;
+    max-width: 430px;
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 16.5px;
+    line-height: 1.55;
+    color: var(--salon-ink-soft);
+}
+
+.divider {
+    margin: 30px 0 0;
+}
+
+.steps {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 6px 0 4px;
+    margin: 0;
+    list-style: none;
+}
+
+.step {
+    display: flex;
+    gap: 16px;
+    align-items: baseline;
+    padding: 15px 2px;
+    border-bottom: var(--salon-hairline);
+
+    &:last-child {
+        border-bottom: none;
+    }
+}
+
+.numeral {
+    font-family: var(--font-display);
+    font-size: 19px;
+    color: var(--salon-oxblood);
+    min-width: 28px;
+}
+
+.step_text {
+    font-size: 13.5px;
+    line-height: 1.45;
+    color: var(--salon-ink);
+}
+
+.step_sub {
+    display: block;
+    font-size: 11.5px;
+    color: var(--salon-ink-muted);
+}
+
+.device_strip {
+    display: flex;
+    align-items: center;
+    gap: 13px;
+    background: var(--salon-paper-warm);
+    border: 1px solid var(--salon-rule);
+    padding: 14px 18px;
+    margin-top: 22px;
+
+    &.listening {
+        border-style: dashed;
+        border-color: var(--salon-rule-strong);
+    }
+}
+
+.dot {
+    display: block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+
+    &.connected {
+        background: var(--salon-oxblood);
+        box-shadow: 0 0 0 3px rgba(125,44,44,.14);
+    }
+
+    &.listening {
+        background: var(--salon-gilt);
+    }
+
+    &.none {
+        background: transparent;
+        border: 1px solid var(--salon-gilt);
+    }
+}
+
+.device_label {
+    font-family: var(--font-ui);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--salon-ink-muted);
+}
+
+.device_strip.connected .device_label {
+    color: var(--salon-ghost-ink);
+}
+
+.device_aside {
+    margin-left: auto;
+    font-family: var(--font-display);
+    font-size: 14.5px;
+    font-style: italic;
+    color: var(--salon-nav-ink);
+}
+
+.actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-top: 26px;
+}
+
+@media (max-width: 480px) {
+    .page {
+        padding: 24px 16px;
+    }
+
+    .card {
+        padding: 28px 20px 24px !important;
+    }
+
+    .device_strip {
+        flex-wrap: wrap;
+        row-gap: 6px;
+    }
+
+    .device_aside {
+        margin-left: 21px;
+    }
+}

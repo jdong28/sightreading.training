@@ -107,8 +107,9 @@ Pill.propTypes = {
   children: types.node,
 }
 
-export function FleuronRule({className}) {
-  return <div className={classNames(styles.fleuron_rule, className)} aria-hidden="true">
+export function FleuronRule({width, className}) {
+  const style = width ? {"--salon-fleuron-width": `${width}px`} : undefined
+  return <div className={classNames(styles.fleuron_rule, className)} style={style} aria-hidden="true">
     <span className={styles.hairline} />
     <span className={styles.fleuron}>❖</span>
     <span className={classNames(styles.hairline, styles.trailing)} />
@@ -116,6 +117,7 @@ export function FleuronRule({className}) {
 }
 
 FleuronRule.propTypes = {
+  width: types.number,
   className: types.string,
 }
 

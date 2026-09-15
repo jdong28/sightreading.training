@@ -1,5 +1,6 @@
 import SightReadingPage from "st/components/pages/sight_reading_page"
 import SetupPage from "st/components/pages/setup_page"
+import OnboardingPage from "st/components/pages/onboarding_page"
 import LoginPage from "st/components/pages/login_page"
 import RegisterPage from "st/components/pages/register_page"
 import {guideRoutes} from "st/components/pages/guide_pages"
@@ -17,11 +18,29 @@ import DevicePickerLightbox from "st/components/device_picker_lightbox"
 
 import {dispatch, trigger} from "st/events"
 import {readConfig, writeConfig} from "st/config"
+import {hasOnboarded} from "st/onboarding"
 
 import * as React from "react"
-import {BrowserRouter, Route, Routes, Navigate} from "react-router-dom"
+import {BrowserRouter, Route, Routes, Navigate, useLocation} from "react-router-dom"
 
 import {SampleOutput} from "st/sample_output"
+
+// the onboarding card owns its own full-viewport chrome
+export function HeaderChrome({midiInput}) {
+  let location = useLocation()
+  if (location.pathname == "/welcome") {
+    return null
+  }
+
+  return <div className="header_spacer">
+    <Header midiInput={midiInput} />
+  </div>
+}
+
+// first launch redirects "/" to the invitation card until it's dismissed
+export function HomeGate({children}) {
+  return hasOnboarded() ? children : <Navigate replace to="/welcome" />
+}
 
 class Layout extends React.Component {
   constructor(props) {
@@ -109,12 +128,17 @@ class Layout extends React.Component {
     let pageProps = this.pageProps()
 
     return <div className="page_layout">
-      <div className="header_spacer">
-        {this.renderHeader()}
-      </div>
+      <HeaderChrome midiInput={this.state.midiInput} />
 
       <Routes>
-        <Route path="/" element={<SightReadingPage {...pageProps} />} />
+        <Route path="/" element={<HomeGate><SightReadingPage {...pageProps} /></HomeGate>} />
+        <Route path="/welcome" element={
+          <OnboardingPage
+            midi={this.state.midi}
+            midiInput={this.state.midiInput}
+            onSelectInput={idx => this.setInput(idx)}
+          />
+        } />
         <Route path="/staff2" element={<SightReadingPage useStaffTwo={true} {...pageProps} />} />
         <Route path="/setup" element={<SetupPage />} />
         <Route path="/login" element={<LoginPage/>} />
@@ -164,10 +188,6 @@ class Layout extends React.Component {
     })
 
     return lb
-  }
-
-  renderHeader() {
-    return <Header midiInput={this.state.midiInput} />
   }
 
   midiInputs() {
