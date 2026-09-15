@@ -55,6 +55,9 @@ export const BOTH_HANDS = "both hands"
 export const RIGHT_HAND = "right hand (treble staff)"
 export const LEFT_HAND = "left hand (bass staff)"
 
+// the measures per card that drills the whole section as one looping card
+export const WHOLE_SECTION = "all"
+
 // track option names use the notation's own 0-based track index (t0, t1...)
 function sheetMusicTrackName(idx) {
   return `track t${idx}`
@@ -174,14 +177,15 @@ export function pieceSection(staff, settings, song) {
 }
 
 // The measures of the piece section as flashcards (see st/measure_cards),
-// or null for pasted notation or a section without notes on the staff. The
+// or null for pasted notation, the whole section drill or a section without
+// notes on the staff. The
 // deck of the latest settings is kept so the status line and the generator
 // share the card being shown
 let cardDeck = null
 
 export function measureCardDeck(staff, settings) {
   let piece = sheetMusicPiece(settings)
-  if (!piece) {
+  if (!piece || !(Number(settings.measuresPerCard) >= 1)) {
     return null
   }
 
@@ -610,11 +614,13 @@ export const GENERATORS = [
       {
         name: "measuresPerCard",
         label: "measures per card",
-        type: "number",
-        default: 1,
-        min: 1,
-        max: MAX_MEASURES_PER_CARD,
-        hint: "The staff shows this many measures of the section at a time, like a flashcard.",
+        type: "select",
+        default: WHOLE_SECTION,
+        values: [
+          {name: WHOLE_SECTION},
+          ...Array.from({length: MAX_MEASURES_PER_CARD}, (_, idx) => ({name: `${idx + 1}`})),
+        ],
+        hint: "All loops the whole section. A number shows that many measures of the section at a time, like a flashcard.",
         visible: settings => !!sheetMusicPiece(settings),
       },
       {

@@ -5,14 +5,16 @@ import {
   MeasureCardGenerator, IN_ORDER, RANDOM_ORDER
 } from "st/measure_cards"
 
-import {SheetMusicGenerator} from "st/generators"
-import {GENERATORS, sheetMusicSection, BOTH_HANDS} from "st/data"
+import {SheetMusicGenerator, generatorDefaultSettings} from "st/generators"
+import {
+  GENERATORS, sheetMusicSection, BOTH_HANDS, WHOLE_SECTION, SHEET_MUSIC_STORAGE_KEY
+} from "st/data"
 import {importMusicXMLPiece} from "st/sheet_music_deck"
 import {setAppStore} from "st/storage"
 import NoteList from "st/note_list"
 import NoteStats from "st/note_stats"
 
-import {openTestStore, pickupScore} from "spec/helpers"
+import {openTestStore, pickupScore, noteXML} from "spec/helpers"
 
 const grand = {name: "grand", range: ["C3", "C7"]}
 
@@ -395,6 +397,69 @@ describe("measure cards", function() {
       expect(input("measuresPerCard").visible(settingsFor({piece: ""}))).toBe(false)
       expect(input("order").visible(settingsFor({piece: ""}))).toBe(false)
       expect(input("order").values.map(v => v.name)).toEqual([IN_ORDER, RANDOM_ORDER])
+      expect(input("measuresPerCard").default).toEqual(WHOLE_SECTION)
+      expect(input("measuresPerCard").values.map(v => v.name))
+        .toEqual([WHOLE_SECTION, "1", "2", "3", "4", "5", "6", "7", "8"])
+    })
+
+    it("keeps a saved drill without a card size on the whole section loop, however long", async function() {
+      let bars = Array.from({length: 16}, (_, idx) => `
+        <measure number="${idx + 1}">
+          ${idx == 0 ? `<attributes>
+            <divisions>1</divisions>
+            <time><beats>2</beats><beat-type>4</beat-type></time>
+            <staves>2</staves>
+            <clef number="1"><sign>G</sign><line>2</line></clef>
+            <clef number="2"><sign>F</sign><line>4</line></clef>
+          </attributes>` : ""}
+          ${noteXML("CDEFGAB"[idx % 7], 5, 1, 1)}
+          ${noteXML("CDEFGAB"[(idx + 2) % 7], 5, 1, 1)}
+        </measure>`).join("")
+
+      let long = (await importMusicXMLPiece("long.musicxml", `<?xml version="1.0" encoding="UTF-8"?>
+        <score-partwise version="4.0">
+          <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+          <part id="P1">${bars}</part>
+        </score-partwise>`, store)).piece
+
+      let saved = window.localStorage.getItem(SHEET_MUSIC_STORAGE_KEY)
+      let settings
+      try {
+        window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+          piece: long.id, song: "", startMeasure: 1, endMeasure: 16, hand: BOTH_HANDS,
+        }))
+        settings = generatorDefaultSettings(sheetMusic, grand)
+      } finally {
+        if (saved == null) {
+          window.localStorage.removeItem(SHEET_MUSIC_STORAGE_KEY)
+        } else {
+          window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, saved)
+        }
+      }
+
+      expect(settings.measuresPerCard).toEqual(WHOLE_SECTION)
+
+      let {columns, status} = sheetMusicSection(grand, settings)
+      expect(columns.length).toEqual(32)
+      expect(sheetMusic.status(grand, settings)).toEqual(status)
+
+      generator = sheetMusic.create(grand, null, settings)
+      expect(generator instanceof SheetMusicGenerator).toBe(true)
+
+      let plain = new SheetMusicGenerator(columns)
+      for (let i = 0; i < 70; i++) {
+        expect(generator.nextNote()).toEqual(plain.nextNote())
+      }
+    })
+
+    it("picks random cards only for a numeric card size", function() {
+      generator = sheetMusic.create(grand, null, settingsFor({measuresPerCard: WHOLE_SECTION, order: RANDOM_ORDER}))
+      expect(generator instanceof SheetMusicGenerator).toBe(true)
+
+      generator = sheetMusic.create(grand, null, settingsFor({measuresPerCard: "1", order: RANDOM_ORDER}))
+      expect(generator instanceof MeasureCardGenerator).toBe(true)
+      expect(generator.deck.order).toEqual(RANDOM_ORDER)
+      expect(generator.deck.cards.map(card => card.measures)).toEqual([[0], [1], [2]])
     })
 
     it("drills a piece section as measure cards", function() {
@@ -417,7 +482,7 @@ describe("measure cards", function() {
       expect(generator.nextNote()).toEqual([])
     })
 
-    it("keeps drilling a whole section in order exactly as before", function() {
+    it("loops a section that fits on one card like the whole section drill", function() {
       let settings = settingsFor({measuresPerCard: 8})
       generator = sheetMusic.create(grand, null, settings)
       let plain = new SheetMusicGenerator(sheetMusicSection(grand, settings).columns)
