@@ -276,6 +276,8 @@ export const STAVES = [
 export const GENERATORS = [
   {
     name: "random",
+    // shown in the programme drawer and the trainer title
+    label: "Random notes",
     mode: "notes",
     inputs: [
       {
@@ -317,6 +319,7 @@ export const GENERATORS = [
   },
   {
     name: "sweep",
+    label: "Sweep up & down",
     mode: "notes",
     debug: true,
     create: function(staff, keySignature) {
@@ -328,6 +331,7 @@ export const GENERATORS = [
   },
   {
     name: "steps",
+    label: "Steps",
     mode: "notes",
     debug: true, // not needed anymore with smoothness
     create: function(staff, keySignature) {
@@ -338,6 +342,7 @@ export const GENERATORS = [
   },
   {
     name: "triads",
+    label: "Triads",
     mode: "notes",
     inputs: [
       smoothInput
@@ -350,6 +355,7 @@ export const GENERATORS = [
   },
   {
     name: "sevens",
+    label: "Sevens",
     mode: "notes",
     inputs: [
       smoothInput,
@@ -364,6 +370,7 @@ export const GENERATORS = [
   },
   {
     name: "progression",
+    label: "Progression",
     mode: "notes",
     inputs: [
       smoothInput,
@@ -438,6 +445,7 @@ export const GENERATORS = [
   },
   {
     name: "position",
+    label: "Position",
     mode: "notes",
     inputs: [],
     create: function(staff, keySignature, options) {
@@ -449,6 +457,7 @@ export const GENERATORS = [
   },
   {
     name: "intervals",
+    label: "Intervals",
     mode: "notes",
     inputs: [
       {
@@ -469,6 +478,7 @@ export const GENERATORS = [
   },
   {
     name: "sheet music",
+    label: "Sheet music",
     mode: "notes",
     storageKey: SHEET_MUSIC_STORAGE_KEY,
     inputs: [
@@ -556,6 +566,7 @@ export const GENERATORS = [
   },
   {
     name: "random",
+    label: "Random chords",
     mode: "chords",
     inputs: [
       {
@@ -609,6 +620,7 @@ export const GENERATORS = [
   },
   {
     name: "multi-key",
+    label: "Multi-key chords",
     mode: "chords",
     inputs: [
       {

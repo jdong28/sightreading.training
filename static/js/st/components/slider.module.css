@@ -39,6 +39,16 @@
     }
 }
 
+/* hidden unless a slider className styles it, see the programme drawer */
+.slider_fill {
+    display: none;
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    border-radius: 999px;
+}
+
 .slider_input {
     border: 1px solid var(--border-color);
     border-radius: 4px;

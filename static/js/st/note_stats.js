@@ -24,10 +24,12 @@ export default class NoteStats {
   static SESSION_GAP = 30*60*1000
 
   // opts.onSessionEnd(stats) is called before a note played after a pause of
-  // SESSION_GAP starts a new session in these stats
+  // opts.sessionGap (SESSION_GAP by default, Infinity never) starts a new
+  // session in these stats
   constructor(currentUser, opts={}) {
     this.currentUser = currentUser
     this.onSessionEnd = opts.onSessionEnd
+    this.sessionGap = opts.sessionGap ?? NoteStats.SESSION_GAP
     this.startSession()
     this.resetBuffer()
   }
@@ -52,7 +54,7 @@ export default class NoteStats {
   }
 
   endSessionAfterPause(time) {
-    if (this.endedAt == null || time - this.endedAt < NoteStats.SESSION_GAP) {
+    if (this.endedAt == null || time - this.endedAt < this.sessionGap) {
       return
     }
 

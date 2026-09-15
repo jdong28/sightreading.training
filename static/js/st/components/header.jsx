@@ -13,6 +13,10 @@ import styles from "./header.module.css"
 // below this nav row width the links collapse into the menu
 const COLLAPSE_NAV_WIDTH = 700
 
+// the element pages portal their actions into, at the start of the top row
+// (eg. the trainer's Programme pill)
+export const HEADER_ACTIONS_ID = "header_page_actions"
+
 export const NAV_LINKS = [
   {to: "/", label: "Sight reading", end: true},
   {to: "/play-along", label: "Play along"},
@@ -149,6 +153,8 @@ export default class Header extends React.Component {
 
     return <header className={styles.header}>
       <div className={styles.top_row}>
+        <div id={HEADER_ACTIONS_ID} className={styles.page_actions} />
+
         <Link to="/" className={styles.wordmark}>
           <span className={styles.wordmark_glyph} aria-hidden="true">❧</span>
           <span className={styles.wordmark_text}>

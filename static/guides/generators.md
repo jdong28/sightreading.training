@@ -2,7 +2,7 @@
 
 In order to provide unique sheet music to read, Sight Reading Trainer uses a random music generator. You can customize the generator to control the difficulty, and the types of things you want to practice.
 
-Access the generator settings by clicking the **Configure** button on the main screen.
+Access the generator settings by clicking **Programme** at the top of the Staff page, which opens the programme drawer.
 
 ## Choosing a staff
 
@@ -60,4 +60,4 @@ Picking or importing a piece with both a treble and a bass staff while a single 
 
 Alternatively, pick **Pasted song notation** and paste song notation in the play along format, or pick a song from the play along library when logged in. Measures of pasted notation count from 1, and **Track** limits the section to one track of the song, or uses all tracks.
 
-Notes that start on the same beat are shown together as one column, and the section loops once you reach its end. Rhythm is ignored. Notes outside the range of the chosen staff are skipped, and the settings panel reports how many. Generated accompaniment from chord symbols is not included. The piece or song, section, hand or track, staff and generator are saved in your browser, so reloading the page returns to the same drill.
+Notes that start on the same beat are shown together as one column, and the section loops once you reach its end. Rhythm is ignored. Notes outside the range of the chosen staff are skipped, and the programme drawer reports how many. Generated accompaniment from chord symbols is not included. The piece or song, section, hand or track, staff and generator are saved in your browser, so reloading the page returns to the same drill.

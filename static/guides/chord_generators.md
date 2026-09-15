@@ -2,7 +2,7 @@
 
 In addition to sight reading notes on sheet music, you can use the chord staff to sight read chords by name. Chords are generated in the desired key, and you'll need to press the minimum number of notes to continue to the next chord.
 
-You can access chord mode by going to **Staff**, selecting **Configure**, then **Chord** under the *Staff* option. If you want to generate chords outside a specific key you can choose **Chromatic** mode under *Key*.
+You can access chord mode by going to **Staff**, opening **Programme**, then **Chord** under *Clef*. If you want to generate chords outside a specific key you can choose **Chromatic** under *Key*.
 
 Here are the other configurable options:
 

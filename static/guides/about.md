@@ -42,7 +42,7 @@ channel 10. It should be a GM Drum Kit to sound correctly.
 
 There are many different tools included to practice your music and sight reading skills:
 
-* **[Staff](/)** -- Notes are randomly generated for you to sight read and play. This will ensure that you're always reading and never playing from memory. In the simplest mode you'll play one note at a time, but you can increase complexity by clicking **configure**, and changing how notes are generated. In order to play more than 1 note at a time you need a MIDI controller connected!
+* **[Staff](/)** -- Notes are randomly generated for you to sight read and play. This will ensure that you're always reading and never playing from memory. In the simplest mode you'll play one note at a time, but you can increase complexity by clicking **Programme**, and changing how notes are generated. In order to play more than 1 note at a time you need a MIDI controller connected!
 * **[Play Along](/play-along)** -- Pre-programmed songs are available for you to play. You can control the playback speed, and configure a metronome by using the MIDI output option. You can also play your own sheet music by importing an uncompressed MusicXML file (`.musicxml` or `.xml`) from the song editor.
 * **[Ear Training](/ear-training)** -- Various tools to practice your ear, including interval recognition and playing back a melody.
 * **[Flash Cards](/flash-cards)** -- Generates random flash cards to help you memorize or quickly identify things related to music theory

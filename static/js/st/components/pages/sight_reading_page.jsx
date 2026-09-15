@@ -2,20 +2,24 @@ import NoteList from "st/note_list"
 import ChordList from "st/chord_list"
 import NoteStats from "st/note_stats"
 import SlideToZero from "st/slide_to_zero"
-import Slider from "st/components/slider"
-import sliderStyles from "st/components/slider.module.css"
 import Keyboard from "st/components/keyboard"
 import StatsLightbox from "st/components/sight_reading/stats_lightbox"
 import Hotkeys from "st/components/hotkeys"
 
 import styles from "./sight_reading_page.module.css"
 import staffStyles from "st/components/staff.module.css"
-import sharedStyles from "st/components/shared.module.css"
 
-import {KeySignature, noteName, parseNote} from "st/music"
-import {STAVES, GENERATORS, sheetMusicPiece} from "st/data"
+import {noteName, parseNote} from "st/music"
+import {STAVES, GENERATORS, sheetMusicPiece, RIGHT_HAND, LEFT_HAND} from "st/data"
+import {pieceSong} from "st/sheet_music_deck"
 import {getAppStore} from "st/storage"
-import {GeneratorSettings, SettingsPanel} from "st/components/sight_reading/settings_panel"
+import {
+  ProgrammeDrawer, generatorLabel, staffLabel, keyLabel
+} from "st/components/sight_reading/settings_panel"
+import {
+  Plate, Pill, StatCard, TitleBlock, FleuronRule, PullQuote, SectionLabel
+} from "st/components/salon"
+import {HEADER_ACTIONS_ID} from "st/components/header"
 import {setTitle, gaEvent, csrfToken} from "st/globals"
 import {dispatch, trigger} from "st/events"
 import {NOTE_EVENTS} from "st/midi"
@@ -25,14 +29,11 @@ import {
 } from "st/generators"
 
 import * as React from "react"
+import {createPortal} from "react-dom"
 import classNames from "classnames"
 import NoSleep from "nosleep.js"
 
 import {isMobile} from "st/browser"
-
-import * as types from "prop-types"
-
-import {TransitionGroup, CSSTransition} from "react-transition-group"
 
 import {getSession} from "st/app"
 
@@ -40,6 +41,54 @@ import {StaffTwo} from "st/components/staff_two"
 
 const DEFAULT_NOTE_WIDTH = 100
 const DEFAULT_SPEED = 4
+
+// the height the new renderer paints the staff at inside the staff plate
+const STAFF_TWO_HEIGHT = 150
+
+// Kwiatkowski's watercolour "Chopin's Polonaise, a ball at the Hôtel Lambert
+// in Paris" (1859), public domain (the author died in 1891): resized from
+// https://commons.wikimedia.org/wiki/File:Kwiatkowski_Chopin%27s_Polonaise.jpg
+const SALON_IMAGE = "/static/img/hotel_lambert_soiree.jpg"
+
+export const PULL_QUOTE = "Read ahead by one column. The hands must trail the eyes, never lead them."
+
+const HAND_LABELS = {
+  [RIGHT_HAND]: "right hand",
+  [LEFT_HAND]: "left hand",
+}
+
+// seconds -> "m:ss"
+export function formatElapsed(seconds) {
+  seconds = Math.max(0, Math.floor(seconds || 0))
+  let minutes = Math.floor(seconds / 60)
+  return `${minutes}:${String(seconds % 60).padStart(2, "0")}`
+}
+
+// the rounded percentage of notes read, or null before any note is played
+export function accuracyPercent(hits, misses) {
+  if (!hits && !misses) { return null }
+  return Math.round(hits / (hits + misses) * 100)
+}
+
+export function romanNumeral(n) {
+  let out = ""
+  for (let [value, numeral] of [[10, "X"], [9, "IX"], [5, "V"], [4, "IV"], [1, "I"]]) {
+    while (n >= value) {
+      out += numeral
+      n -= value
+    }
+  }
+  return out
+}
+
+// eg. "C#5" -> "C♯5", in the app's octave numbering like the keyboard labels
+function displayNoteName(note) {
+  return String(note).replace("#", "♯").replace(/^([A-G])b/, "$1♭")
+}
+
+function measuresLabel(start, end) {
+  return start == end ? `measure ${start}` : `measures ${start}–${end}`
+}
 
 export default class SightReadingPage extends React.Component {
   constructor(props) {
@@ -49,10 +98,22 @@ export default class SightReadingPage extends React.Component {
     this.releaseNote = this.releaseNote.bind(this)
     this.onFullscreenChange = this.onFullscreenChange.bind(this)
     this.onPageHide = () => this.recordSession()
-    this.onSessionEnd = () => {
-      this.recordSession()
-      // the stats start counting the next session from zero
-      this.sectionMark = {...this.sectionMark, hits: 0, misses: 0}
+    this.openSettings = () => this.setState({settingsOpen: true})
+    this.closeSettings = () => this.setState({settingsOpen: false})
+    this.applySettings = () => {
+      this.closeSettings()
+      if (this.state.currentGenerator) {
+        this.refreshNoteList()
+      }
+    }
+    this.toggleSession = e => {
+      // so the space bar skips a note instead of pressing the pill again
+      if (e && e.currentTarget) { e.currentTarget.blur() }
+      if (this.state.session) {
+        this.restSession()
+      } else {
+        this.beginSession()
+      }
     }
 
     this.keyMap = {
@@ -81,6 +142,12 @@ export default class SightReadingPage extends React.Component {
       scale: window.innerWidth < 1000 ? 0.8 : 1,
       stats: this.newStats(),
       keySignature: currentKeySignature(),
+
+      // the session runs from Begin until Rest; notes played at rest are
+      // ignored
+      session: false,
+      sessionStartedAt: null,
+      clockNow: null,
     }
   }
 
@@ -114,6 +181,9 @@ export default class SightReadingPage extends React.Component {
         this.enterWaitMode()
       }
     })
+
+    // the Programme pill goes in the header's top row when there is one
+    this.setState({headerActions: document.getElementById(HEADER_ACTIONS_ID)})
 
     dispatch(this, {
       saveGeneratorPreset: (e, form) => {
@@ -149,9 +219,15 @@ export default class SightReadingPage extends React.Component {
   }
 
   componentWillUnmount() {
+    this.unmounted = true
     document.removeEventListener("webkitfullscreenchange", this.onFullscreenChange)
     window.removeEventListener("pagehide", this.onPageHide)
+    this.stopClock()
     this.recordSession()
+
+    if (this.state.slider) {
+      this.state.slider.cancel()
+    }
 
     if (this.nosleep && this.state.fullscreen) {
       this.nosleep.disable()
@@ -213,6 +289,82 @@ export default class SightReadingPage extends React.Component {
 
     notes.fillBuffer(this.state.bufferSize)
     return this.setState({ notes: notes })
+  }
+
+  // Begin: a fresh session in new stats, with the elapsed clock running
+  beginSession() {
+    if (this.state.session) { return }
+
+    this.restartSession({
+      session: true,
+      heldNotes: {},
+      touchedNotes: {},
+    })
+  }
+
+  // saves the stats so far and counts afresh from now, clock included
+  restartSession(update) {
+    let now = Date.now()
+    this.startClock()
+
+    this.setState({
+      ...update,
+      sessionStartedAt: now,
+      clockNow: now,
+      stats: this.closeSession(),
+    })
+  }
+
+  // Clear stats: a running session restarts, at rest the stats start over
+  clearStats() {
+    if (this.state.session) {
+      this.restartSession()
+    } else {
+      this.setState({stats: this.closeSession()})
+    }
+  }
+
+  // Rest: stops the clock and saves the session, keeping its figures on the
+  // stat cards until the next Begin
+  restSession() {
+    if (!this.state.session) { return }
+
+    this.stopClock()
+
+    this.setState({
+      session: false,
+      clockNow: Date.now(),
+      heldNotes: {},
+      touchedNotes: {},
+    })
+
+    let saving = this.recordSession()
+    if (saving) {
+      // shows the session in the evening's list once it is stored
+      saving.then(() => {
+        if (!this.unmounted) { this.forceUpdate() }
+      })
+    }
+  }
+
+  startClock() {
+    this.stopClock()
+    this.clockTimer = window.setInterval(() => {
+      this.setState({clockNow: Date.now()})
+    }, 1000)
+  }
+
+  stopClock() {
+    if (this.clockTimer) {
+      window.clearInterval(this.clockTimer)
+      delete this.clockTimer
+    }
+  }
+
+  elapsedSeconds() {
+    let {sessionStartedAt, clockNow} = this.state
+    if (sessionStartedAt == null || clockNow == null) { return 0 }
+    return Math.floor((clockNow - sessionStartedAt) / 1000)
   }
 
   // called when held notes reaches 0
@@ -365,6 +517,11 @@ export default class SightReadingPage extends React.Component {
   }
 
   pressNote(note) {
+    // key presses at rest aren't judged
+    if (!this.state.session) {
+      return
+    }
+
     switch (this.state.currentGenerator.mode) {
       case "chords": {
         let ignoreAbove = this.state.currentGeneratorSettings.ignoreAbove
@@ -426,13 +583,15 @@ export default class SightReadingPage extends React.Component {
     }
   }
 
-  toggleMode() {
-    storeCurrentDrill({mode: this.state.mode == "wait" ? "scroll" : "wait"})
+  setMode(mode) {
+    if (mode == this.state.mode) { return }
 
-    if (this.state.mode == "wait") {
-      this.enterScrollMode();
+    storeCurrentDrill({mode})
+
+    if (mode == "scroll") {
+      this.enterScrollMode()
     } else {
-      this.enterWaitMode();
+      this.enterWaitMode()
     }
   }
 
@@ -475,7 +634,8 @@ export default class SightReadingPage extends React.Component {
         },
         onLoop: function() {
           let column = this.state.notes.currentColumn()
-          if (column.length) {
+          // notes scrolling past at rest aren't misses
+          if (column.length && this.state.session) {
             this.state.stats.missNotes(column);
           }
           let notes = this.state.notes.clone()
@@ -498,16 +658,10 @@ export default class SightReadingPage extends React.Component {
   setGenerator(generator, settings) {
     storeCurrentDrill({generator: generator.name})
 
-    let update = {
+    this.setState({
       currentGenerator: generator,
       currentGeneratorSettings: settings,
-    }
-
-    if (generator != this.state.currentGenerator) {
-      update.stats = this.closeSession()
-    }
-
-    this.setState(update)
+    })
   }
 
   setStaff(staff, callback) {
@@ -520,7 +674,6 @@ export default class SightReadingPage extends React.Component {
     let update = {
       currentStaff: staff,
       notes: null,
-      stats: this.closeSession(),
     }
 
     // if the current generator is not compatible with new staff change it
@@ -556,22 +709,8 @@ export default class SightReadingPage extends React.Component {
     }
   }
 
-  toggleSettings() {
-    this.setState({
-      settingsOpen: !this.state.settingsOpen
-    });
-    this.recalcFlex();
-  }
-
   toggleKeyboard() {
     this.setState({keyboardOpen: !this.state.keyboardOpen});
-    this.recalcFlex();
-  }
-
-  recalcFlex() {
-    this.refs.workspace.style.height = "0px";
-    this.refs.workspace.offsetHeight;
-    this.refs.workspace.style.height = "auto";
   }
 
   // the generator settings in effect, defaults included
@@ -642,7 +781,8 @@ export default class SightReadingPage extends React.Component {
   // Writes the current session to the local store, replacing what an earlier
   // call wrote for it, together with the section practice in one write that
   // starts right away, as the page may be going away. Nothing is written
-  // before a note is played
+  // before a note is played. Returns a promise settling once written, or
+  // nothing when there was nothing to write
   recordSession() {
     let sectionPractice = this.takeSectionPractice()
 
@@ -666,12 +806,13 @@ export default class SightReadingPage extends React.Component {
       return
     }
 
-    getAppStore().putSession(session, {sectionPractice})
+    return getAppStore().putSession(session, {sectionPractice})
       .catch(err => console.warn("Couldn't save the practice session", err))
   }
 
   newStats() {
-    return new NoteStats(getSession().currentUser, {onSessionEnd: this.onSessionEnd})
+    let session = getSession()
+    return new NoteStats(session && session.currentUser, {sessionGap: Infinity})
   }
 
   // Records the session played on the current staff and generator, returning
@@ -684,7 +825,7 @@ export default class SightReadingPage extends React.Component {
   openStatsLightbox() {
     trigger(this, "showLightbox",
       <StatsLightbox
-        resetStats={() => this.setState({stats: this.closeSession()})}
+        resetStats={() => this.clearStats()}
         stats={this.state.stats} />)
   }
 
@@ -693,42 +834,31 @@ export default class SightReadingPage extends React.Component {
       ref="page_container"
       className={classNames(styles.sight_reading_page, {
         [styles.fullscreen]: this.state.fullscreen,
-        keyboard_open: this.state.keyboardOpen,
-        settings_open: this.state.settingsOpen,
         [styles.scroll_mode]: this.state.mode == "scroll",
         [styles.wait_mode]: this.state.mode == "wait",
     })}>
-      {this.renderWorkspace()}
-      {this.renderKeyboard()}
+      <div className={styles.trainer_scroller}>
+        <main className={styles.trainer}>
+          {this.renderProgrammeButton()}
+          {this.renderTitle()}
 
-      <TransitionGroup>
-        {this.renderSettings()}
-      </TransitionGroup>
+          <div className={styles.trainer_grid}>
+            <div className={styles.trainer_main}>
+              {this.renderStaffPlate()}
+              {this.renderTransport()}
+              {this.renderStatCards()}
+            </div>
+            {this.renderRail()}
+          </div>
+        </main>
+      </div>
 
-      {this.renderKeyboardToggle()}
-      <Hotkeys keyMap={this.keyMap} />
-    </div>;
-  }
+      {this.renderKeyboardFooter()}
 
-  renderKeyboardToggle() {
-    if (!this.state.currentStaff) { return }
-    if (this.state.currentStaff.mode != "notes") { return }
-
-    return <button
-      onClick={this.toggleKeyboard.bind(this)}
-      className={styles.keyboard_toggle}>
-      {this.state.keyboardOpen ? "Hide Keyboard" : "Show Keyboard"}
-    </button>
-  }
-
-  renderSettings() {
-    if (!this.state.settingsOpen) {
-      return;
-    }
-
-    return <CSSTransition classNames="slide_right" timeout={{enter: 200, exit: 100}}>
-      <SettingsPanel
-        close={this._toggleSettings ||= this.toggleSettings.bind(this)}
+      <ProgrammeDrawer
+        open={this.state.settingsOpen}
+        close={this.closeSettings}
+        apply={this.applySettings}
         staves={STAVES}
         generators={GENERATORS}
         saveGeneratorPreset={this.state.savingPreset}
@@ -742,105 +872,106 @@ export default class SightReadingPage extends React.Component {
 
         setKeySignature={this._setKeySignature ||= this.setKeySignature.bind(this)}
         setStaff={this._setStaff ||= this.setStaff.bind(this)}
+
+        mode={this.state.mode}
+        setMode={this._setMode ||= this.setMode.bind(this)}
+        scrollSpeed={this.state.scrollSpeed}
+        setScrollSpeed={this._setScrollSpeed ||= scrollSpeed => {
+          storeCurrentDrill({speed: scrollSpeed})
+          this.setState({scrollSpeed})
+        }}
       />
-    </CSSTransition>
+
+      <Hotkeys keyMap={this.keyMap} />
+    </div>;
   }
 
-  renderKeyboard() {
-    if (!this.state.currentStaff) { return }
-    if (this.state.currentStaff.mode != "notes") { return }
-    if (!this.state.keyboardOpen) { return }
+  // in the header's top row, or atop the trainer when there's no header or
+  // the trainer is fullscreen
+  renderProgrammeButton() {
+    let pill = <Pill
+      variant="ghost"
+      className={styles.programme_pill}
+      aria-label="Programme"
+      aria-expanded={!!this.state.settingsOpen}
+      onClick={this.openSettings}>
+      <span className={styles.hairlines} aria-hidden="true"><span /><span /><span /></span>
+      <span className={styles.programme_label}>Programme</span>
+    </Pill>
 
-    let [lower, upper] = this.state.currentStaff.range;
+    if (this.state.headerActions && !this.state.fullscreen) {
+      return createPortal(pill, this.state.headerActions)
+    }
 
-    return <Keyboard
-      lower={lower}
-      upper={upper}
-      midiOutput={this.props.midiOutput}
-      heldNotes={this.state.heldNotes}
-      onKeyDown={this.pressNote}
-      onKeyUp={this.releaseNote} />;
+    return <div className={styles.programme_row}>{pill}</div>
   }
 
-  renderWorkspace() {
-    if (this.state.stats.streak) {
-      var streak = <div className={sharedStyles.stat_container}>
-        <div className={sharedStyles.value}>{this.state.stats.streak}</div>
-        <div className={sharedStyles.label}>streak</div>
-      </div>
+  titleParts() {
+    let section = this.currentPieceSection()
+    if (section) {
+      let hand = HAND_LABELS[this.currentSettings().hand] || "both hands"
+      return {
+        title: section.pieceTitle,
+        italic: `${measuresLabel(section.startMeasure, section.endMeasure)}, ${hand}`,
+      }
     }
 
-    let fullscreenButton
-    if (document.body.webkitRequestFullscreen && !this.state.fullscreen) {
-      fullscreenButton = <button
-        type="button"
-        onClick={e => this.toggleFullscreen()}
-      >Fullscreen</button>
+    let generator = this.state.currentGenerator
+    if (!generator) { return {} }
+
+    let key = this.state.keySignature
+    return {
+      title: generatorLabel(generator),
+      italic: key.isChromatic() ? "chromatic" : `in ${keyLabel(key)} major`,
+    }
+  }
+
+  renderTitle() {
+    let {title, italic} = this.titleParts()
+
+    return <div className={styles.title}>
+      <TitleBlock eyebrow="Salon de Paris · 1836" title={title} italic={italic} />
+      <FleuronRule />
+    </div>
+  }
+
+  // the staff and key, or the imported piece's metre and measures
+  plateLabel() {
+    let section = this.currentPieceSection()
+    if (section) {
+      let song = pieceSong(sheetMusicPiece(this.currentSettings()))
+      let beats = song && song.metadata && song.metadata.beatsPerMeasure
+      let measures = measuresLabel(section.startMeasure, section.endMeasure)
+      return beats ? `${beats} ♩ a bar · ${measures}` : measures
     }
 
-    let header = <div className={styles.workspace_header}>
-      <div className="header_buttons">
-        <button
-          onClick={this.toggleSettings.bind(this)}
-          className="settings_toggle">
-          Configure
-        </button>
-        {" "}
-        {fullscreenButton}
-      </div>
+    let staff = this.state.currentStaff
+    if (!staff) { return null }
 
-      <div className={styles.stats}>
-        {streak}
+    let key = this.state.keySignature
+    return `${staffLabel(staff)} · ${key.isChromatic() ? "chromatic" : `${keyLabel(key)} major`}`
+  }
 
-        <div className={sharedStyles.stat_container} onClick={this.openStatsLightbox.bind(this)}>
-          <div className={sharedStyles.value}>{this.state.stats.hits}</div>
-          <div className={sharedStyles.label}>hits</div>
-        </div>
+  // the next note to read while the session runs
+  statusLine() {
+    if (!this.state.session) {
+      return "At rest"
+    }
 
-        <div className={sharedStyles.stat_container} onClick={this.openStatsLightbox.bind(this)}>
-          <div className={sharedStyles.value}>{this.state.stats.misses}</div>
-          <div className={sharedStyles.label}>misses</div>
-        </div>
-      </div>
-    </div>
+    let notes = this.state.notes
+    if (!notes || !notes.length) {
+      return "No notes to read"
+    }
 
-    let debug = <div className="debug">
-      <pre>
-        held: {JSON.stringify(this.state.heldNotes)}
-        {" "}
-        touched: {JSON.stringify(this.state.touchedNotes)}
-      </pre>
-    </div>
+    if (this.state.currentGenerator?.mode == "chords") {
+      return `Next · ${notes[0]}`
+    }
 
-    let toolbar = <div className={styles.toolbar}>
-      <div className={styles.labeled_tool}>
-        <span className={styles.label}>Mode</span>
-        <div
-          onClick={this.toggleMode.bind(this)}
-          className={classNames(styles.toggle_switch, {
-            first: this.state.mode == "wait",
-            [styles.second]: this.state.mode == "scroll",
-          })}>
-          <span className={styles.toggle_option}>Wait</span>
-          <span className={styles.toggle_option}>Scroll</span>
-        </div>
-      </div>
+    let column = notes.currentColumn()
+    return `Next · ${column.map(displayNoteName).join(" ")}`
+  }
 
-      <span className={classNames("speed_picker", sliderStyles.slider_input, "slider_input")}>
-        <span className={classNames(sliderStyles.slider_label, "slider_label")}>Speed</span>
-        <Slider
-          min={50}
-          max={300}
-          disabled={this.state.mode == "scroll"}
-          onChange={(value) => {
-            storeCurrentDrill({speed: Math.round(value)})
-            this.setState({scrollSpeed: Math.round(value)})
-          }}
-          value={+this.state.scrollSpeed} />
-        <span className={classNames(sliderStyles.slider_value, "slider_value")}>{ this.state.scrollSpeed }</span>
-      </span>
-    </div>
-
+  renderStaffPlate() {
     let staff
 
     if (this.state.currentStaff) {
@@ -855,6 +986,8 @@ export default class SightReadingPage extends React.Component {
            noteWidth = {this.state.noteWidth}
            noteShaking = {this.state.noteShaking}
            scale = {this.state.scale}
+           height = {STAFF_TWO_HEIGHT}
+           maxScale = {0.3}
           />
       } else {
         staff = this.state.currentStaff.render.call(this, {
@@ -868,15 +1001,182 @@ export default class SightReadingPage extends React.Component {
       }
     }
 
-    return <div ref="workspace" className={styles.workspace}>
-      <div className={styles.workspace_wrapper}>
-        {header}
-        <div className={classNames(staffStyles.staff_wrapper, styles.staff_wrapper)}>
-          {staff}
-        </div>
-        {toolbar}
+    return <Plate className={styles.staff_plate}>
+      <div className={styles.plate_header}>
+        <span>{this.plateLabel()}</span>
+        <span className={styles.plate_status} aria-live="polite">{this.statusLine()}</span>
       </div>
-    </div>;
+      <div className={classNames(staffStyles.staff_wrapper, styles.staff_wrapper)}>
+        {staff}
+      </div>
+    </Plate>
   }
 
+  renderTransport() {
+    let fullscreenButton
+    if (document.body.webkitRequestFullscreen && !this.state.fullscreen) {
+      fullscreenButton = <Pill
+        variant="ghost"
+        className={styles.transport_pill}
+        onClick={e => this.toggleFullscreen()}>Fullscreen</Pill>
+    }
+
+    let keyboardToggle
+    if (this.state.currentStaff && this.state.currentStaff.mode == "notes") {
+      keyboardToggle = <Pill
+        variant="ghost"
+        className={styles.transport_pill}
+        aria-pressed={!this.state.keyboardOpen}
+        onClick={this.toggleKeyboard.bind(this)}>
+        {this.state.keyboardOpen ? "Hide keyboard" : "Show keyboard"}
+      </Pill>
+    }
+
+    return <div className={styles.transport}>
+      <Pill
+        variant="primary"
+        className={styles.session_pill}
+        aria-pressed={this.state.session}
+        onClick={this.toggleSession}>{this.state.session ? "Rest" : "Begin"}</Pill>
+      <Pill
+        variant="ghost"
+        className={styles.transport_pill}
+        disabled={!this.state.currentGenerator}
+        onClick={() => this.refreshNoteList()}>New passage</Pill>
+      {keyboardToggle}
+      {fullscreenButton}
+      <span className={styles.tempo_readout}>
+        {this.state.mode == "scroll" ? "Scroll" : "Wait"}
+        {" "}<span className={styles.gilt} aria-hidden="true">·</span>{" "}
+        speed {this.state.scrollSpeed}
+      </span>
+    </div>
+  }
+
+  renderStatCards() {
+    let stats = this.state.stats
+    let accuracy = accuracyPercent(stats.hits, stats.misses)
+
+    return <div className={styles.stat_cards}>
+      <StatCard
+        className={styles.stat_card}
+        label="Elapsed"
+        value={formatElapsed(this.elapsedSeconds())} />
+
+      <div
+        role="button"
+        tabIndex={0}
+        className={styles.stat_button}
+        title="Session stats"
+        onClick={() => this.openStatsLightbox()}
+        onKeyDown={e => {
+          if (e.key == "Enter" || e.key == " ") {
+            e.preventDefault()
+            this.openStatsLightbox()
+          }
+        }}>
+        <StatCard
+          className={styles.stat_card}
+          label="Accuracy"
+          accent
+          value={accuracy == null ? "—" : accuracy}
+          suffix={accuracy == null ? null : "%"} />
+      </div>
+
+      <StatCard className={styles.stat_card} label="Notes read" value={stats.hits} />
+      <StatCard className={styles.stat_card} label="Best streak" value={stats.bestStreak} />
+    </div>
+  }
+
+  // the last sessions started today saved to the local store, newest last
+  eveningSessions() {
+    let now = new Date()
+    let today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+    return getAppStore().recentSessions().filter(s => s.startedAt >= today).slice(-3)
+  }
+
+  renderRail() {
+    let sessions = this.eveningSessions()
+
+    let evening
+    if (sessions.length) {
+      evening = <ol className={styles.evening_list}>
+        {sessions.map((session, idx) => {
+          let staff = STAVES.find(s => s.name == session.staff)
+          let generator = GENERATORS.find(g =>
+            g.name == session.generator && (!staff || g.mode == staff.mode))
+
+          let exercise = session.settings?.pieceTitle ||
+            (generator ? generatorLabel(generator) : session.generator)
+
+          let parts = [staff ? `${staffLabel(staff)} staff` : session.staff, exercise].filter(Boolean)
+          let accuracy = accuracyPercent(session.notesRead, session.misses)
+
+          return <li key={session.id} className={styles.evening_row}>
+            <span className={styles.numeral}>{romanNumeral(idx + 1)}</span>
+            <span className={styles.evening_text}>
+              {parts.join(", ")}
+              <span className={styles.evening_detail}>
+                {accuracy == null ? "No notes read" : `${accuracy}% accuracy`}
+              </span>
+            </span>
+          </li>
+        })}
+      </ol>
+    } else {
+      evening = <p className={styles.evening_empty}>Nothing played yet</p>
+    }
+
+    return <aside className={styles.rail}>
+      <figure className={styles.engraving}>
+        <div className={styles.engraving_slot}>
+          <img
+            src={SALON_IMAGE}
+            alt="A ball at the Hôtel Lambert in Paris, Chopin at the piano" />
+        </div>
+        <figcaption className={styles.engraving_caption}>Soirée at the Hôtel Lambert</figcaption>
+      </figure>
+
+      <div className={styles.evening}>
+        <SectionLabel ornament="❧">This evening</SectionLabel>
+        {evening}
+      </div>
+
+      <PullQuote>{PULL_QUOTE}</PullQuote>
+    </aside>
+  }
+
+  renderKeyboardFooter() {
+    let staff = this.state.currentStaff
+    let hasKeyboard = staff && staff.mode == "notes"
+    let open = hasKeyboard && this.state.keyboardOpen
+
+    let content
+    if (open) {
+      let [lower, upper] = staff.range
+      let held = Object.keys(this.state.heldNotes)
+
+      content = <div className={styles.keyboard_inner}>
+        <div className={styles.keyboard_label}>
+          <span>Pleyel upright — {lower} to {upper}</span>
+          <span>Held {held.length ? held.join(" · ") : "—"}</span>
+        </div>
+        <div className={styles.keyboard_well}>
+          <Keyboard
+            className={styles.keyboard}
+            lower={lower}
+            upper={upper}
+            midiOutput={this.props.midiOutput}
+            heldNotes={this.state.heldNotes}
+            onKeyDown={this.pressNote}
+            onKeyUp={this.releaseNote} />
+        </div>
+      </div>
+    }
+
+    return <footer className={classNames(styles.keyboard_footer, {[styles.collapsed]: !open})}>
+      <div className={styles.piano_lid} aria-hidden="true" />
+      {content}
+    </footer>
+  }
 }

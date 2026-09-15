@@ -1,0 +1,451 @@
+/* The programme drawer of the sight reading trainer, see the trainer screen
+   in docs/design/salon-de-chopin.md */
+
+.scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 20;
+    background: rgba(36,31,24,.32);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .3s ease;
+
+    &.open {
+        opacity: 1;
+        pointer-events: auto;
+    }
+}
+
+.drawer {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 21;
+    box-sizing: border-box;
+    width: 312px;
+    max-width: 100%;
+    display: flex;
+    flex-direction: column;
+    overflow: auto;
+    overscroll-behavior: contain;
+    background: var(--salon-paper);
+    border-right: 1px solid var(--salon-rule-strong);
+    box-shadow: 26px 0 54px -30px rgba(36,31,24,.45);
+    color: var(--salon-ink);
+    font-family: var(--font-ui);
+    text-align: left;
+    transform: translateX(-100%);
+    visibility: hidden;
+    /* hidden from focus and assistive tech once it has slid out */
+    transition: transform .32s cubic-bezier(.22,.61,.36,1), visibility 0s linear .32s;
+
+    &.open {
+        transform: translateX(0);
+        visibility: visible;
+        transition: transform .32s cubic-bezier(.22,.61,.36,1), visibility 0s;
+    }
+
+    @media (max-width: 480px) {
+        width: 100%;
+        border-right: 0;
+    }
+}
+
+.drawer_header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 22px 24px 14px;
+}
+
+.drawer_title {
+    font-family: var(--font-display);
+    font-size: 22px;
+    letter-spacing: -.01em;
+}
+
+.drawer_ornament {
+    color: var(--salon-gilt);
+    font-size: 15px;
+    margin-left: 8px;
+}
+
+.close_button {
+    flex: none;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    background: transparent;
+    border: 1px solid var(--salon-rule);
+    border-radius: 999px;
+    box-shadow: none;
+    color: var(--salon-nav-ink);
+    font-size: 16px;
+    font-weight: 400;
+    letter-spacing: 0;
+    line-height: 1;
+}
+
+.drawer_rule {
+    border-top: var(--salon-double-rule);
+    margin: 0 24px;
+}
+
+.drawer_body {
+    padding: 20px 24px 28px;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+
+.group_header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 11px;
+}
+
+.group_label, .input_label, .sub_label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .2em;
+    text-transform: uppercase;
+    color: var(--salon-ink-muted);
+}
+
+.group_aside {
+    font-family: var(--font-display);
+    font-size: 19px;
+    line-height: 1;
+}
+
+.exercise_group .group_header {
+    margin-bottom: 0;
+}
+
+.pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.pills + .tempo_track {
+    margin-top: 18px;
+}
+
+/* pill overrides double their class to win over the pill variants of
+   st/components/salon.module.css */
+
+.key_pill.key_pill {
+    font-family: var(--font-display);
+    font-size: 15px;
+    font-weight: 400;
+    letter-spacing: 0;
+    padding: 6px 14px;
+
+    &.chromatic {
+        font-family: var(--font-ui);
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: .04em;
+        padding: 8px 14px;
+    }
+}
+
+.small_pill.small_pill {
+    padding: 7px 14px;
+}
+
+.apply_button.apply_button {
+    width: 100%;
+    font-size: 12px;
+    letter-spacing: .12em;
+    padding: 13px 0;
+}
+
+.exercise_list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.exercise {
+    border-bottom: var(--salon-hairline);
+
+    &:last-child {
+        border-bottom: 0;
+    }
+}
+
+.exercise_row {
+    display: flex;
+    width: 100%;
+    justify-content: space-between;
+    align-items: center;
+    padding: 11px 0;
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    color: var(--salon-nav-ink);
+    text-align: left;
+    letter-spacing: 0;
+
+    &:hover {
+        color: var(--salon-ink);
+    }
+
+    .selected & {
+        color: var(--salon-ink);
+    }
+}
+
+.exercise_name {
+    font-family: var(--font-display);
+    font-size: 15px;
+    font-weight: 400;
+}
+
+.exercise_mark {
+    color: var(--salon-gilt);
+    font-size: 13px;
+}
+
+/* the gilt track of the tempo control, also used for range inputs */
+.gilt_slider {
+    display: block;
+    min-width: 0;
+    padding: 6px 8px;
+
+    :global(.slider_track) {
+        height: 4px;
+        background: var(--salon-rule-light);
+        border-radius: 999px;
+        cursor: pointer;
+    }
+
+    :global(.slider_fill) {
+        display: block;
+        background: var(--salon-gilt);
+    }
+
+    :global(.slider_track) button {
+        width: 16px;
+        height: 16px;
+        margin-top: -8px;
+        margin-left: -8px;
+        padding: 0;
+        background: var(--salon-paper);
+        border: 1px solid var(--salon-gilt);
+        border-radius: 50%;
+        box-shadow: 0 1px 4px rgba(36,31,24,.28);
+
+        &:focus-visible {
+            box-shadow: 0 1px 4px rgba(36,31,24,.28), 0 0 0 3px rgba(125,44,44,.25);
+        }
+    }
+}
+
+.tempo_legend {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 10px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    color: var(--salon-ink-muted);
+}
+
+.generator_inputs {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 4px 0 16px;
+}
+
+.generator_input {
+    .input_label {
+        margin-bottom: 7px;
+    }
+
+    label {
+        display: block;
+    }
+}
+
+.select_component {
+    display: block;
+    background: var(--salon-paper);
+    border: 1px solid var(--salon-rule);
+    border-radius: 0;
+    padding: 6px 12px;
+
+    :global(.svgicon) {
+        fill: var(--salon-gilt);
+    }
+
+    > div {
+        color: var(--salon-ink);
+        font-size: 13px;
+    }
+}
+
+.slider_row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+
+    .gilt_slider {
+        flex: 1;
+    }
+
+    .current_value {
+        min-width: 20px;
+        font-family: var(--font-display);
+        font-size: 16px;
+        text-align: right;
+    }
+}
+
+.number_input {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 7px 10px;
+    font-size: 13px;
+}
+
+.text_input_row {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.text_input {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 8px;
+    font-family: monospace;
+    font-size: 12px;
+    resize: vertical;
+}
+
+.input_hint, .generator_status, .input_notice, .bool_row {
+    font-size: 11.5px;
+    line-height: 1.45;
+    color: var(--salon-ink-muted);
+}
+
+.input_hint {
+    margin-top: 6px;
+}
+
+.generator_status {
+    font-family: var(--font-display);
+    font-size: 13px;
+    font-style: italic;
+    color: var(--salon-ink-soft);
+}
+
+.input_notice {
+    color: var(--salon-ink-soft);
+}
+
+.input_error {
+    font-size: 12px;
+    color: var(--salon-oxblood);
+}
+
+.bool_row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+
+    input {
+        accent-color: var(--salon-oxblood);
+    }
+}
+
+.deck_input {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.deck_row {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+
+    .select_component {
+        flex: 1;
+        min-width: 0;
+        /* long file name titles wrap rather than cover the button */
+        overflow-wrap: anywhere;
+    }
+
+    button {
+        flex: none;
+    }
+}
+
+.deck_actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+/* a ghost pill over a visually hidden file input */
+.generator_input .file_input {
+    position: relative;
+    display: inline-block;
+
+    input {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        opacity: 0;
+        overflow: hidden;
+    }
+
+    &:focus-within .file_pill {
+        box-shadow: 0 0 0 2px rgba(125,44,44,.3);
+    }
+}
+
+.file_pill {
+    display: inline-block;
+    box-sizing: border-box;
+    padding: 7px 14px;
+    background: var(--salon-paper);
+    border: 1px solid var(--salon-rule);
+    border-radius: 999px;
+    box-shadow: 0 1px 2px rgba(36,31,24,.08);
+    color: var(--salon-ghost-ink);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    line-height: 1.3;
+    text-transform: uppercase;
+    cursor: pointer;
+
+    &:hover {
+        border-color: var(--salon-rule-strong);
+        color: var(--salon-ink);
+    }
+}
+
+.note_range_row {
+    display: flex;
+    gap: 10px;
+
+    label {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+    }
+}
