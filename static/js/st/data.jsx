@@ -10,8 +10,13 @@ import {
 
 import {
   extractSectionColumns, filterColumnsToRange, parseSongText, countMeasures,
-  measureNumberRange, staffTracks
+  measureNumberRange, measureNumberList, staffTracks
 } from "st/song_sections"
+
+import {
+  MeasureCardDeck, MeasureCardGenerator, measureCards, IN_ORDER, RANDOM_ORDER,
+  MAX_MEASURES_PER_CARD
+} from "st/measure_cards"
 
 import {
   loadDeck, findPiece, pieceSong, removePiece, importMusicXMLPiece,
@@ -166,6 +171,54 @@ export function pieceSection(staff, settings, song) {
   return sectionResult(staff, columns, parts, {
     suggestGrand: twoStaves && !tracks,
   })
+}
+
+// The measures of the piece section as flashcards (see st/measure_cards),
+// or null for pasted notation or a section without notes on the staff. The
+// deck of the latest settings is kept so the status line and the generator
+// share the card being shown
+let cardDeck = null
+
+export function measureCardDeck(staff, settings) {
+  let piece = sheetMusicPiece(settings)
+  if (!piece) {
+    return null
+  }
+
+  let key = JSON.stringify([
+    piece.id, staff.name, staff.range, settings.startMeasure, settings.endMeasure,
+    settings.hand, settings.measuresPerCard, settings.order,
+  ])
+
+  if (cardDeck && cardDeck.key == key && cardDeck.piece == piece) {
+    return cardDeck.deck
+  }
+
+  let song = pieceSong(piece)
+  let tracks = handTracks(song, settings.hand)
+  let [firstMeasure] = measureNumberRange(song)
+  let start = Math.max(firstMeasure, Math.floor(settings.startMeasure) || 0)
+  let end = Math.floor(settings.endMeasure)
+
+  let measures = measureNumberList(song)
+    .filter(number => number >= start && number <= end)
+    .map(number => {
+      let columns = extractSectionColumns(song, {startMeasure: number, endMeasure: number, track: tracks})
+      let [visible] = filterColumnsToRange(columns, staff.range[0], staff.range[1])
+      return {number, columns: visible}
+    })
+
+  let deck = new MeasureCardDeck(measureCards(measures, settings.measuresPerCard), {
+    pieceId: piece.id,
+    order: settings.order,
+  })
+
+  if (!deck.playable) {
+    deck = null
+  }
+
+  cardDeck = {key, piece, deck}
+  return deck
 }
 
 // columns for the current sheet music settings on the given staff, plus a
@@ -554,12 +607,42 @@ export const GENERATORS = [
         ],
         visible: settings => !!sheetMusicPiece(settings),
       },
+      {
+        name: "measuresPerCard",
+        label: "measures per card",
+        type: "number",
+        default: 1,
+        min: 1,
+        max: MAX_MEASURES_PER_CARD,
+        hint: "The staff shows this many measures of the section at a time, like a flashcard.",
+        visible: settings => !!sheetMusicPiece(settings),
+      },
+      {
+        name: "order",
+        type: "select",
+        default: IN_ORDER,
+        values: [
+          {name: IN_ORDER},
+          {name: RANDOM_ORDER},
+        ],
+        hint: "Random picks the measures you miss most more often.",
+        visible: settings => !!sheetMusicPiece(settings),
+      },
     ],
     // shown under the inputs in the settings panel
     status: function(staff, settings) {
-      return sheetMusicSection(staff, settings).status
+      let {status} = sheetMusicSection(staff, settings)
+      let deck = measureCardDeck(staff, settings)
+      return deck ? `${deck.status()}. ${status}` : status
     },
     create: function(staff, keySignature, settings) {
+      let deck = measureCardDeck(staff, settings)
+      if (deck) {
+        // a single measure section's stats are already recorded by the page
+        let recordMeasures = settings.startMeasure != settings.endMeasure
+        return new MeasureCardGenerator(deck, {recordMeasures})
+      }
+
       let {columns} = sheetMusicSection(staff, settings)
       return new SheetMusicGenerator(columns)
     }

@@ -31,6 +31,17 @@ function measureNumbers(song) {
   return null
 }
 
+// the distinct measure numbers of the song in score order, eg. [0, 1, 2] for
+// a score opening with a pickup
+export function measureNumberList(song) {
+  let numbers = measureNumbers(song)
+  if (numbers) {
+    return [...new Set(numbers)]
+  }
+
+  return Array.from({length: countMeasures(song)}, (_, idx) => idx + 1)
+}
+
 // [first, last] measure numbers of the song. Scores that open with a pickup
 // start at measure 0, like the numbers printed on the score.
 export function measureNumberRange(song) {

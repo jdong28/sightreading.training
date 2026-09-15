@@ -73,6 +73,8 @@ const STORES = {
  * @property {number} misses
  * @property {number} attempts practice stints on the section with any notes played
  * @property {number} lastPracticed
+ * @property {number} [elapsedMs] time spent playing the section, kept for
+ * the single measures practiced on measure flashcards (see st/measure_cards)
  */
 
 /**
@@ -318,7 +320,8 @@ function validSectionStats(stats) {
     typeof stats.pieceId == "string" &&
     Number.isInteger(stats.startMeasure) && Number.isInteger(stats.endMeasure) &&
     isCount(stats.hits) && isCount(stats.misses) && isCount(stats.attempts) &&
-    typeof stats.lastPracticed == "number"
+    typeof stats.lastPracticed == "number" &&
+    (stats.elapsedMs === undefined || isCount(stats.elapsedMs))
 }
 
 // the stored fields of a piece, dropping anything else
@@ -537,6 +540,8 @@ export class LocalStore {
    * @param {number} practice.hits
    * @param {number} practice.misses
    * @param {number} [practice.at] when it was practiced, defaults to now
+   * @param {number} [practice.elapsedMs] time spent playing it, added to the
+   * section's elapsedMs
    * @returns {Promise<SectionStatsRecord>}
    */
   recordSectionPractice(practice) {
@@ -549,7 +554,7 @@ export class LocalStore {
   }
 
   // the stats of the practiced section with the practice added
-  sectionPracticeRecord({pieceId, startMeasure, endMeasure, hits, misses, at=Date.now()}) {
+  sectionPracticeRecord({pieceId, startMeasure, endMeasure, hits, misses, at=Date.now(), elapsedMs}) {
     let section = {pieceId, startMeasure, endMeasure}
     let current = this.cache.sectionStats.find(stats => sameSection(stats, section)) ||
       {...section, hits: 0, misses: 0, attempts: 0, lastPracticed: 0}
@@ -560,6 +565,11 @@ export class LocalStore {
       misses: current.misses + misses,
       attempts: current.attempts + 1,
       lastPracticed: Math.max(current.lastPracticed, at),
+    }
+
+    // only sections timed once carry the field
+    if (elapsedMs !== undefined || current.elapsedMs !== undefined) {
+      record.elapsedMs = (current.elapsedMs || 0) + Math.round(elapsedMs || 0)
     }
 
     if (!validSectionStats(record)) {
@@ -700,6 +710,10 @@ export class LocalStore {
           misses: stats.misses,
           attempts: stats.attempts,
           lastPracticed: stats.lastPracticed,
+        }
+
+        if (stats.elapsedMs !== undefined) {
+          record.elapsedMs = stats.elapsedMs
         }
 
         let idx = sectionStats.findIndex(s => sameSection(s, record))

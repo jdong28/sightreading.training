@@ -191,6 +191,22 @@ describe("local store", function() {
       ])
     })
 
+    it("adds up the time spent on a section once it is timed", async function() {
+      let store = await open()
+      let practice = {pieceId: "a", startMeasure: 3, endMeasure: 3, hits: 1, misses: 0, at: 1000}
+      await store.recordSectionPractice(practice)
+      expect(store.sectionStats("a")[0].elapsedMs).toBeUndefined()
+
+      await store.recordSectionPractice({...practice, elapsedMs: 1200.4})
+      await store.recordSectionPractice(practice)
+      await store.recordSectionPractice({...practice, elapsedMs: 800})
+
+      let reopened = await open({keep: true})
+      expect(reopened.sectionStats("a")).toEqual([
+        {pieceId: "a", startMeasure: 3, endMeasure: 3, hits: 4, misses: 0, attempts: 4, lastPracticed: 1000, elapsedMs: 2000},
+      ])
+    })
+
     it("runs writes in order without losing concurrent updates", async function() {
       let store = await open()
       let practice = {pieceId: "a", startMeasure: 1, endMeasure: 4, hits: 1, misses: 0}
@@ -278,7 +294,7 @@ describe("local store", function() {
         sectionStats: [
           section("a", 1, 4, {hits: 99, lastPracticed: 10}), // older, ignored
           section("remote", 1, 4, {hits: 42, lastPracticed: 2000}), // newer, replaces
-          section("c", 2, 3),
+          section("c", 2, 3, {elapsedMs: 4500}),
           section("unknown", 1, 1),
         ],
         sessions: [
@@ -298,6 +314,8 @@ describe("local store", function() {
       ])
       expect(store.sectionStats("a")[0].hits).toEqual(3)
       expect(store.sectionStats("local")[0].hits).toEqual(42)
+      expect(store.sectionStats("c")[0].elapsedMs).toEqual(4500)
+      expect("elapsedMs" in store.sectionStats("local")[0]).toBe(false)
       expect(store.sectionStats("c").length).toEqual(1)
       expect(store.sectionStats("unknown")).toEqual([])
     })
