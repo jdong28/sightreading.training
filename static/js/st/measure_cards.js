@@ -20,8 +20,8 @@ export const MAX_MEASURES_PER_CARD = 8
  * The notes of one measure of the pool.
  * @typedef {Object} PoolMeasure
  * @property {number} number the score's bar number
- * @property {string[][]} columns each may carry `staves`, the score staff of
- * its notes (see extractSectionColumns in st/song_sections)
+ * @property {string[][]} columns each may carry `staves`, the grand staff
+ * of each of its notes (see extractSectionColumns in st/song_sections)
  * @property {{upper: ?string, lower: ?string}} [clefs] the clef signs the
  * grand staff opens the measure with (see grandStaffClefs)
  */
@@ -33,8 +33,8 @@ export const MAX_MEASURES_PER_CARD = 8
  * @property {number[]} measures bar numbers, in order
  * @property {string[][]} columns the columns of every measure, in order
  * @property {number[]} columnMeasures index into measures for each column
- * @property {{upper: ?string, lower: ?string}} [clefs] the clefs of its first
- * measure, which the staff draws the whole card in
+ * @property {{upper: ?string, lower: ?string}[]} [clefs] the clefs of each
+ * of its measures
  */
 
 /**
@@ -80,7 +80,7 @@ export function sectionCard(measures) {
   }
 
   if (measures[0].clefs) {
-    card.clefs = measures[0].clefs
+    card.clefs = measures.map(measure => measure.clefs)
   }
 
   return card
@@ -89,9 +89,9 @@ export function sectionCard(measures) {
 /**
  * A copy of the card's column for the staff. When the card has more than
  * one measure, the first column of each measure carries its bar number as
- * `measure`, where the staff draws a bar line. The score staff of its notes
- * are kept as `staves`, and the card's clefs as `clefs`, for a staff that
- * draws them on the score's staves (st/components/staves)
+ * `measure`, where the staff draws a bar line. The grand staff of its notes
+ * are kept as `staves`, and the clefs of its measure as `clefs`, for a staff
+ * that draws them on the score's staves (st/components/staves)
  * @param {MeasureCard} card
  * @param {number} idx
  * @returns {string[]}
@@ -103,7 +103,7 @@ export function cardColumn(card, idx) {
 
   if (source.staves) {
     column.staves = source.staves
-    column.clefs = card.clefs || {upper: null, lower: null}
+    column.clefs = (card.clefs && card.clefs[measureIdx]) || {upper: null, lower: null}
   }
 
   if (card.measures.length > 1 && (idx == 0 || card.columnMeasures[idx - 1] != measureIdx)) {

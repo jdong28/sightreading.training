@@ -1,5 +1,6 @@
 import * as React from "react"
 
+import classNames from "classnames"
 import * as types from "prop-types"
 import {parseNote, noteStaffOffset, MIDDLE_C_PITCH} from "st/music"
 
@@ -96,6 +97,9 @@ export default class StaffNotes extends React.Component {
     lowerRow: types.number.isRequired,
     heldNotes: types.object.isRequired,
     noteShaking: types.bool,
+    // the clef props (upperRow, lowerRow, cleffImage, staffClass) each column
+    // is drawn in, when they differ from the staff's (see Staff#clefProps)
+    columnClefs: types.array,
   }
 
   render() {
@@ -105,37 +109,52 @@ export default class StaffNotes extends React.Component {
     let scale = this.props.scale || 1
     let offsetLeft = keySignatureWidth(this.props.keySignature) * scale
 
+    // the notes, by the clef of their column, which places them
+    let byClef = new Map()
+    let group = (note, key) => {
+      let clef = this.columnClef(note.getStart())
+      if (!byClef.has(clef)) {
+        byClef.set(clef, {notes: [], held: []})
+      }
+      byClef.get(clef)[key].push(note)
+    }
+    songNotes.forEach(note => group(note, "notes"))
+    heldSongNotes.forEach(note => group(note, "held"))
+
     return <div ref="notes" className={this.classNames()}>
-      <LedgerLines key="ledger_lines"
-        offsetLeft={offsetLeft}
-        upperRow={this.props.upperRow}
-        lowerRow={this.props.lowerRow}
-        notes={songNotes.concat(heldSongNotes)}
-        pixelsPerBeat={this.props.noteWidth}
-        scale={scale}
-      />
+      {[...byClef].map(([clef, {notes, held}], idx) => [
+        <LedgerLines key={`ledger_lines-${idx}`}
+          offsetLeft={offsetLeft}
+          upperRow={clef.upperRow}
+          lowerRow={clef.lowerRow}
+          notes={notes.concat(held)}
+          pixelsPerBeat={this.props.noteWidth}
+          scale={scale}
+        />,
 
-      <WholeNotes key="notes"
-        offsetLeft={offsetLeft}
-        keySignature={this.props.keySignature}
-        upperRow={this.props.upperRow}
-        lowerRow={this.props.lowerRow}
-        notes={songNotes}
-        noteClasses={noteClasses}
-        pixelsPerBeat={this.props.noteWidth}
-      />
+        <WholeNotes key={`notes-${idx}`}
+          offsetLeft={offsetLeft}
+          keySignature={this.props.keySignature}
+          upperRow={clef.upperRow}
+          lowerRow={clef.lowerRow}
+          notes={notes}
+          noteClasses={noteClasses}
+          pixelsPerBeat={this.props.noteWidth}
+        />,
 
-      <WholeNotes key="held_notes"
-        offsetLeft={offsetLeft}
-        keySignature={this.props.keySignature}
-        upperRow={this.props.upperRow}
-        lowerRow={this.props.lowerRow}
-        notes={heldSongNotes}
-        staticNoteClasses={styles.held}
-        pixelsPerBeat={this.props.noteWidth}
-      />
+        <WholeNotes key={`held_notes-${idx}`}
+          offsetLeft={offsetLeft}
+          keySignature={this.props.keySignature}
+          upperRow={clef.upperRow}
+          lowerRow={clef.lowerRow}
+          notes={held}
+          staticNoteClasses={styles.held}
+          pixelsPerBeat={this.props.noteWidth}
+        />,
+      ])}
 
       {this.renderBarLines(offsetLeft)}
+      {this.renderClefChanges(offsetLeft)}
       {this.renderAnnotations()}
     </div>
   }
@@ -146,47 +165,21 @@ export default class StaffNotes extends React.Component {
     }
 
     let notes = new SongNoteList()
-    let placed = []
     let dur = 40 / this.props.noteWidth
 
     // notes that are held down but aren't correct
     Object.keys(this.props.heldNotes)
       .filter((note) => !this.props.notes.inHead(note))
       .forEach((note, idx) => {
-        let staff = this.heldNoteStaff(note)
-        if (staff == null) {
-          notes.push(new SongNote(note, 0, dur))
-        } else if (staff == this.props.staff) {
-          placed.push(new SongNote(note, 0, dur))
-        }
+        notes.push(new SongNote(note, 0, dur))
       })
 
-    let visible = this.filterVisibleNotes(notes)
-    placed.forEach(n => visible.push(n))
-    return visible
+    return this.filterVisibleNotes(notes)
   }
 
-  // The score staff to draw a wrong held note on when the head column
-  // carries the score staff of its notes: the staff of the head note nearest
-  // to it, or null to split it by pitch like the columns without staves
-  heldNoteStaff(note) {
-    let head = this.props.notes[0]
-    if (!this.props.staff || !Array.isArray(head) || !head.staves || !head.length) {
-      return null
-    }
-
-    let row = noteStaffOffset(note)
-    let nearest = null
-    let nearestDistance = null
-    head.forEach((headNote, idx) => {
-      let distance = Math.abs(noteStaffOffset(headNote) - row)
-      if (nearestDistance == null || distance < nearestDistance) {
-        nearest = head.staves[idx]
-        nearestDistance = distance
-      }
-    })
-
-    return nearest ? nearest.staff : null
+  // the clef props the column at idx is drawn in
+  columnClef(idx) {
+    return (this.props.columnClefs && this.props.columnClefs[idx]) || this.props
   }
 
   // filter notes so only the ones visible for this staff returned
@@ -226,8 +219,8 @@ export default class StaffNotes extends React.Component {
       }
     }
 
-    // notes of columns that carry their score staff, drawn on this staff when
-    // it is theirs rather than split by pitch
+    // notes of columns that carry their staff, drawn on this staff when it is
+    // theirs rather than split by pitch
     let placed = []
 
     this.props.notes.forEach((column, columnIdx) => {
@@ -247,7 +240,7 @@ export default class StaffNotes extends React.Component {
 
       if (Array.isArray(column) && column.staves && this.props.staff) {
         let onStaff = column.filter((n, idx) =>
-          column.staves[idx] && column.staves[idx].staff == this.props.staff)
+          column.staves[idx] == this.props.staff)
         let offsets = groupOffsets(onStaff, this.props.keySignature)
         onStaff.forEach((n, idx) => {
           let sNote = new SongNote(n, beat, dur)
@@ -310,6 +303,28 @@ export default class StaffNotes extends React.Component {
         style={{left: `${Math.round(offsetLeft + idx * noteWidth - before)}px`}}
         data-measure={column.measure}
         data-label={showNumbers ? column.measure : null} />)
+    })
+
+    return out
+  }
+
+  // A small clef where the clef of the staff changes, on the boundary before
+  // the column that changes it, where a new measure's bar line is
+  renderClefChanges(offsetLeft) {
+    let noteWidth = this.props.noteWidth
+    let headWidth = NOTE_HEAD_WIDTH * (this.props.scale || 1)
+    let before = (noteWidth - headWidth) / 2
+
+    let out = []
+    this.props.notes.forEach((column, idx) => {
+      let clef = this.columnClef(idx)
+      if (idx == 0 || clef == this.columnClef(idx - 1)) { return }
+
+      out.push(<img
+        key={`clef-change-${idx}`}
+        className={classNames(styles.clef_change, clef.staffClass)}
+        style={{left: `${Math.round(offsetLeft + idx * noteWidth - before)}px`}}
+        src={clef.cleffImage} />)
     })
 
     return out

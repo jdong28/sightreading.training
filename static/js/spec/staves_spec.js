@@ -14,7 +14,7 @@ import {pieceSectionMeasures, BOTH_HANDS, RIGHT_HAND, LEFT_HAND} from "st/data"
 import {reverieOpening, clefChangeScore} from "spec/helpers"
 
 // MIDI pitches, so the specs don't depend on the octave numbering of names
-const Bb3 = 58, C4 = 60, D4 = 62, G4 = 67, D5 = 74, G5 = 79
+const G2 = 43, Bb3 = 58, C4 = 60, D4 = 62, G4 = 67, D5 = 74, G5 = 79
 
 const GRAND = {name: "grand", range: ["C2", "C6"]}
 
@@ -58,23 +58,25 @@ describe("staves", function() {
   let notesOn = el => [...el.querySelectorAll(`.${staffStyles.whole_note}`)]
   let notePitches = el => notesOn(el).map(note => +note.dataset.midiNote)
   let ledgerLines = el => el.querySelectorAll(`.${staffStyles.ledger_line}`).length
+  let clefChanges = el => [...el.querySelectorAll(`.${staffStyles.clef_change}`)]
+  let noteTop = (el, pitch) => notesOn(el).find(note => +note.dataset.midiNote == pitch).style.top
 
   describe("score staves of imported columns", function() {
-    it("carries the track, grand staff and clef of each note of the Rêverie opening", function() {
+    it("carries the grand staff of each note of the Rêverie opening", function() {
       let song = parseMusicXML(reverieOpening())
       let columns = extractSectionColumns(song, {startMeasure: 2, endMeasure: 4, staves: true})
 
       expect(columns.length).toEqual(7 + 7 + 8)
       expect(pitches(columns[0])).toEqual([Bb3])
-      expect(columns[0].staves).toEqual([{track: 1, staff: "lower", clef: "g"}])
-      expect(columns.slice(0, 14).flatMap(column => column.staves.map(s => s.staff)))
+      expect(columns[0].staves).toEqual(["lower"])
+      expect(columns.slice(0, 14).flatMap(column => column.staves))
         .toEqual(Array(14).fill("lower"))
 
       // measure 4 opens with the right hand's G5 on the upper staff
       expect(pitches(columns[14])).toEqual([G5])
-      expect(columns[14].staves).toEqual([{track: 0, staff: "upper", clef: "g"}])
+      expect(columns[14].staves).toEqual(["upper"])
       expect(pitches(columns[18])).toEqual([D5])
-      expect(columns[18].staves[0].staff).toEqual("upper")
+      expect(columns[18].staves).toEqual(["upper"])
 
       // both staves open in treble clef
       expect(grandStaffClefs(song, 0)).toEqual({upper: "g", lower: "g"})
@@ -85,7 +87,7 @@ describe("staves", function() {
       expect(plain.some(column => column.staves)).toBe(false)
     })
 
-    it("keeps the staves and card clefs through the sheet music generators", function() {
+    it("keeps the staves and measure clefs through the sheet music generators", function() {
       let song = parseMusicXML(reverieOpening())
       let measures = pieceSectionMeasures(GRAND, {startMeasure: 2, endMeasure: 4, hand: BOTH_HANDS}, song)
       expect(measures.map(m => m.clefs)).toEqual(Array(3).fill({upper: "g", lower: "g"}))
@@ -93,7 +95,7 @@ describe("staves", function() {
       let [card] = measureCards(measures, 3)
       let generator = new SheetMusicGenerator(card.columns.map((column, idx) => cardColumn(card, idx)), {card})
       let first = generator.nextNote()
-      expect(first.staves).toEqual([{track: 1, staff: "lower", clef: "g"}])
+      expect(first.staves).toEqual(["lower"])
       expect(first.clefs).toEqual({upper: "g", lower: "g"})
       expect(first.measure).toEqual(2)
 
@@ -148,13 +150,16 @@ describe("staves", function() {
       }
     })
 
-    it("draws a wrong held note on the staff of the nearest note to play", function() {
+    it("splits wrong held notes at middle C, placed by the clef of each staff", function() {
       let song = parseMusicXML(reverieOpening())
-      renderStaff(GrandStaff, sectionColumns(song, 2, 2), {heldNotes: {[noteName(D4)]: true}})
+      renderStaff(GrandStaff, sectionColumns(song, 2, 2), {heldNotes: {[noteName(D4)]: true, [noteName(G2)]: true}})
 
       let held = el => notesOn(el).filter(note => note.classList.contains(staffStyles.held))
-      expect(held(staffEl("upper")).length).toEqual(0)
-      expect(held(staffEl("lower")).map(note => +note.dataset.midiNote)).toEqual([D4])
+      expect(held(staffEl("upper")).map(note => +note.dataset.midiNote)).toEqual([D4])
+      expect(held(staffEl("lower")).map(note => +note.dataset.midiNote)).toEqual([G2])
+
+      // the lower staff is in treble clef here, so G2 hangs far below it
+      expect(noteTop(staffEl("lower"), G2)).toEqual("250%")
     })
 
     it("draws one hand alone in that staff's clef", function() {
@@ -170,7 +175,7 @@ describe("staves", function() {
       renderStaff(FStaff, left)
       let single = container.querySelector(`.${staffStyles.staff}`)
       expect(clefImage(single)).toContain("clefs.G")
-      expect(notesOn(single).find(note => +note.dataset.midiNote == Bb3).style.top).toEqual("137%")
+      expect(noteTop(single, Bb3)).toEqual("137%")
 
       let right = sectionColumns(song, 2, 4, RIGHT_HAND)
       expect(right.map(pitches)).toEqual([[G5], [D5]])
@@ -194,14 +199,42 @@ describe("staves", function() {
       expect(clefImage(staffEl("lower"))).toContain("clefs.F")
       expect(ledgerLines(staffEl("lower"))).toEqual(0)
 
-      // a range crossing the change is drawn in the clef it opens with
+      // a range crossing the change opens in bass clef and changes to treble
       renderStaff(GrandStaff, sectionColumns(song, 2, 3))
-      expect(clefImage(staffEl("lower"))).toContain("clefs.F")
-      expect(notePitches(staffEl("lower"))).toEqual([C4 - 8, C4])
+      let lower = staffEl("lower")
+      expect(clefImage(lower)).toContain("clefs.F")
+      expect(notePitches(lower)).toEqual([C4 - 8, C4])
+      expect(clefChanges(lower).map(clef => clef.getAttribute("src"))).toEqual(["/static/svg/clefs.G.svg"])
+      expect(noteTop(lower, C4)).toEqual("125%")
+      expect(clefChanges(staffEl("upper")).length).toEqual(0)
 
-      // the notes record the clef in effect where they start
-      let columns = extractSectionColumns(song, {startMeasure: 1, endMeasure: 4, track: [1], staves: true})
-      expect(columns.map(column => column.staves[0].clef)).toEqual(["f", "f", "g", "g"])
+      // each measure keeps the clefs it is written in
+      let measures = pieceSectionMeasures(GRAND, {startMeasure: 1, endMeasure: 4, hand: BOTH_HANDS}, song)
+      expect(measures.map(measure => measure.clefs.lower)).toEqual(["f", "f", "g", "g"])
+    })
+
+    it("draws a clef change inside a card at its bar line", function() {
+      let song = parseMusicXML(clefChangeScore({
+        clefs: [["G", 2], ["F", 4]],
+        notes: [["C", 4], ["E", 4], ["G", 2], ["B", 2]],
+      }))
+
+      let [card] = measureCards(pieceSectionMeasures(GRAND, {startMeasure: 1, endMeasure: 4, hand: BOTH_HANDS}, song), 4)
+      renderStaff(GrandStaff, card.columns.map((column, idx) => cardColumn(card, idx)))
+
+      let lower = staffEl("lower")
+      expect(clefImage(lower)).toContain("clefs.G")
+
+      let [change] = clefChanges(lower)
+      expect(clefChanges(lower).length).toEqual(1)
+      expect(change.getAttribute("src")).toContain("clefs.F")
+      let barLine = lower.querySelector(`.${staffStyles.bar_line}[data-measure="3"]`)
+      expect(change.style.left).toEqual(barLine.style.left)
+
+      // G2 after the change sits on the bottom line of the bass staff,
+      // without the ledger lines the treble clef would need
+      expect(noteTop(lower, G2)).toEqual("100%")
+      expect(ledgerLines(lower)).toEqual(1) // the C4 of measure 1, in treble clef
     })
   })
 

@@ -35,20 +35,23 @@ export const CLEF_PROPS = {
   },
 }
 
-// The first column of notes that carries the score staff of its notes and
-// the clefs to draw them in (see cardColumn in st/measure_cards), or null
-// when the notes are split between the staves by pitch
-export function scoreStaffColumn(notes) {
+// The grand staves a staff draws the notes of when the columns carry their
+// staff and clefs (an imported piece, see cardColumn in st/measure_cards):
+// its own staff of a grand staff, or every staff of the columns for a staff
+// on its own. null when the notes are split between the staves by pitch
+function scoreStaves(notes, staff) {
   if (!(notes instanceof NoteList)) {
     return null
   }
 
-  return notes.find(column => Array.isArray(column) && column.clefs) || null
-}
+  let staves = new Set()
+  for (let column of notes) {
+    if (!Array.isArray(column) || !column.clefs) { continue }
+    if (staff) { return [staff] }
+    column.staves.forEach(s => staves.add(s))
+  }
 
-// the props of a clef sign, or of fallback when the sign isn't drawn
-function clefProps(sign, fallback) {
-  return CLEF_PROPS[sign] || CLEF_PROPS[fallback]
+  return staves.size ? [...staves] : null
 }
 
 export class Staff extends React.PureComponent {
@@ -69,33 +72,27 @@ export class Staff extends React.PureComponent {
     inGrand: types.bool,
     scale: types.number,
     // the grand staff this staff is ("upper" or "lower"), which draws the
-    // notes of that score staff when the columns carry it
+    // notes of that staff when the columns carry it
     staff: types.string,
   }
 
-  // The props with the clef the score uses on this staff: a staff on its own
-  // showing the notes of a single score staff (eg. one hand of a piece), or
-  // of staves that share a clef, is drawn in that clef. The grand staff
-  // passes the clefs of its own staves
+  // The props with the clef the score uses on this staff at its first
+  // column, and columnClefs, the clef props each column is drawn in: the
+  // clef the staves shown share at the column (eg. one hand of a piece on a
+  // staff on its own), else the staff's own
   clefProps() {
-    let column = this.props.staff == null && scoreStaffColumn(this.props.notes)
-    if (!column) {
+    let staves = scoreStaves(this.props.notes, this.props.staff)
+    if (!staves) {
       return this.props
     }
 
-    let signs = new Set()
-    for (let col of this.props.notes) {
-      for (let staff of (Array.isArray(col) && col.staves) || []) {
-        signs.add(column.clefs[staff.staff])
-      }
-    }
+    let columnClefs = this.props.notes.map(column => {
+      let signs = new Set(staves.map(staff => column.clefs && column.clefs[staff]))
+      let [sign] = signs
+      return (signs.size == 1 && CLEF_PROPS[sign]) || this.props
+    })
 
-    let [sign] = signs
-    if (signs.size != 1 || !CLEF_PROPS[sign]) {
-      return this.props
-    }
-
-    return {...this.props, ...CLEF_PROPS[sign]}
+    return {...this.props, ...columnClefs[0], columnClefs}
   }
 
   // skips react for performance
@@ -288,27 +285,21 @@ export class GrandStaff extends React.PureComponent {
     return true
   }
 
-  // Notes of columns that carry their score staff (an imported piece) go on
-  // the staff of the score, each staff drawn in the clef the score uses for
-  // it at the card; other notes are split at middle C, treble over bass
+  // Notes of columns that carry their staff (an imported piece) go on the
+  // staff of the score, drawn in the score's clefs; other notes are split at
+  // middle C, treble over bass
   render() {
-    let column = scoreStaffColumn(this.props.notes)
-    let upperClef = column ? clefProps(column.clefs.upper, "g") : null
-    let lowerClef = column ? clefProps(column.clefs.lower, "f") : null
-
     return <div className={styles.grand_staff}>
       <GStaff
         ref={this.gstaff}
         filterPitch={this.filterGStaff}
         {...this.props}
-        {...upperClef}
         staff="upper" />
       <FStaff
         ref={this.fstaff}
         filterPitch={this.filterFStaff}
         showAnnotations={false}
         {...this.props}
-        {...lowerClef}
         staff="lower" />
     </div>;
   }

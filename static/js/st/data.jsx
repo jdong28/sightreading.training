@@ -183,9 +183,9 @@ export function pieceSection(staff, settings, song) {
 }
 
 // The measures of an imported piece's section with the columns of each on the
-// staff, the pool of st/measure_cards. Columns carry the score staff of their
-// notes and each measure the clefs the grand staff opens it with, so the
-// staff draws the piece on the score's own staves
+// staff, the pool of st/measure_cards. Columns carry the grand staff of their
+// notes and each measure the clefs the grand staff draws it in, so the staff
+// draws the piece on the score's own staves and clefs
 export function pieceSectionMeasures(staff, settings, song) {
   let tracks = handTracks(song, settings.hand)
   let [firstMeasure] = measureNumberRange(song)
