@@ -21,7 +21,7 @@ import {DRILL_STORAGE_KEY} from "st/generators"
 import {scopeEvent} from "st/events"
 import NoteStats from "st/note_stats"
 import {KeySignature} from "st/music"
-import {openTestStore, noteXML, reverieOpening, keyChangeScore} from "spec/helpers"
+import {openTestStore, noteXML, reverieOpening, keyChangeScore, clefChangeScore} from "spec/helpers"
 
 // a two staff 3/4 piece, measures 1 and 2
 let minuetXML = `<?xml version="1.0" encoding="UTF-8"?>
@@ -350,6 +350,47 @@ describe("sight reading page", function() {
     }))
     expect(plateLabel()).toEqual("3 ♩ a bar · measures 1–8")
     expect(numberedBarLines()).toEqual(["1", "2", "3", "4", "5", "6", "7", "8", "1", "2"])
+  })
+
+  it("keeps a score note below the staff inside the plate in both modes", async function() {
+    // the score writes the left hand in treble clef, so its A3 hangs two
+    // ledger lines below the lower staff
+    let {piece} = await importMusicXMLPiece("treble_left.musicxml", clefChangeScore({
+      clefs: [["G", 2], ["G", 2]],
+      notes: [["A", 3], ["A", 3], ["A", 3], ["A", 3]],
+    }), store)
+
+    window.localStorage.setItem(DRILL_STORAGE_KEY, JSON.stringify({
+      staff: "grand", generator: "sheet music", mode: "scroll",
+    }))
+    window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+      piece: piece.id, startMeasure: 1, endMeasure: 4, hand: BOTH_HANDS, measuresPerCard: "all",
+    }))
+
+    let el = renderPage()
+    expect(page.state.mode).toEqual("scroll")
+
+    let lowerNotes = () => {
+      let lower = el.querySelector("[data-staff=\"lower\"]")
+      return [lower, [...lower.querySelectorAll(`.${staffStyles.whole_note}`)]]
+    }
+
+    for (let mode of ["scroll", "wait"]) {
+      flushSync(() => page.setMode(mode))
+      expect(page.state.mode).toEqual(mode)
+
+      let wrapper = el.querySelector(`.${staffStyles.staff_wrapper}`).getBoundingClientRect()
+      let [lower, heads] = lowerNotes()
+      let staff = lower.getBoundingClientRect()
+
+      expect(heads.length).toBeGreaterThan(0)
+      for (let head of heads) {
+        let box = head.getBoundingClientRect()
+        expect(+head.dataset.midiNote).toEqual(57)
+        expect(box.bottom).toBeGreaterThan(staff.bottom)
+        expect(box.bottom).toBeLessThanOrEqual(wrapper.bottom)
+      }
+    }
   })
 
   it("opens, closes and applies the programme drawer", function() {

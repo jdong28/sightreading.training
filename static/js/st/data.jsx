@@ -16,7 +16,7 @@ import {
 } from "st/song_sections"
 
 import {
-  MeasureCardDeck, MeasureCardGenerator, measureCards, sectionCard, cardColumn,
+  MeasureCardDeck, MeasureCardGenerator, measureCards, sectionCard, cardColumns,
   IN_ORDER, RANDOM_ORDER, MAX_MEASURES_PER_CARD
 } from "st/measure_cards"
 
@@ -182,8 +182,10 @@ export function pieceSection(staff, settings, song) {
 }
 
 // The measures of an imported piece's section with the columns of each on the
-// staff, the pool of st/measure_cards
-function pieceSectionMeasures(staff, settings, song) {
+// staff, the pool of st/measure_cards. Columns carry the grand staff of their
+// notes and the clefs at their onset, so the staff draws the piece on the
+// score's own staves and clefs
+export function pieceSectionMeasures(staff, settings, song) {
   let tracks = handTracks(song, settings.hand)
   let [firstMeasure] = measureNumberRange(song)
   let start = Math.max(firstMeasure, Math.floor(settings.startMeasure) || 0)
@@ -192,7 +194,9 @@ function pieceSectionMeasures(staff, settings, song) {
   return measureNumberList(song)
     .filter(number => number >= start && number <= end)
     .map(number => {
-      let columns = extractSectionColumns(song, {startMeasure: number, endMeasure: number, track: tracks})
+      let columns = extractSectionColumns(song, {
+        startMeasure: number, endMeasure: number, track: tracks, staves: true,
+      })
       let [visible] = filterColumnsToRange(columns, staff.range[0], staff.range[1])
       return {number, columns: visible}
     })
@@ -687,7 +691,7 @@ export const GENERATORS = [
       let measures = piece ? pieceSectionMeasures(staff, settings, pieceSong(piece)) : []
       if (measures.length) {
         let card = sectionCard(measures)
-        let columns = card.columns.map((column, idx) => cardColumn(card, idx))
+        let columns = cardColumns(card)
         return new SheetMusicGenerator(columns, {card})
       }
 

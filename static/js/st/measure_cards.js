@@ -20,7 +20,9 @@ export const MAX_MEASURES_PER_CARD = 8
  * The notes of one measure of the pool.
  * @typedef {Object} PoolMeasure
  * @property {number} number the score's bar number
- * @property {string[][]} columns
+ * @property {string[][]} columns each may carry `staves`, the grand staff
+ * of each of its notes, and `clefs`, the clef sign of each staff at its onset
+ * (see extractSectionColumns in st/song_sections)
  */
 
 /**
@@ -78,20 +80,50 @@ export function sectionCard(measures) {
 /**
  * A copy of the card's column for the staff. When the card has more than
  * one measure, the first column of each measure carries its bar number as
- * `measure`, where the staff draws a bar line.
+ * `measure`, where the staff draws a bar line. The grand staff of its notes
+ * are kept as `staves`, and the clefs at its onset as `clefs`, for a staff
+ * that draws them on the score's staves (st/components/staves)
  * @param {MeasureCard} card
  * @param {number} idx
  * @returns {string[]}
  */
 export function cardColumn(card, idx) {
-  let column = [...card.columns[idx]]
+  let source = card.columns[idx]
+  let column = [...source]
   let measureIdx = card.columnMeasures[idx]
+
+  if (source.staves) {
+    column.staves = source.staves
+    column.clefs = source.clefs
+  }
 
   if (card.measures.length > 1 && (idx == 0 || card.columnMeasures[idx - 1] != measureIdx)) {
     column.measure = card.measures[measureIdx]
   }
 
   return column
+}
+
+/**
+ * Every column of the card, as the staff draws them.
+ * @param {MeasureCard} card
+ * @returns {string[][]}
+ */
+export function cardColumns(card) {
+  return card.columns.map((column, idx) => cardColumn(card, idx))
+}
+
+/**
+ * Every column a drill of the card draws: a looping card's columns are
+ * followed by its first column again, where the loop wraps back to it.
+ * @param {MeasureCard} card
+ * @param {Object} [opts]
+ * @param {boolean} [opts.loop]
+ * @returns {string[][]}
+ */
+export function drillColumns(card, {loop=false}={}) {
+  let columns = cardColumns(card)
+  return loop && columns.length ? [...columns, columns[0]] : columns
 }
 
 /**

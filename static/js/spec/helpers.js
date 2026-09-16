@@ -189,3 +189,49 @@ export const keyChangeScore = ({title="Key Change", keys=[-1, 4]}={}) => `<?xml 
     </measure>`).join("\n    ")}
   </part>
 </score-partwise>`
+
+const clefXML = (staff, sign, line) =>
+  `<clef number="${staff}"><sign>${sign}</sign><line>${line}</line></clef>`
+
+// A one measure 4/4 piano piece: the upper staff in treble clef holds E5, and
+// the lower staff, opening in bass clef, plays a quarter note [step, octave]
+// on each beat of lower, where a ["clef", sign, line] entry changes its clef
+export const midMeasureClefScore = lower => `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <work><work-title>Mid-Measure Clef</work-title></work>
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes><divisions>1</divisions><time><beats>4</beats><beat-type>4</beat-type></time><staves>2</staves>${clefXML(1, "G", 2)}${clefXML(2, "F", 4)}</attributes>
+      ${noteXML("E", 5, 4, 1)}
+      <backup><duration>4</duration></backup>
+      ${lower.map(([a, b, c]) => a == "clef" ? `<attributes>${clefXML(2, b, c)}</attributes>` : noteXML(a, b, 1, 2)).join("")}
+    </measure>
+  </part>
+</score-partwise>`
+
+// A 4/4 piano piece of four measures, each a whole note on both staves: the
+// upper staff in treble clef plays upper; the lower staff plays notes, one
+// [step, octave] (or a chord of them) a measure, opening in clefs[0] and
+// changing to clefs[1] from measure 3. By
+// default it opens in bass clef with C3 and E3 and changes to treble clef for
+// C4 and E4, under E5
+export const clefChangeScore = ({
+  clefs=[["F", 4], ["G", 2]],
+  notes=[["C", 3], ["E", 3], ["C", 4], ["E", 4]],
+  upper=["E", 5],
+}={}) => `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <work><work-title>Clef Change</work-title></work>
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    ${notes.map((lower, idx) => `<measure number="${idx + 1}">
+      ${idx == 0 ? `<attributes><divisions>1</divisions><time><beats>4</beats><beat-type>4</beat-type></time><staves>2</staves>${clefXML(1, "G", 2)}${clefXML(2, ...clefs[0])}</attributes>` : ""}
+      ${idx == 2 ? `<attributes>${clefXML(2, ...clefs[1])}</attributes>` : ""}
+      ${noteXML(upper[0], upper[1], 4, 1)}
+      <backup><duration>4</duration></backup>
+      ${(Array.isArray(lower[0]) ? lower : [lower])
+        .map(([step, octave], chordIdx) => noteXML(step, octave, 4, 2, chordIdx ? "<chord/>" : "")).join("")}
+    </measure>`).join("\n    ")}
+  </part>
+</score-partwise>`

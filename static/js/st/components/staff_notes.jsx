@@ -13,8 +13,9 @@ import styles from "st/components/staff.module.css"
 // .group_offset in staff.module.css
 export const STAFF_NOTES_LEFT = 120
 export const KEY_SIGNATURE_SPACING = 20
-// a whole note head is 20% of the 120px staff, noteheads.s0.svg is 1.69:1
-const NOTE_HEAD_HEIGHT = 120 * 0.2
+const STAFF_HEIGHT = 120
+// a whole note head is 20% of the staff, noteheads.s0.svg is 1.69:1
+const NOTE_HEAD_HEIGHT = STAFF_HEIGHT * 0.2
 export const NOTE_HEAD_WIDTH = NOTE_HEAD_HEIGHT * 1.69
 // how far a sharp, the widest accidental, reaches left of its note head: it
 // ends 10% of a head short of it and is three heads tall, sharp.svg is 245:1024
@@ -24,6 +25,13 @@ export const GROUP_OFFSET = 30
 
 // the space between an accidental and the note heads of the column before it
 const ACCIDENTAL_GAP = 4
+
+// the space a clef change keeps from the note heads and accidentals around it
+const CLEF_CHANGE_MARGIN = 2
+// the narrowest clef change drawn on the staff, else a small one goes above it
+const MIN_CLEF_CHANGE_WIDTH = 10
+// the size of a clef change above the staff, as a share of its full size
+const ABOVE_STAFF_CLEF_CHANGE = 0.3
 
 // room right of the last column: its note head, a stacked second's offset and
 // the ledger lines' overhang
@@ -46,6 +54,26 @@ export function groupOffsets(column, keySignature) {
     lastRow = row
     return offset
   })
+}
+
+// The notes of a column a staff draws, and whether each is pushed right by
+// the group offset: the score's notes for this staff when the column carries
+// its staves, else the notes of the column the staff's pitch filter keeps
+export function staffColumnNotes(column, {staff, keySignature, filterPitch}) {
+  if (Array.isArray(column) && column.staves && staff) {
+    let onStaff = column.filter((n, idx) => column.staves[idx] == staff)
+    return [onStaff, groupOffsets(onStaff, keySignature)]
+  }
+
+  let notes = Array.isArray(column) ? column : [column]
+  let offsets = groupOffsets(notes, keySignature)
+
+  if (!filterPitch) {
+    return [notes, offsets]
+  }
+
+  let keep = notes.map(n => filterPitch(parseNote(n)))
+  return [notes.filter((n, idx) => keep[idx]), offsets.filter((o, idx) => keep[idx])]
 }
 
 // The narrowest column, unscaled like the staff's noteWidth, that keeps an
@@ -86,6 +114,77 @@ export function fitStaffScale(staffWidth, span, {scale=1, keySignature=null, min
   return Math.max(Math.min(minScale, scale), Math.min(scale, fit))
 }
 
+// where the bar line before the column at idx is drawn
+function barLineLeft(props, offsetLeft, idx) {
+  let noteWidth = props.noteWidth
+  let headWidth = NOTE_HEAD_WIDTH * (props.scale || 1)
+  return Math.round(offsetLeft + idx * noteWidth - (noteWidth - headWidth) / 2)
+}
+
+// The boxes of the small clefs a staff draws where the clef of its columns
+// changes (see Staff#clefProps), in pixels from the top left of its notes, so
+// the staff can make room for the ones that reach above its lines. Each sits
+// beneath the notes in the gap before the column that changes it: between the
+// note heads of the column before (pushed right by a stacked second's offset)
+// and the room for an accidental of the column, or the column's bar line, and
+// no bigger than the clef heading the staff. A gap too narrow for it holds a
+// smaller clef above the staff and the note heads of the column before,
+// ending where the gap does
+export function clefChangeBoxes(props) {
+  let scale = props.scale || 1
+  let noteWidth = props.noteWidth
+  let offsetLeft = keySignatureWidth(props.keySignature) * scale
+  let staffHeight = STAFF_HEIGHT * scale
+  let margin = CLEF_CHANGE_MARGIN * scale
+  let room = noteWidth - (NOTE_HEAD_WIDTH + ACCIDENTAL_WIDTH) * scale - 2 * margin
+  let columnClef = idx => (props.columnClefs && props.columnClefs[idx]) || props
+
+  let out = []
+  let previous = null
+
+  props.notes.forEach((column, idx) => {
+    let beforeColumn = previous
+    previous = column
+
+    let clef = columnClef(idx)
+    if (idx == 0 || clef.cleffImage == columnClef(idx - 1).cleffImage) { return }
+
+    let [before, offsets] = staffColumnNotes(beforeColumn, props)
+    let offset = offsets.includes(true) ? GROUP_OFFSET * scale : 0
+
+    let glyph = clef.changeGlyph
+    let start = offsetLeft + (idx - 1) * noteWidth + NOTE_HEAD_WIDTH * scale + offset + margin
+    let space = room - offset
+    if (column.measure != null) {
+      space = Math.min(space, barLineLeft(props, offsetLeft, idx) - margin - start)
+    }
+    let fullHeight = glyph.height * staffHeight
+    let width = Math.min(fullHeight * glyph.aspect, space)
+
+    if (width >= MIN_CLEF_CHANGE_WIDTH * scale) {
+      let height = width / glyph.aspect
+      out.push({
+        idx, clef, width, height,
+        left: start + (space - width) / 2,
+        top: glyph.line * staffHeight - glyph.anchor * height,
+      })
+      return
+    }
+
+    let beforeClef = columnClef(idx - 1)
+    let headsTop = Math.min(0, ...before.map(name => {
+      let row = noteStaffOffset(props.keySignature.enharmonic(name))
+      return (beforeClef.upperRow - row) * staffHeight / 8 - NOTE_HEAD_HEIGHT * scale / 2
+    }))
+
+    let height = fullHeight * ABOVE_STAFF_CLEF_CHANGE
+    width = height * glyph.aspect
+    out.push({idx, clef, width, height, left: start + space - width, top: headsTop - margin - height})
+  })
+
+  return out
+}
+
 export default class StaffNotes extends React.Component {
   static propTypes = {
     keySignature: types.object.isRequired,
@@ -96,6 +195,9 @@ export default class StaffNotes extends React.Component {
     lowerRow: types.number.isRequired,
     heldNotes: types.object.isRequired,
     noteShaking: types.bool,
+    // the clef props (upperRow, lowerRow, cleffImage, staffClass) each column
+    // is drawn in, when they differ from the staff's (see Staff#clefProps)
+    columnClefs: types.array,
   }
 
   render() {
@@ -105,35 +207,50 @@ export default class StaffNotes extends React.Component {
     let scale = this.props.scale || 1
     let offsetLeft = keySignatureWidth(this.props.keySignature) * scale
 
+    // the notes, by the clef of their column, which places them
+    let byClef = new Map()
+    let group = (note, key) => {
+      let clef = this.columnClef(note.getStart())
+      if (!byClef.has(clef.cleffImage)) {
+        byClef.set(clef.cleffImage, {clef, notes: [], held: []})
+      }
+      byClef.get(clef.cleffImage)[key].push(note)
+    }
+    songNotes.forEach(note => group(note, "notes"))
+    heldSongNotes.forEach(note => group(note, "held"))
+
     return <div ref="notes" className={this.classNames()}>
-      <LedgerLines key="ledger_lines"
-        offsetLeft={offsetLeft}
-        upperRow={this.props.upperRow}
-        lowerRow={this.props.lowerRow}
-        notes={songNotes.concat(heldSongNotes)}
-        pixelsPerBeat={this.props.noteWidth}
-        scale={scale}
-      />
+      {this.renderClefChanges()}
+      {[...byClef.values()].map(({clef, notes, held}, idx) => [
+        <LedgerLines key={`ledger_lines-${idx}`}
+          offsetLeft={offsetLeft}
+          upperRow={clef.upperRow}
+          lowerRow={clef.lowerRow}
+          notes={notes.concat(held)}
+          pixelsPerBeat={this.props.noteWidth}
+          scale={scale}
+        />,
 
-      <WholeNotes key="notes"
-        offsetLeft={offsetLeft}
-        keySignature={this.props.keySignature}
-        upperRow={this.props.upperRow}
-        lowerRow={this.props.lowerRow}
-        notes={songNotes}
-        noteClasses={noteClasses}
-        pixelsPerBeat={this.props.noteWidth}
-      />
+        <WholeNotes key={`notes-${idx}`}
+          offsetLeft={offsetLeft}
+          keySignature={this.props.keySignature}
+          upperRow={clef.upperRow}
+          lowerRow={clef.lowerRow}
+          notes={notes}
+          noteClasses={noteClasses}
+          pixelsPerBeat={this.props.noteWidth}
+        />,
 
-      <WholeNotes key="held_notes"
-        offsetLeft={offsetLeft}
-        keySignature={this.props.keySignature}
-        upperRow={this.props.upperRow}
-        lowerRow={this.props.lowerRow}
-        notes={heldSongNotes}
-        staticNoteClasses={styles.held}
-        pixelsPerBeat={this.props.noteWidth}
-      />
+        <WholeNotes key={`held_notes-${idx}`}
+          offsetLeft={offsetLeft}
+          keySignature={this.props.keySignature}
+          upperRow={clef.upperRow}
+          lowerRow={clef.lowerRow}
+          notes={held}
+          staticNoteClasses={styles.held}
+          pixelsPerBeat={this.props.noteWidth}
+        />,
+      ])}
 
       {this.renderBarLines(offsetLeft)}
       {this.renderAnnotations()}
@@ -156,6 +273,11 @@ export default class StaffNotes extends React.Component {
       })
 
     return this.filterVisibleNotes(notes)
+  }
+
+  // the clef props the column at idx is drawn in
+  columnClef(idx) {
+    return (this.props.columnClefs && this.props.columnClefs[idx]) || this.props
   }
 
   // filter notes so only the ones visible for this staff returned
@@ -196,40 +318,32 @@ export default class StaffNotes extends React.Component {
     }
 
     this.props.notes.forEach((column, columnIdx) => {
-      let withClasses = (note) => {
+      let [columnNotes, offsets] = staffColumnNotes(column, this.props)
+
+      columnNotes.forEach((n, idx) => {
+        let sNote = new SongNote(n, beat, dur)
+
+        if (offsets[idx]) {
+          appendClass(sNote, "group_offset")
+        }
+
         if (columnIdx == 0) {
           if (this.props.noteShaking) {
-            appendClass(note, "noteshake")
+            appendClass(sNote, "noteshake")
           }
 
-          if (this.props.heldNotes[note.note]) {
-            appendClass(note, "held")
+          if (this.props.heldNotes[sNote.note]) {
+            appendClass(sNote, "held")
           }
         }
 
-        return note
-      }
-
-      if (Array.isArray(column)) {
-        let offsets = groupOffsets(column, this.props.keySignature)
-        column.forEach((n, idx) => {
-          let sNote = new SongNote(n, beat, dur)
-
-          if (offsets[idx]) {
-            appendClass(sNote, "group_offset")
-          }
-
-          notes.push(withClasses(sNote))
-        })
-
-      } else {
-        notes.push(withClasses(new SongNote(column, beat, dur)))
-      }
+        notes.push(sNote)
+      })
 
       beat += 1
     })
 
-    return [this.filterVisibleNotes(notes), noteClasses]
+    return [notes, noteClasses]
   }
 
   classNames()  {
@@ -245,9 +359,6 @@ export default class StaffNotes extends React.Component {
   // moves with its column. The bar number is written above it, on the upper
   // staff only of a grand staff
   renderBarLines(offsetLeft) {
-    let noteWidth = this.props.noteWidth
-    let headWidth = NOTE_HEAD_WIDTH * (this.props.scale || 1)
-    let before = (noteWidth - headWidth) / 2
     let showNumbers = this.props.showAnnotations !== false
 
     let out = []
@@ -257,12 +368,26 @@ export default class StaffNotes extends React.Component {
       out.push(<div
         key={`bar-line-${idx}`}
         className={styles.bar_line}
-        style={{left: `${Math.round(offsetLeft + idx * noteWidth - before)}px`}}
+        style={{left: `${barLineLeft(this.props, offsetLeft, idx)}px`}}
         data-measure={column.measure}
         data-label={showNumbers ? column.measure : null} />)
     })
 
     return out
+  }
+
+  // the small clefs where the clef of this staff changes (see clefChangeBoxes)
+  renderClefChanges() {
+    return clefChangeBoxes(this.props).map(box => <img
+      key={`clef-change-${box.idx}`}
+      className={styles.clef_change}
+      style={{
+        left: `${box.left}px`,
+        top: `${box.top}px`,
+        width: `${box.width}px`,
+        height: `${box.height}px`,
+      }}
+      src={box.clef.cleffImage} />)
   }
 
   renderAnnotations() {
