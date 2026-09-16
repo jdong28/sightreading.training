@@ -28,6 +28,11 @@ const GRAND_STAFF_GAP = 70
 const HEAD_ABOVE_ROW = 0.2 * 0.47
 const HEAD_BELOW_ROW = 0.2 - HEAD_ABOVE_ROW
 
+// An accidental drawn on a note is three heads tall and starts a head above
+// it (.accidental.sharp and .natural in staff.module.css), so it reaches a
+// head's height further past the note's row than the head does
+const ACCIDENTAL_PAST_HEAD = 0.2
+
 // the props that draw a staff in a clef, by the clef sign of st/musicxml
 export const CLEF_PROPS = {
   g: {
@@ -103,10 +108,15 @@ function ledgerSteps(props, row) {
   return 0
 }
 
-// The props a staff draws its notes with: the clef of the score at its head
-// column over its own, and columnClefs, the clef props each column is drawn
-// in, when the columns carry the score's clefs (see columnClefSigns)
+// The props a staff draws its notes with: its columns at the staff's scale,
+// the clef of the score at its head column over its own, and columnClefs, the
+// clef props each column is drawn in, when the columns carry the score's
+// clefs (see columnClefSigns)
 function staffClefProps(props) {
+  if (props.noteWidth) {
+    props = {...props, noteWidth: Math.floor(props.noteWidth * (props.scale || 1))}
+  }
+
   let columnClefs = columnClefProps(props.notes, props.staff, props)
   if (!columnClefs) {
     return props
@@ -127,21 +137,27 @@ export function notesReach(props) {
   let above = 0
   let below = 0
 
-  let include = (clef, row) => {
+  let include = (clef, row, accidental) => {
     let steps = ledgerSteps(clef, row)
 
     if (!steps) { return }
 
+    let past = accidental ? ACCIDENTAL_PAST_HEAD : 0
+
     if (row > clef.upperRow) {
-      above = Math.max(above, steps * height / 8 + HEAD_ABOVE_ROW * height)
+      above = Math.max(above, steps * height / 8 + (HEAD_ABOVE_ROW + past) * height)
     } else {
-      below = Math.max(below, steps * height / 8 + HEAD_BELOW_ROW * height)
+      below = Math.max(below, steps * height / 8 + (HEAD_BELOW_ROW + past) * height)
     }
   }
 
   let kept = name => !props.filterPitch || props.filterPitch(parseNote(name))
-  // where a whole note is drawn, in the key signature the staff spells it in
-  let drawnRow = name => noteStaffOffset(props.keySignature.enharmonic(name))
+  // a whole note as the staff draws it: the row of the name it is spelled
+  // with in the key signature, and whether an accidental is drawn on it
+  let drawn = name => {
+    let spelled = props.keySignature.enharmonic(name)
+    return [noteStaffOffset(spelled), props.keySignature.accidentalsForNote(spelled) != null]
+  }
 
   if (props.notes instanceof SongNoteList) {
     props.notes.forEach(note => {
@@ -155,7 +171,7 @@ export function notesReach(props) {
 
       props.unitColumns.forEach((column, idx) => {
         let [columnNotes] = staffColumnNotes(column, props)
-        columnNotes.forEach(name => include((columnClefs && columnClefs[idx]) || props, drawnRow(name)))
+        columnNotes.forEach(name => include((columnClefs && columnClefs[idx]) || props, ...drawn(name)))
       })
 
       clefChangeBoxes({...props, notes: props.unitColumns, columnClefs}).forEach(box => {
@@ -165,7 +181,7 @@ export function notesReach(props) {
 
     Object.keys(props.heldNotes || {}).forEach(name => {
       if (!props.notes.inHead(name) && kept(name)) {
-        include(props, drawnRow(name))
+        include(props, ...drawn(name))
       }
     })
   }
@@ -233,7 +249,6 @@ export class Staff extends React.PureComponent {
     let staffNotes = null
 
     if (props.notes instanceof NoteList) {
-      props = {...props, noteWidth: Math.floor(props.noteWidth * scale)}
       staffNotes = <StaffNotes ref="notes" {...props}></StaffNotes>
     }
 

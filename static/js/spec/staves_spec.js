@@ -377,7 +377,8 @@ describe("staves", function() {
         upper: ["C", 4],
       }))
       let classicColumns = sectionColumns(classic, 1, 4)
-      renderStaff(GrandStaff, classicColumns, {unitColumns: classicColumns})
+      let classicProps = {unitColumns: classicColumns, keySignature: new KeySignature(0)}
+      renderStaff(GrandStaff, classicColumns, classicProps)
 
       expect(notePitches(staffEl("upper"))).toContain(C4)
       expect(notePitches(staffEl("lower"))).toContain(B3)
@@ -385,9 +386,72 @@ describe("staves", function() {
       expect(head(staffEl("upper"), C4).bottom)
         .toBeLessThanOrEqual(head(staffEl("lower"), B3).top)
 
+      // in F major the same B3 carries a natural, which reaches further than
+      // its head, so the gap opens for it
+      renderStaff(GrandStaff, classicColumns, {unitColumns: classicColumns})
+      expect(staffEl("lower").querySelector(`.${staffStyles.natural}`)).not.toBe(null)
+      expect(gap()).toBeGreaterThan(70)
+      expect(head(staffEl("upper"), C4).bottom)
+        .toBeLessThanOrEqual(head(staffEl("lower"), B3).top)
+
       // as does a drill of bare columns, split at middle C
       renderStaff(GrandStaff, [[noteName(E4)], [noteName(G3)]])
       expect(gap()).toEqual(70)
+    })
+
+    it("keeps that room at the staff's own scale, where the columns are narrowest", function() {
+      // the narrowest columns at this scale leave no room on the lower staff
+      // for its clef change, so it goes above the staff's lines and into the
+      // gap, where the right hand's A3 already hangs below the upper staff
+      let columns = clefChangeCard({
+        notes: [["C", 3], ["C", 4], ["D", 4], ["E", 4]],
+        upper: ["A", 3],
+      })
+      let keySignature = new KeySignature(0)
+
+      renderStaff(GrandStaff, columns, {
+        scale: 0.8,
+        keySignature,
+        noteWidth: minNoteWidth(columns, keySignature),
+        unitColumns: columns,
+      })
+
+      let upper = staffEl("upper")
+      let [change] = clefChanges(staffEl("lower"))
+      expect(change.getAttribute("src")).toContain("clefs.G")
+      expect(clefBox(change).top).toBeLessThan(0)
+
+      let heads = notesOn(upper).map(note => note.getBoundingClientRect().bottom)
+      expect(heads.length).toEqual(4)
+      expect(change.getBoundingClientRect().top).toBeGreaterThanOrEqual(Math.max(...heads))
+    })
+
+    it("makes room for the accidental on a note far outside the staff", function() {
+      // the score writes the left hand in treble clef, so its B3 hangs three
+      // ledger lines below, and F major draws a natural on it
+      let song = parseMusicXML(clefChangeScore({
+        clefs: [["G", 2], ["G", 2]],
+        notes: [["B", 3], ["B", 3], ["B", 3], ["B", 3]],
+      }))
+      let columns = sectionColumns(song, 1, 4)
+
+      container.classList.add(staffStyles.staff_wrapper)
+      renderStaff(GrandStaff, columns, {unitColumns: columns})
+
+      let lower = staffEl("lower")
+      expect(clefImage(lower)).toContain("clefs.G")
+      expect(new Set(notePitches(lower))).toEqual(new Set([B3]))
+
+      let naturals = [...lower.querySelectorAll(
+        `.${staffStyles.staff_notes} .${staffStyles.natural}`)]
+      expect(naturals.length).toEqual(4)
+
+      let wrapper = container.getBoundingClientRect()
+      for (let natural of naturals) {
+        let box = natural.getBoundingClientRect()
+        expect(box.bottom).toBeGreaterThan(lower.getBoundingClientRect().bottom)
+        expect(box.bottom).toBeLessThanOrEqual(wrapper.bottom)
+      }
     })
 
     it("splits wrong held notes at middle C on columns without the score's clefs", function() {

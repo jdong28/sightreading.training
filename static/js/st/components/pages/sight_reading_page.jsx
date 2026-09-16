@@ -343,8 +343,8 @@ export default class SightReadingPage extends React.Component {
     }
 
     // enough columns to show the whole of any card of a piece
-    let cardColumns = (generatorInstance.cards || []).map(card => card.columns.length)
-    notes.fillBuffer(Math.max(this.state.bufferSize, ...cardColumns))
+    let cardColumnCounts = (generatorInstance.cards || []).map(card => card.columns.length)
+    notes.fillBuffer(Math.max(this.state.bufferSize, ...cardColumnCounts))
     return this.setState({ notes: notes })
   }
 
