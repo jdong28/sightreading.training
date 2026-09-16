@@ -47,14 +47,19 @@ export const CLEF_PROPS = {
 // score's clefs: the clef of that staff of a grand staff, or for a staff on
 // its own the clef of the one staff the drill's hand is on. A column without
 // clefs, eg. the gap after a card, keeps the sign of the column before it, or
-// of the first column with clefs when it leads
+// of the first column with clefs when it leads. A song's notes are not
+// columns and never carry clefs
 function columnClefSigns(notes, staff) {
-  let signs = Array.isArray(notes) ? notes.map(column => {
+  if (!Array.isArray(notes) || notes instanceof SongNoteList) {
+    return null
+  }
+
+  let signs = notes.map(column => {
     if (!column.clefs) { return undefined }
     if (staff) { return column.clefs[staff] }
     let staves = Object.keys(column.clefs)
     return staves.length == 1 ? column.clefs[staves[0]] : null
-  }) : []
+  })
 
   let sign = signs.find(s => s !== undefined)
   if (sign === undefined) {
@@ -319,6 +324,20 @@ export class GrandStaff extends React.PureComponent {
     }
   }
 
+  // The clef props each staff's head column is drawn in, kept while the
+  // notes are, since staffForPitch looks them up for every note drawn
+  headClefs() {
+    if (this.clefsFor != this.props.notes) {
+      this.clefsFor = this.props.notes
+      this.clefs = {
+        upper: headClefProps(this.props.notes, "upper", CLEF_PROPS.g),
+        lower: headClefProps(this.props.notes, "lower", CLEF_PROPS.f),
+      }
+    }
+
+    return this.clefs
+  }
+
   // The staff a note that doesn't carry one goes on, notably a wrong note
   // held down: the one whose clef at the head column leaves it fewest ledger
   // steps from the five lines, so it is always drawn near a staff. A note
@@ -326,8 +345,7 @@ export class GrandStaff extends React.PureComponent {
   // which splits the classic treble over bass layout at middle C
   staffForPitch(pitch) {
     let row = noteStaffOffset(noteName(pitch))
-    let upper = headClefProps(this.props.notes, "upper", CLEF_PROPS.g)
-    let lower = headClefProps(this.props.notes, "lower", CLEF_PROPS.f)
+    let {upper, lower} = this.headClefs()
 
     let upperSteps = ledgerSteps(upper, row)
     let lowerSteps = ledgerSteps(lower, row)

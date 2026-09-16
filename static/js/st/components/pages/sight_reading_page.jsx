@@ -401,15 +401,18 @@ export default class SightReadingPage extends React.Component {
     return this.unitColumnsCache
   }
 
-  // The legacy staff's scale, column width and unit. In wait mode a piece's
-  // card (or whole section) is fitted to the plate so every note of it shows:
-  // the scale fits every card of the drill, so the staff keeps its size from
-  // card to card, and the columns fit the card on the staff
+  // The legacy staff's scale, column width and unit: the columns of the
+  // piece's card (or whole section) on the staff, which fix its margins in
+  // every mode. In wait mode the card is also fitted to the plate so every
+  // note of it shows: the scale fits every card of the drill, so the staff
+  // keeps its size from card to card, and the columns fit the card on it
   staffLayout() {
     let {scale, noteWidth, staffWidth, keySignature} = this.state
-    let current = this.state.mode == "wait" && this.currentCard()
-    if (!current) {
-      return {scale, noteWidth}
+    let current = this.currentCard()
+    let unitColumns = current ? this.unitColumns(current.card) : null
+
+    if (!current || this.state.mode != "wait") {
+      return {scale, noteWidth, unitColumns}
     }
 
     scale = Math.min(...this.state.notes.generator.cards.map(card =>
@@ -421,7 +424,7 @@ export default class SightReadingPage extends React.Component {
       scale, keySignature, maxWidth: noteWidth, minWidth: minNoteWidth(current.card.columns, keySignature),
     })
 
-    return {scale, noteWidth, unitColumns: this.unitColumns(current.card)}
+    return {scale, noteWidth, unitColumns}
   }
 
   // Begin: a fresh session in new stats, with the elapsed clock running

@@ -16,7 +16,7 @@ import {
 } from "st/song_sections"
 
 import {
-  MeasureCardDeck, MeasureCardGenerator, measureCards, sectionCard, cardColumn,
+  MeasureCardDeck, MeasureCardGenerator, measureCards, sectionCard, cardColumns,
   IN_ORDER, RANDOM_ORDER, MAX_MEASURES_PER_CARD
 } from "st/measure_cards"
 
@@ -691,7 +691,7 @@ export const GENERATORS = [
       let measures = piece ? pieceSectionMeasures(staff, settings, pieceSong(piece)) : []
       if (measures.length) {
         let card = sectionCard(measures)
-        let columns = card.columns.map((column, idx) => cardColumn(card, idx))
+        let columns = cardColumns(card)
         return new SheetMusicGenerator(columns, {card})
       }
 
