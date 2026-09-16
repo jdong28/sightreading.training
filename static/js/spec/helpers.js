@@ -211,14 +211,15 @@ export const midMeasureClefScore = lower => `<?xml version="1.0" encoding="UTF-8
 </score-partwise>`
 
 // A 4/4 piano piece of four measures, each a whole note on both staves: the
-// upper staff in treble clef plays E5; the lower staff plays notes, one
+// upper staff in treble clef plays upper; the lower staff plays notes, one
 // [step, octave] (or a chord of them) a measure, opening in clefs[0] and
 // changing to clefs[1] from measure 3. By
 // default it opens in bass clef with C3 and E3 and changes to treble clef for
-// C4 and E4
+// C4 and E4, under E5
 export const clefChangeScore = ({
   clefs=[["F", 4], ["G", 2]],
   notes=[["C", 3], ["E", 3], ["C", 4], ["E", 4]],
+  upper=["E", 5],
 }={}) => `<?xml version="1.0" encoding="UTF-8"?>
 <score-partwise version="4.0">
   <work><work-title>Clef Change</work-title></work>
@@ -227,7 +228,7 @@ export const clefChangeScore = ({
     ${notes.map((lower, idx) => `<measure number="${idx + 1}">
       ${idx == 0 ? `<attributes><divisions>1</divisions><time><beats>4</beats><beat-type>4</beat-type></time><staves>2</staves>${clefXML(1, "G", 2)}${clefXML(2, ...clefs[0])}</attributes>` : ""}
       ${idx == 2 ? `<attributes>${clefXML(2, ...clefs[1])}</attributes>` : ""}
-      ${noteXML("E", 5, 4, 1)}
+      ${noteXML(upper[0], upper[1], 4, 1)}
       <backup><duration>4</duration></backup>
       ${(Array.isArray(lower[0]) ? lower : [lower])
         .map(([step, octave], chordIdx) => noteXML(step, octave, 4, 2, chordIdx ? "<chord/>" : "")).join("")}

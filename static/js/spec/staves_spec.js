@@ -342,6 +342,54 @@ describe("staves", function() {
       expect(new Set(heights).size).toEqual(1)
     })
 
+    it("keeps the room both staves reach into between them", function() {
+      // the right hand dips to A3 on the upper staff while the left hand
+      // reaches C4 on the lower one, so both crowd the gap at the same column
+      let song = parseMusicXML(clefChangeScore({
+        clefs: [["F", 4], ["F", 4]],
+        notes: [["C", 4], ["C", 4], ["C", 4], ["C", 4]],
+        upper: ["A", 3],
+      }))
+      let columns = sectionColumns(song, 1, 4)
+      renderStaff(GrandStaff, columns, {unitColumns: columns})
+
+      let upper = staffEl("upper")
+      let lower = staffEl("lower")
+      expect(clefImage(upper)).toContain("clefs.G")
+      expect(clefImage(lower)).toContain("clefs.F")
+      expect(new Set(notePitches(upper))).toEqual(new Set([A3]))
+      expect(new Set(notePitches(lower))).toEqual(new Set([C4]))
+
+      let gap = () => staffEl("lower").getBoundingClientRect().top -
+        staffEl("upper").getBoundingClientRect().bottom
+      let head = (el, pitch) =>
+        notesOn(el).find(note => +note.dataset.midiNote == pitch).getBoundingClientRect()
+
+      // the gap grows past the stylesheet's own, so the heads never meet
+      expect(gap()).toBeGreaterThan(70)
+      expect(head(upper, A3).bottom).toBeLessThanOrEqual(head(lower, C4).top)
+
+      // a score on the classic treble over bass staves never reaches that
+      // far, so it keeps the gap it always had
+      let classic = parseMusicXML(clefChangeScore({
+        clefs: [["F", 4], ["F", 4]],
+        notes: [["B", 3], ["B", 3], ["B", 3], ["B", 3]],
+        upper: ["C", 4],
+      }))
+      let classicColumns = sectionColumns(classic, 1, 4)
+      renderStaff(GrandStaff, classicColumns, {unitColumns: classicColumns})
+
+      expect(notePitches(staffEl("upper"))).toContain(C4)
+      expect(notePitches(staffEl("lower"))).toContain(B3)
+      expect(gap()).toEqual(70)
+      expect(head(staffEl("upper"), C4).bottom)
+        .toBeLessThanOrEqual(head(staffEl("lower"), B3).top)
+
+      // as does a drill of bare columns, split at middle C
+      renderStaff(GrandStaff, [[noteName(E4)], [noteName(G3)]])
+      expect(gap()).toEqual(70)
+    })
+
     it("splits wrong held notes at middle C on columns without the score's clefs", function() {
       renderStaff(GrandStaff, [[noteName(E4)], [noteName(G3)]],
         {heldNotes: {[noteName(C4)]: true, [noteName(B3)]: true}})

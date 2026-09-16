@@ -13,14 +13,6 @@
     }
 }
 
-.grand_staff {
-    .staff {
-        &:first-child {
-            margin-bottom: calc(70px * var(--staff-scale, 1));
-        }
-    }
-}
-
 /* The fixed offsets scale with --staff-scale, set by the Staff component
    (st/components/staves) from its scale prop along with its height */
 .staff {

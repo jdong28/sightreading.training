@@ -18,6 +18,16 @@ import styles from "st/components/staff.module.css"
 const DEFAULT_HEIGHT = 120
 const DEFAULT_MARGIN = 60
 
+// the least room a grand staff keeps between its two staves, which is what
+// the classic treble over bass layout needs for the notes between them
+const GRAND_STAFF_GAP = 70
+
+// A whole note's head is 20% of the staff tall and hangs 47% of its own
+// height above the line of its row (see .note in staff.module.css), so it
+// reaches this much of a staff past that line, further below than above
+const HEAD_ABOVE_ROW = 0.2 * 0.47
+const HEAD_BELOW_ROW = 0.2 - HEAD_ABOVE_ROW
+
 // the props that draw a staff in a clef, by the clef sign of st/musicxml
 export const CLEF_PROPS = {
   g: {
@@ -93,6 +103,76 @@ function ledgerSteps(props, row) {
   return 0
 }
 
+// The props a staff draws its notes with: the clef of the score at its head
+// column over its own, and columnClefs, the clef props each column is drawn
+// in, when the columns carry the score's clefs (see columnClefSigns)
+function staffClefProps(props) {
+  let columnClefs = columnClefProps(props.notes, props.staff, props)
+  if (!columnClefs) {
+    return props
+  }
+
+  return {...props, ...columnClefs[0], columnClefs}
+}
+
+// How far past its five lines a staff drawn with props reaches, above and
+// below, in pixels: its notes' heads, and the clef changes too big for the
+// gaps they mark, which go above the staff. A drill measures the whole unit
+// its notes are a window of rather than the window, so the staff holds its
+// place as the window slides, plus the notes held down that aren't in its
+// head, which land wherever the player's wrong note falls (see
+// StaffNotes#convertHeldToSongNotes)
+export function notesReach(props) {
+  let height = DEFAULT_HEIGHT * (props.scale || 1)
+  let above = 0
+  let below = 0
+
+  let include = (clef, row) => {
+    let steps = ledgerSteps(clef, row)
+
+    if (!steps) { return }
+
+    if (row > clef.upperRow) {
+      above = Math.max(above, steps * height / 8 + HEAD_ABOVE_ROW * height)
+    } else {
+      below = Math.max(below, steps * height / 8 + HEAD_BELOW_ROW * height)
+    }
+  }
+
+  let kept = name => !props.filterPitch || props.filterPitch(parseNote(name))
+  // where a whole note is drawn, in the key signature the staff spells it in
+  let drawnRow = name => noteStaffOffset(props.keySignature.enharmonic(name))
+
+  if (props.notes instanceof SongNoteList) {
+    props.notes.forEach(note => {
+      if (kept(note.note)) { include(props, noteStaffOffset(note.note)) }
+    })
+  }
+
+  if (props.notes instanceof NoteList) {
+    if (props.unitColumns) {
+      let columnClefs = columnClefProps(props.unitColumns, props.staff, props)
+
+      props.unitColumns.forEach((column, idx) => {
+        let [columnNotes] = staffColumnNotes(column, props)
+        columnNotes.forEach(name => include((columnClefs && columnClefs[idx]) || props, drawnRow(name)))
+      })
+
+      clefChangeBoxes({...props, notes: props.unitColumns, columnClefs}).forEach(box => {
+        above = Math.max(above, -box.top)
+      })
+    }
+
+    Object.keys(props.heldNotes || {}).forEach(name => {
+      if (!props.notes.inHead(name) && kept(name)) {
+        include(props, drawnRow(name))
+      }
+    })
+  }
+
+  return [above, below]
+}
+
 export class Staff extends React.PureComponent {
   static propTypes = {
     // rendering props
@@ -117,19 +197,14 @@ export class Staff extends React.PureComponent {
     // notes are a sliding window of, which fixes the staff's margins while
     // that window slides. Without it a drill keeps the stylesheet's margins
     unitColumns: types.array,
+    // the room this staff keeps below it, set by GrandStaff so the notes of
+    // its two staves never meet
+    gapBelow: types.number,
   }
 
-  // The props with the clef the score uses on this staff at its first
-  // column, and columnClefs, the clef props each column is drawn in, when
-  // the columns carry the clefs of the score's staves (see columnClefSigns),
-  // else the staff's own
+  // the props this staff draws its notes with (see staffClefProps)
   clefProps() {
-    let columnClefs = columnClefProps(this.props.notes, this.props.staff, this.props)
-    if (!columnClefs) {
-      return this.props
-    }
-
-    return {...this.props, ...columnClefs[0], columnClefs}
+    return staffClefProps(this.props)
   }
 
   // skips react for performance
@@ -142,68 +217,14 @@ export class Staff extends React.PureComponent {
     this.refs.notes.setOffset(amount * noteWidth * scale)
   }
 
-  // The margins a staff needs above and below its lines for everything it
-  // draws outside them: a song's notes, and the notes held down that aren't
-  // in the head of a drill, which land wherever the player's wrong note falls
-  // (see StaffNotes#convertHeldToSongNotes). A drill measures its own notes,
-  // and the clef changes too big for the gaps they mark, over the whole unit
-  // its notes are a window of rather than the window, so the staff holds its
-  // place as the window slides. props are the staff's clef props
-  notesMargins(props) {
-    let above = 0
-    let below = 0
+  // The margin that keeps something reaching that far past the staff's lines
+  // inside the plate, with a note head's room to spare, or null when the
+  // stylesheet's own margin already does
+  reachMargin(reach, scale) {
+    if (!reach) { return null }
 
-    let include = (clef, row) => {
-      let steps = ledgerSteps(clef, row)
-
-      if (!steps) { return }
-
-      if (row > clef.upperRow) {
-        above = Math.max(above, this.rowsMargin(steps))
-      } else {
-        below = Math.max(below, this.rowsMargin(steps))
-      }
-    }
-
-    let kept = name => !props.filterPitch || props.filterPitch(parseNote(name))
-    // where a whole note is drawn, in the key signature the staff spells it in
-    let drawnRow = name => noteStaffOffset(props.keySignature.enharmonic(name))
-
-    if (props.notes instanceof SongNoteList) {
-      props.notes.forEach(note => {
-        if (kept(note.note)) { include(props, noteStaffOffset(note.note)) }
-      })
-    }
-
-    if (props.notes instanceof NoteList) {
-      if (props.unitColumns) {
-        let columnClefs = columnClefProps(props.unitColumns, props.staff, props)
-
-        props.unitColumns.forEach((column, idx) => {
-          let [columnNotes] = staffColumnNotes(column, props)
-          columnNotes.forEach(name => include((columnClefs && columnClefs[idx]) || props, drawnRow(name)))
-        })
-
-        clefChangeBoxes({...props, notes: props.unitColumns, columnClefs}).forEach(box => {
-          above = Math.max(above, -box.top)
-        })
-      }
-
-      Object.keys(props.heldNotes || {}).forEach(name => {
-        if (!props.notes.inHead(name) && kept(name)) {
-          include(props, drawnRow(name))
-        }
-      })
-    }
-
-    return [above, below]
-  }
-
-  // the margin a staff needs beside its lines to show a note steps rows
-  // outside them: the rows, half a line spacing each, and the note's head
-  rowsMargin(steps) {
-    let height = DEFAULT_HEIGHT * (this.props.scale || 1)
-    return steps * height / 8 + height * 0.2
+    let margin = reach + HEAD_BELOW_ROW * DEFAULT_HEIGHT * scale
+    return margin > DEFAULT_MARGIN * scale ? margin : null
   }
 
   render() {
@@ -222,10 +243,14 @@ export class Staff extends React.PureComponent {
 
     let height = DEFAULT_HEIGHT * scale
 
-    let [above, below] = this.notesMargins(props)
+    let [above, below] = notesReach(props)
 
-    let marginTop = above > DEFAULT_MARGIN * scale ? above : null
-    let marginBottom = below > DEFAULT_MARGIN * scale ? below : null
+    let marginTop = this.reachMargin(above, scale)
+    let marginBottom = this.reachMargin(below, scale)
+
+    if (this.props.gapBelow > (marginBottom || 0)) {
+      marginBottom = this.props.gapBelow
+    }
 
     // the fixed offsets of staff.module.css scale with --staff-scale
     return <div
@@ -365,15 +390,30 @@ export class GrandStaff extends React.PureComponent {
     return this.staffForPitch(pitch) == "lower"
   }
 
+  // the props one of the two staves draws with, so how far it reaches past
+  // its lines can be measured before it renders
+  staffProps(staff) {
+    let [defaults, filterPitch] = staff == "upper" ?
+      [CLEF_PROPS.g, this.filterGStaff] : [CLEF_PROPS.f, this.filterFStaff]
+
+    return staffClefProps({...defaults, ...this.props, staff, filterPitch})
+  }
+
   // Notes of columns that carry their staff (an imported piece) go on the
   // staff of the score, drawn in the score's clefs; other notes go on the
-  // staff whose clef draws them nearest its lines
+  // staff whose clef draws them nearest its lines. The two staves keep the
+  // room both of them reach into between them, so their notes never meet
   render() {
-    return <div className={styles.grand_staff}>
+    let scale = this.props.scale || 1
+    let [, upperBelow] = notesReach(this.staffProps("upper"))
+    let [lowerAbove] = notesReach(this.staffProps("lower"))
+
+    return <div>
       <GStaff
         ref={this.gstaff}
         filterPitch={this.filterGStaff}
         {...this.props}
+        gapBelow={Math.max(GRAND_STAFF_GAP * scale, upperBelow + lowerAbove)}
         staff="upper" />
       <FStaff
         ref={this.fstaff}
