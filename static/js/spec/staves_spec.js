@@ -10,7 +10,7 @@ import {KeySignature, noteName, parseNote} from "st/music"
 import {parseMusicXML} from "st/musicxml"
 import {extractSectionColumns} from "st/song_sections"
 import {
-  sectionCard, cardColumn, measureCards, MeasureCardDeck, MeasureCardGenerator, IN_ORDER
+  sectionCard, cardColumn, cardColumns, measureCards, MeasureCardDeck, MeasureCardGenerator, IN_ORDER
 } from "st/measure_cards"
 import {SheetMusicGenerator} from "st/generators"
 import {pieceSectionMeasures, BOTH_HANDS, RIGHT_HAND, LEFT_HAND} from "st/data"
@@ -247,8 +247,9 @@ describe("staves", function() {
         notes: [["A", 3], ["A", 3], ["A", 3], ["A", 3]],
       }))
 
+      let columns = sectionColumns(song, 1, 4)
       container.classList.add(staffStyles.staff_wrapper)
-      renderStaff(GrandStaff, sectionColumns(song, 1, 4))
+      renderStaff(GrandStaff, columns, {unitColumns: columns})
 
       let lower = staffEl("lower")
       expect(clefImage(lower)).toContain("clefs.G")
@@ -270,10 +271,13 @@ describe("staves", function() {
       let song = parseMusicXML(clefChangeScore({notes: [["C", 3], ["C", 4], ["D", 4], ["E", 4]]}))
       let [card] = measureCards(
         pieceSectionMeasures(GRAND, {startMeasure: 1, endMeasure: 4, hand: LEFT_HAND}, song), 4)
-      let columns = card.columns.map((column, idx) => cardColumn(card, idx))
+      let columns = cardColumns(card)
 
       container.classList.add(staffStyles.staff_wrapper)
-      renderStaff(FStaff, columns, {noteWidth: minNoteWidth(columns, new KeySignature(-1))})
+      renderStaff(FStaff, columns, {
+        noteWidth: minNoteWidth(columns, new KeySignature(-1)),
+        unitColumns: columns,
+      })
 
       let single = container.querySelector(`.${staffStyles.staff}`)
       expect(clefImage(single)).toContain("clefs.F")
@@ -288,6 +292,54 @@ describe("staves", function() {
       expect(box.bottom).toBeLessThanOrEqual(c4.top)
       expect(box.top).toBeLessThan(staff.top)
       expect(box.top).toBeGreaterThanOrEqual(container.getBoundingClientRect().top)
+    })
+
+    it("holds the staff's margins as a drill's notes slide through its card", function() {
+      // the lower staff changes to treble clef inside the card, and the C4
+      // before the change pushes that clef above the staff
+      let song = parseMusicXML(clefChangeScore({notes: [["C", 3], ["C", 4], ["D", 4], ["E", 4]]}))
+      let [card] = measureCards(
+        pieceSectionMeasures(GRAND, {startMeasure: 1, endMeasure: 4, hand: BOTH_HANDS}, song), 4)
+      let unitColumns = cardColumns(card)
+      let keySignature = new KeySignature(-1)
+
+      let deck = new MeasureCardDeck([card], {pieceId: "p", order: IN_ORDER})
+      let generator = new MeasureCardGenerator(deck)
+      let notes = new NoteList([], {generator})
+      notes.fillBuffer(2)
+
+      container.classList.add(staffStyles.staff_wrapper)
+
+      let margins = []
+      let heights = []
+
+      for (let shift = 0; shift < unitColumns.length; shift++) {
+        flushSync(() => root.render(React.createElement(GrandStaff, {
+          notes,
+          heldNotes: {},
+          keySignature,
+          noteWidth: minNoteWidth(card.columns, keySignature),
+          scale: 1,
+          unitColumns,
+        })))
+
+        let lower = staffEl("lower")
+        margins.push(`${lower.style.marginTop} ${lower.style.marginBottom}`)
+        heights.push(container.getBoundingClientRect().height)
+
+        notes = notes.clone()
+        notes.shift()
+        notes.pushRandom()
+      }
+
+      generator.stop()
+
+      // the clef change is only ever in part of the window, but the card
+      // reserves room for it above the staff on every shift
+      expect(margins.length).toEqual(4)
+      expect(parseFloat(margins[0])).toBeGreaterThan(60)
+      expect(new Set(margins).size).toEqual(1)
+      expect(new Set(heights).size).toEqual(1)
     })
 
     it("splits wrong held notes at middle C on columns without the score's clefs", function() {

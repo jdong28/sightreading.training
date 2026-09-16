@@ -105,6 +105,15 @@ export function cardColumn(card, idx) {
 }
 
 /**
+ * Every column of the card, as the staff draws them.
+ * @param {MeasureCard} card
+ * @returns {string[][]}
+ */
+export function cardColumns(card) {
+  return card.columns.map((column, idx) => cardColumn(card, idx))
+}
+
+/**
  * How much a measure is favored by random picks, from its single measure
  * section stats: 1 when never missed, growing with the misses per hit.
  * @param {{hits: number, misses: number}} [stats]

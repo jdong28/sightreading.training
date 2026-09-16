@@ -39,6 +39,7 @@ import {getSession} from "st/app"
 
 import {StaffTwo} from "st/components/staff_two"
 import {fitNoteWidth, fitStaffScale, minNoteWidth} from "st/components/staff_notes"
+import {cardColumns} from "st/measure_cards"
 
 const DEFAULT_NOTE_WIDTH = 100
 const DEFAULT_SPEED = 4
@@ -389,10 +390,21 @@ export default class SightReadingPage extends React.Component {
     return {card, number: generator.currentCardNumber()}
   }
 
-  // The legacy staff's scale and column width. In wait mode a piece's card
-  // (or whole section) is fitted to the plate so every note of it shows: the
-  // scale fits every card of the drill, so the staff keeps its size from card
-  // to card, and the columns fit the card on the staff
+  // The columns of the card on the staff, kept while it is the current one
+  // so the staff is handed the same unit as its notes slide through it
+  unitColumns(card) {
+    if (this.unitColumnsCard != card) {
+      this.unitColumnsCard = card
+      this.unitColumnsCache = cardColumns(card)
+    }
+
+    return this.unitColumnsCache
+  }
+
+  // The legacy staff's scale, column width and unit. In wait mode a piece's
+  // card (or whole section) is fitted to the plate so every note of it shows:
+  // the scale fits every card of the drill, so the staff keeps its size from
+  // card to card, and the columns fit the card on the staff
   staffLayout() {
     let {scale, noteWidth, staffWidth, keySignature} = this.state
     let current = this.state.mode == "wait" && this.currentCard()
@@ -409,7 +421,7 @@ export default class SightReadingPage extends React.Component {
       scale, keySignature, maxWidth: noteWidth, minWidth: minNoteWidth(current.card.columns, keySignature),
     })
 
-    return {scale, noteWidth}
+    return {scale, noteWidth, unitColumns: this.unitColumns(current.card)}
   }
 
   // Begin: a fresh session in new stats, with the elapsed clock running
@@ -1113,7 +1125,7 @@ export default class SightReadingPage extends React.Component {
            maxScale = {0.3 * PLATE_STAFF_SCALE}
           />
       } else {
-        let {scale, noteWidth} = this.staffLayout()
+        let {scale, noteWidth, unitColumns} = this.staffLayout()
         staff = this.state.currentStaff.render.call(this, {
           heldNotes: this.state.heldNotes,
           notes: this.state.notes,
@@ -1121,6 +1133,7 @@ export default class SightReadingPage extends React.Component {
           noteWidth,
           noteShaking: this.state.noteShaking,
           scale,
+          unitColumns,
         })
       }
     }

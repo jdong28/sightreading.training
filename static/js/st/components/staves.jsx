@@ -49,7 +49,7 @@ export const CLEF_PROPS = {
 // clefs, eg. the gap after a card, keeps the sign of the column before it, or
 // of the first column with clefs when it leads
 function columnClefSigns(notes, staff) {
-  let signs = notes instanceof NoteList ? notes.map(column => {
+  let signs = Array.isArray(notes) ? notes.map(column => {
     if (!column.clefs) { return undefined }
     if (staff) { return column.clefs[staff] }
     let staves = Object.keys(column.clefs)
@@ -65,6 +65,13 @@ function columnClefSigns(notes, staff) {
     if (columnSign !== undefined) { sign = columnSign }
     return sign
   })
+}
+
+// the clef props each of notes' columns is drawn in on staff, the score's
+// when the columns carry them (see columnClefSigns), else null
+function columnClefProps(notes, staff, defaultProps) {
+  let signs = columnClefSigns(notes, staff)
+  return signs && signs.map(sign => CLEF_PROPS[sign] || defaultProps)
 }
 
 // the clef props a staff is drawn in at its head column, the score's when the
@@ -101,6 +108,10 @@ export class Staff extends React.PureComponent {
     // the grand staff this staff is ("upper" or "lower"), which draws the
     // notes of that staff when the columns carry it
     staff: types.string,
+    // Every column of the drill's current unit, the card (or section) the
+    // notes are a sliding window of, which fixes the staff's margins while
+    // that window slides. Without it a drill keeps the stylesheet's margins
+    unitColumns: types.array,
   }
 
   // The props with the clef the score uses on this staff at its first
@@ -108,12 +119,11 @@ export class Staff extends React.PureComponent {
   // the columns carry the clefs of the score's staves (see columnClefSigns),
   // else the staff's own
   clefProps() {
-    let signs = columnClefSigns(this.props.notes, this.props.staff)
-    if (!signs) {
+    let columnClefs = columnClefProps(this.props.notes, this.props.staff, this.props)
+    if (!columnClefs) {
       return this.props
     }
 
-    let columnClefs = signs.map(sign => CLEF_PROPS[sign] || this.props)
     return {...this.props, ...columnClefs[0], columnClefs}
   }
 
@@ -128,11 +138,12 @@ export class Staff extends React.PureComponent {
   }
 
   // The margins a staff needs above and below its lines for everything it
-  // draws outside them: a song's notes, the notes of each column drawn in
-  // that column's clef, the notes held down that aren't in the head of a
-  // drill, which land wherever the player's wrong note falls (see
-  // StaffNotes#convertHeldToSongNotes), and a clef change too big for the gap
-  // it marks, which goes above the staff. props are the staff's clef props
+  // draws outside them: a song's notes, and the notes held down that aren't
+  // in the head of a drill, which land wherever the player's wrong note falls
+  // (see StaffNotes#convertHeldToSongNotes). A drill measures its own notes,
+  // and the clef changes too big for the gaps they mark, over the whole unit
+  // its notes are a window of rather than the window, so the staff holds its
+  // place as the window slides. props are the staff's clef props
   notesMargins(props) {
     let above = 0
     let below = 0
@@ -160,20 +171,23 @@ export class Staff extends React.PureComponent {
     }
 
     if (props.notes instanceof NoteList) {
-      props.notes.forEach((column, idx) => {
-        let clef = (props.columnClefs && props.columnClefs[idx]) || props
-        let [columnNotes] = staffColumnNotes(column, props)
-        columnNotes.forEach(name => include(clef, drawnRow(name)))
-      })
+      if (props.unitColumns) {
+        let columnClefs = columnClefProps(props.unitColumns, props.staff, props)
+
+        props.unitColumns.forEach((column, idx) => {
+          let [columnNotes] = staffColumnNotes(column, props)
+          columnNotes.forEach(name => include((columnClefs && columnClefs[idx]) || props, drawnRow(name)))
+        })
+
+        clefChangeBoxes({...props, notes: props.unitColumns, columnClefs}).forEach(box => {
+          above = Math.max(above, -box.top)
+        })
+      }
 
       Object.keys(props.heldNotes || {}).forEach(name => {
         if (!props.notes.inHead(name) && kept(name)) {
           include(props, drawnRow(name))
         }
-      })
-
-      clefChangeBoxes(props).forEach(box => {
-        above = Math.max(above, -box.top)
       })
     }
 
