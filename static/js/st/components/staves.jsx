@@ -7,7 +7,7 @@ import NoteList from "st/note_list"
 import {SongNoteList} from "st/song_note_list"
 import ChordList from "st/chord_list"
 
-import {parseNote, noteStaffOffset, MIDDLE_C_PITCH} from "st/music"
+import {parseNote, noteName, noteStaffOffset} from "st/music"
 
 import StaffNotes, {KEY_SIGNATURE_SPACING} from "st/components/staff_notes"
 import StaffSongNotes from "st/components/staff_song_notes"
@@ -40,6 +40,45 @@ export const CLEF_PROPS = {
   },
 }
 
+// The clef sign of the score in force at each column of notes on staff (see
+// cardColumn in st/measure_cards), or null when the columns don't carry the
+// score's clefs: the clef of that staff of a grand staff, or for a staff on
+// its own the clef of the one staff the drill's hand is on. A column without
+// clefs, eg. the gap after a card, keeps the sign of the column before it, or
+// of the first column with clefs when it leads
+function columnClefSigns(notes, staff) {
+  let signs = notes instanceof NoteList ? notes.map(column => {
+    if (!column.clefs) { return undefined }
+    if (staff) { return column.clefs[staff] }
+    let staves = Object.keys(column.clefs)
+    return staves.length == 1 ? column.clefs[staves[0]] : null
+  }) : []
+
+  let sign = signs.find(s => s !== undefined)
+  if (sign === undefined) {
+    return null
+  }
+
+  return signs.map(columnSign => {
+    if (columnSign !== undefined) { sign = columnSign }
+    return sign
+  })
+}
+
+// the clef props a staff is drawn in at its head column, the score's when the
+// columns carry it, else defaultProps
+export function headClefProps(notes, staff, defaultProps) {
+  let signs = columnClefSigns(notes, staff)
+  return (signs && CLEF_PROPS[signs[0]]) || defaultProps
+}
+
+// how many rows a note's row sits outside the five lines of clef props
+function ledgerSteps(props, row) {
+  if (row > props.upperRow) { return row - props.upperRow }
+  if (row < props.lowerRow) { return props.lowerRow - row }
+  return 0
+}
+
 export class Staff extends React.PureComponent {
   static propTypes = {
     // rendering props
@@ -64,31 +103,15 @@ export class Staff extends React.PureComponent {
 
   // The props with the clef the score uses on this staff at its first
   // column, and columnClefs, the clef props each column is drawn in, when
-  // the columns carry the clefs of the score's staves (an imported piece,
-  // see cardColumn in st/measure_cards): the clef of this staff of a grand
-  // staff, or for a staff on its own the clef of the one staff the drill's
-  // hand is on, else the staff's own. A column without clefs, eg. the gap
-  // after a card, keeps the clef of the column before it, or of the first
-  // column with clefs when it leads
+  // the columns carry the clefs of the score's staves (see columnClefSigns),
+  // else the staff's own
   clefProps() {
-    let notes = this.props.notes
-    let signs = notes instanceof NoteList ? notes.map(column => {
-      if (!column.clefs) { return undefined }
-      if (this.props.staff) { return column.clefs[this.props.staff] }
-      let staves = Object.keys(column.clefs)
-      return staves.length == 1 ? column.clefs[staves[0]] : null
-    }) : []
-
-    let sign = signs.find(s => s !== undefined)
-    if (sign === undefined) {
+    let signs = columnClefSigns(this.props.notes, this.props.staff)
+    if (!signs) {
       return this.props
     }
 
-    let columnClefs = signs.map(columnSign => {
-      if (columnSign !== undefined) { sign = columnSign }
-      return CLEF_PROPS[sign] || this.props
-    })
-
+    let columnClefs = signs.map(sign => CLEF_PROPS[sign] || this.props)
     return {...this.props, ...columnClefs[0], columnClefs}
   }
 
@@ -102,32 +125,49 @@ export class Staff extends React.PureComponent {
     this.refs.notes.setOffset(amount * noteWidth * scale)
   }
 
-  // find the min/max note range in rows
+  // The min/max rows of the notes this staff draws, so it can make room for
+  // the ones outside its lines: a song's notes, and the notes held down that
+  // aren't in the head of a drill, which land wherever the player's wrong
+  // note falls (see StaffNotes#convertHeldToSongNotes)
   notesRowRange() {
     let min, max
 
+    let include = name => {
+      if (this.props.filterPitch && !this.props.filterPitch(parseNote(name))) {
+        return
+      }
+
+      let row = noteStaffOffset(name)
+
+      if (min == null || row < min) {
+        min = row
+      }
+
+      if (max == null || row > max) {
+        max = row
+      }
+    }
+
     if (this.props.notes instanceof SongNoteList) {
-      this.props.notes.forEach(note => {
-        if (this.props.filterPitch) {
-          let pitch = parseNote(note.note)
-          if (!this.props.filterPitch(pitch)) {
-            return
-          }
-        }
+      this.props.notes.forEach(note => include(note.note))
+    }
 
-        let row = noteStaffOffset(note.note)
-
-        if (min == null || row < min) {
-          min = row
-        }
-
-        if (max == null || row > max) {
-          max = row
+    if (this.props.notes instanceof NoteList) {
+      Object.keys(this.props.heldNotes || {}).forEach(name => {
+        if (!this.props.notes.inHead(name)) {
+          include(name)
         }
       })
     }
 
     return [min, max]
+  }
+
+  // the margin a staff needs beside its lines to show a note steps rows
+  // outside them: the rows, half a line spacing each, and the note's head
+  rowsMargin(steps) {
+    let height = DEFAULT_HEIGHT * (this.props.scale || 1)
+    return steps * height / 8 + height * 0.2
   }
 
   render() {
@@ -147,14 +187,12 @@ export class Staff extends React.PureComponent {
     let scale = this.props.scale || 1
     let height = DEFAULT_HEIGHT * scale
 
-    let noteHeight = height * 0.2 // height of 1 bar
-
     let [minRow, maxRow] = this.notesRowRange()
 
     let marginTop, marginBottom
 
     if (minRow != null && minRow < props.lowerRow) {
-      marginBottom = noteHeight * (props.lowerRow - minRow) / 2 + noteHeight
+      marginBottom = this.rowsMargin(props.lowerRow - minRow)
 
       if (marginBottom < DEFAULT_MARGIN * scale) {
         marginBottom = null
@@ -162,7 +200,7 @@ export class Staff extends React.PureComponent {
     }
 
     if (maxRow != null && maxRow > props.upperRow) {
-      marginTop = noteHeight * (maxRow - props.upperRow) / 2 + noteHeight
+      marginTop = this.rowsMargin(maxRow - props.upperRow)
 
       if (marginTop < DEFAULT_MARGIN * scale) {
         marginTop = null
@@ -266,25 +304,37 @@ export class GrandStaff extends React.PureComponent {
     }
   }
 
-  filterGStaff(pitch) {
-    if (pitch < MIDDLE_C_PITCH) {
-      return false
+  // The staff a note that doesn't carry one goes on, notably a wrong note
+  // held down: the one whose clef at the head column leaves it fewest ledger
+  // steps from the five lines, so it is always drawn near a staff. A note
+  // below both staves goes on the lower one, any other tie on the upper,
+  // which splits the classic treble over bass layout at middle C
+  staffForPitch(pitch) {
+    let row = noteStaffOffset(noteName(pitch))
+    let upper = headClefProps(this.props.notes, "upper", CLEF_PROPS.g)
+    let lower = headClefProps(this.props.notes, "lower", CLEF_PROPS.f)
+
+    let upperSteps = ledgerSteps(upper, row)
+    let lowerSteps = ledgerSteps(lower, row)
+
+    if (upperSteps == lowerSteps) {
+      return row < lower.lowerRow ? "lower" : "upper"
     }
 
-    return true
+    return upperSteps < lowerSteps ? "upper" : "lower"
+  }
+
+  filterGStaff(pitch) {
+    return this.staffForPitch(pitch) == "upper"
   }
 
   filterFStaff(pitch) {
-    if (pitch >= MIDDLE_C_PITCH) {
-      return false
-    }
-
-    return true
+    return this.staffForPitch(pitch) == "lower"
   }
 
   // Notes of columns that carry their staff (an imported piece) go on the
-  // staff of the score, drawn in the score's clefs; other notes are split at
-  // middle C, treble over bass
+  // staff of the score, drawn in the score's clefs; other notes go on the
+  // staff whose clef draws them nearest its lines
   render() {
     return <div className={styles.grand_staff}>
       <GStaff

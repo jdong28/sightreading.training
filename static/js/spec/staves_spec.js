@@ -17,7 +17,7 @@ import {pieceSectionMeasures, BOTH_HANDS, RIGHT_HAND, LEFT_HAND} from "st/data"
 import {reverieOpening, clefChangeScore, midMeasureClefScore} from "spec/helpers"
 
 // MIDI pitches, so the specs don't depend on the octave numbering of names
-const G2 = 43, C3 = 48, E3 = 52, F3 = 53, G3 = 55, Bb3 = 58, C4 = 60, D4 = 62, G4 = 67, D5 = 74, G5 = 79
+const G2 = 43, C3 = 48, E3 = 52, F3 = 53, G3 = 55, Bb3 = 58, B3 = 59, C4 = 60, D4 = 62, E4 = 64, G4 = 67, D5 = 74, G5 = 79
 
 const GRAND = {name: "grand", range: ["C2", "C6"]}
 
@@ -214,16 +214,40 @@ describe("staves", function() {
       }
     })
 
-    it("splits wrong held notes at middle C, placed by the clef of each staff", function() {
+    it("keeps a wrong held note on the staff whose clef draws it nearest, inside the wrapper", function() {
       let song = parseMusicXML(reverieOpening())
+      container.classList.add(staffStyles.staff_wrapper)
       renderStaff(GrandStaff, sectionColumns(song, 2, 2), {heldNotes: {[noteName(D4)]: true, [noteName(G2)]: true}})
 
+      // both staves are in treble clef here, so the lower one draws the notes
+      // hanging below them
       let held = el => notesOn(el).filter(note => note.classList.contains(staffStyles.held))
-      expect(held(staffEl("upper")).map(note => +note.dataset.midiNote)).toEqual([D4])
-      expect(held(staffEl("lower")).map(note => +note.dataset.midiNote)).toEqual([G2])
+      let lower = staffEl("lower")
+      expect(held(staffEl("upper")).map(note => +note.dataset.midiNote)).toEqual([])
+      expect(held(lower).map(note => +note.dataset.midiNote)).toEqual([D4, G2])
 
-      // the lower staff is in treble clef here, so G2 hangs far below it
-      expect(noteTop(staffEl("lower"), G2)).toEqual("250%")
+      // G2 sits on the ledger lines below that staff, which makes room for it
+      let g2 = notesOn(lower).find(note => +note.dataset.midiNote == G2).getBoundingClientRect()
+      let lines = [...lower.querySelectorAll(`.${staffStyles.ledger_line}`)]
+        .map(line => line.getBoundingClientRect().top)
+      expect(lines.length).toBeGreaterThan(0)
+      expect(Math.max(...lines)).toBeGreaterThan(g2.top)
+      expect(Math.max(...lines)).toBeLessThan(g2.bottom)
+
+      let wrapper = container.getBoundingClientRect()
+      expect(g2.top).toBeGreaterThanOrEqual(wrapper.top)
+      expect(g2.bottom).toBeLessThanOrEqual(wrapper.bottom)
+    })
+
+    it("splits wrong held notes at middle C on columns without the score's clefs", function() {
+      renderStaff(GrandStaff, [[noteName(E4)], [noteName(G3)]],
+        {heldNotes: {[noteName(C4)]: true, [noteName(B3)]: true}})
+
+      let held = el => notesOn(el).filter(note => note.classList.contains(staffStyles.held))
+      expect(clefImage(staffEl("upper"))).toContain("clefs.G")
+      expect(clefImage(staffEl("lower"))).toContain("clefs.F")
+      expect(held(staffEl("upper")).map(note => +note.dataset.midiNote)).toEqual([C4])
+      expect(held(staffEl("lower")).map(note => +note.dataset.midiNote)).toEqual([B3])
     })
 
     it("draws one hand alone in that staff's clef", function() {
