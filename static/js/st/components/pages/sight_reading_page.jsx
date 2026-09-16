@@ -39,7 +39,7 @@ import {getSession} from "st/app"
 
 import {StaffTwo} from "st/components/staff_two"
 import {fitNoteWidth, fitStaffScale, minNoteWidth} from "st/components/staff_notes"
-import {cardColumns} from "st/measure_cards"
+import {drillColumns} from "st/measure_cards"
 
 const DEFAULT_NOTE_WIDTH = 100
 const DEFAULT_SPEED = 4
@@ -391,11 +391,14 @@ export default class SightReadingPage extends React.Component {
   }
 
   // The columns of the card on the staff, kept while it is the current one
-  // so the staff is handed the same unit as its notes slide through it
-  unitColumns(card) {
-    if (this.unitColumnsCard != card) {
+  // so the staff is handed the same unit as its notes slide through it, with
+  // the wrap back to its start when the card loops (see drillColumns)
+  unitColumns({card, number}) {
+    let loop = number == null
+    if (this.unitColumnsCard != card || this.unitColumnsLoop != loop) {
       this.unitColumnsCard = card
-      this.unitColumnsCache = cardColumns(card)
+      this.unitColumnsLoop = loop
+      this.unitColumnsCache = drillColumns(card, {loop})
     }
 
     return this.unitColumnsCache
@@ -409,7 +412,7 @@ export default class SightReadingPage extends React.Component {
   staffLayout() {
     let {scale, noteWidth, staffWidth, keySignature} = this.state
     let current = this.currentCard()
-    let unitColumns = current ? this.unitColumns(current.card) : null
+    let unitColumns = current ? this.unitColumns(current) : null
 
     if (!current || this.state.mode != "wait") {
       return {scale, noteWidth, unitColumns}

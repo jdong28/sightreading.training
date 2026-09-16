@@ -10,7 +10,7 @@ import {KeySignature, noteName, parseNote} from "st/music"
 import {parseMusicXML} from "st/musicxml"
 import {extractSectionColumns} from "st/song_sections"
 import {
-  sectionCard, cardColumn, cardColumns, measureCards, MeasureCardDeck, MeasureCardGenerator, IN_ORDER
+  sectionCard, cardColumn, cardColumns, drillColumns, measureCards, MeasureCardDeck, MeasureCardGenerator, IN_ORDER
 } from "st/measure_cards"
 import {SheetMusicGenerator} from "st/generators"
 import {pieceSectionMeasures, BOTH_HANDS, RIGHT_HAND, LEFT_HAND} from "st/data"
@@ -340,6 +340,42 @@ describe("staves", function() {
       expect(parseFloat(margins[0])).toBeGreaterThan(60)
       expect(new Set(margins).size).toEqual(1)
       expect(new Set(heights).size).toEqual(1)
+    })
+
+    it("makes room for the clef change where a looping section wraps to its start", function() {
+      // the section opens in treble clef and ends in bass on C4, above the
+      // staff, so the treble clef the loop returns to goes above that note
+      let song = parseMusicXML(clefChangeScore({
+        clefs: [["G", 2], ["F", 4]],
+        notes: [["G", 4], ["E", 4], ["C", 3], ["C", 4]],
+      }))
+      let card = sectionCard(pieceSectionMeasures(GRAND, {startMeasure: 1, endMeasure: 4, hand: LEFT_HAND}, song))
+      let keySignature = new KeySignature(-1)
+
+      let notes = new NoteList([], {generator: new SheetMusicGenerator(cardColumns(card), {card})})
+      notes.fillBuffer(card.columns.length + 2)
+
+      container.classList.add(staffStyles.staff_wrapper)
+      flushSync(() => root.render(React.createElement(FStaff, {
+        notes,
+        heldNotes: {},
+        keySignature,
+        noteWidth: minNoteWidth(card.columns, keySignature),
+        scale: 1,
+        unitColumns: drillColumns(card, {loop: true}),
+      })))
+
+      let single = container.querySelector(`.${staffStyles.staff}`)
+      expect(clefImage(single)).toContain("clefs.G")
+
+      let changes = clefChanges(single)
+      expect(changes.map(change => change.getAttribute("src").includes("clefs.G"))).toEqual([false, true])
+
+      let wrap = changes[1].getBoundingClientRect()
+      let c4 = notesOn(single).find(note => +note.dataset.midiNote == C4).getBoundingClientRect()
+      expect(wrap.bottom).toBeLessThanOrEqual(c4.top)
+      expect(wrap.top).toBeLessThan(single.getBoundingClientRect().top)
+      expect(wrap.top).toBeGreaterThanOrEqual(container.getBoundingClientRect().top)
     })
 
     it("keeps the room both staves reach into between them", function() {

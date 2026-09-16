@@ -114,6 +114,19 @@ export function cardColumns(card) {
 }
 
 /**
+ * Every column a drill of the card draws: a looping card's columns are
+ * followed by its first column again, where the loop wraps back to it.
+ * @param {MeasureCard} card
+ * @param {Object} [opts]
+ * @param {boolean} [opts.loop]
+ * @returns {string[][]}
+ */
+export function drillColumns(card, {loop=false}={}) {
+  let columns = cardColumns(card)
+  return loop && columns.length ? [...columns, columns[0]] : columns
+}
+
+/**
  * How much a measure is favored by random picks, from its single measure
  * section stats: 1 when never missed, growing with the misses per hit.
  * @param {{hits: number, misses: number}} [stats]
