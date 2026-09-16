@@ -17,7 +17,7 @@ import {pieceSectionMeasures, BOTH_HANDS, RIGHT_HAND, LEFT_HAND} from "st/data"
 import {reverieOpening, clefChangeScore, midMeasureClefScore} from "spec/helpers"
 
 // MIDI pitches, so the specs don't depend on the octave numbering of names
-const G2 = 43, C3 = 48, E3 = 52, F3 = 53, G3 = 55, Bb3 = 58, B3 = 59, C4 = 60, D4 = 62, E4 = 64, G4 = 67, D5 = 74, G5 = 79
+const G2 = 43, C3 = 48, E3 = 52, F3 = 53, G3 = 55, A3 = 57, Bb3 = 58, B3 = 59, C4 = 60, D4 = 62, E4 = 64, G4 = 67, D5 = 74, G5 = 79
 
 const GRAND = {name: "grand", range: ["C2", "C6"]}
 
@@ -237,6 +237,57 @@ describe("staves", function() {
       let wrapper = container.getBoundingClientRect()
       expect(g2.top).toBeGreaterThanOrEqual(wrapper.top)
       expect(g2.bottom).toBeLessThanOrEqual(wrapper.bottom)
+    })
+
+    it("makes room for a score note hanging below the treble clef of its staff", function() {
+      // the lower staff is written in treble clef, so its A3 sits two ledger
+      // lines below the staff, further down than the plate's usual margin
+      let song = parseMusicXML(clefChangeScore({
+        clefs: [["G", 2], ["G", 2]],
+        notes: [["A", 3], ["A", 3], ["A", 3], ["A", 3]],
+      }))
+
+      container.classList.add(staffStyles.staff_wrapper)
+      renderStaff(GrandStaff, sectionColumns(song, 1, 4))
+
+      let lower = staffEl("lower")
+      expect(clefImage(lower)).toContain("clefs.G")
+      expect(notePitches(lower)).toEqual([A3, A3, A3, A3])
+      expect(clefChanges(lower).length).toEqual(0)
+
+      let wrapper = container.getBoundingClientRect()
+      for (let head of notesOn(lower)) {
+        let box = head.getBoundingClientRect()
+        expect(box.bottom).toBeGreaterThan(lower.getBoundingClientRect().bottom)
+        expect(box.bottom).toBeLessThanOrEqual(wrapper.bottom)
+        expect(box.top).toBeGreaterThanOrEqual(wrapper.top)
+      }
+    })
+
+    it("makes room for a clef change drawn above the staff at the narrowest column", function() {
+      // C4 before the change sits above the bass staff, and the narrowest
+      // column leaves no room on the staff, so the clef goes above them both
+      let song = parseMusicXML(clefChangeScore({notes: [["C", 3], ["C", 4], ["D", 4], ["E", 4]]}))
+      let [card] = measureCards(
+        pieceSectionMeasures(GRAND, {startMeasure: 1, endMeasure: 4, hand: LEFT_HAND}, song), 4)
+      let columns = card.columns.map((column, idx) => cardColumn(card, idx))
+
+      container.classList.add(staffStyles.staff_wrapper)
+      renderStaff(FStaff, columns, {noteWidth: minNoteWidth(columns, new KeySignature(-1))})
+
+      let single = container.querySelector(`.${staffStyles.staff}`)
+      expect(clefImage(single)).toContain("clefs.F")
+
+      let [change] = clefChanges(single)
+      expect(clefChanges(single).length).toEqual(1)
+      expect(change.getAttribute("src")).toContain("clefs.G")
+
+      let staff = single.getBoundingClientRect()
+      let box = change.getBoundingClientRect()
+      let c4 = notesOn(single).find(note => +note.dataset.midiNote == C4).getBoundingClientRect()
+      expect(box.bottom).toBeLessThanOrEqual(c4.top)
+      expect(box.top).toBeLessThan(staff.top)
+      expect(box.top).toBeGreaterThanOrEqual(container.getBoundingClientRect().top)
     })
 
     it("splits wrong held notes at middle C on columns without the score's clefs", function() {

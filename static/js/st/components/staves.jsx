@@ -9,7 +9,9 @@ import ChordList from "st/chord_list"
 
 import {parseNote, noteName, noteStaffOffset} from "st/music"
 
-import StaffNotes, {KEY_SIGNATURE_SPACING} from "st/components/staff_notes"
+import StaffNotes, {
+  KEY_SIGNATURE_SPACING, clefChangeBoxes, staffColumnNotes
+} from "st/components/staff_notes"
 import StaffSongNotes from "st/components/staff_song_notes"
 import styles from "st/components/staff.module.css"
 
@@ -125,42 +127,57 @@ export class Staff extends React.PureComponent {
     this.refs.notes.setOffset(amount * noteWidth * scale)
   }
 
-  // The min/max rows of the notes this staff draws, so it can make room for
-  // the ones outside its lines: a song's notes, and the notes held down that
-  // aren't in the head of a drill, which land wherever the player's wrong
-  // note falls (see StaffNotes#convertHeldToSongNotes)
-  notesRowRange() {
-    let min, max
+  // The margins a staff needs above and below its lines for everything it
+  // draws outside them: a song's notes, the notes of each column drawn in
+  // that column's clef, the notes held down that aren't in the head of a
+  // drill, which land wherever the player's wrong note falls (see
+  // StaffNotes#convertHeldToSongNotes), and a clef change too big for the gap
+  // it marks, which goes above the staff. props are the staff's clef props
+  notesMargins(props) {
+    let above = 0
+    let below = 0
 
-    let include = name => {
-      if (this.props.filterPitch && !this.props.filterPitch(parseNote(name))) {
-        return
-      }
+    let include = (clef, row) => {
+      let steps = ledgerSteps(clef, row)
 
-      let row = noteStaffOffset(name)
+      if (!steps) { return }
 
-      if (min == null || row < min) {
-        min = row
-      }
-
-      if (max == null || row > max) {
-        max = row
+      if (row > clef.upperRow) {
+        above = Math.max(above, this.rowsMargin(steps))
+      } else {
+        below = Math.max(below, this.rowsMargin(steps))
       }
     }
 
-    if (this.props.notes instanceof SongNoteList) {
-      this.props.notes.forEach(note => include(note.note))
-    }
+    let kept = name => !props.filterPitch || props.filterPitch(parseNote(name))
+    // where a whole note is drawn, in the key signature the staff spells it in
+    let drawnRow = name => noteStaffOffset(props.keySignature.enharmonic(name))
 
-    if (this.props.notes instanceof NoteList) {
-      Object.keys(this.props.heldNotes || {}).forEach(name => {
-        if (!this.props.notes.inHead(name)) {
-          include(name)
-        }
+    if (props.notes instanceof SongNoteList) {
+      props.notes.forEach(note => {
+        if (kept(note.note)) { include(props, noteStaffOffset(note.note)) }
       })
     }
 
-    return [min, max]
+    if (props.notes instanceof NoteList) {
+      props.notes.forEach((column, idx) => {
+        let clef = (props.columnClefs && props.columnClefs[idx]) || props
+        let [columnNotes] = staffColumnNotes(column, props)
+        columnNotes.forEach(name => include(clef, drawnRow(name)))
+      })
+
+      Object.keys(props.heldNotes || {}).forEach(name => {
+        if (!props.notes.inHead(name) && kept(name)) {
+          include(props, drawnRow(name))
+        }
+      })
+
+      clefChangeBoxes(props).forEach(box => {
+        above = Math.max(above, -box.top)
+      })
+    }
+
+    return [above, below]
   }
 
   // the margin a staff needs beside its lines to show a note steps rows
@@ -171,41 +188,25 @@ export class Staff extends React.PureComponent {
   }
 
   render() {
+    let scale = this.props.scale || 1
     let props = this.clefProps()
     let staffNotes = null
 
     if (props.notes instanceof NoteList) {
-      let scale = props.scale || 1
-      let noteWidth = Math.floor(props.noteWidth * scale)
-      staffNotes = <StaffNotes ref="notes" {...props} noteWidth={noteWidth}></StaffNotes>
+      props = {...props, noteWidth: Math.floor(props.noteWidth * scale)}
+      staffNotes = <StaffNotes ref="notes" {...props}></StaffNotes>
     }
 
     if (props.notes instanceof SongNoteList) {
       staffNotes = <StaffSongNotes ref="notes" {...props}></StaffSongNotes>
     }
 
-    let scale = this.props.scale || 1
     let height = DEFAULT_HEIGHT * scale
 
-    let [minRow, maxRow] = this.notesRowRange()
+    let [above, below] = this.notesMargins(props)
 
-    let marginTop, marginBottom
-
-    if (minRow != null && minRow < props.lowerRow) {
-      marginBottom = this.rowsMargin(props.lowerRow - minRow)
-
-      if (marginBottom < DEFAULT_MARGIN * scale) {
-        marginBottom = null
-      }
-    }
-
-    if (maxRow != null && maxRow > props.upperRow) {
-      marginTop = this.rowsMargin(maxRow - props.upperRow)
-
-      if (marginTop < DEFAULT_MARGIN * scale) {
-        marginTop = null
-      }
-    }
+    let marginTop = above > DEFAULT_MARGIN * scale ? above : null
+    let marginBottom = below > DEFAULT_MARGIN * scale ? below : null
 
     // the fixed offsets of staff.module.css scale with --staff-scale
     return <div
