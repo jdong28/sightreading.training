@@ -209,9 +209,6 @@ export class Staff extends React.PureComponent {
     // the grand staff this staff is ("upper" or "lower"), which draws the
     // notes of that staff when the columns carry it
     staff: types.string,
-    // the side of the score a lone treble or bass staff stands for, which only
-    // the rests and tied heads it draws go by (see ScoreExtras#extrasStaff)
-    scoreStaff: types.string,
     // Every column of the drill's current unit, the card (or section) the
     // notes are a sliding window of, which fixes the staff's margins while
     // that window slides. Without it a drill keeps the stylesheet's margins
@@ -339,11 +336,11 @@ export class Staff extends React.PureComponent {
 }
 
 export class GStaff extends Staff {
-  static defaultProps = {...CLEF_PROPS.g, scoreStaff: "upper"}
+  static defaultProps = CLEF_PROPS.g
 }
 
 export class FStaff extends Staff {
-  static defaultProps = {...CLEF_PROPS.f, scoreStaff: "lower"}
+  static defaultProps = CLEF_PROPS.f
 }
 
 export class GrandStaff extends React.PureComponent {

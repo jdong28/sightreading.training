@@ -41,17 +41,15 @@ export default class ScoreExtras extends React.PureComponent {
     noteWidth: types.number,
     // the stem each head is drawn with (see columnStems in st/staff_rhythm)
     stems: types.object,
-    // the score staff a lone treble or bass staff stands for (see extrasStaff)
-    scoreStaff: types.string,
   }
 
   render() {
-    let extras = columnExtras(this.props.notes, {
+    let staff = this.restsStaff()
+    let rests = staff ? this.renderRests(columnExtras(this.props.notes, {
       ...this.props.layout,
-      staff: this.extrasStaff(),
-    })
+      staff,
+    })) : []
 
-    let rests = this.renderRests(extras)
     let ties = this.renderTies()
 
     if (!rests.length && !ties) {
@@ -61,22 +59,23 @@ export default class ScoreExtras extends React.PureComponent {
     return <div className={styles.score_extras}>{rests}{ties}</div>
   }
 
-  // The score staff whose rests and tied heads this staff draws: the side
-  // GrandStaff hands it, else, on a lone treble or bass staff, its own side of
-  // the score, or the one score staff the drill is on when it is on one, which
-  // a column's own clefs name whatever window is on the staff (the staves of
-  // the drill's hands, see grandStaffClefs in st/song_sections)
-  extrasStaff() {
+  // The score staff whose rests this staff draws, or null for none: the side
+  // GrandStaff hands it, else, on a lone treble or bass staff, the one score
+  // staff of the drill, which a column's own clefs name whatever window is on
+  // the staff (the staves of the drill's hands, see grandStaffClefs in
+  // st/song_sections). A lone staff reading both staves of the score draws the
+  // notes of either hand, so no rest on it could say which hand it belongs to
+  restsStaff() {
     if (this.props.staff) { return this.props.staff }
 
     for (let column of this.props.notes) {
       let staves = column.clefs ? Object.keys(column.clefs) : []
       if (staves.length) {
-        return staves.length == 1 ? staves[0] : this.props.scoreStaff
+        return staves.length == 1 ? staves[0] : null
       }
     }
 
-    return this.props.scoreStaff
+    return null
   }
 
   // where an offset in column widths falls, in pixels from the staff's notes

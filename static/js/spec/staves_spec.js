@@ -1013,21 +1013,6 @@ describe("staves", function() {
       expect(parseFloat(rest.style.left)).toBeLessThan(heads[0])
     })
 
-    it("draws no rest of the other score staff on a lone treble staff", function() {
-      // both hands rest in this bar: the right hand's dotted quarter and the
-      // left hand's whole measure rest
-      let song = parseMusicXML(compoundRestScore())
-      let columns = sectionColumns(song, 1, 2, BOTH_HANDS, {name: "treble", range: ["C4", "C6"]})
-      renderStaff(GStaff, columns, {unitColumns: columns, keySignature: new KeySignature(0)})
-
-      let staff = container.querySelector(`.${staffStyles.staff}`)
-      let rests = [...staff.querySelectorAll(`.${staffStyles.rest}`)]
-
-      // the whole measure rest below is the left hand's, which this staff
-      // doesn't read, so only the right hand's rest is drawn
-      expect(rests.map(rest => rest.dataset.restType)).toEqual(["quarter"])
-    })
-
     // a two staff bar the left hand rests out whole while the right hand plays
     // inside the bass staff's own range
     let lowStaffRestScore = () => `<?xml version="1.0" encoding="UTF-8"?>
@@ -1048,17 +1033,23 @@ describe("staves", function() {
   </part>
 </score-partwise>`
 
-    it("draws no rest of the resting hand on a lone treble staff", function() {
+    it("draws no rest on a lone staff that reads both staves of the score", function() {
       let song = parseMusicXML(lowStaffRestScore())
-      // both hands are drilled, so the bar the left hand rests out is the right
-      // hand's four quarters on this staff
-      let columns = sectionColumns(song, 1, 1, BOTH_HANDS, {name: "treble", range: ["C4", "C6"]})
-      renderStaff(GStaff, columns, {unitColumns: columns, keySignature: new KeySignature(0)})
 
-      let staff = container.querySelector(`.${staffStyles.staff}`)
+      // both hands are drilled, so the notes of this bar are the right hand's
+      // and its whole measure rest the left hand's: on one staff, which draws
+      // either hand's notes, no rest can say which hand it belongs to
+      for (let [type, staff] of [
+        [GStaff, {name: "treble", range: ["C4", "C6"]}],
+        [FStaff, {name: "bass", range: ["C2", "E4"]}],
+      ]) {
+        let columns = sectionColumns(song, 1, 1, BOTH_HANDS, staff)
+        renderStaff(type, columns, {unitColumns: columns, keySignature: new KeySignature(0)})
 
-      expect(notesOn(staff).length).toEqual(4)
-      expect(staff.querySelectorAll(`.${staffStyles.rest}`).length).toEqual(0)
+        let el = container.querySelector(`.${staffStyles.staff}`)
+        expect(notesOn(el).length).toEqual(4)
+        expect(el.querySelectorAll(`.${staffStyles.rest}`).length).toEqual(0)
+      }
     })
 
     // a two staff bar whose left hand opens on a quarter rest and plays notes a
@@ -1089,20 +1080,6 @@ describe("staves", function() {
 
       expect(notesOn(staff).length).toEqual(3)
       expect(rests.map(rest => rest.dataset.restType)).toEqual(["quarter"])
-    })
-
-    it("draws the resting hand's whole measure rest on a lone bass staff", function() {
-      let song = parseMusicXML(lowStaffRestScore())
-      // the card is the bar the left hand rests out, so every note on the
-      // staff is the right hand's while the rest is the left hand's
-      let columns = sectionColumns(song, 1, 1, BOTH_HANDS, {name: "bass", range: ["C2", "E4"]})
-      renderStaff(FStaff, columns, {unitColumns: columns, keySignature: new KeySignature(0)})
-
-      let staff = container.querySelector(`.${staffStyles.staff}`)
-      let rests = [...staff.querySelectorAll(`.${staffStyles.rest}`)]
-
-      expect(notesOn(staff).length).toEqual(4)
-      expect(rests.map(rest => rest.dataset.restType)).toEqual(["whole"])
     })
 
     // a treble staff whose first tie joins eighths and whose second joins whole
@@ -1147,6 +1124,43 @@ describe("staves", function() {
         expect(startOf(tie)).toBeGreaterThan(left + 0.7 * width(type))
         expect(startOf(tie)).toBeLessThanOrEqual(left + width(type))
       }
+    })
+
+    // two 4/4 bars, the second opening on a quarter rest, so the bar whose rest
+    // comes before its first head starts inside the card
+    let nextBarRestScore = () => `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes><divisions>1</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>
+      ${["C", "D", "E", "F"].map(step => `<note><pitch><step>${step}</step><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>`).join("")}
+    </measure>
+    <measure number="2">
+      <note><rest/><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>
+      ${["G", "A", "G"].map(step => `<note><pitch><step>${step}</step><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>`).join("")}
+    </measure>
+  </part>
+</score-partwise>`
+
+    it("keeps a bar's opening rest clear of its head once the window reaches it", function() {
+      let song = parseMusicXML(nextBarRestScore())
+      let columns = sectionColumns(song, 1, 2, BOTH_HANDS, {name: "treble", range: ["C4", "C6"]})
+      // the window the staff draws once the first bar has been played, its card
+      // still fixing the layout (see unitColumns)
+      renderStaff(GStaff, columns.slice(4), {unitColumns: columns, keySignature: new KeySignature(0)})
+
+      let staff = container.querySelector(`.${staffStyles.staff}`)
+      let rest = staff.querySelector(`.${staffStyles.rest}`)
+      let heads = notesOn(staff).map(note => parseFloat(note.style.left)).sort((a, b) => a - b)
+      let barLine = staff.querySelector(`.${staffStyles.bar_line}[data-measure="2"]`)
+
+      expect(rest.dataset.restType).toEqual("quarter")
+      expect(heads.length).toEqual(3)
+      // the rest opens the bar at the head of the window, so it keeps the room
+      // before that head, after its own bar line
+      expect(parseFloat(rest.style.left)).toBeLessThan(heads[0])
+      expect(parseFloat(barLine.style.left)).toBeLessThanOrEqual(parseFloat(rest.style.left))
     })
 
     it("draws a note held down on the head column of a bar that opens with a rest", function() {

@@ -147,27 +147,33 @@ function roomFor(beats, unit) {
   return Math.max(Math.pow(beats / unit, SPACING_EXPONENT), MIN_COLUMN_ADVANCE)
 }
 
-// The beats the extras of the first column fall before it: the rest a bar the
-// card opens with holds, or a head a tie runs on to from a column the staff
-// can't show. Zero when every extra falls after a column's own onset
+// The most beats any column's extras fall before it: the rest a bar opens with,
+// or a head a tie runs on to from a column the staff can't show. The most of
+// them, because any column of a card can become the head of the window on the
+// staff, and the room before the head holds still as the window slides. Zero
+// when every extra falls after its column's own onset
 function leadBeats(columns) {
-  let column = columns && columns[0]
-  if (!column || column.beat == null) { return 0 }
+  let most = 0
 
-  let earliest = column.beat
-  for (let extra of column.extras || []) {
-    if (extra.beat < earliest) {
-      earliest = extra.beat
+  for (let column of columns || []) {
+    if (column.beat == null) { continue }
+
+    for (let extra of column.extras || []) {
+      let before = column.beat - extra.beat
+      if (before > most) {
+        most = before
+      }
     }
   }
 
-  return column.beat - earliest
+  return most
 }
 
 /**
  * Where the columns are drawn and how much room each one holds. The first
  * column is offset by the room its card keeps for the extras that fall before
- * it, so a bar opening on a rest draws it there rather than over the clef.
+ * one of its columns, so a bar opening on a rest draws it there rather than
+ * over the clef or the head of its own bar.
  * @param {Array} columns the columns on the staff
  * @param {Array} [unitColumns] the whole card the columns are a window of
  * @returns {{offsets: number[], advances: number[], gaps: Array, unit:
