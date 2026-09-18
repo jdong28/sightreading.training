@@ -13,9 +13,7 @@ import {parseNote, noteStaffOffset} from "st/music"
 
 import * as types from "prop-types"
 import {
-  noteTypeProps, headGlyph, stemDirection, voiceGroups, voicePositions,
-  middleRow, NOTE_HEAD_HEIGHT, STAFF_ROW, STEM_WIDTH, STEM_LENGTH, DOT_SIZE,
-  FLAG_GLYPH,
+  noteTypeProps, headGlyph, NOTE_HEAD_HEIGHT, STEM_WIDTH, DOT_SIZE, FLAG_GLYPH,
 } from "st/staff_rhythm"
 import styles from "st/components/staff.module.css"
 
@@ -31,11 +29,13 @@ export default class ScoreNotes extends React.PureComponent {
     pixelsPerBeat: types.number,
     offsetLeft: types.number,
     scale: types.number,
+    // the stem each head is drawn with (see columnStems in st/staff_rhythm)
+    stems: types.object,
     // noteClasses, staticNoteClasses
   }
 
   render() {
-    let stems = this.stems()
+    let stems = this.props.stems || new Map()
     let out = this.props.notes.map((n, idx) => this.renderNote(n, idx, stems))
 
     if (out.length) {
@@ -45,84 +45,14 @@ export default class ScoreNotes extends React.PureComponent {
     return null
   }
 
-  // the staff row a note is drawn on, spelled in the key signature
-  noteRow(note) {
-    return noteStaffOffset(this.props.keySignature.enharmonic(note.note))
-  }
-
-  /**
-   * The stem of each voice of each column, kept on the note it is drawn from:
-   * the lowest note of a group stemming up, the highest of one stemming down.
-   * Only notated values that carry a stem have one, so a column of whole
-   * notes, and every note without notation, has none.
-   * @returns {Map} note id -> {dir, height, flags}
-   */
-  stems() {
-    if (this.stemsFor == this.props.notes) {
-      return this.stemCache
-    }
-
-    let middle = middleRow(this.props)
-    let byColumn = new Map()
-
-    for (let note of this.props.notes) {
-      let key = note.getStart()
-      if (!byColumn.has(key)) {
-        byColumn.set(key, [])
-      }
-      byColumn.get(key).push(note)
-    }
-
-    let stems = new Map()
-
-    for (let notes of byColumn.values()) {
-      let rowsByVoice = new Map()
-      for (let note of notes) {
-        let voice = (note.notation && note.notation.voice) || 0
-        if (!rowsByVoice.has(voice)) {
-          rowsByVoice.set(voice, [])
-        }
-        rowsByVoice.get(voice).push(this.noteRow(note))
-      }
-
-      let positions = voicePositions(rowsByVoice)
-
-      for (let group of voiceGroups(notes.map(note => note.notation))) {
-        let groupNotes = group.indices.map(idx => notes[idx])
-        if (!groupNotes.some(note => note.notation)) { continue }
-
-        // the shortest value of the group carries the stem's flags, as the
-        // one stem is drawn for all of them
-        let flags = Math.max(...groupNotes.map(note =>
-          noteTypeProps(note.notation && note.notation.type).flags))
-
-        if (!groupNotes.some(note => noteTypeProps(note.notation && note.notation.type).stem)) {
-          continue
-        }
-
-        let rows = groupNotes.map(note => this.noteRow(note))
-        let dir = stemDirection(rows, middle, {voicePosition: positions[group.voice]})
-
-        let anchorRow = dir == "up" ? Math.min(...rows) : Math.max(...rows)
-        let anchor = groupNotes[rows.indexOf(anchorRow)]
-        let span = Math.max(...rows) - Math.min(...rows)
-
-        stems.set(anchor.id, {dir, height: STEM_LENGTH + span * STAFF_ROW, flags})
-      }
-    }
-
-    this.stemsFor = this.props.notes
-    this.stemCache = stems
-    return stems
-  }
-
   // the stem, its flags and the augmentation dots drawn on a note, in the
   // pixels of the staff's scale
   renderRhythm(note, stem, headWidth, scale) {
     let parts = []
     let dots = (note.notation && note.notation.dots) || 0
 
-    if (stem) {
+    // only the head that carries the group's stem draws it
+    if (stem && stem.height) {
       let width = STEM_WIDTH * scale
       let flags = []
 

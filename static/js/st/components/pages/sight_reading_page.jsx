@@ -53,9 +53,10 @@ export const PLATE_STAFF_SCALE = 0.8
 
 // A piece's card (or whole section) is fitted to the plate: its columns are
 // squeezed down to the card's minNoteWidth, then the staff shrinks down to
-// MIN_FIT_SCALE, which is low enough for a card of eight of the score's
-// busiest bars. A card that still doesn't fit runs on past the plate's edge
-export const MIN_FIT_SCALE = 0.3
+// MIN_FIT_SCALE, the smallest staff still worth reading, which fits a card of
+// up to six of the score's busiest bars. A card that still doesn't fit, the
+// densest eight bar ones, runs on past the plate's edge
+export const MIN_FIT_SCALE = 0.4
 
 // The distance in column widths from a card's first column to its last: the
 // beats between them for an imported piece's columns, else one a column (see
@@ -794,15 +795,16 @@ export default class SightReadingPage extends React.Component {
           if (column.length && this.state.session) {
             this.state.stats.missNotes(column);
           }
+          // the room the column leaving the staff held, which the notes slide
+          // by, so a long note holds the staff for as many beats as the score
+          // gives it
+          let advance = this.columnAdvance(this.state.notes)
           let notes = this.state.notes.clone()
           notes.shift();
           notes.pushRandom();
           this.setState({ notes })
 
-          // the next column is its own width away, so a long note holds the
-          // staff for as many beats as the score gives it
           let slider = this.state.slider
-          let advance = this.columnAdvance(notes)
           slider.value += advance - slider.loopPhase
           slider.loopPhase = advance
         }.bind(this)

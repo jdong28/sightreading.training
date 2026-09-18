@@ -167,7 +167,9 @@ function notatedValue(el, beats, ratio) {
     return {type, dots}
   }
 
-  return typeForBeats(beats / ratio)
+  // a tuplet is played shorter than it is written: its duration is the
+  // notated value over the ratio, so the value is the duration times it
+  return typeForBeats(beats * ratio)
 }
 
 // actual-notes / normal-notes of a <time-modification>, eg. 3/2 for a

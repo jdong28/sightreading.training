@@ -296,6 +296,34 @@ describe("sight reading page", function() {
     expect(stackedWidth).toEqual(singleWidth + GROUP_OFFSET)
   })
 
+  it("fits a card of the score's busiest bars inside the plate", async function() {
+    let {piece} = await importMusicXMLPiece("reverie.musicxml", reverieOpening(), store)
+
+    window.localStorage.setItem(DRILL_STORAGE_KEY, JSON.stringify({staff: "grand", generator: "sheet music"}))
+    window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+      piece: piece.id, startMeasure: 1, endMeasure: 4, hand: BOTH_HANDS, measuresPerCard: "all",
+    }))
+
+    let el = renderPage()
+    expect(page.state.mode).toEqual("wait")
+
+    // every head of the four bars, the ostinato's eighths and the heads their
+    // ties run on to, is drawn inside the plate it was fitted to, above the
+    // floor only the densest cards reach
+    let wrapper = el.querySelector(`.${staffStyles.staff_wrapper}`).getBoundingClientRect()
+    let heads = [...el.querySelectorAll(`.${staffStyles.note}`)]
+
+    expect(heads.length).toBeGreaterThan(20)
+    for (let head of heads) {
+      expect(head.getBoundingClientRect().right).toBeLessThanOrEqual(wrapper.right)
+    }
+    expect(page.staffLayout().scale).toBeGreaterThan(MIN_FIT_SCALE)
+
+    // and on a laptop's plate the same card fits without shrinking the staff
+    flushSync(() => page.setState({staffWidth: 1240}))
+    expect(page.staffLayout().scale).toEqual(page.state.scale)
+  })
+
   it("shows the measure card on the staff and in the plate header", async function() {
     let {piece} = await importMusicXMLPiece("salon_octet.musicxml", octetXML, store)
 

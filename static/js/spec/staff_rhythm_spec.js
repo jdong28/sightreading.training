@@ -37,6 +37,30 @@ describe("staff rhythm", function() {
       // a length no value spells is drawn as the longest that fits
       expect(typeForBeats(1.1).type).toEqual("quarter")
     })
+
+    it("spells a tuplet the score names no value for by the value it is written as", function() {
+      // three eighths in the room of two, then a dotted half to fill the bar,
+      // neither with a <type> of its own
+      let song = parseMusicXML(`<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes><divisions>6</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>
+      ${["C", "D", "E"].map(step => `<note><pitch><step>${step}</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><time-modification><actual-notes>3</actual-notes><normal-notes>2</normal-notes></time-modification></note>`).join("")}
+      <note><pitch><step>F</step><octave>5</octave></pitch><duration>18</duration><voice>1</voice></note>
+    </measure>
+  </part>
+</score-partwise>`)
+
+      // a triplet eighth is played a third of a beat but written as an eighth
+      expect([...song.tracks[0]].map(note => note.notation.type))
+        .toEqual(["eighth", "eighth", "eighth", "half"])
+      expect([...song.tracks[0]].map(note => note.notation.tuplet || 1))
+        .toEqual([1.5, 1.5, 1.5, 1])
+      // and the value filling the rest of the bar keeps its dot
+      expect(song.tracks[0][3].notation.dots).toEqual(1)
+    })
   })
 
   describe("the Rêverie opening", function() {
@@ -164,6 +188,23 @@ describe("staff rhythm", function() {
         .toEqual([MIN_COLUMN_ADVANCE, MIN_COLUMN_ADVANCE, jasmine.any(Number)])
     })
 
+    it("gives a looping card's wrap back to its start the room that column holds", function() {
+      // a bar of four quarters drilled on a loop: its first column is drawn
+      // again where the loop comes round (drillColumns in st/measure_cards),
+      // and the beats of the section left after it are not its own gap
+      let quarters = [
+        column(["C5"], 0, 4), column(["D5"], 1, 3),
+        column(["E5"], 2, 2), column(["F5"], 3, 1),
+      ]
+      let looped = [...quarters, quarters[0]]
+
+      // every gap of the bar is a beat, so a column width is a beat and each
+      // column holds exactly one of them, the wrap included
+      expect(columnUnit(looped)).toEqual(1)
+      expect(columnAdvances(looped)).toEqual([1, 1, 1, 1, 1])
+      expect(columnAdvances(quarters, looped)).toEqual([1, 1, 1, 1])
+    })
+
     it("places the rests and tied heads in the room their column holds", function() {
       let columns = bar()
       columns[0].extras = [{kind: "rest", beat: 1, staff: "upper", type: "quarter"}]
@@ -173,6 +214,17 @@ describe("staff rhythm", function() {
 
       // one of the column's two beats in, so half of the room it holds
       expect(rest.offset).toBeCloseTo(layout.advances[0] / 2, 6)
+    })
+
+    it("keeps an extra falling before the first column on the staff", function() {
+      // a card whose bar opens with a rest: the first head is a beat into the
+      // bar, and the staff has no room before it, where the clef and the key
+      // signature are
+      let columns = [column(["C5"], 1, 3), column(["E5"], 2, 2)]
+      columns[0].extras = [{kind: "rest", beat: 0, staff: "upper", type: "quarter"}]
+
+      let [rest] = columnExtras(columns, columnLayout(columns))
+      expect(rest.offset).toEqual(0)
     })
   })
 

@@ -8,8 +8,8 @@ import LedgerLines, {LEDGER_OVERHANG} from "st/components/staff/ledger_lines"
 import ScoreNotes from "st/components/staff/score_notes"
 import ScoreExtras from "st/components/staff/score_extras"
 import {
-  columnLayout, columnOffsets, columnExtras, noteTypeProps, HEAD_GLYPHS,
-  STAFF_HEIGHT, NOTE_HEAD_HEIGHT,
+  columnLayout, columnOffsets, columnExtras, columnStems, middleRow,
+  noteTypeProps, HEAD_GLYPHS, STAFF_HEIGHT, NOTE_HEAD_HEIGHT,
 } from "st/staff_rhythm"
 import styles from "st/components/staff.module.css"
 
@@ -278,6 +278,18 @@ export default class StaffNotes extends React.Component {
     songNotes.forEach(note => group(note, "notes"))
     heldSongNotes.forEach(note => group(note, "held"))
 
+    // the stems of every head the staff draws, so the notes, their flags and
+    // the ties bowing away from them all agree on which way each one turns
+    let stems = new Map()
+    for (let {clef, notes} of byClef.values()) {
+      for (let [id, stem] of columnStems(notes, {
+        rowOf: note => noteStaffOffset(this.props.keySignature.enharmonic(note.note)),
+        middleRow: middleRow(clef),
+      })) {
+        stems.set(id, stem)
+      }
+    }
+
     return <div ref="notes" className={this.classNames()}>
       {this.renderClefChanges()}
       {[...byClef.values()].map(({clef, notes, held}, idx) => [
@@ -297,6 +309,7 @@ export default class StaffNotes extends React.Component {
           lowerRow={clef.lowerRow}
           notes={notes}
           noteClasses={noteClasses}
+          stems={stems}
           pixelsPerBeat={this.props.noteWidth}
           scale={scale}
         />,
@@ -307,6 +320,7 @@ export default class StaffNotes extends React.Component {
           upperRow={clef.upperRow}
           lowerRow={clef.lowerRow}
           notes={held}
+          stems={stems}
           staticNoteClasses={styles.held}
           pixelsPerBeat={this.props.noteWidth}
           scale={scale}
@@ -318,6 +332,7 @@ export default class StaffNotes extends React.Component {
         offsetLeft={offsetLeft}
         scale={scale}
         layout={layout}
+        stems={stems}
         heads={songNotes} />
 
       {this.renderBarLines(offsetLeft, layout)}

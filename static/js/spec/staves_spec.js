@@ -796,6 +796,93 @@ describe("staves", function() {
       expect(wholeLeft + whole.width).toBeLessThan(bars[1])
     })
 
+    // a grand staff score whose right hand plays four quarters through a bar
+    // the left hand rests out whole, then a bar both hands hold
+    let barRestScore = () => `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes><divisions>4</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><staves>2</staves><clef number="1"><sign>G</sign><line>2</line></clef><clef number="2"><sign>F</sign><line>4</line></clef></attributes>
+      ${["C", "D", "E", "F"].map(step => `<note><pitch><step>${step}</step><octave>5</octave></pitch><duration>4</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>`).join("")}
+      <backup><duration>16</duration></backup>
+      <note><rest measure="yes"/><duration>16</duration><voice>2</voice><staff>2</staff></note>
+    </measure>
+    <measure number="2">
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>16</duration><voice>1</voice><type>whole</type><staff>1</staff></note>
+      <backup><duration>16</duration></backup>
+      <note><pitch><step>C</step><octave>3</octave></pitch><duration>16</duration><voice>2</voice><type>whole</type><staff>2</staff></note>
+    </measure>
+  </part>
+</score-partwise>`
+
+    it("centres a whole measure rest in the bar it fills, not in one column's room", function() {
+      let song = parseMusicXML(barRestScore())
+      let columns = sectionColumns(song, 1, 2)
+      renderStaff(GrandStaff, columns, {unitColumns: columns, keySignature: new KeySignature(0)})
+
+      let rest = staffEl("lower").querySelector(`.${staffStyles.rest}`)
+      expect(rest.dataset.restType).toEqual("whole")
+
+      // the bar's four quarters are a column apart, so the middle of the bar
+      // is the third of them, not half way into the first one's room
+      let heads = notesOn(staffEl("upper"))
+        .map(note => parseFloat(note.style.left)).sort((a, b) => a - b)
+      let middle = parseFloat(rest.style.left) + rest.getBoundingClientRect().width / 2
+
+      expect(heads.length).toEqual(5)
+      expect(middle).toBeCloseTo(heads[2], 0)
+    })
+
+    it("centres a whole measure rest in its own bar when the card loops", function() {
+      let song = parseMusicXML(barRestScore())
+      let card = sectionCard(pieceSectionMeasures(GRAND, {
+        startMeasure: 1, endMeasure: 1, hand: BOTH_HANDS,
+      }, song))
+      // the single bar drilled on a loop, its first column coming round again
+      let columns = drillColumns(card, {loop: true})
+      renderStaff(GrandStaff, columns, {unitColumns: columns, keySignature: new KeySignature(0)})
+
+      let [rest] = [...staffEl("lower").querySelectorAll(`.${staffStyles.rest}`)]
+      let heads = notesOn(staffEl("upper"))
+        .map(note => parseFloat(note.style.left)).sort((a, b) => a - b)
+      let middle = parseFloat(rest.style.left) + rest.getBoundingClientRect().width / 2
+
+      // the bar ends where the loop wraps back to it, so its middle is still
+      // the third of its four quarters
+      expect(heads.length).toEqual(5)
+      expect(middle).toBeCloseTo(heads[2], 0)
+    })
+
+    // a treble staff of two eighths tied above the middle line, beamed, so the
+    // score writes the beam's stem up where the staff draws the heads stem down
+    let tiedBeamScore = () => `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes><divisions>2</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>
+      <note><pitch><step>G</step><octave>5</octave></pitch><duration>1</duration><tie type="start"/><voice>1</voice><type>eighth</type><stem>up</stem><beam number="1">begin</beam><staff>1</staff><notations><tied type="start"/></notations></note>
+      <note><pitch><step>G</step><octave>5</octave></pitch><duration>1</duration><tie type="stop"/><voice>1</voice><type>eighth</type><stem>up</stem><beam number="1">end</beam><staff>1</staff><notations><tied type="stop"/></notations></note>
+      <note><pitch><step>G</step><octave>5</octave></pitch><duration>6</duration><voice>1</voice><type>half</type><dot/><stem>up</stem><staff>1</staff></note>
+    </measure>
+  </part>
+</score-partwise>`
+
+    it("bows a tie away from the stem the staff draws, not the one the score writes", function() {
+      let song = parseMusicXML(tiedBeamScore())
+      let columns = sectionColumns(song, 1, 1, BOTH_HANDS, {name: "treble", range: ["C4", "C6"]})
+      renderStaff(GStaff, columns, {unitColumns: columns, keySignature: new KeySignature(0)})
+
+      let staff = container.querySelector(`.${staffStyles.staff}`)
+
+      // a head above the middle line is drawn stem down, whatever direction
+      // the score's beam runs in, so its tie bows over the head
+      expect(stemOf(staff, G5).dataset.stem).toEqual("down")
+      expect([...staff.querySelectorAll(`.${staffStyles.tie}`)].map(tie => tie.dataset.tie))
+        .toEqual(["up"])
+    })
+
     it("draws a drill without the score's rhythm as whole notes", function() {
       renderStaff(GStaff, [[noteName(C5)], [noteName(E5)]], {keySignature: new KeySignature(0)})
 

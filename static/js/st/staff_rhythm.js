@@ -65,9 +65,11 @@ export function noteTypeProps(type) {
 }
 
 // How long a column holds the staff before the next one, in beats: up to the
-// next column's onset, or, for the last column (and a looping card's repeat of
-// its first), the beats the column itself was extracted with. Columns without
-// beats, eg. a generated drill, hold one column each
+// next column's onset, or, for the last column, the beats the column itself
+// was extracted with. A column drawn again, where a looping card wraps back to
+// its start, holds the staff for as long as the column it repeats, never the
+// beats the card has left after that column. Columns without beats, eg. a
+// generated drill, hold one column each
 function columnBeats(columns, idx) {
   let column = columns[idx]
   if (!column || column.beat == null) { return null }
@@ -75,6 +77,11 @@ function columnBeats(columns, idx) {
   let next = columns[idx + 1]
   if (next && next.beat > column.beat) {
     return next.beat - column.beat
+  }
+
+  let repeated = columns.findIndex(other => other && other.beat === column.beat)
+  if (repeated >= 0 && repeated < idx) {
+    return columnBeats(columns, repeated)
   }
 
   return column.beats > 0 ? column.beats : null
@@ -235,6 +242,75 @@ export function voicePositions(rowsByVoice) {
   return out
 }
 
+/**
+ * The stem the staff draws each head with, so everything drawn from a stem —
+ * its flags, and the ties bowing away from it — agrees with it. The heads of
+ * a voice's column share one stem, drawn from the lowest note of a group
+ * stemming up and the highest of one stemming down; the others carry only the
+ * direction it turns. Only notated values that carry a stem have one, so a
+ * column of whole notes, and every note without notation, has none.
+ * @param {Object[]} notes the heads one staff draws, each with its notation
+ * @param {Object} opts
+ * @param {function} opts.rowOf the staff row a note is drawn on
+ * @param {number} opts.middleRow the staff's middle line
+ * @returns {Map} note id -> {dir}, with {height, flags} on the head that
+ * carries the stem
+ */
+export function columnStems(notes, {rowOf, middleRow}) {
+  let byColumn = new Map()
+
+  for (let note of notes) {
+    let key = note.getStart()
+    if (!byColumn.has(key)) {
+      byColumn.set(key, [])
+    }
+    byColumn.get(key).push(note)
+  }
+
+  let stems = new Map()
+
+  for (let columnNotes of byColumn.values()) {
+    let rowsByVoice = new Map()
+    for (let note of columnNotes) {
+      let voice = (note.notation && note.notation.voice) || 0
+      if (!rowsByVoice.has(voice)) {
+        rowsByVoice.set(voice, [])
+      }
+      rowsByVoice.get(voice).push(rowOf(note))
+    }
+
+    let positions = voicePositions(rowsByVoice)
+
+    for (let group of voiceGroups(columnNotes.map(note => note.notation))) {
+      let groupNotes = group.indices.map(idx => columnNotes[idx])
+      if (!groupNotes.some(note => note.notation)) { continue }
+
+      // the shortest value of the group carries the stem's flags, as the
+      // one stem is drawn for all of them
+      let flags = Math.max(...groupNotes.map(note =>
+        noteTypeProps(note.notation && note.notation.type).flags))
+
+      if (!groupNotes.some(note => noteTypeProps(note.notation && note.notation.type).stem)) {
+        continue
+      }
+
+      let rows = groupNotes.map(note => rowOf(note))
+      let dir = stemDirection(rows, middleRow, {voicePosition: positions[group.voice]})
+
+      let anchorRow = dir == "up" ? Math.min(...rows) : Math.max(...rows)
+      let anchor = groupNotes[rows.indexOf(anchorRow)]
+      let span = Math.max(...rows) - Math.min(...rows)
+
+      for (let note of groupNotes) {
+        stems.set(note.id, note == anchor ?
+          {dir, height: STEM_LENGTH + span * STAFF_ROW, flags} : {dir})
+      }
+    }
+  }
+
+  return stems
+}
+
 // The unscaled geometry the staff draws rhythm with, in the pixels of a
 // DEFAULT_HEIGHT staff (st/components/staves), which the staff's scale
 // multiplies like every other offset in staff.module.css
@@ -336,7 +412,11 @@ export function columnExtras(columns, {offsets, advances, gaps, unit, staff}) {
         advances[idx] * (extra.beat - column.beat) / beats :
         (extra.beat - column.beat) / (unit > 0 ? unit : 1)
 
-      out.push({...extra, columnIdx: idx, offset: offsets[idx] + into})
+      // an extra falling before the first column, a bar the card opens a rest
+      // into or a head carried from a column the staff can't show, is drawn
+      // in that column's own room: the staff has none before it, where the
+      // key signature and the clef are
+      out.push({...extra, columnIdx: idx, offset: Math.max(0, offsets[idx] + into)})
     }
   })
 

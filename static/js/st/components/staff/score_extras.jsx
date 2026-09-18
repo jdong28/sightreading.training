@@ -11,8 +11,8 @@ import * as types from "prop-types"
 
 import {noteStaffOffset} from "st/music"
 import {
-  columnExtras, tieArcs, restGlyph, rowCenter, headGlyph,
-  STAFF_ROW, STAFF_SPACE, NOTE_HEAD_HEIGHT,
+  columnExtras, tieArcs, restGlyph, rowCenter, headGlyph, stemDirection,
+  middleRow, STAFF_ROW, STAFF_SPACE, NOTE_HEAD_HEIGHT,
 } from "st/staff_rhythm"
 import styles from "st/components/staff.module.css"
 
@@ -39,6 +39,8 @@ export default class ScoreExtras extends React.PureComponent {
     offsetLeft: types.number,
     scale: types.number,
     noteWidth: types.number,
+    // the stem each head is drawn with (see columnStems in st/staff_rhythm)
+    stems: types.object,
   }
 
   render() {
@@ -62,11 +64,49 @@ export default class ScoreExtras extends React.PureComponent {
     return (this.props.offsetLeft || 0) + offset * this.props.noteWidth
   }
 
+  // Whether the column at idx opens a bar: the staff draws a bar line before
+  // it, or it starts the card's columns over, where a looping card comes round
+  // to its first bar again (see drillColumns in st/measure_cards)
+  opensBar(idx) {
+    let columns = this.props.notes
+    if (idx <= 0) { return true }
+    if (columns[idx].measure != null) { return true }
+
+    let previous = columns[idx - 1]
+    return columns[idx].beat != null && previous.beat != null &&
+      columns[idx].beat <= previous.beat
+  }
+
+  // The room the bar holding the column at idx spans, in column widths: from
+  // the last column that opens a bar to the next one, or, without one, the end
+  // of the room the columns hold
+  barRoom(idx) {
+    let {offsets, advances} = this.props.layout
+    let last = this.props.notes.length - 1
+
+    let start = 0
+    for (let at = Math.min(idx, last); at > 0; at--) {
+      if (this.opensBar(at)) {
+        start = at
+        break
+      }
+    }
+
+    let end = offsets[last] + advances[last]
+    for (let at = start + 1; at <= last; at++) {
+      if (this.opensBar(at)) {
+        end = offsets[at]
+        break
+      }
+    }
+
+    return [offsets[start], end - offsets[start]]
+  }
+
   // The rests of the score, each at its beat. A whole measure rest is centred
   // in the bar it fills, as it is on paper, whatever the meter
   renderRests(extras) {
     let scale = this.props.scale || 1
-    let advances = this.props.layout.advances
 
     return extras.filter(extra => extra.kind == "rest").map((rest, idx) => {
       let glyph = restGlyph(rest.type)
@@ -75,8 +115,10 @@ export default class ScoreExtras extends React.PureComponent {
 
       let left = this.left(rest.offset)
       if (rest.wholeMeasure) {
-        // a whole measure rest is centred in the room its bar holds
-        left += (advances[rest.columnIdx] * this.props.noteWidth - width) / 2
+        // a whole measure rest fills a bar, so it is centred in the room the
+        // bar holds rather than drawn at the beat it starts on
+        let [from, room] = this.barRoom(rest.columnIdx)
+        left = this.left(from) + (room * this.props.noteWidth - width) / 2
       }
 
       let line = (MIDDLE_LINE_ROWS - glyph.row) * STAFF_ROW * scale
@@ -100,6 +142,12 @@ export default class ScoreExtras extends React.PureComponent {
     return (this.props.columnClefs && this.props.columnClefs[idx]) || this.props
   }
 
+  // the direction of the stem the staff draws on a head, if it has one
+  headStem(note) {
+    let stem = this.props.stems && this.props.stems.get(note.id)
+    return stem ? stem.dir : null
+  }
+
   // The tie arcs between the heads on the staff, bowing away from the stems
   // they belong to. A tie with no head to run to on this card runs off its
   // edge instead
@@ -120,7 +168,11 @@ export default class ScoreExtras extends React.PureComponent {
           x: this.left(note.getStart()),
           y: rowCenter(row, clef) * scale,
           width,
-          stem: note.notation.stem,
+          // the stem the staff draws on the head, never the one the score
+          // writes, which is the direction of a beam that isn't drawn yet. A
+          // value with no stem bows its tie away from the middle line, as a
+          // single voice's stem turns there
+          stem: this.headStem(note) || stemDirection([row], middleRow(clef)),
           tieTo: note.notation.tieTo,
           tieFrom: note.tiedFrom ?? null,
         }
