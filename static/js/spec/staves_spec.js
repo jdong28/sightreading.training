@@ -1048,6 +1048,49 @@ describe("staves", function() {
   </part>
 </score-partwise>`
 
+    it("draws no rest of the resting hand on a lone treble staff", function() {
+      let song = parseMusicXML(lowStaffRestScore())
+      // both hands are drilled, so the bar the left hand rests out is the right
+      // hand's four quarters on this staff
+      let columns = sectionColumns(song, 1, 1, BOTH_HANDS, {name: "treble", range: ["C4", "C6"]})
+      renderStaff(GStaff, columns, {unitColumns: columns, keySignature: new KeySignature(0)})
+
+      let staff = container.querySelector(`.${staffStyles.staff}`)
+
+      expect(notesOn(staff).length).toEqual(4)
+      expect(staff.querySelectorAll(`.${staffStyles.rest}`).length).toEqual(0)
+    })
+
+    // a two staff bar whose left hand opens on a quarter rest and plays notes a
+    // treble staff can show
+    let lowHandRestScore = () => `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes><divisions>4</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><staves>2</staves><clef number="1"><sign>G</sign><line>2</line></clef><clef number="2"><sign>F</sign><line>4</line></clef></attributes>
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>16</duration><voice>1</voice><type>whole</type><staff>1</staff></note>
+      <backup><duration>16</duration></backup>
+      <note><rest/><duration>4</duration><voice>2</voice><type>quarter</type><staff>2</staff></note>
+      ${["C", "D", "C"].map(step => `<note><pitch><step>${step}</step><octave>4</octave></pitch><duration>4</duration><voice>2</voice><type>quarter</type><staff>2</staff></note>`).join("")}
+    </measure>
+  </part>
+</score-partwise>`
+
+    it("draws the drilled hand's rests on a staff that isn't the score's", function() {
+      let song = parseMusicXML(lowHandRestScore())
+      // the left hand alone, read on a treble staff: its own rest is the only
+      // one the drill carries, so it is the one to draw
+      let columns = sectionColumns(song, 1, 1, LEFT_HAND, {name: "treble", range: ["C4", "C6"]})
+      renderStaff(GStaff, columns, {unitColumns: columns, keySignature: new KeySignature(0)})
+
+      let staff = container.querySelector(`.${staffStyles.staff}`)
+      let rests = [...staff.querySelectorAll(`.${staffStyles.rest}`)]
+
+      expect(notesOn(staff).length).toEqual(3)
+      expect(rests.map(rest => rest.dataset.restType)).toEqual(["quarter"])
+    })
+
     it("draws the resting hand's whole measure rest on a lone bass staff", function() {
       let song = parseMusicXML(lowStaffRestScore())
       // the card is the bar the left hand rests out, so every note on the
