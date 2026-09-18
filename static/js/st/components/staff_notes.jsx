@@ -187,7 +187,7 @@ export function clefChangeBoxes(props) {
   let margin = CLEF_CHANGE_MARGIN * scale
   let layout = columnLayout(props.notes, props.unitColumns)
   let offsets = layout.offsets
-  let before = extrasBefore(props.notes, layout)
+  let extrasLeft = extrasBefore(props.notes, layout)
   let columnClef = idx => (props.columnClefs && props.columnClefs[idx]) || props
 
   let out = []
@@ -208,7 +208,7 @@ export function clefChangeBoxes(props) {
     let start = offsetLeft + offsets[idx - 1] * noteWidth + NOTE_HEAD_WIDTH * scale + offset + margin
     let space = gap - (NOTE_HEAD_WIDTH + ACCIDENTAL_WIDTH) * scale - 2 * margin - offset
     if (column.measure != null) {
-      space = Math.min(space, barLineLeft(props, offsetLeft, idx, offsets, before[idx]) - margin - start)
+      space = Math.min(space, barLineLeft(props, offsetLeft, idx, offsets, extrasLeft[idx]) - margin - start)
     }
     let fullHeight = glyph.height * staffHeight
     let width = Math.min(fullHeight * glyph.aspect, space)

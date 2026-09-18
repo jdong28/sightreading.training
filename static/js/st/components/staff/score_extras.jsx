@@ -62,20 +62,23 @@ export default class ScoreExtras extends React.PureComponent {
   }
 
   // The score staff whose rests and tied heads this staff draws: the side
-  // GrandStaff hands it, else, on a lone treble or bass staff, the side the
-  // notes it draws are written on, so a drill of one hand draws that hand's
-  // rests whichever staff it is read on, and its own side when it draws both
+  // GrandStaff hands it, else, on a lone treble or bass staff, its own side of
+  // the score, but only once the card holds both sides' extras — a drill of one
+  // hand carries that hand's rests alone (extractSectionColumns collects them
+  // for the tracks it drills), and they are read on whichever staff shows them
   extrasStaff() {
     if (this.props.staff) { return this.props.staff }
 
     let staves = new Set()
     for (let column of this.props.notes) {
-      for (let staff of column.staves || []) {
-        staves.add(staff)
+      for (let extra of column.extras || []) {
+        if (extra.staff) {
+          staves.add(extra.staff)
+        }
       }
     }
 
-    return staves.size == 1 ? [...staves][0] : this.props.scoreStaff
+    return staves.size > 1 ? this.props.scoreStaff : null
   }
 
   // where an offset in column widths falls, in pixels from the staff's notes
