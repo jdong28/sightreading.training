@@ -445,11 +445,18 @@ export function columnExtras(columns, {offsets, advances, gaps, unit, leadBeats,
 
       let before = column.beat - extra.beat
 
-      if (idx == 0 && before > 0) {
-        // an extra before the first column, the rest a bar opens with, keeps
-        // its share of the room the layout reserves before the first head
-        let share = leadBeats > 0 ? offsets[0] * (1 - before / leadBeats) : 0
-        out.push({...extra, columnIdx: idx, offset: Math.max(0, share)})
+      if (before > 0) {
+        // An extra falling before its column: the rest a bar opens with, or
+        // one carried onto this column from a column the staff can't show. It
+        // keeps its share of the room before the column, which for the first
+        // one is the room the layout reserves (see columnLayout), and never
+        // falls back past the column before it
+        let from = idx > 0 ? offsets[idx - 1] : 0
+        let span = idx > 0 ? column.beat - columns[idx - 1].beat : leadBeats
+        let room = offsets[idx] - from
+        let at = span > 0 ? offsets[idx] - room * before / span : from
+
+        out.push({...extra, columnIdx: idx, offset: Math.max(from, at)})
         continue
       }
 

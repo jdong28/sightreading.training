@@ -276,10 +276,13 @@ describe("sight reading page", function() {
     let columnsOf = () => page.state.notes.generator.cards[0].columns
     let layout = page.staffLayout()
     let stackedWidth = minNoteWidth(columnsOf(), page.state.keySignature)
+    let stackedFitted = layout.noteWidth
 
     expect([...page.state.notes.currentColumn()]).toEqual(["C3", "E4", "F4"])
     expect(layout.scale).toEqual(MIN_FIT_SCALE)
-    expect(layout.noteWidth).toEqual(stackedWidth)
+    // the columns are spaced by their beats, so a column is fitted wider than
+    // the narrowest room a head and its accidental need
+    expect(stackedFitted).toBeGreaterThanOrEqual(stackedWidth)
 
     flushSync(() => page.setGenerator(page.state.currentGenerator, {
       ...page.state.currentGeneratorSettings, piece: singles.id,
@@ -290,10 +293,71 @@ describe("sight reading page", function() {
 
     expect([...page.state.notes.currentColumn()]).toEqual(["C3", "E4"])
     expect(layout.scale).toEqual(MIN_FIT_SCALE)
-    expect(layout.noteWidth).toEqual(singleWidth)
+    expect(layout.noteWidth).toBeGreaterThanOrEqual(singleWidth)
 
-    // the stacked second's column keeps the group offset's room as well
+    // the stacked second's column keeps the group offset's room as well, in
+    // the fitted width as in the minimum
     expect(stackedWidth).toEqual(singleWidth + GROUP_OFFSET)
+    expect(stackedFitted - layout.noteWidth).toBeGreaterThanOrEqual(GROUP_OFFSET)
+  })
+
+  it("keeps an accidental clear of the previous head at the fitted columns", async function() {
+    let {piece} = await importMusicXMLPiece("seconds.musicxml", secondsXML("Seconds", true), store)
+
+    window.localStorage.setItem(DRILL_STORAGE_KEY, JSON.stringify({staff: "grand", generator: "sheet music"}))
+    window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+      piece: piece.id, startMeasure: 1, endMeasure: 8, hand: BOTH_HANDS, measuresPerCard: "all",
+    }))
+
+    let el = renderPage()
+    // a plate narrow enough that the card is fitted at its narrowest columns
+    flushSync(() => page.setState({staffWidth: 200}))
+    expect(page.staffLayout().scale).toEqual(MIN_FIT_SCALE)
+
+    await Promise.all([...el.querySelectorAll("img")].map(img => img.decode()))
+
+    // the bar's G#4 is a beat after its E4, the narrowest gap of the card, so
+    // its sharp is what has to clear the heads before it
+    let notes = [...el.querySelector("[data-staff=\"upper\"]").querySelectorAll(`.${staffStyles.note}`)]
+      .map(note => ({
+        at: parseFloat(note.style.left),
+        head: note.querySelector(`.${staffStyles.primary}`).getBoundingClientRect(),
+        accidental: note.querySelector(`.${staffStyles.accidental}`),
+      }))
+
+    let sharps = notes.filter(note => note.accidental)
+    expect(sharps.length).toBeGreaterThan(0)
+
+    for (let note of sharps) {
+      let before = notes.filter(other => other.at < note.at)
+      if (!before.length) { continue }
+
+      let accidental = note.accidental.getBoundingClientRect()
+      expect(accidental.width).toBeGreaterThan(0)
+      expect(accidental.left)
+        .toBeGreaterThanOrEqual(Math.max(...before.map(other => other.head.right)))
+    }
+  })
+
+  it("shrinks the staff to the legibility floor and no further", async function() {
+    let {piece} = await importMusicXMLPiece("seconds.musicxml", secondsXML("Seconds", true), store)
+
+    window.localStorage.setItem(DRILL_STORAGE_KEY, JSON.stringify({staff: "grand", generator: "sheet music"}))
+    window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+      piece: piece.id, startMeasure: 1, endMeasure: 8, hand: BOTH_HANDS, measuresPerCard: "all",
+    }))
+
+    renderPage()
+    flushSync(() => page.setState({staffWidth: 200}))
+
+    // the smallest staff still worth reading: a card that doesn't fit at it
+    // runs past the plate's edge rather than shrinking further
+    expect(MIN_FIT_SCALE).toEqual(0.4)
+    expect(page.staffLayout().scale).toEqual(0.4)
+
+    // and a plate with room for the card keeps the staff at its full size
+    flushSync(() => page.setState({staffWidth: 1240}))
+    expect(page.staffLayout().scale).toEqual(page.state.scale)
   })
 
   it("fits a card of the score's busiest bars inside the plate", async function() {

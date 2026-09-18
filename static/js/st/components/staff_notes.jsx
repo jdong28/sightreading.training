@@ -261,7 +261,7 @@ export default class StaffNotes extends React.Component {
   render() {
     let layout = this.columnLayout()
     let [songNotes, noteClasses] = this.convertToSongNotes(layout)
-    let heldSongNotes = this.convertHeldToSongNotes()
+    let heldSongNotes = this.convertHeldToSongNotes(layout)
 
     let scale = this.props.scale || 1
     let offsetLeft = keySignatureWidth(this.props.keySignature) * scale
@@ -340,19 +340,21 @@ export default class StaffNotes extends React.Component {
     </div>
   }
 
-  convertHeldToSongNotes() {
+  // The notes held down that aren't in the head column, drawn on it so they
+  // show against the column being judged
+  convertHeldToSongNotes(layout) {
     if (!this.props.heldNotes) {
       return []
     }
 
     let notes = new SongNoteList()
     let dur = 40 / this.props.noteWidth
+    let head = (layout.offsets && layout.offsets[0]) || 0
 
-    // notes that are held down but aren't correct
     Object.keys(this.props.heldNotes)
       .filter((note) => !this.props.notes.inHead(note))
       .forEach((note, idx) => {
-        notes.push(new SongNote(note, 0, dur))
+        notes.push(new SongNote(note, head, dur))
       })
 
     return this.filterVisibleNotes(notes)

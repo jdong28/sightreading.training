@@ -998,6 +998,28 @@ describe("staves", function() {
         .toEqual(["up"])
     })
 
+    it("draws a note held down on the head column of a bar that opens with a rest", function() {
+      let song = parseMusicXML(leadingRestScore())
+      let columns = sectionColumns(song, 1, 2, BOTH_HANDS, {name: "treble", range: ["C4", "C6"]})
+      renderStaff(GStaff, columns, {
+        unitColumns: columns,
+        keySignature: new KeySignature(0),
+        heldNotes: {[noteName(A4)]: true},
+      })
+
+      let staff = container.querySelector(`.${staffStyles.staff}`)
+      let held = [...staff.querySelectorAll(`.${staffStyles.held}`)]
+      let heads = notesOn(staff)
+        .filter(note => !note.classList.contains(staffStyles.held))
+        .map(note => parseFloat(note.style.left)).sort((a, b) => a - b)
+
+      expect(held.length).toEqual(1)
+      // the head column is drawn after the room the opening rest holds, and a
+      // wrong note held down is drawn on that column, not left of it
+      expect(heads[0]).toBeGreaterThan(0)
+      expect(parseFloat(held[0].style.left)).toEqual(heads[0])
+    })
+
     it("draws a drill without the score's rhythm as whole notes", function() {
       renderStaff(GStaff, [[noteName(C5)], [noteName(E5)]], {keySignature: new KeySignature(0)})
 

@@ -42,7 +42,7 @@ function notationToJSON(notation) {
   if (!notation || !notation.type) { return null }
 
   let out = {type: notation.type}
-  for (let field of ["dots", "voice", "tuplet", "hidden"]) {
+  for (let field of ["dots", "voice", "tuplet"]) {
     if (notation[field]) {
       out[field] = notation[field]
     }

@@ -240,6 +240,24 @@ describe("staff rhythm", function() {
       expect(columnLayout(bar()).offsets[0]).toEqual(0)
     })
 
+    it("places an extra carried onto a later column in the room before it", function() {
+      // the column between these two was dropped whole, its notes outside the
+      // staff's range (filterColumnsToRange), so its rest is drawn with the
+      // column after it: a sixteenth, whose own room is far narrower than the
+      // gap the rest is carried back across
+      let columns = [column(["C5"], 0, 4), column(["E5"], 2, 0.25)]
+      columns[1].extras = [{kind: "rest", beat: 1.5, staff: "upper", type: "eighth"}]
+
+      let layout = columnLayout(columns)
+      let [rest] = columnExtras(columns, layout)
+
+      // half a beat back of the two beats between the columns, so a quarter of
+      // the room between them
+      expect(rest.offset).toBeCloseTo(layout.offsets[1] - layout.advances[0] / 4, 6)
+      expect(rest.offset).toBeGreaterThan(layout.offsets[0])
+      expect(rest.offset).toBeLessThan(layout.offsets[1])
+    })
+
     it("measures a card's room in the unit the staff draws it with", function() {
       // a bar of a quarter, a quarter and a half, drilled on a loop: the wrap
       // back to its first column is part of the unit the staff spaces it by

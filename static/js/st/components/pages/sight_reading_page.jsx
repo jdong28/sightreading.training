@@ -416,20 +416,29 @@ export default class SightReadingPage extends React.Component {
       return {scale, noteWidth, unitColumns}
     }
 
-    // the room a card needs, in the unit the staff draws it with, so the plate
-    // is fitted to what is drawn (see drillColumns and st/staff_rhythm)
+    // What a card needs of the plate, in the unit the staff draws it with (see
+    // drillColumns and st/staff_rhythm), so the plate is fitted to what is
+    // drawn: the room its columns span, and a column width wide enough that
+    // its narrowest gap — not the nominal column — still holds a note head and
+    // its accidental
     let loop = current.number == null
-    let spanOf = card => columnSpan(card.columns,
-      card == current.card ? unitColumns : drillColumns(card, {loop}))
+    let fitFor = card => {
+      let unit = card == current.card ? unitColumns : drillColumns(card, {loop})
+      let narrowest = Math.min(1, ...columnAdvances(card.columns, unit))
 
-    scale = Math.min(...this.state.notes.generator.cards.map(card =>
-      fitStaffScale(staffWidth, spanOf(card), {
-        scale, keySignature, minWidth: minNoteWidth(card.columns, keySignature), minScale: MIN_FIT_SCALE,
-      })))
+      return {
+        span: columnSpan(card.columns, unit),
+        minWidth: Math.ceil(minNoteWidth(card.columns, keySignature) / narrowest),
+      }
+    }
 
-    noteWidth = fitNoteWidth(staffWidth, spanOf(current.card), {
-      scale, keySignature, maxWidth: noteWidth, minWidth: minNoteWidth(current.card.columns, keySignature),
-    })
+    scale = Math.min(...this.state.notes.generator.cards.map(card => {
+      let {span, minWidth} = fitFor(card)
+      return fitStaffScale(staffWidth, span, {scale, keySignature, minWidth, minScale: MIN_FIT_SCALE})
+    }))
+
+    let {span, minWidth} = fitFor(current.card)
+    noteWidth = fitNoteWidth(staffWidth, span, {scale, keySignature, maxWidth: noteWidth, minWidth})
 
     return {scale, noteWidth, unitColumns}
   }

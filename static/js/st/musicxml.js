@@ -183,8 +183,8 @@ function timeModification(el) {
   return actual > 0 && normal > 0 ? actual / normal : 1
 }
 
-// Notation elements the score hides (MuseScore writes the invisible rests it
-// pads a voice with this way) are parsed but never drawn
+// The rests the score hides (MuseScore writes the invisible rests it pads a
+// voice with this way) are parsed but never drawn
 function isHidden(el) {
   return el.getAttribute("print-object") == "no"
 }
@@ -212,10 +212,6 @@ function notationOf(el, duration) {
   // ratio's consumer; nothing draws it yet
   if (ratio != 1) {
     out.tuplet = ratio
-  }
-
-  if (isHidden(el)) {
-    out.hidden = true
   }
 
   return out
@@ -328,6 +324,7 @@ function walkPart(measures, partName) {
                 // a whole measure rest is drawn centered in its bar whatever
                 // the meter, so it keeps no notated value of its own
                 wholeMeasure: childEl(el, "rest").getAttribute("measure") == "yes",
+                hidden: isHidden(el),
                 ...notationOf(el, duration / divisions),
               })
             }
@@ -579,7 +576,6 @@ export function parseMusicXML(text) {
       dots: event.dots,
       voice: event.voice,
       tuplet: event.tuplet,
-      hidden: event.hidden,
     })
 
     for (let event of part.events) {

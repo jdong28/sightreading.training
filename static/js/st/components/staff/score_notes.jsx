@@ -137,7 +137,6 @@ export default class ScoreNotes extends React.PureComponent {
       [styles.is_sharp]: accidentals == 1,
       [styles.is_natural]: accidentals == 0,
       [styles.outside]: outside,
-      [styles.tied_head]: !!note.tiedFrom,
     }, noteClasses, props.staticNoteClasses)
 
     let parts = [
