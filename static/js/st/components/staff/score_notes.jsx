@@ -89,8 +89,7 @@ export default class ScoreNotes extends React.PureComponent {
 
       for (let group of voiceGroups(notes.map(note => note.notation))) {
         let groupNotes = group.indices.map(idx => notes[idx])
-        let notation = groupNotes.map(note => note.notation).find(n => n)
-        if (!notation) { continue }
+        if (!groupNotes.some(note => note.notation)) { continue }
 
         // the shortest value of the group carries the stem's flags, as the
         // one stem is drawn for all of them
@@ -102,10 +101,7 @@ export default class ScoreNotes extends React.PureComponent {
         }
 
         let rows = groupNotes.map(note => this.noteRow(note))
-        let dir = stemDirection(rows, middle, {
-          stem: notation.stem,
-          voicePosition: positions[group.voice],
-        })
+        let dir = stemDirection(rows, middle, {voicePosition: positions[group.voice]})
 
         let anchorRow = dir == "up" ? Math.min(...rows) : Math.max(...rows)
         let anchor = groupNotes[rows.indexOf(anchorRow)]

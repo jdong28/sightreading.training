@@ -2,8 +2,12 @@ import {parseMusicXML} from "st/musicxml"
 import {extractSectionColumns} from "st/song_sections"
 import {
   typeForBeats, columnUnit, columnAdvances, columnOffsets, columnSpan,
-  columnExtras, tieArcs, stemDirection, MIN_COLUMN_ADVANCE,
+  columnLayout, columnExtras, tieArcs, stemDirection,
+  MIN_COLUMN_ADVANCE, SPACING_EXPONENT,
 } from "st/staff_rhythm"
+
+// the room a gap of that many mean gaps holds, in column widths
+let room = gaps => Math.pow(gaps, SPACING_EXPONENT)
 import {reverieOpening} from "spec/helpers"
 
 // the notation of a note, without the fields it leaves out
@@ -119,10 +123,27 @@ describe("staff rhythm", function() {
     it("measures a column width by the mean gap between the columns", function() {
       expect(columnUnit(bar())).toEqual(4 / 3)
 
-      // the half note holds the staff for twice a quarter's room
-      expect(columnAdvances(bar())).toEqual([1.5, 0.75, 0.75])
-      expect(columnOffsets(bar())).toEqual([0, 1.5, 2.25])
-      expect(columnSpan(bar())).toEqual(2.25)
+      // the half note holds more room than a quarter, but well under twice
+      // it, the way an engraver spaces a system
+      let [half, quarter] = columnAdvances(bar())
+      expect(half).toBeCloseTo(room(1.5), 6)
+      expect(quarter).toBeCloseTo(room(0.75), 6)
+      expect(half).toBeGreaterThan(quarter)
+      expect(half).toBeLessThan(2 * quarter)
+
+      expect(columnOffsets(bar())).toEqual([0, half, half + quarter])
+      expect(columnSpan(bar())).toBeCloseTo(half + quarter, 6)
+    })
+
+    it("never spans more room than the same number of even columns", function() {
+      // the exponent is below one and the unit is the mean gap, so a card
+      // always fits where a drill of the same column count fitted
+      let columns = [
+        column(["C5"], 0, 4), column(["D5"], 4, 4), column(["E5"], 5, 3),
+        column(["F5"], 5.5, 2.5), column(["G5"], 6, 2),
+      ]
+
+      expect(columnSpan(columns)).toBeLessThanOrEqual(columns.length - 1)
     })
 
     it("draws a drill without the score's rhythm one column at a time", function() {
@@ -143,25 +164,29 @@ describe("staff rhythm", function() {
         .toEqual([MIN_COLUMN_ADVANCE, MIN_COLUMN_ADVANCE, jasmine.any(Number)])
     })
 
-    it("places the rests and tied heads between the columns", function() {
+    it("places the rests and tied heads in the room their column holds", function() {
       let columns = bar()
       columns[0].extras = [{kind: "rest", beat: 1, staff: "upper", type: "quarter"}]
 
-      let layout = {offsets: columnOffsets(columns), unit: columnUnit(columns)}
+      let layout = columnLayout(columns)
       let [rest] = columnExtras(columns, layout)
 
-      // a beat into a column that holds the staff for two
-      expect(rest.offset).toBeCloseTo(0.75, 6)
+      // one of the column's two beats in, so half of the room it holds
+      expect(rest.offset).toBeCloseTo(layout.advances[0] / 2, 6)
     })
   })
 
   describe("stems and ties", function() {
-    it("turns a stem away from the middle line, or the way the score writes it", function() {
-      expect(stemDirection([41], 41)).toEqual("up")
+    it("turns a stem away from the middle line, and away from the other voice", function() {
+      expect(stemDirection([41], 41)).toEqual("down")
       expect(stemDirection([45], 41)).toEqual("down")
       expect(stemDirection([37], 41)).toEqual("up")
-      expect(stemDirection([45], 41, {stem: "up"})).toEqual("up")
+
+      // the furthest note of a chord decides for the whole group
+      expect(stemDirection([37, 40], 41)).toEqual("up")
+
       expect(stemDirection([37], 41, {voicePosition: "lower"})).toEqual("down")
+      expect(stemDirection([45], 41, {voicePosition: "upper"})).toEqual("up")
     })
 
     it("runs a tie off the card when the head it joins isn't on it", function() {

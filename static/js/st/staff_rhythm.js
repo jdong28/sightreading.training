@@ -86,10 +86,18 @@ function columnBeats(columns, idx) {
 // and a bar of them can't drag the card off the staff plate
 export const MIN_COLUMN_ADVANCE = 0.75
 
+// How a note's room grows with its length, the way an engraver spaces a
+// system: not in proportion to the length but well under it, so a note twice
+// as long as its neighbours takes about half again their room rather than
+// twice it, and a whole note among eighths doesn't swallow the bar. Because
+// the exponent is below one and the unit is the mean gap, the columns of a
+// card never span more room than the same number of even columns would
+// (Jensen), so a card that fitted the staff plate before still fits
+export const SPACING_EXPONENT = 0.55
+
 // The beat a column width measures: the mean gap between the columns, so a
 // section of even notes draws a column width apart, exactly as a drill
-// without the score's rhythm does, while a note twice as long as its
-// neighbours takes twice their room. Null when no column carries its beats
+// without the score's rhythm does. Null when no column carries its beats
 export function columnUnit(columns) {
   let total = 0
   let gaps = 0
@@ -105,11 +113,11 @@ export function columnUnit(columns) {
   return gaps ? total / gaps : null
 }
 
-// How many column widths each column holds the staff for, in the beat
-// proportional layout measured over unitColumns (the whole card, so the
-// layout holds still as the notes slide through the staff). Every column
-// holds one width when the columns carry no beats, which is what a generated
-// drill and a piece imported before the score's rhythm was kept draw
+// How many column widths each column holds the staff for, measured over
+// unitColumns (the whole card, so the layout holds still as the notes slide
+// through the staff). Every column holds one width when the columns carry no
+// beats, which is what a generated drill and a piece imported before the
+// score's rhythm was kept draw
 export function columnAdvances(columns, unitColumns=columns) {
   let unit = columnUnit(unitColumns && unitColumns.length ? unitColumns : columns)
   if (!unit) {
@@ -118,13 +126,19 @@ export function columnAdvances(columns, unitColumns=columns) {
 
   return columns.map((column, idx) => {
     let beats = columnBeats(columns, idx)
-    return beats > 0 ? Math.max(beats / unit, MIN_COLUMN_ADVANCE) : 1
+    if (!(beats > 0)) { return 1 }
+    return Math.max(Math.pow(beats / unit, SPACING_EXPONENT), MIN_COLUMN_ADVANCE)
   })
 }
 
-// Where each column is drawn, in column widths from the first one (see
-// columnAdvances)
-export function columnOffsets(columns, unitColumns) {
+/**
+ * Where the columns are drawn and how much room each one holds.
+ * @param {Array} columns the columns on the staff
+ * @param {Array} [unitColumns] the whole card the columns are a window of
+ * @returns {{offsets: number[], advances: number[], gaps: Array, unit: number|null}}
+ * offsets and advances in column widths, gaps the beats each column holds
+ */
+export function columnLayout(columns, unitColumns) {
   let advances = columnAdvances(columns, unitColumns)
   let offsets = []
   let at = 0
@@ -134,7 +148,18 @@ export function columnOffsets(columns, unitColumns) {
     at += advance
   }
 
-  return offsets
+  return {
+    offsets,
+    advances,
+    gaps: columns.map((column, idx) => columnBeats(columns, idx)),
+    unit: columnUnit(unitColumns && unitColumns.length ? unitColumns : columns),
+  }
+}
+
+// Where each column is drawn, in column widths from the first one (see
+// columnAdvances)
+export function columnOffsets(columns, unitColumns) {
+  return columnLayout(columns, unitColumns).offsets
 }
 
 // The distance in column widths from the first column of columns to the last,
@@ -146,27 +171,26 @@ export function columnSpan(columns) {
 }
 
 // The stem direction of a group of notes sharing a staff, a column and a
-// voice: the one the score writes, else away from the voice the group is not
-// (an upper voice stems up and a lower voice down), else away from the middle
-// line, which is what a single voice does
+// voice: away from the voice the group is not (an upper voice stems up and a
+// lower voice down), else away from the middle line, which is what a single
+// voice does. The direction the score writes (notation.stem) is not used: it
+// is the direction of the beam the note belongs to, and until beams are drawn
+// a lone note under it would stem the wrong way and hang its flag over the
+// notes around it
 // rows: the staff rows of the group's notes
 // middleRow: the staff's middle line
-// opts.stem: the direction the score writes, if any
 // opts.voicePosition: "upper" or "lower" when two voices share the staff
-export function stemDirection(rows, middleRow, {stem, voicePosition}={}) {
-  if (stem == "up" || stem == "down") {
-    return stem
-  }
-
+export function stemDirection(rows, middleRow, {voicePosition}={}) {
   if (voicePosition) {
     return voicePosition == "upper" ? "up" : "down"
   }
 
-  // the note furthest from the middle line decides, as it does on paper
+  // the note furthest from the middle line decides, as it does on paper, and
+  // a note on the line itself stems down
   let furthest = rows.reduce((far, row) =>
     Math.abs(row - middleRow) > Math.abs(far - middleRow) ? row : far, middleRow)
 
-  return furthest > middleRow ? "down" : "up"
+  return furthest >= middleRow ? "down" : "up"
 }
 
 // Groups the notes a staff draws in one column by voice, since each voice
@@ -199,7 +223,9 @@ export function voicePositions(rowsByVoice) {
   if (voices.length < 2) { return {} }
 
   let highest = voice => Math.max(...rowsByVoice.get(voice))
-  let sorted = [...voices].sort((a, b) => highest(b) - highest(a))
+  // the higher notes are the upper voice; voices on the same notes keep the
+  // order the score writes them in, where the upper voice comes first
+  let sorted = [...voices].sort((a, b) => highest(b) - highest(a) || a - b)
 
   let out = {}
   sorted.forEach((voice, idx) => {
@@ -288,19 +314,29 @@ export function rowLine(row, {upperRow}) {
  * @param {Array} columns the columns on the staff, each with its extras
  * @param {Object} opts
  * @param {number[]} opts.offsets where each column is drawn, in column widths
- * @param {number} opts.unit beats to a column width
+ * @param {number[]} opts.advances the room each column holds, in column widths
+ * @param {number[]} opts.gaps the beats each column holds
  * @param {string} [opts.staff] the grand staff being drawn, when it is one of two
  * @returns {Object[]} each extra with `offset`, its own place in column widths
  */
-export function columnExtras(columns, {offsets, unit, staff}) {
-  if (!(unit > 0)) { return [] }
+export function columnExtras(columns, {offsets, advances, gaps, unit, staff}) {
+  if (!offsets || !advances) { return [] }
 
   let out = []
 
   columns.forEach((column, idx) => {
+    let beats = gaps && gaps[idx]
+
     for (let extra of column.extras || []) {
       if (staff && extra.staff && extra.staff != staff) { continue }
-      out.push({...extra, columnIdx: idx, offset: offsets[idx] + (extra.beat - column.beat) / unit})
+      // a beat of the column's own room, so a head or rest between two
+      // columns keeps its place however that column is spaced; a column
+      // whose room isn't known goes by the card's own beat to a column width
+      let into = beats > 0 ?
+        advances[idx] * (extra.beat - column.beat) / beats :
+        (extra.beat - column.beat) / (unit > 0 ? unit : 1)
+
+      out.push({...extra, columnIdx: idx, offset: offsets[idx] + into})
     }
   })
 

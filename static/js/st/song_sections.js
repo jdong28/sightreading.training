@@ -293,8 +293,13 @@ export function extractSectionColumns(song, opts={}) {
 
   let inRange = entries.filter(([note]) => inBeatRange(note.start))
 
+  // the last measure of a score has no measure after it to end on, so the
+  // columns of the section take the beat the score's measures end at
+  let measuresEnd = song.metadata && song.metadata.measuresEnd
+  let columnsEnd = isFinite(endBeat) ? endBeat : measuresEnd
+
   let columns = groupByOnset(
-    inRange, grand && grandStaffClefs(song, grand, trackIndices), {endBeat})
+    inRange, grand && grandStaffClefs(song, grand, trackIndices), {endBeat: columnsEnd})
 
   if (!grand) {
     return columns

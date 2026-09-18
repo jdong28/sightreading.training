@@ -66,7 +66,7 @@ export default class ScoreExtras extends React.PureComponent {
   // in the bar it fills, as it is on paper, whatever the meter
   renderRests(extras) {
     let scale = this.props.scale || 1
-    let unit = this.props.layout.unit
+    let advances = this.props.layout.advances
 
     return extras.filter(extra => extra.kind == "rest").map((rest, idx) => {
       let glyph = restGlyph(rest.type)
@@ -74,8 +74,9 @@ export default class ScoreExtras extends React.PureComponent {
       let height = glyph.height * scale
 
       let left = this.left(rest.offset)
-      if (rest.wholeMeasure && rest.duration > 0) {
-        left += (rest.duration / unit * this.props.noteWidth - width) / 2
+      if (rest.wholeMeasure) {
+        // a whole measure rest is centred in the room its bar holds
+        left += (advances[rest.columnIdx] * this.props.noteWidth - width) / 2
       }
 
       let line = (MIDDLE_LINE_ROWS - glyph.row) * STAFF_ROW * scale

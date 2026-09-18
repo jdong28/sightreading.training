@@ -8,7 +8,7 @@ import LedgerLines, {LEDGER_OVERHANG} from "st/components/staff/ledger_lines"
 import ScoreNotes from "st/components/staff/score_notes"
 import ScoreExtras from "st/components/staff/score_extras"
 import {
-  columnOffsets, columnUnit, columnExtras,
+  columnLayout, columnOffsets, columnExtras, noteTypeProps, HEAD_GLYPHS,
   STAFF_HEIGHT, NOTE_HEAD_HEIGHT,
 } from "st/staff_rhythm"
 import styles from "st/components/staff.module.css"
@@ -94,6 +94,16 @@ export function columnNotation(column, columnNotes, {staff}) {
   return notation.length == columnNotes.length ? notation : null
 }
 
+// the width of the widest head the columns draw: a whole note's, unless
+// every note of the card is a half or shorter, whose heads are narrower
+export function columnsHeadWidth(columns) {
+  let widest = columns.some(column => !column.notation ||
+    column.notation.some(notation => noteTypeProps(notation && notation.type).head == "whole"))
+
+  let glyph = widest ? HEAD_GLYPHS.whole : HEAD_GLYPHS.half
+  return NOTE_HEAD_HEIGHT * glyph.aspect
+}
+
 // The narrowest column, unscaled like the staff's noteWidth, that keeps an
 // accidental clear of the note heads of the column before it: a head, pushed
 // right by the group offset when any column has a stacked second, then the
@@ -105,7 +115,7 @@ export function minNoteWidth(columns, keySignature) {
   let accidental = columns.some(column => column.some(note =>
     keySignature.accidentalsForNote(keySignature.enharmonic(note)) != null))
 
-  return Math.ceil(NOTE_HEAD_WIDTH + (stacked ? GROUP_OFFSET : 0) +
+  return Math.ceil(columnsHeadWidth(columns) + (stacked ? GROUP_OFFSET : 0) +
     (accidental ? ACCIDENTAL_WIDTH + ACCIDENTAL_GAP : NOTE_HEAD_GAP))
 }
 
@@ -242,11 +252,7 @@ export default class StaffNotes extends React.Component {
     if (this.layoutFor != this.props.notes || this.layoutUnit != this.props.unitColumns) {
       this.layoutFor = this.props.notes
       this.layoutUnit = this.props.unitColumns
-      let unitColumns = this.props.unitColumns
-      this.layoutCache = {
-        offsets: columnOffsets(this.props.notes, unitColumns),
-        unit: columnUnit(unitColumns && unitColumns.length ? unitColumns : this.props.notes),
-      }
+      this.layoutCache = columnLayout(this.props.notes, this.props.unitColumns)
     }
 
     return this.layoutCache
@@ -367,7 +373,7 @@ export default class StaffNotes extends React.Component {
   // ties of the piece run on to, which are drawn where they fall but are
   // never played. Each carries the column it belongs to and, for an imported
   // piece, its beat and how the score writes it
-  convertToSongNotes({offsets, unit}) {
+  convertToSongNotes(layout) {
     let notes = new SongNoteList()
     let dur = 40 / this.props.noteWidth
 
@@ -387,7 +393,7 @@ export default class StaffNotes extends React.Component {
       let notation = columnNotation(column, columnNotes, this.props)
 
       columnNotes.forEach((n, idx) => {
-        let sNote = new SongNote(n, offsets[columnIdx], dur)
+        let sNote = new SongNote(n, layout.offsets[columnIdx], dur)
         sNote.columnIdx = columnIdx
 
         if (notation && notation[idx]) {
@@ -413,7 +419,7 @@ export default class StaffNotes extends React.Component {
       })
     })
 
-    for (let head of columnExtras(this.props.notes, {offsets, unit, staff: this.props.staff})) {
+    for (let head of columnExtras(this.props.notes, {...layout, staff: this.props.staff})) {
       if (head.kind != "head") { continue }
 
       let sNote = new SongNote(head.name, head.offset, dur)

@@ -9,7 +9,7 @@ import SightReadingPage, {
 import {GStaff} from "st/components/staves"
 import NoteList from "st/note_list"
 import {
-  fitNoteWidth, fitStaffScale, minNoteWidth, NOTE_HEAD_WIDTH, GROUP_OFFSET, ACCIDENTAL_WIDTH
+  fitNoteWidth, fitStaffScale, minNoteWidth, GROUP_OFFSET
 } from "st/components/staff_notes"
 import staffStyles from "st/components/staff.module.css"
 import drawerStyles from "st/components/sight_reading/programme_drawer.module.css"
@@ -271,23 +271,29 @@ describe("sight reading page", function() {
 
     renderPage()
     // a plate too narrow for the section's columns at any allowed width
-    flushSync(() => page.setState({staffWidth: 400}))
+    flushSync(() => page.setState({staffWidth: 200}))
 
-    let headAndAccidental = NOTE_HEAD_WIDTH + ACCIDENTAL_WIDTH
+    let columnsOf = () => page.state.notes.generator.cards[0].columns
     let layout = page.staffLayout()
+    let stackedWidth = minNoteWidth(columnsOf(), page.state.keySignature)
+
     expect([...page.state.notes.currentColumn()]).toEqual(["C3", "E4", "F4"])
     expect(layout.scale).toEqual(MIN_FIT_SCALE)
-    expect(layout.noteWidth).toBeGreaterThanOrEqual(headAndAccidental + GROUP_OFFSET)
+    expect(layout.noteWidth).toEqual(stackedWidth)
 
     flushSync(() => page.setGenerator(page.state.currentGenerator, {
       ...page.state.currentGeneratorSettings, piece: singles.id,
     }))
 
     layout = page.staffLayout()
+    let singleWidth = minNoteWidth(columnsOf(), page.state.keySignature)
+
     expect([...page.state.notes.currentColumn()]).toEqual(["C3", "E4"])
     expect(layout.scale).toEqual(MIN_FIT_SCALE)
-    expect(layout.noteWidth).toBeGreaterThanOrEqual(headAndAccidental)
-    expect(layout.noteWidth).toBeLessThan(headAndAccidental + GROUP_OFFSET)
+    expect(layout.noteWidth).toEqual(singleWidth)
+
+    // the stacked second's column keeps the group offset's room as well
+    expect(stackedWidth).toEqual(singleWidth + GROUP_OFFSET)
   })
 
   it("shows the measure card on the staff and in the plate header", async function() {

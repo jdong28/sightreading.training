@@ -53,8 +53,9 @@ export const PLATE_STAFF_SCALE = 0.8
 
 // A piece's card (or whole section) is fitted to the plate: its columns are
 // squeezed down to the card's minNoteWidth, then the staff shrinks down to
-// MIN_FIT_SCALE. A card that still doesn't fit runs on past the plate's edge
-export const MIN_FIT_SCALE = 0.5
+// MIN_FIT_SCALE, which is low enough for a card of eight of the score's
+// busiest bars. A card that still doesn't fit runs on past the plate's edge
+export const MIN_FIT_SCALE = 0.3
 
 // The distance in column widths from a card's first column to its last: the
 // beats between them for an imported piece's columns, else one a column (see

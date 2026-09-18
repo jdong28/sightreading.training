@@ -5,6 +5,7 @@ import {flushSync} from "react-dom"
 import {GStaff, FStaff, GrandStaff} from "st/components/staves"
 import staffStyles from "st/components/staff.module.css"
 import {minNoteWidth, ACCIDENTAL_WIDTH, NOTE_HEAD_WIDTH, GROUP_OFFSET} from "st/components/staff_notes"
+import {SPACING_EXPONENT} from "st/staff_rhythm"
 import NoteList from "st/note_list"
 import {KeySignature, noteName, parseNote} from "st/music"
 import {parseMusicXML} from "st/musicxml"
@@ -715,10 +716,12 @@ describe("staves", function() {
       let staff = container.querySelector(`.${staffStyles.staff}`)
       let left = pitch => parseFloat(head(staff, pitch).style.left)
 
-      // the half note holds the staff for twice a quarter's room: the gaps
-      // of the bar are 2, 1 and 1 beats, a mean of 4/3 to a column width
-      expect(left(E5) - left(C5)).toBeCloseTo(1.5 * 60, 3)
-      expect(left(G4) - left(E5)).toBeCloseTo(0.75 * 60, 3)
+      // the gaps of the bar are 2, 1 and 1 beats, a mean of 4/3 to a column
+      // width, and a note's room grows under its length (SPACING_EXPONENT)
+      let room = gaps => Math.pow(gaps, SPACING_EXPONENT) * 60
+      expect(left(E5) - left(C5)).toBeCloseTo(room(1.5), 3)
+      expect(left(G4) - left(E5)).toBeCloseTo(room(0.75), 3)
+      expect(left(E5) - left(C5)).toBeGreaterThan(left(G4) - left(E5))
     })
 
     it("draws the score's rests at their beat", function() {
@@ -732,6 +735,65 @@ describe("staves", function() {
       expect(rests.map(rest => rest.dataset.restType)).toEqual(["quarter"])
       expect(parseFloat(rests[0].style.left))
         .toBeGreaterThan(parseFloat(head(staff, A4).style.left))
+    })
+
+    // a grand staff piece whose lower staff rests through three bars: a whole
+    // measure rest, then a half rest, then a quarter rest
+    let restScore = () => `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes><divisions>4</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><staves>2</staves><clef number="1"><sign>G</sign><line>2</line></clef><clef number="2"><sign>F</sign><line>4</line></clef></attributes>
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>16</duration><voice>1</voice><type>whole</type><staff>1</staff></note>
+      <backup><duration>16</duration></backup>
+      <note><rest measure="yes"/><duration>16</duration><voice>2</voice><staff>2</staff></note>
+    </measure>
+    <measure number="2">
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>16</duration><voice>1</voice><type>whole</type><staff>1</staff></note>
+      <backup><duration>16</duration></backup>
+      <note><rest/><duration>8</duration><voice>2</voice><type>half</type><staff>2</staff></note>
+      <note><pitch><step>C</step><octave>3</octave></pitch><duration>8</duration><voice>2</voice><type>half</type><staff>2</staff></note>
+    </measure>
+    <measure number="3">
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>16</duration><voice>1</voice><type>whole</type><staff>1</staff></note>
+      <backup><duration>16</duration></backup>
+      <note><rest/><duration>4</duration><voice>2</voice><type>quarter</type><staff>2</staff></note>
+      <note><pitch><step>C</step><octave>3</octave></pitch><duration>12</duration><voice>2</voice><type>half</type><dot/><staff>2</staff></note>
+    </measure>
+  </part>
+</score-partwise>`
+
+    it("sets the rests on the staff by their value, never by a pitch", function() {
+      let song = parseMusicXML(restScore())
+      let columns = sectionColumns(song, 1, 3)
+      renderStaff(GrandStaff, columns, {unitColumns: columns, keySignature: new KeySignature(0)})
+
+      let lower = staffEl("lower")
+      let rests = [...lower.querySelectorAll(`.${staffStyles.rest}`)]
+      expect(rests.map(rest => rest.dataset.restType)).toEqual(["whole", "half", "quarter"])
+
+      let [whole, half, quarter] = rests.map(rest => rest.getBoundingClientRect())
+      let line = n => lower.querySelector(`.${staffStyles[`line${n}`]}`).getBoundingClientRect()
+      let middle = line(3)
+
+      // within a staff line's own thickness
+      let onLine = (at, lineBox) => expect(Math.abs(at - lineBox.top)).toBeLessThanOrEqual(lineBox.height)
+
+      // a whole rest hangs under the second line from the top
+      onLine(whole.top, line(2))
+      expect(whole.bottom).toBeGreaterThan(line(2).bottom)
+
+      // a half rest sits on the middle line, a quarter rest is centred on it
+      onLine(half.bottom, middle)
+      onLine((quarter.top + quarter.bottom) / 2 - middle.height / 2, middle)
+
+      // the whole measure rest is centred in the bar it fills
+      let bars = [...lower.querySelectorAll(`.${staffStyles.bar_line}`)]
+        .map(bar => parseFloat(bar.style.left))
+      let wholeLeft = parseFloat(rests[0].style.left)
+      expect(wholeLeft).toBeGreaterThan(bars[0])
+      expect(wholeLeft + whole.width).toBeLessThan(bars[1])
     })
 
     it("draws a drill without the score's rhythm as whole notes", function() {
