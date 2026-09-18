@@ -21,9 +21,9 @@ export const MAX_PIECES = 300
 
 // 1: notes, clefs and metadata only
 // 2: adds the notation the staff draws the score's rhythm with (the notated
-// value, dots, tuplet, voice, stem and tied heads of every note, and the
-// track's rests). Pieces stored as 1 are still read, and drill as they always
-// did, drawn as whole notes until the score is imported again
+// value, dots, tuplet, voice and tied heads of every note, and the track's
+// rests). Pieces stored as 1 are still read, and drill as they always did,
+// drawn as whole notes until the score is imported again
 const SONG_FORMAT = 2
 
 // metadata copied into a stored piece, see parseMusicXML
@@ -42,7 +42,7 @@ function notationToJSON(notation) {
   if (!notation || !notation.type) { return null }
 
   let out = {type: notation.type}
-  for (let field of ["dots", "voice", "tuplet", "stem", "hidden"]) {
+  for (let field of ["dots", "voice", "tuplet", "hidden"]) {
     if (notation[field]) {
       out[field] = notation[field]
     }

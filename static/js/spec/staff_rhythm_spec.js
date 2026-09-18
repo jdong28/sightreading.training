@@ -70,7 +70,7 @@ describe("staff rhythm", function() {
       song = parseMusicXML(reverieOpening())
     })
 
-    it("keeps the value, voice and stem of every note", function() {
+    it("keeps the value and voice of every note", function() {
       let ostinato = song.tracks[1]
 
       expect(notationOf(ostinato[0])).toEqual(jasmine.objectContaining({
@@ -216,15 +216,43 @@ describe("staff rhythm", function() {
       expect(rest.offset).toBeCloseTo(layout.advances[0] / 2, 6)
     })
 
-    it("keeps an extra falling before the first column on the staff", function() {
+    it("reserves room before the first column for the extras that fall there", function() {
       // a card whose bar opens with a rest: the first head is a beat into the
-      // bar, and the staff has no room before it, where the clef and the key
-      // signature are
+      // bar, and the rest is drawn in the beat before it
       let columns = [column(["C5"], 1, 3), column(["E5"], 2, 2)]
       columns[0].extras = [{kind: "rest", beat: 0, staff: "upper", type: "quarter"}]
 
-      let [rest] = columnExtras(columns, columnLayout(columns))
+      let layout = columnLayout(columns)
+      let [rest] = columnExtras(columns, layout)
+
+      expect(layout.leadBeats).toEqual(1)
+      expect(layout.offsets[0]).toBeGreaterThan(0)
+      // the rest opens the bar, so it starts where the staff's notes do, clear
+      // of the first head
       expect(rest.offset).toEqual(0)
+      expect(rest.offset).toBeLessThan(layout.offsets[0])
+
+      // the room is kept whatever window of the card is on the staff, so the
+      // notes don't jump sideways as they slide through it
+      expect(columnLayout([columns[1]], columns).offsets[0]).toEqual(layout.offsets[0])
+
+      // and a card with nothing before its first head keeps no room
+      expect(columnLayout(bar()).offsets[0]).toEqual(0)
+    })
+
+    it("measures a card's room in the unit the staff draws it with", function() {
+      // a bar of a quarter, a quarter and a half, drilled on a loop: the wrap
+      // back to its first column is part of the unit the staff spaces it by
+      let columns = [column(["C5"], 0, 4), column(["D5"], 1, 3), column(["E5"], 2, 2)]
+      let looped = [...columns, columns[0]]
+
+      expect(columnUnit(columns)).toBeCloseTo(4 / 3, 6)
+      expect(columnUnit(looped)).toBeCloseTo(1.25, 6)
+
+      // the gaps before the half note are a beat each, so it is drawn in the
+      // room a beat holds in the looping unit, twice
+      expect(columnSpan(columns, looped)).toBeCloseTo(2 * room(1 / 1.25), 6)
+      expect(columnSpan(columns, looped)).toBeGreaterThan(columnSpan(columns))
     })
   })
 
@@ -250,6 +278,15 @@ describe("staff rhythm", function() {
       let arcs = tieArcs(heads, 20)
       expect(arcs.map(arc => [arc.x1, arc.x2, arc.dir]))
         .toEqual([[10, 90, "down"], [90, 110, "down"]])
+    })
+
+    it("keeps a tie running off the card's start clear of the clef", function() {
+      // the head the tie runs to is the first on the staff, closer to the
+      // staff's notes than the stub reaches back
+      let heads = [{beat: 2, name: "C5", x: 15, y: 5, stem: "up", tieTo: null, tieFrom: 0}]
+
+      expect(tieArcs(heads, 20, {left: 8}).map(arc => [arc.x1, arc.x2]))
+        .toEqual([[8, 15]])
     })
   })
 })

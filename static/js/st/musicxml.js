@@ -16,9 +16,9 @@
 //     with the notes they are tied to kept as the merged note's notation.ties
 //     so the staff can draw the continuation heads and their tie arcs
 //   - every note keeps the notation the staff draws it with (see
-//     st/staff_rhythm): the notated value, dots, tuplet ratio, voice, stem
-//     direction and tie flags. Rests are kept the same way, on the track of
-//     their staff, so the staff can draw them at their beat
+//     st/staff_rhythm): the notated value, dots, tuplet ratio, voice and tie
+//     flags. Rests are kept the same way, on the track of their staff, so the
+//     staff can draw them at their beat
 //
 // Not supported: compressed .mxl files (zip containers). They are refused
 // with a MusicXMLError so the UI can show a clear message.
@@ -189,15 +189,11 @@ function isHidden(el) {
   return el.getAttribute("print-object") == "no"
 }
 
-function stemDirection(el) {
-  let stem = childText(el, "stem")
-  return stem == "up" || stem == "down" ? stem : null
-}
-
 // The notation of a note or rest event, the drawing data of st/staff_rhythm:
 // its notated value and dots, the tuplet ratio it is played at (1 for a plain
-// note), its voice and, for a note, the stem the score draws it with
-function notationOf(el, duration, {rest=false}={}) {
+// note) and its voice. The stem the score writes is the direction of a beam,
+// so the staff works out its own (see stemDirection in st/staff_rhythm)
+function notationOf(el, duration) {
   let ratio = timeModification(el)
   let value = notatedValue(el, duration, ratio) || {type: "quarter", dots: 0}
 
@@ -212,19 +208,14 @@ function notationOf(el, duration, {rest=false}={}) {
     out.voice = voice
   }
 
+  // the tuplet brackets and beams of part 2 (sr-score-beams-slurs-q2) are the
+  // ratio's consumer; nothing draws it yet
   if (ratio != 1) {
     out.tuplet = ratio
   }
 
   if (isHidden(el)) {
     out.hidden = true
-  }
-
-  if (!rest) {
-    let stem = stemDirection(el)
-    if (stem) {
-      out.stem = stem
-    }
   }
 
   return out
@@ -337,7 +328,7 @@ function walkPart(measures, partName) {
                 // a whole measure rest is drawn centered in its bar whatever
                 // the meter, so it keeps no notated value of its own
                 wholeMeasure: childEl(el, "rest").getAttribute("measure") == "yes",
-                ...notationOf(el, duration / divisions, {rest: true}),
+                ...notationOf(el, duration / divisions),
               })
             }
             break
@@ -588,7 +579,6 @@ export function parseMusicXML(text) {
       dots: event.dots,
       voice: event.voice,
       tuplet: event.tuplet,
-      stem: event.stem,
       hidden: event.hidden,
     })
 

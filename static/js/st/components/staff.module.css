@@ -330,6 +330,13 @@
             -webkit-user-drag: none;
         }
 
+        /* the augmentation dots of a dotted rest */
+        .rest_dot {
+            position: absolute;
+            user-select: none;
+            -webkit-user-drag: none;
+        }
+
         .ties {
             position: absolute;
             top: 0;

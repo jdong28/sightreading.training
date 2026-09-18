@@ -58,13 +58,6 @@ export const PLATE_STAFF_SCALE = 0.8
 // densest eight bar ones, runs on past the plate's edge
 export const MIN_FIT_SCALE = 0.4
 
-// The distance in column widths from a card's first column to its last: the
-// beats between them for an imported piece's columns, else one a column (see
-// st/staff_rhythm)
-function cardSpan(card) {
-  return columnSpan(card.columns)
-}
-
 // the legacy renderer's scale for the window's width
 function staffScale() {
   return (window.innerWidth < 1000 ? 0.8 : 1) * PLATE_STAFF_SCALE
@@ -423,12 +416,18 @@ export default class SightReadingPage extends React.Component {
       return {scale, noteWidth, unitColumns}
     }
 
+    // the room a card needs, in the unit the staff draws it with, so the plate
+    // is fitted to what is drawn (see drillColumns and st/staff_rhythm)
+    let loop = current.number == null
+    let spanOf = card => columnSpan(card.columns,
+      card == current.card ? unitColumns : drillColumns(card, {loop}))
+
     scale = Math.min(...this.state.notes.generator.cards.map(card =>
-      fitStaffScale(staffWidth, cardSpan(card), {
+      fitStaffScale(staffWidth, spanOf(card), {
         scale, keySignature, minWidth: minNoteWidth(card.columns, keySignature), minScale: MIN_FIT_SCALE,
       })))
 
-    noteWidth = fitNoteWidth(staffWidth, cardSpan(current.card), {
+    noteWidth = fitNoteWidth(staffWidth, spanOf(current.card), {
       scale, keySignature, maxWidth: noteWidth, minWidth: minNoteWidth(current.card.columns, keySignature),
     })
 

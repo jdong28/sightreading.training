@@ -12,7 +12,7 @@ import * as types from "prop-types"
 import {noteStaffOffset} from "st/music"
 import {
   columnExtras, tieArcs, restGlyph, rowCenter, headGlyph, stemDirection,
-  middleRow, STAFF_ROW, STAFF_SPACE, NOTE_HEAD_HEIGHT,
+  middleRow, STAFF_ROW, STAFF_SPACE, NOTE_HEAD_HEIGHT, DOT_SIZE, DOT_GAP,
 } from "st/staff_rhythm"
 import styles from "st/components/staff.module.css"
 
@@ -78,11 +78,12 @@ export default class ScoreExtras extends React.PureComponent {
   }
 
   // The room the bar holding the column at idx spans, in column widths: from
-  // the last column that opens a bar to the next one, or, without one, the end
-  // of the room the columns hold
+  // the last column that opens a bar to the next one, the empty columns the
+  // staff is padded with after a card, or the end of the room the columns hold
   barRoom(idx) {
     let {offsets, advances} = this.props.layout
-    let last = this.props.notes.length - 1
+    let columns = this.props.notes
+    let last = columns.length - 1
 
     let start = 0
     for (let at = Math.min(idx, last); at > 0; at--) {
@@ -94,7 +95,7 @@ export default class ScoreExtras extends React.PureComponent {
 
     let end = offsets[last] + advances[last]
     for (let at = start + 1; at <= last; at++) {
-      if (this.opensBar(at)) {
+      if (this.opensBar(at) || columns[at].beat == null) {
         end = offsets[at]
         break
       }
@@ -103,13 +104,39 @@ export default class ScoreExtras extends React.PureComponent {
     return [offsets[start], end - offsets[start]]
   }
 
-  // The rests of the score, each at its beat. A whole measure rest is centred
-  // in the bar it fills, as it is on paper, whatever the meter
+  // The augmentation dots of a rest, after its glyph and against the middle
+  // line, as they are drawn on a head
+  renderRestDots(rest, key, {left, width, scale}) {
+    let dots = rest.wholeMeasure ? 0 : (rest.dots || 0)
+    let size = DOT_SIZE * scale
+    let out = []
+
+    for (let i = 0; i < dots; i++) {
+      out.push(<img
+        key={`${key}-dot-${i}`}
+        className={styles.rest_dot}
+        style={{
+          left: `${left + width + (DOT_GAP + i * (DOT_SIZE + DOT_GAP)) * scale}px`,
+          top: `${MIDDLE_LINE_ROWS * STAFF_ROW * scale - size / 2}px`,
+          width: `${size}px`,
+          height: `${size}px`,
+        }}
+        src="/static/svg/aug_dot.svg" />)
+    }
+
+    return out
+  }
+
+  // The rests of the score, each at its beat, with its dots. A whole measure
+  // rest is the whole rest glyph centred in the bar it fills, as it is on
+  // paper, whatever the meter and whatever the bar's own length spells
   renderRests(extras) {
     let scale = this.props.scale || 1
+    let out = []
 
-    return extras.filter(extra => extra.kind == "rest").map((rest, idx) => {
-      let glyph = restGlyph(rest.type)
+    extras.filter(extra => extra.kind == "rest").forEach((rest, idx) => {
+      let type = rest.wholeMeasure ? "whole" : rest.type
+      let glyph = restGlyph(type)
       let width = glyph.width * scale
       let height = glyph.height * scale
 
@@ -123,18 +150,22 @@ export default class ScoreExtras extends React.PureComponent {
 
       let line = (MIDDLE_LINE_ROWS - glyph.row) * STAFF_ROW * scale
 
-      return <img
+      out.push(<img
         key={`rest-${idx}`}
         className={styles.rest}
-        data-rest-type={rest.type}
+        data-rest-type={type}
         style={{
           left: `${left}px`,
           top: `${line - glyph.anchor * height}px`,
           width: `${width}px`,
           height: `${height}px`,
         }}
-        src={glyph.src} />
+        src={glyph.src} />)
+
+      out.push(...this.renderRestDots(rest, `rest-${idx}`, {left, width, scale}))
     })
+
+    return out
   }
 
   // the clef props the column at idx is drawn in
@@ -168,10 +199,9 @@ export default class ScoreExtras extends React.PureComponent {
           x: this.left(note.getStart()),
           y: rowCenter(row, clef) * scale,
           width,
-          // the stem the staff draws on the head, never the one the score
-          // writes, which is the direction of a beam that isn't drawn yet. A
-          // value with no stem bows its tie away from the middle line, as a
-          // single voice's stem turns there
+          // the stem the staff draws on the head; a value with no stem bows
+          // its tie away from the middle line, as a single voice's stem turns
+          // there
           stem: this.headStem(note) || stemDirection([row], middleRow(clef)),
           tieTo: note.notation.tieTo,
           tieFrom: note.tiedFrom ?? null,
@@ -181,7 +211,7 @@ export default class ScoreExtras extends React.PureComponent {
     if (!heads.length) { return null }
 
     let width = heads[0].width
-    let arcs = tieArcs(heads, TIE_STUB * scale)
+    let arcs = tieArcs(heads, TIE_STUB * scale, {left: this.props.offsetLeft || 0})
     if (!arcs.length) { return null }
 
     return <svg className={styles.ties} key="ties">

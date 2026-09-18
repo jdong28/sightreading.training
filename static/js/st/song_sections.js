@@ -130,7 +130,6 @@ function noteNotation(note) {
     dots: notation.dots || 0,
     voice: notation.voice || null,
     tuplet: notation.tuplet || 1,
-    stem: notation.stem || null,
     tieTo: next ? next.start : null,
   }
 }
@@ -159,7 +158,6 @@ function tieHeads(note, staff) {
     // it runs from, which is all the score writes on it
     voice: notation.voice || null,
     tuplet: notation.tuplet || 1,
-    stem: notation.stem || null,
     from: idx == 0 ? note.start : ties[idx - 1].start,
     tieTo: ties[idx + 1] ? ties[idx + 1].start : null,
   }))

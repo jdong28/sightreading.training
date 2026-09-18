@@ -134,21 +134,53 @@ export function columnAdvances(columns, unitColumns=columns) {
   return columns.map((column, idx) => {
     let beats = columnBeats(columns, idx)
     if (!(beats > 0)) { return 1 }
-    return Math.max(Math.pow(beats / unit, SPACING_EXPONENT), MIN_COLUMN_ADVANCE)
+    return roomFor(beats, unit)
   })
 }
 
+// The room a gap of that many beats holds, in column widths, where a column
+// width is unit beats (see SPACING_EXPONENT and MIN_COLUMN_ADVANCE)
+function roomFor(beats, unit) {
+  if (!(beats > 0) || !(unit > 0)) { return 0 }
+  return Math.max(Math.pow(beats / unit, SPACING_EXPONENT), MIN_COLUMN_ADVANCE)
+}
+
+// The beats the extras of the first column fall before it: the rest a bar the
+// card opens with holds, or a head a tie runs on to from a column the staff
+// can't show. Zero when every extra falls after a column's own onset
+function leadBeats(columns) {
+  let column = columns && columns[0]
+  if (!column || column.beat == null) { return 0 }
+
+  let earliest = column.beat
+  for (let extra of column.extras || []) {
+    if (extra.beat < earliest) {
+      earliest = extra.beat
+    }
+  }
+
+  return column.beat - earliest
+}
+
 /**
- * Where the columns are drawn and how much room each one holds.
+ * Where the columns are drawn and how much room each one holds. The first
+ * column is offset by the room its card keeps for the extras that fall before
+ * it, so a bar opening on a rest draws it there rather than over the clef.
  * @param {Array} columns the columns on the staff
  * @param {Array} [unitColumns] the whole card the columns are a window of
- * @returns {{offsets: number[], advances: number[], gaps: Array, unit: number|null}}
- * offsets and advances in column widths, gaps the beats each column holds
+ * @returns {{offsets: number[], advances: number[], gaps: Array, unit:
+ * number|null, leadBeats: number}} offsets and advances in column widths, gaps
+ * the beats each column holds, leadBeats the beats the reserved room holds
  */
 export function columnLayout(columns, unitColumns) {
   let advances = columnAdvances(columns, unitColumns)
+  let unitOf = unitColumns && unitColumns.length ? unitColumns : columns
+  let unit = columnUnit(unitOf)
+  // measured over the card, not the window, so the room holds still as the
+  // notes slide through the staff
+  let beats = leadBeats(unitOf)
   let offsets = []
-  let at = 0
+  let at = roomFor(beats, unit)
 
   for (let advance of advances) {
     offsets.push(at)
@@ -159,7 +191,8 @@ export function columnLayout(columns, unitColumns) {
     offsets,
     advances,
     gaps: columns.map((column, idx) => columnBeats(columns, idx)),
-    unit: columnUnit(unitColumns && unitColumns.length ? unitColumns : columns),
+    unit,
+    leadBeats: beats,
   }
 }
 
@@ -169,21 +202,23 @@ export function columnOffsets(columns, unitColumns) {
   return columnLayout(columns, unitColumns).offsets
 }
 
-// The distance in column widths from the first column of columns to the last,
-// what a card is fitted to the staff plate by
-export function columnSpan(columns) {
+// The room the columns need in column widths, what a card is fitted to the
+// staff plate by: up to the last column, from the staff's notes rather than
+// from the first column, so the room reserved before it is fitted too, and
+// measured in the unit the staff draws the card with (see columnAdvances)
+export function columnSpan(columns, unitColumns) {
   if (!columns || columns.length < 2) { return 0 }
-  let offsets = columnOffsets(columns)
+  let offsets = columnOffsets(columns, unitColumns)
   return offsets[offsets.length - 1]
 }
 
 // The stem direction of a group of notes sharing a staff, a column and a
 // voice: away from the voice the group is not (an upper voice stems up and a
 // lower voice down), else away from the middle line, which is what a single
-// voice does. The direction the score writes (notation.stem) is not used: it
-// is the direction of the beam the note belongs to, and until beams are drawn
-// a lone note under it would stem the wrong way and hang its flag over the
-// notes around it
+// voice does. The direction the score writes is not kept at all (st/musicxml):
+// it is the direction of the beam the note belongs to, and until beams are
+// drawn a lone note under it would stem the wrong way and hang its flag over
+// the notes around it
 // rows: the staff rows of the group's notes
 // middleRow: the staff's middle line
 // opts.voicePosition: "upper" or "lower" when two voices share the staff
@@ -324,6 +359,8 @@ export const STEM_WIDTH = STAFF_SPACE * 0.13
 // a stem is three and a half spaces long, as it is on paper
 export const STEM_LENGTH = STAFF_SPACE * 3.5
 export const DOT_SIZE = STAFF_SPACE * 0.26
+// the space between a head or rest and its first augmentation dot, and between dots
+export const DOT_GAP = DOT_SIZE
 // how far a head hangs above the line of its row, see .note's transform
 const HEAD_ABOVE_ROW = 0.47
 
@@ -395,7 +432,7 @@ export function rowLine(row, {upperRow}) {
  * @param {string} [opts.staff] the grand staff being drawn, when it is one of two
  * @returns {Object[]} each extra with `offset`, its own place in column widths
  */
-export function columnExtras(columns, {offsets, advances, gaps, unit, staff}) {
+export function columnExtras(columns, {offsets, advances, gaps, unit, leadBeats, staff}) {
   if (!offsets || !advances) { return [] }
 
   let out = []
@@ -405,18 +442,25 @@ export function columnExtras(columns, {offsets, advances, gaps, unit, staff}) {
 
     for (let extra of column.extras || []) {
       if (staff && extra.staff && extra.staff != staff) { continue }
+
+      let before = column.beat - extra.beat
+
+      if (idx == 0 && before > 0) {
+        // an extra before the first column, the rest a bar opens with, keeps
+        // its share of the room the layout reserves before the first head
+        let share = leadBeats > 0 ? offsets[0] * (1 - before / leadBeats) : 0
+        out.push({...extra, columnIdx: idx, offset: Math.max(0, share)})
+        continue
+      }
+
       // a beat of the column's own room, so a head or rest between two
       // columns keeps its place however that column is spaced; a column
       // whose room isn't known goes by the card's own beat to a column width
       let into = beats > 0 ?
-        advances[idx] * (extra.beat - column.beat) / beats :
-        (extra.beat - column.beat) / (unit > 0 ? unit : 1)
+        advances[idx] * -before / beats :
+        -before / (unit > 0 ? unit : 1)
 
-      // an extra falling before the first column, a bar the card opens a rest
-      // into or a head carried from a column the staff can't show, is drawn
-      // in that column's own room: the staff has none before it, where the
-      // key signature and the clef are
-      out.push({...extra, columnIdx: idx, offset: Math.max(0, offsets[idx] + into)})
+      out.push({...extra, columnIdx: idx, offset: offsets[idx] + into})
     }
   })
 
@@ -430,9 +474,12 @@ export function columnExtras(columns, {offsets, advances, gaps, unit, staff}) {
  * @param {Object[]} heads {beat, name, x, y, stem, tieTo, tieFrom}, in the
  * pixels of the staff's scale
  * @param {number} stub how far a tie with no head to run to reaches
+ * @param {Object} [opts]
+ * @param {number} [opts.left] the furthest left a stub reaches back to, so a
+ * tie running off this card stays clear of the clef and key signature
  * @returns {Object[]} {x1, y1, x2, y2, dir}, dir the side the arc bulges to
  */
-export function tieArcs(heads, stub) {
+export function tieArcs(heads, stub, {left=null}={}) {
   let at = (beat, name) => heads.find(head =>
     head.name == name && Math.abs(head.beat - beat) < BEAT_EPSILON)
 
@@ -452,8 +499,9 @@ export function tieArcs(heads, stub) {
     }
 
     if (head.tieFrom != null && !at(head.tieFrom, head.name)) {
+      let from = head.x - stub
       arcs.push({
-        x1: head.x - stub, y1: head.y,
+        x1: left == null ? from : Math.max(left, from), y1: head.y,
         x2: head.x, y2: head.y,
         dir: arcDir(head),
       })

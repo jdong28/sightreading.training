@@ -13,12 +13,10 @@ import {parseNote, noteStaffOffset} from "st/music"
 
 import * as types from "prop-types"
 import {
-  noteTypeProps, headGlyph, NOTE_HEAD_HEIGHT, STEM_WIDTH, DOT_SIZE, FLAG_GLYPH,
+  noteTypeProps, headGlyph, NOTE_HEAD_HEIGHT, STEM_WIDTH, DOT_SIZE, DOT_GAP,
+  FLAG_GLYPH,
 } from "st/staff_rhythm"
 import styles from "st/components/staff.module.css"
-
-// the space between a head and its first augmentation dot, and between dots
-const DOT_GAP = DOT_SIZE
 
 export default class ScoreNotes extends React.PureComponent {
   static propTypes = {
