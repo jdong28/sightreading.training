@@ -5,7 +5,12 @@ import {parseNote, noteStaffOffset, MIDDLE_C_PITCH} from "st/music"
 
 import {SongNoteList, SongNote} from "st/song_note_list"
 import LedgerLines, {LEDGER_OVERHANG} from "st/components/staff/ledger_lines"
-import WholeNotes from "st/components/staff/whole_notes"
+import ScoreNotes from "st/components/staff/score_notes"
+import ScoreExtras from "st/components/staff/score_extras"
+import {
+  columnOffsets, columnUnit, columnExtras,
+  STAFF_HEIGHT, NOTE_HEAD_HEIGHT,
+} from "st/staff_rhythm"
 import styles from "st/components/staff.module.css"
 
 // The unscaled horizontal layout of the notes on a staff (st/components/staves),
@@ -13,9 +18,7 @@ import styles from "st/components/staff.module.css"
 // .group_offset in staff.module.css
 export const STAFF_NOTES_LEFT = 120
 export const KEY_SIGNATURE_SPACING = 20
-const STAFF_HEIGHT = 120
 // a whole note head is 20% of the staff, noteheads.s0.svg is 1.69:1
-const NOTE_HEAD_HEIGHT = STAFF_HEIGHT * 0.2
 export const NOTE_HEAD_WIDTH = NOTE_HEAD_HEIGHT * 1.69
 // how far a sharp, the widest accidental, reaches left of its note head: it
 // ends 10% of a head short of it and is three heads tall, sharp.svg is 245:1024
@@ -25,6 +28,8 @@ export const GROUP_OFFSET = 30
 
 // the space between an accidental and the note heads of the column before it
 const ACCIDENTAL_GAP = 4
+// the space kept between the note heads of columns that draw no accidental
+const NOTE_HEAD_GAP = 6
 
 // the space a clef change keeps from the note heads and accidentals around it
 const CLEF_CHANGE_MARGIN = 2
@@ -76,13 +81,32 @@ export function staffColumnNotes(column, {staff, keySignature, filterPitch}) {
   return [notes.filter((n, idx) => keep[idx]), offsets.filter((o, idx) => keep[idx])]
 }
 
+// How the score writes each of the notes a staff draws in a column (see
+// staffColumnNotes), or null for a column without the score's notation
+export function columnNotation(column, columnNotes, {staff}) {
+  if (!Array.isArray(column) || !column.notation) { return null }
+
+  let notation = column.notation
+  if (column.staves && staff) {
+    notation = notation.filter((n, idx) => column.staves[idx] == staff)
+  }
+
+  return notation.length == columnNotes.length ? notation : null
+}
+
 // The narrowest column, unscaled like the staff's noteWidth, that keeps an
 // accidental clear of the note heads of the column before it: a head, pushed
 // right by the group offset when any column has a stacked second, then the
-// accidental and a little space
+// accidental and a little space. Columns whose notes are all spelled by the
+// key signature draw no accidental and only keep the heads apart, so a piece
+// written in its own key fits more of itself on the staff
 export function minNoteWidth(columns, keySignature) {
   let stacked = columns.some(column => groupOffsets(column, keySignature).includes(true))
-  return Math.ceil(NOTE_HEAD_WIDTH + (stacked ? GROUP_OFFSET : 0) + ACCIDENTAL_WIDTH + ACCIDENTAL_GAP)
+  let accidental = columns.some(column => column.some(note =>
+    keySignature.accidentalsForNote(keySignature.enharmonic(note)) != null))
+
+  return Math.ceil(NOTE_HEAD_WIDTH + (stacked ? GROUP_OFFSET : 0) +
+    (accidental ? ACCIDENTAL_WIDTH + ACCIDENTAL_GAP : NOTE_HEAD_GAP))
 }
 
 // the unscaled width a staff wrapper needs besides the span of the columns
@@ -114,11 +138,15 @@ export function fitStaffScale(staffWidth, span, {scale=1, keySignature=null, min
   return Math.max(Math.min(minScale, scale), Math.min(scale, fit))
 }
 
-// where the bar line before the column at idx is drawn
-function barLineLeft(props, offsetLeft, idx) {
+// Where the bar line before the column at idx is drawn: on the boundary
+// between it and the column before, at most one column width back so a long
+// note's room never drags the line away from the bar it opens
+function barLineLeft(props, offsetLeft, idx, offsets) {
   let noteWidth = props.noteWidth
   let headWidth = NOTE_HEAD_WIDTH * (props.scale || 1)
-  return Math.round(offsetLeft + idx * noteWidth - (noteWidth - headWidth) / 2)
+  let at = offsets[idx]
+  let gap = idx > 0 ? Math.min(1, at - offsets[idx - 1]) : 1
+  return Math.round(offsetLeft + at * noteWidth - (gap * noteWidth - headWidth) / 2)
 }
 
 // The boxes of the small clefs a staff draws where the clef of its columns
@@ -136,7 +164,7 @@ export function clefChangeBoxes(props) {
   let offsetLeft = keySignatureWidth(props.keySignature) * scale
   let staffHeight = STAFF_HEIGHT * scale
   let margin = CLEF_CHANGE_MARGIN * scale
-  let room = noteWidth - (NOTE_HEAD_WIDTH + ACCIDENTAL_WIDTH) * scale - 2 * margin
+  let offsets = columnOffsets(props.notes, props.unitColumns)
   let columnClef = idx => (props.columnClefs && props.columnClefs[idx]) || props
 
   let out = []
@@ -149,14 +177,15 @@ export function clefChangeBoxes(props) {
     let clef = columnClef(idx)
     if (idx == 0 || clef.cleffImage == columnClef(idx - 1).cleffImage) { return }
 
-    let [before, offsets] = staffColumnNotes(beforeColumn, props)
-    let offset = offsets.includes(true) ? GROUP_OFFSET * scale : 0
+    let [before, groupOffset] = staffColumnNotes(beforeColumn, props)
+    let offset = groupOffset.includes(true) ? GROUP_OFFSET * scale : 0
 
     let glyph = clef.changeGlyph
-    let start = offsetLeft + (idx - 1) * noteWidth + NOTE_HEAD_WIDTH * scale + offset + margin
-    let space = room - offset
+    let gap = (offsets[idx] - offsets[idx - 1]) * noteWidth
+    let start = offsetLeft + offsets[idx - 1] * noteWidth + NOTE_HEAD_WIDTH * scale + offset + margin
+    let space = gap - (NOTE_HEAD_WIDTH + ACCIDENTAL_WIDTH) * scale - 2 * margin - offset
     if (column.measure != null) {
-      space = Math.min(space, barLineLeft(props, offsetLeft, idx) - margin - start)
+      space = Math.min(space, barLineLeft(props, offsetLeft, idx, offsets) - margin - start)
     }
     let fullHeight = glyph.height * staffHeight
     let width = Math.min(fullHeight * glyph.aspect, space)
@@ -198,10 +227,34 @@ export default class StaffNotes extends React.Component {
     // the clef props (upperRow, lowerRow, cleffImage, staffClass) each column
     // is drawn in, when they differ from the staff's (see Staff#clefProps)
     columnClefs: types.array,
+    // every column of the drill's unit, which fixes the beat proportional
+    // layout while the notes slide through the staff (see st/staff_rhythm)
+    unitColumns: types.array,
+  }
+
+  /**
+   * Where the columns on the staff are drawn, in column widths from the
+   * first, and how many beats a column width is. The layout is measured over
+   * the whole unit so it holds still as the notes slide through the staff.
+   * @returns {{offsets: number[], unit: number|null}}
+   */
+  columnLayout() {
+    if (this.layoutFor != this.props.notes || this.layoutUnit != this.props.unitColumns) {
+      this.layoutFor = this.props.notes
+      this.layoutUnit = this.props.unitColumns
+      let unitColumns = this.props.unitColumns
+      this.layoutCache = {
+        offsets: columnOffsets(this.props.notes, unitColumns),
+        unit: columnUnit(unitColumns && unitColumns.length ? unitColumns : this.props.notes),
+      }
+    }
+
+    return this.layoutCache
   }
 
   render() {
-    let [songNotes, noteClasses] = this.convertToSongNotes()
+    let layout = this.columnLayout()
+    let [songNotes, noteClasses] = this.convertToSongNotes(layout)
     let heldSongNotes = this.convertHeldToSongNotes()
 
     let scale = this.props.scale || 1
@@ -210,7 +263,7 @@ export default class StaffNotes extends React.Component {
     // the notes, by the clef of their column, which places them
     let byClef = new Map()
     let group = (note, key) => {
-      let clef = this.columnClef(note.getStart())
+      let clef = this.columnClef(note.columnIdx)
       if (!byClef.has(clef.cleffImage)) {
         byClef.set(clef.cleffImage, {clef, notes: [], held: []})
       }
@@ -231,7 +284,7 @@ export default class StaffNotes extends React.Component {
           scale={scale}
         />,
 
-        <WholeNotes key={`notes-${idx}`}
+        <ScoreNotes key={`notes-${idx}`}
           offsetLeft={offsetLeft}
           keySignature={this.props.keySignature}
           upperRow={clef.upperRow}
@@ -239,9 +292,10 @@ export default class StaffNotes extends React.Component {
           notes={notes}
           noteClasses={noteClasses}
           pixelsPerBeat={this.props.noteWidth}
+          scale={scale}
         />,
 
-        <WholeNotes key={`held_notes-${idx}`}
+        <ScoreNotes key={`held_notes-${idx}`}
           offsetLeft={offsetLeft}
           keySignature={this.props.keySignature}
           upperRow={clef.upperRow}
@@ -249,11 +303,19 @@ export default class StaffNotes extends React.Component {
           notes={held}
           staticNoteClasses={styles.held}
           pixelsPerBeat={this.props.noteWidth}
+          scale={scale}
         />,
       ])}
 
-      {this.renderBarLines(offsetLeft)}
-      {this.renderAnnotations()}
+      <ScoreExtras
+        {...this.props}
+        offsetLeft={offsetLeft}
+        scale={scale}
+        layout={layout}
+        heads={songNotes} />
+
+      {this.renderBarLines(offsetLeft, layout)}
+      {this.renderAnnotations(layout)}
     </div>
   }
 
@@ -301,9 +363,12 @@ export default class StaffNotes extends React.Component {
     return out
   }
 
-  convertToSongNotes() {
+  // Every head the staff draws: the notes of its columns, then the heads the
+  // ties of the piece run on to, which are drawn where they fall but are
+  // never played. Each carries the column it belongs to and, for an imported
+  // piece, its beat and how the score writes it
+  convertToSongNotes({offsets, unit}) {
     let notes = new SongNoteList()
-    let beat = 0
     let dur = 40 / this.props.noteWidth
 
     let noteClasses = {}
@@ -318,12 +383,19 @@ export default class StaffNotes extends React.Component {
     }
 
     this.props.notes.forEach((column, columnIdx) => {
-      let [columnNotes, offsets] = staffColumnNotes(column, this.props)
+      let [columnNotes, groupOffset] = staffColumnNotes(column, this.props)
+      let notation = columnNotation(column, columnNotes, this.props)
 
       columnNotes.forEach((n, idx) => {
-        let sNote = new SongNote(n, beat, dur)
+        let sNote = new SongNote(n, offsets[columnIdx], dur)
+        sNote.columnIdx = columnIdx
 
-        if (offsets[idx]) {
+        if (notation && notation[idx]) {
+          sNote.notation = notation[idx]
+          sNote.beat = column.beat
+        }
+
+        if (groupOffset[idx]) {
           appendClass(sNote, "group_offset")
         }
 
@@ -339,9 +411,24 @@ export default class StaffNotes extends React.Component {
 
         notes.push(sNote)
       })
-
-      beat += 1
     })
+
+    for (let head of columnExtras(this.props.notes, {offsets, unit, staff: this.props.staff})) {
+      if (head.kind != "head") { continue }
+
+      let sNote = new SongNote(head.name, head.offset, dur)
+      sNote.columnIdx = head.columnIdx
+      sNote.notation = head
+      sNote.beat = head.beat
+      sNote.tiedFrom = head.from ?? null
+
+      // a head another voice sounds at the same beat sits beside the one
+      // that is played, as the score writes the two voices
+      sNote.doubled = notes.some(note =>
+        note.note == sNote.note && note.getStart() == sNote.getStart())
+
+      notes.push(sNote)
+    }
 
     return [notes, noteClasses]
   }
@@ -358,7 +445,7 @@ export default class StaffNotes extends React.Component {
   // halfway between the previous column's note head and the column, so it
   // moves with its column. The bar number is written above it, on the upper
   // staff only of a grand staff
-  renderBarLines(offsetLeft) {
+  renderBarLines(offsetLeft, {offsets}) {
     let showNumbers = this.props.showAnnotations !== false
 
     let out = []
@@ -368,7 +455,7 @@ export default class StaffNotes extends React.Component {
       out.push(<div
         key={`bar-line-${idx}`}
         className={styles.bar_line}
-        style={{left: `${barLineLeft(this.props, offsetLeft, idx)}px`}}
+        style={{left: `${barLineLeft(this.props, offsetLeft, idx, offsets)}px`}}
         data-measure={column.measure}
         data-label={showNumbers ? column.measure : null} />)
     })
@@ -390,7 +477,7 @@ export default class StaffNotes extends React.Component {
       src={box.clef.cleffImage} />)
   }
 
-  renderAnnotations() {
+  renderAnnotations({offsets}) {
     if (this.props.showAnnotations === false) {
       return null
     }
@@ -400,7 +487,7 @@ export default class StaffNotes extends React.Component {
       if (column.annotation) {
         let style = {
           top: "-60%",
-          left: `${idx * this.props.noteWidth}px`
+          left: `${offsets[idx] * this.props.noteWidth}px`
         }
         out.push(<div
           style={style}

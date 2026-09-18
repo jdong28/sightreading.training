@@ -77,12 +77,15 @@ export function sectionCard(measures) {
   }
 }
 
+// what a copy of a column keeps for the staff to draw it with: the score's
+// staves and clefs (st/song_sections) and its rhythm (st/staff_rhythm)
+export const COLUMN_DRAW_KEYS = ["staves", "clefs", "beat", "beats", "notation", "extras"]
+
 /**
  * A copy of the card's column for the staff. When the card has more than
  * one measure, the first column of each measure carries its bar number as
- * `measure`, where the staff draws a bar line. The grand staff of its notes
- * are kept as `staves`, and the clefs at its onset as `clefs`, for a staff
- * that draws them on the score's staves (st/components/staves)
+ * `measure`, where the staff draws a bar line. Everything the staff draws the
+ * column with is kept (see COLUMN_DRAW_KEYS)
  * @param {MeasureCard} card
  * @param {number} idx
  * @returns {string[]}
@@ -92,9 +95,10 @@ export function cardColumn(card, idx) {
   let column = [...source]
   let measureIdx = card.columnMeasures[idx]
 
-  if (source.staves) {
-    column.staves = source.staves
-    column.clefs = source.clefs
+  for (let key of COLUMN_DRAW_KEYS) {
+    if (source[key] != null) {
+      column[key] = source[key]
+    }
   }
 
   if (card.measures.length > 1 && (idx == 0 || card.columnMeasures[idx - 1] != measureIdx)) {

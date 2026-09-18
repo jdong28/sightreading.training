@@ -248,7 +248,7 @@ describe("sight reading page", function() {
 
         await Promise.all([...container.querySelectorAll("img")].map(img => img.decode()))
 
-        let notes = [...container.querySelectorAll(`.${staffStyles.whole_note}`)]
+        let notes = [...container.querySelectorAll(`.${staffStyles.note}`)]
         let next = notes.pop()
         let headsRight = Math.max(...notes.map(note =>
           note.querySelector(`.${staffStyles.primary}`).getBoundingClientRect().right))
@@ -309,7 +309,7 @@ describe("sight reading page", function() {
     expect(el.querySelectorAll(`.${staffStyles.bar_line}`).length).toEqual(4)
 
     let upperNotes = () => el.querySelector(`.${staffStyles.staff_notes}`)
-    let noteLefts = () => [...upperNotes().querySelectorAll(`.${staffStyles.whole_note}`)]
+    let noteLefts = () => [...upperNotes().querySelectorAll(`.${staffStyles.note}`)]
       .map(note => parseFloat(note.style.left)).sort((a, b) => a - b)
     let barLineLeft = measure =>
       parseFloat(upperNotes().querySelector(`.${staffStyles.bar_line}[data-measure="${measure}"]`).style.left)
@@ -372,7 +372,7 @@ describe("sight reading page", function() {
 
     let lowerNotes = () => {
       let lower = el.querySelector("[data-staff=\"lower\"]")
-      return [lower, [...lower.querySelectorAll(`.${staffStyles.whole_note}`)]]
+      return [lower, [...lower.querySelectorAll(`.${staffStyles.note}`)]]
     }
 
     for (let mode of ["scroll", "wait"]) {

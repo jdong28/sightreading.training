@@ -12,12 +12,19 @@
 //   - every staff of a part becomes its own track, so a piano part becomes
 //     two tracks, each with a clef entry from the part's <clef> elements
 //   - repeats, endings, and transposition are ignored
-//   - grace notes are skipped, ties are merged into one note
+//   - grace notes are skipped, ties are merged into one note for detection,
+//     with the notes they are tied to kept as the merged note's notation.ties
+//     so the staff can draw the continuation heads and their tie arcs
+//   - every note keeps the notation the staff draws it with (see
+//     st/staff_rhythm): the notated value, dots, tuplet ratio, voice, stem
+//     direction and tie flags. Rests are kept the same way, on the track of
+//     their staff, so the staff can draw them at their beat
 //
 // Not supported: compressed .mxl files (zip containers). They are refused
 // with a MusicXMLError so the UI can show a clear message.
 
 import {noteName, parseNote} from "st/music"
+import {NOTE_TYPES, typeForBeats} from "st/staff_rhythm"
 import {MultiTrackSong, SongNote} from "st/song_note_list"
 
 export class MusicXMLError extends Error {
@@ -149,6 +156,78 @@ function tieTypes(noteEl) {
   return types
 }
 
+// The notated value of a note or rest: its <type> when the score writes one,
+// else the value its duration spells. Returns {type, dots}, the notated value
+// and the number of augmentation dots, or null when neither can be named.
+function notatedValue(el, beats, ratio) {
+  let dots = childEls(el, "dot").length
+  let type = childText(el, "type")
+
+  if (type && NOTE_TYPES[type]) {
+    return {type, dots}
+  }
+
+  return typeForBeats(beats / ratio)
+}
+
+// actual-notes / normal-notes of a <time-modification>, eg. 3/2 for a
+// triplet, or 1 for a note played as it is written
+function timeModification(el) {
+  let mod = childEl(el, "time-modification")
+  if (!mod) { return 1 }
+
+  let actual = +(childText(mod, "actual-notes") || 0)
+  let normal = +(childText(mod, "normal-notes") || 0)
+  return actual > 0 && normal > 0 ? actual / normal : 1
+}
+
+// Notation elements the score hides (MuseScore writes the invisible rests it
+// pads a voice with this way) are parsed but never drawn
+function isHidden(el) {
+  return el.getAttribute("print-object") == "no"
+}
+
+function stemDirection(el) {
+  let stem = childText(el, "stem")
+  return stem == "up" || stem == "down" ? stem : null
+}
+
+// The notation of a note or rest event, the drawing data of st/staff_rhythm:
+// its notated value and dots, the tuplet ratio it is played at (1 for a plain
+// note), its voice and, for a note, the stem the score draws it with
+function notationOf(el, duration, {rest=false}={}) {
+  let ratio = timeModification(el)
+  let value = notatedValue(el, duration, ratio) || {type: "quarter", dots: 0}
+
+  let out = {type: value.type}
+
+  if (value.dots) {
+    out.dots = value.dots
+  }
+
+  let voice = +(childText(el, "voice") || 0)
+  if (voice) {
+    out.voice = voice
+  }
+
+  if (ratio != 1) {
+    out.tuplet = ratio
+  }
+
+  if (isHidden(el)) {
+    out.hidden = true
+  }
+
+  if (!rest) {
+    let stem = stemDirection(el)
+    if (stem) {
+      out.stem = stem
+    }
+  }
+
+  return out
+}
+
 // Walks the measures of one part, producing measure relative events so the
 // measure starts can be reconciled across parts afterwards.
 function walkPart(measures, partName) {
@@ -159,6 +238,7 @@ function walkPart(measures, partName) {
     beatsPerMeasureAt: [], // active time signature by measure index
     fifthsAt: [], // active key signature by measure index
     events: [],
+    rests: [],
     clefs: [],
     fifths: null,
     beatsPerMeasure: null,
@@ -244,6 +324,20 @@ function walkPart(measures, partName) {
           }
 
           if (hasChild(el, "rest")) {
+            if (duration > 0) {
+              let staff = +(childText(el, "staff") || 1)
+              part.staves.add(staff)
+              part.rests.push({
+                measureIdx,
+                offset: start / divisions,
+                duration: duration / divisions,
+                staff,
+                // a whole measure rest is drawn centered in its bar whatever
+                // the meter, so it keeps no notated value of its own
+                wholeMeasure: childEl(el, "rest").getAttribute("measure") == "yes",
+                ...notationOf(el, duration / divisions, {rest: true}),
+              })
+            }
             break
           }
 
@@ -270,6 +364,7 @@ function walkPart(measures, partName) {
             staff,
             tieStart: ties.has("start"),
             tieStop: ties.has("stop"),
+            ...notationOf(el, duration / divisions),
           })
           break
         }
@@ -466,8 +561,34 @@ export function parseMusicXML(text) {
       track.cleffs.push([measureStarts[clef.measureIdx] + clef.offset, clef.sign])
     }
 
+    for (let rest of part.rests) {
+      let track = song.getTrack(trackByStaff[rest.staff])
+      if (!track.rests) {
+        track.rests = []
+      }
+      track.rests.push({
+        start: measureStarts[rest.measureIdx] + rest.offset,
+        duration: rest.duration,
+        type: rest.type,
+        dots: rest.dots,
+        voice: rest.voice,
+        wholeMeasure: rest.wholeMeasure,
+        hidden: rest.hidden,
+      })
+    }
+
     // a tie start waiting for its stop, keyed by track and note name
     let pendingTies = {}
+
+    // the notation of an event, as the staff draws it (see st/staff_rhythm)
+    let notationFor = event => ({
+      type: event.type,
+      dots: event.dots,
+      voice: event.voice,
+      tuplet: event.tuplet,
+      stem: event.stem,
+      hidden: event.hidden,
+    })
 
     for (let event of part.events) {
       let track = trackByStaff[event.staff]
@@ -478,6 +599,9 @@ export function parseMusicXML(text) {
         let pending = pendingTies[key]
         if (pending && Math.abs(pending.getStop() - noteStart) < EPSILON) {
           pending.duration += event.duration
+          // the note the tie runs to is drawn as its own head, tied to the
+          // one before it, though only the merged note is played
+          pending.notation.ties.push({start: noteStart, ...notationFor(event)})
           if (!event.tieStart) {
             delete pendingTies[key]
           }
@@ -486,6 +610,7 @@ export function parseMusicXML(text) {
       }
 
       let note = new SongNote(event.name, noteStart, event.duration)
+      note.notation = {...notationFor(event), ties: []}
       song.pushWithTrack(note, track)
 
       if (event.tieStart) {

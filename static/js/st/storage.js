@@ -34,7 +34,10 @@ export const DECK_MIGRATION_MARKER = "legacyDeckMigrated"
 
 export const LIBRARY_FORMAT = "sightreading-library"
 // 2: note names use middle C "C4", version 1 pieces are renumbered on import
-export const LIBRARY_VERSION = 2
+// 3: pieces carry the score's rhythm (song format 2, see st/sheet_music_deck);
+// version 2 pieces are read as they are and drill unchanged, drawn as whole
+// notes until their score is imported again
+export const LIBRARY_VERSION = 3
 
 // sessions started within this many days are loaded into the cache
 export const RECENT_SESSION_DAYS = 30

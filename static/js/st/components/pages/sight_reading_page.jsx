@@ -39,6 +39,7 @@ import {getSession} from "st/app"
 
 import {StaffTwo} from "st/components/staff_two"
 import {fitNoteWidth, fitStaffScale, minNoteWidth} from "st/components/staff_notes"
+import {columnAdvances, columnSpan} from "st/staff_rhythm"
 import {drillColumns} from "st/measure_cards"
 
 const DEFAULT_NOTE_WIDTH = 100
@@ -55,9 +56,11 @@ export const PLATE_STAFF_SCALE = 0.8
 // MIN_FIT_SCALE. A card that still doesn't fit runs on past the plate's edge
 export const MIN_FIT_SCALE = 0.5
 
-// the distance in columns from a card's first column to its last
+// The distance in column widths from a card's first column to its last: the
+// beats between them for an imported piece's columns, else one a column (see
+// st/staff_rhythm)
 function cardSpan(card) {
-  return card.columns.length - 1
+  return columnSpan(card.columns)
 }
 
 // the legacy renderer's scale for the window's width
@@ -430,6 +433,17 @@ export default class SightReadingPage extends React.Component {
     return {scale, noteWidth, unitColumns}
   }
 
+  // How many column widths the staff slides when the head column of notes is
+  // done with, which is one for every column of a drill without the score's
+  // rhythm and a long note's own room in an imported piece
+  columnAdvance(notes) {
+    if (!notes || !notes.length) { return 1 }
+
+    let current = this.currentCard()
+    let [advance] = columnAdvances(notes, current ? this.unitColumns(current) : null)
+    return advance > 0 ? advance : 1
+  }
+
   // Begin: a fresh session in new stats, with the elapsed clock running
   beginSession() {
     if (this.state.session) { return }
@@ -586,6 +600,7 @@ export default class SightReadingPage extends React.Component {
           gaEvent("sight_reading", "note", "hit");
 
           this.advancedNotes = this.state.notes
+          let advance = this.columnAdvance(this.state.notes)
           let notes = this.state.notes.clone()
           notes.shift();
           notes.pushRandom();
@@ -598,7 +613,7 @@ export default class SightReadingPage extends React.Component {
             touchedNotes: {}
           })
 
-          this.state.slider.add(1)
+          this.state.slider.add(advance)
 
           return true
         } else {
@@ -641,6 +656,7 @@ export default class SightReadingPage extends React.Component {
     }
 
     // Advance to next note
+    let advance = this.columnAdvance(this.state.notes)
     let notes = this.state.notes.clone()
     notes.shift()
     notes.pushRandom()
@@ -652,7 +668,7 @@ export default class SightReadingPage extends React.Component {
       touchedNotes: {}
     })
 
-    this.state.slider.add(1)
+    this.state.slider.add(advance)
   }
 
   pressNote(note) {
@@ -781,6 +797,13 @@ export default class SightReadingPage extends React.Component {
           notes.shift();
           notes.pushRandom();
           this.setState({ notes })
+
+          // the next column is its own width away, so a long note holds the
+          // staff for as many beats as the score gives it
+          let slider = this.state.slider
+          let advance = this.columnAdvance(notes)
+          slider.value += advance - slider.loopPhase
+          slider.loopPhase = advance
         }.bind(this)
       })
     });

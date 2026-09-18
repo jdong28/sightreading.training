@@ -17,7 +17,7 @@ import {pieceSectionMeasures, BOTH_HANDS, RIGHT_HAND, LEFT_HAND} from "st/data"
 import {reverieOpening, clefChangeScore, midMeasureClefScore} from "spec/helpers"
 
 // MIDI pitches, so the specs don't depend on the octave numbering of names
-const G2 = 43, C3 = 48, E3 = 52, F3 = 53, G3 = 55, A3 = 57, Bb3 = 58, B3 = 59, C4 = 60, D4 = 62, E4 = 64, G4 = 67, D5 = 74, G5 = 79
+const G2 = 43, C3 = 48, E3 = 52, F3 = 53, G3 = 55, A3 = 57, Bb3 = 58, B3 = 59, C4 = 60, D4 = 62, E4 = 64, G4 = 67, A4 = 69, C5 = 72, D5 = 74, E5 = 76, F5 = 77, G5 = 79
 
 const GRAND = {name: "grand", range: ["C2", "C6"]}
 
@@ -58,7 +58,7 @@ describe("staves", function() {
 
   let staffEl = staff => container.querySelector(`[data-staff="${staff}"]`)
   let clefImage = el => el.querySelector(`.${staffStyles.cleff}`).getAttribute("src")
-  let notesOn = el => [...el.querySelectorAll(`.${staffStyles.whole_note}`)]
+  let notesOn = el => [...el.querySelectorAll(`.${staffStyles.note}`)]
   let notePitches = el => notesOn(el).map(note => +note.dataset.midiNote)
   let ledgerLines = el => el.querySelectorAll(`.${staffStyles.ledger_line}`).length
   let clefChanges = el => [...el.querySelectorAll(`.${staffStyles.clef_change}`)]
@@ -157,7 +157,10 @@ describe("staves", function() {
 
       expect(notesOn(upper).length).toEqual(0)
       expect(new Set(notePitches(lower))).toEqual(new Set([Bb3, C4, D4, G4]))
-      expect(notesOn(lower).length).toEqual(14)
+      // the fourteen columns of the two bars, the three heads their ties run
+      // on to and bar 2's whole note in the second voice, which are all drawn
+      // though only the columns are played
+      expect(notesOn(lower).length).toEqual(14 + 3 + 1)
 
       expect(clefImage(upper)).toContain("clefs.G")
       expect(clefImage(lower)).toContain("clefs.G")
@@ -650,6 +653,98 @@ describe("staves", function() {
         .toEqual(["/static/svg/clefs.G.svg", "/static/svg/clefs.F_change.svg"])
       expect(noteTop(lower, C4)).toEqual("125%")
       expect(noteTop(lower, E3)).toEqual("37%")
+    })
+  })
+
+  describe("the score's rhythm", function() {
+    // a 4/4 bar of a half note and two quarters, then one of a dotted
+    // quarter, an eighth and a sixteenth, all on the treble staff
+    let rhythmScore = () => `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes><divisions>4</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>8</duration><voice>1</voice><type>half</type></note>
+      <note><pitch><step>E</step><octave>5</octave></pitch><duration>4</duration><voice>1</voice><type>quarter</type></note>
+      <note><pitch><step>G</step><octave>4</octave></pitch><duration>4</duration><voice>1</voice><type>quarter</type></note>
+    </measure>
+    <measure number="2">
+      <note><pitch><step>D</step><octave>5</octave></pitch><duration>6</duration><dot/><voice>1</voice><type>quarter</type></note>
+      <note><pitch><step>F</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type></note>
+      <note><pitch><step>A</step><octave>4</octave></pitch><duration>4</duration><voice>1</voice><type>16th</type></note>
+      <note><rest/><duration>4</duration><voice>1</voice><type>quarter</type></note>
+    </measure>
+  </part>
+</score-partwise>`
+
+    let head = (el, pitch) => notesOn(el).find(note => +note.dataset.midiNote == pitch)
+    let stemOf = (el, pitch) => head(el, pitch).querySelector(`.${staffStyles.stem}`)
+    let flagsOn = (el, pitch) => head(el, pitch).querySelectorAll(`.${staffStyles.flag}`).length
+    let dotsOn = (el, pitch) => head(el, pitch).querySelectorAll(`.${staffStyles.aug_dot}`).length
+
+    it("draws each head, stem, flag and dot as the score writes it", function() {
+      let song = parseMusicXML(rhythmScore())
+      let columns = sectionColumns(song, 1, 2, BOTH_HANDS, {name: "treble", range: ["C4", "C6"]})
+      renderStaff(GStaff, columns, {unitColumns: columns, keySignature: new KeySignature(0)})
+
+      let staff = container.querySelector(`.${staffStyles.staff}`)
+      let types = notesOn(staff).map(note => note.dataset.noteType)
+      expect(types).toEqual(["half", "quarter", "quarter", "quarter", "eighth", "16th"])
+      expect(notesOn(staff).map(note => note.dataset.head))
+        .toEqual(["half", "filled", "filled", "filled", "filled", "filled"])
+
+      // stems turn at the middle line, and only shorter values carry flags
+      expect(stemOf(staff, C5).dataset.stem).toEqual("down")
+      expect(stemOf(staff, G4).dataset.stem).toEqual("up")
+      expect(flagsOn(staff, C5)).toEqual(0)
+      expect(flagsOn(staff, F5)).toEqual(1)
+      expect(flagsOn(staff, A4)).toEqual(2)
+
+      // only the dotted quarter is dotted
+      expect(notesOn(staff).map(note => +note.dataset.midiNote).filter(p => dotsOn(staff, p)))
+        .toEqual([D5])
+      expect(dotsOn(staff, D5)).toEqual(1)
+    })
+
+    it("spaces the columns by the beats between them", function() {
+      let song = parseMusicXML(rhythmScore())
+      let columns = sectionColumns(song, 1, 1, BOTH_HANDS, {name: "treble", range: ["C4", "C6"]})
+      renderStaff(GStaff, columns, {unitColumns: columns, keySignature: new KeySignature(0)})
+
+      let staff = container.querySelector(`.${staffStyles.staff}`)
+      let left = pitch => parseFloat(head(staff, pitch).style.left)
+
+      // the half note holds the staff for twice a quarter's room: the gaps
+      // of the bar are 2, 1 and 1 beats, a mean of 4/3 to a column width
+      expect(left(E5) - left(C5)).toBeCloseTo(1.5 * 60, 3)
+      expect(left(G4) - left(E5)).toBeCloseTo(0.75 * 60, 3)
+    })
+
+    it("draws the score's rests at their beat", function() {
+      let song = parseMusicXML(rhythmScore())
+      let columns = sectionColumns(song, 2, 2, BOTH_HANDS, {name: "treble", range: ["C4", "C6"]})
+      renderStaff(GStaff, columns, {unitColumns: columns, keySignature: new KeySignature(0)})
+
+      let staff = container.querySelector(`.${staffStyles.staff}`)
+      let rests = [...staff.querySelectorAll(`.${staffStyles.rest}`)]
+
+      expect(rests.map(rest => rest.dataset.restType)).toEqual(["quarter"])
+      expect(parseFloat(rests[0].style.left))
+        .toBeGreaterThan(parseFloat(head(staff, A4).style.left))
+    })
+
+    it("draws a drill without the score's rhythm as whole notes", function() {
+      renderStaff(GStaff, [[noteName(C5)], [noteName(E5)]], {keySignature: new KeySignature(0)})
+
+      let staff = container.querySelector(`.${staffStyles.staff}`)
+      expect(notesOn(staff).map(note => note.dataset.head)).toEqual(["whole", "whole"])
+      expect(notesOn(staff).every(note => note.classList.contains(staffStyles.whole_note))).toBe(true)
+      expect(staff.querySelectorAll(`.${staffStyles.stem}`).length).toEqual(0)
+
+      // one column width apart, as they always were
+      expect(notesOn(staff).map(note => parseFloat(note.style.left)))
+        .toEqual([0, 60])
     })
   })
 
