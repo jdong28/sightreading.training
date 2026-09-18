@@ -96,10 +96,12 @@ export const MIN_COLUMN_ADVANCE = 0.75
 // How a note's room grows with its length, the way an engraver spaces a
 // system: not in proportion to the length but well under it, so a note twice
 // as long as its neighbours takes about half again their room rather than
-// twice it, and a whole note among eighths doesn't swallow the bar. Because
-// the exponent is below one and the unit is the mean gap, the columns of a
-// card never span more room than the same number of even columns would
-// (Jensen), so a card that fitted the staff plate before still fits
+// twice it, and a whole note among eighths doesn't swallow the bar. Because the
+// unit is the mean gap, a card of even notes spans exactly one column width a
+// note, as a drill without the score's rhythm does; an uneven card can span
+// more than its column count, which a dense run held at MIN_COLUMN_ADVANCE
+// under a long note does, and the staff takes that up by shrinking towards
+// MIN_FIT_SCALE (st/components/pages/sight_reading_page)
 export const SPACING_EXPONENT = 0.55
 
 // The beat a column width measures: the mean gap between the columns, so a
@@ -415,12 +417,6 @@ export function rowCenter(row, {upperRow}) {
   return (upperRow - row) * STAFF_ROW + (0.5 - HEAD_ABOVE_ROW) * NOTE_HEAD_HEIGHT
 }
 
-// How far below the top of a staff drawn with clef props the line of row
-// falls, in unscaled pixels
-export function rowLine(row, {upperRow}) {
-  return (upperRow - row) * STAFF_ROW
-}
-
 /**
  * The rests and tied continuation heads the columns draw between them, placed
  * in the beat proportional layout.
@@ -474,17 +470,37 @@ export function columnExtras(columns, {offsets, advances, gaps, unit, leadBeats,
   return out
 }
 
+// How far left of its own column, in column widths, the extras a column opens
+// its bar with reach: the leftmost extra placed before the column (see
+// columnExtras), and zero for a column whose extras all fall after its onset.
+// Every staff's extras count, so the bar line the staves draw on the boundary
+// is the same one on each of them
+export function extrasBefore(columns, layout) {
+  let out = columns.map(() => 0)
+
+  for (let extra of columnExtras(columns, layout)) {
+    let back = layout.offsets[extra.columnIdx] - extra.offset
+    if (back > out[extra.columnIdx]) {
+      out[extra.columnIdx] = back
+    }
+  }
+
+  return out
+}
+
 /**
  * The arcs drawn for the ties between heads. A tie whose other head is not on
  * the staff, because it is on the card before or after this one, is drawn as
  * a stub running off that side.
- * @param {Object[]} heads {beat, name, x, y, stem, tieTo, tieFrom}, in the
- * pixels of the staff's scale
+ * @param {Object[]} heads {beat, name, x, y, width, stem, tieTo, tieFrom}, in
+ * the pixels of the staff's scale
  * @param {number} stub how far a tie with no head to run to reaches
  * @param {Object} [opts]
  * @param {number} [opts.left] the furthest left a stub reaches back to, so a
  * tie running off this card stays clear of the clef and key signature
- * @returns {Object[]} {x1, y1, x2, y2, dir}, dir the side the arc bulges to
+ * @returns {Object[]} {x1, y1, w1, x2, y2, w2, dir}, w1 and w2 the width of
+ * the head at each end, so the arc is anchored on the heads it joins, and dir
+ * the side the arc bulges to
  */
 export function tieArcs(heads, stub, {left=null}={}) {
   let at = (beat, name) => heads.find(head =>
@@ -498,9 +514,10 @@ export function tieArcs(heads, stub, {left=null}={}) {
     if (head.tieTo != null) {
       let next = at(head.tieTo, head.name)
       arcs.push({
-        x1: head.x, y1: head.y,
+        x1: head.x, y1: head.y, w1: head.width,
         x2: next ? next.x : head.x + stub,
         y2: next ? next.y : head.y,
+        w2: next ? next.width : head.width,
         dir: arcDir(head),
       })
     }
@@ -508,8 +525,8 @@ export function tieArcs(heads, stub, {left=null}={}) {
     if (head.tieFrom != null && !at(head.tieFrom, head.name)) {
       let from = head.x - stub
       arcs.push({
-        x1: left == null ? from : Math.max(left, from), y1: head.y,
-        x2: head.x, y2: head.y,
+        x1: left == null ? from : Math.max(left, from), y1: head.y, w1: head.width,
+        x2: head.x, y2: head.y, w2: head.width,
         dir: arcDir(head),
       })
     }

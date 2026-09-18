@@ -5,7 +5,7 @@ import {flushSync} from "react-dom"
 import {GStaff, FStaff, GrandStaff} from "st/components/staves"
 import staffStyles from "st/components/staff.module.css"
 import {minNoteWidth, ACCIDENTAL_WIDTH, NOTE_HEAD_WIDTH, GROUP_OFFSET} from "st/components/staff_notes"
-import {SPACING_EXPONENT} from "st/staff_rhythm"
+import {SPACING_EXPONENT, headGlyph, NOTE_HEAD_HEIGHT} from "st/staff_rhythm"
 import NoteList from "st/note_list"
 import {KeySignature, noteName, parseNote} from "st/music"
 import {parseMusicXML} from "st/musicxml"
@@ -996,6 +996,78 @@ describe("staves", function() {
       expect(stemOf(staff, G5).dataset.stem).toEqual("down")
       expect([...staff.querySelectorAll(`.${staffStyles.tie}`)].map(tie => tie.dataset.tie))
         .toEqual(["up"])
+    })
+
+    it("draws the bar line before the rest its bar opens with", function() {
+      let song = parseMusicXML(leadingRestScore())
+      let columns = sectionColumns(song, 1, 2, BOTH_HANDS, {name: "treble", range: ["C4", "C6"]})
+      renderStaff(GStaff, columns, {unitColumns: columns, keySignature: new KeySignature(0)})
+
+      let staff = container.querySelector(`.${staffStyles.staff}`)
+      let rest = staff.querySelector(`.${staffStyles.rest}`)
+      let barLine = staff.querySelector(`.${staffStyles.bar_line}[data-measure="1"]`)
+      let heads = notesOn(staff).map(note => parseFloat(note.style.left)).sort((a, b) => a - b)
+
+      // the rest belongs to the bar the line opens, so the line comes first
+      expect(parseFloat(barLine.style.left)).toBeLessThanOrEqual(parseFloat(rest.style.left))
+      expect(parseFloat(rest.style.left)).toBeLessThan(heads[0])
+    })
+
+    it("draws no rest of the other score staff on a lone treble staff", function() {
+      let song = parseMusicXML(barRestScore())
+      let columns = sectionColumns(song, 1, 2, BOTH_HANDS, {name: "treble", range: ["C4", "C6"]})
+      renderStaff(GStaff, columns, {unitColumns: columns, keySignature: new KeySignature(0)})
+
+      let staff = container.querySelector(`.${staffStyles.staff}`)
+
+      // the bar's whole measure rest is the left hand's, which this staff
+      // doesn't read: only its own four quarters and the next bar's whole note
+      expect(notesOn(staff).length).toEqual(5)
+      expect(staff.querySelectorAll(`.${staffStyles.rest}`).length).toEqual(0)
+    })
+
+    // a treble staff whose first tie joins eighths and whose second joins whole
+    // notes, so the two arcs are anchored on heads of different widths
+    let mixedTieScore = () => `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes><divisions>2</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>
+      <note><rest/><duration>4</duration><voice>1</voice><type>half</type><staff>1</staff></note>
+      <note><rest/><duration>2</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>
+      <note><pitch><step>G</step><octave>4</octave></pitch><duration>1</duration><tie type="start"/><voice>1</voice><type>eighth</type><staff>1</staff><notations><tied type="start"/></notations></note>
+      <note><pitch><step>G</step><octave>4</octave></pitch><duration>1</duration><tie type="stop"/><voice>1</voice><type>eighth</type><staff>1</staff><notations><tied type="stop"/></notations></note>
+    </measure>
+    <measure number="2">
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>8</duration><tie type="start"/><voice>1</voice><type>whole</type><staff>1</staff><notations><tied type="start"/></notations></note>
+    </measure>
+    <measure number="3">
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>8</duration><tie type="stop"/><voice>1</voice><type>whole</type><staff>1</staff><notations><tied type="stop"/></notations></note>
+    </measure>
+  </part>
+</score-partwise>`
+
+    it("anchors each tie on the head it leaves, whatever that head's value", function() {
+      let song = parseMusicXML(mixedTieScore())
+      let columns = sectionColumns(song, 1, 3, BOTH_HANDS, {name: "treble", range: ["C4", "C6"]})
+      renderStaff(GStaff, columns, {unitColumns: columns, keySignature: new KeySignature(0)})
+
+      let staff = container.querySelector(`.${staffStyles.staff}`)
+      let ties = [...staff.querySelectorAll(`.${staffStyles.tie}`)]
+      let startOf = tie => parseFloat(tie.getAttribute("d").match(/^M([-\d.]+)/)[1])
+      let width = type => headGlyph(type, NOTE_HEAD_HEIGHT).width
+
+      expect(ties.length).toEqual(2)
+      // a whole note's head is wider than an eighth's, and each arc leaves the
+      // right hand end of its own head rather than of the first one drawn
+      expect(width("whole")).toBeGreaterThan(width("eighth"))
+
+      for (let [tie, pitch, type] of [[ties[0], G4, "eighth"], [ties[1], C5, "whole"]]) {
+        let left = parseFloat(head(staff, pitch).style.left)
+        expect(startOf(tie)).toBeGreaterThan(left + 0.7 * width(type))
+        expect(startOf(tie)).toBeLessThanOrEqual(left + width(type))
+      }
     })
 
     it("draws a note held down on the head column of a bar that opens with a rest", function() {

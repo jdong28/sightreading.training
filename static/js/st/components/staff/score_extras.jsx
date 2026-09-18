@@ -41,12 +41,14 @@ export default class ScoreExtras extends React.PureComponent {
     noteWidth: types.number,
     // the stem each head is drawn with (see columnStems in st/staff_rhythm)
     stems: types.object,
+    // the score staff a lone treble or bass staff stands for (see extrasStaff)
+    scoreStaff: types.string,
   }
 
   render() {
     let extras = columnExtras(this.props.notes, {
       ...this.props.layout,
-      staff: this.props.staff,
+      staff: this.extrasStaff(),
     })
 
     let rests = this.renderRests(extras)
@@ -57,6 +59,23 @@ export default class ScoreExtras extends React.PureComponent {
     }
 
     return <div className={styles.score_extras}>{rests}{ties}</div>
+  }
+
+  // The score staff whose rests and tied heads this staff draws: the side
+  // GrandStaff hands it, else, on a lone treble or bass staff, the side the
+  // notes it draws are written on, so a drill of one hand draws that hand's
+  // rests whichever staff it is read on, and its own side when it draws both
+  extrasStaff() {
+    if (this.props.staff) { return this.props.staff }
+
+    let staves = new Set()
+    for (let column of this.props.notes) {
+      for (let staff of column.staves || []) {
+        staves.add(staff)
+      }
+    }
+
+    return staves.size == 1 ? [...staves][0] : this.props.scoreStaff
   }
 
   // where an offset in column widths falls, in pixels from the staff's notes
@@ -210,15 +229,16 @@ export default class ScoreExtras extends React.PureComponent {
 
     if (!heads.length) { return null }
 
-    let width = heads[0].width
     let arcs = tieArcs(heads, TIE_STUB * scale, {left: this.props.offsetLeft || 0})
     if (!arcs.length) { return null }
 
     return <svg className={styles.ties} key="ties">
       {arcs.map((arc, idx) => {
         let bow = arc.dir == "up" ? -1 : 1
-        let x1 = arc.x1 + width * TIE_START
-        let x2 = arc.x2 + width * TIE_END
+        // each end is anchored on the head it joins, whose width is its own
+        // notated value's (see headGlyph)
+        let x1 = arc.x1 + arc.w1 * TIE_START
+        let x2 = arc.x2 + arc.w2 * TIE_END
         let y1 = arc.y1 + bow * TIE_OFFSET * scale
         let y2 = arc.y2 + bow * TIE_OFFSET * scale
         let cy = (y1 + y2) / 2 + bow * TIE_DEPTH * scale

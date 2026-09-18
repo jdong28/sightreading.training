@@ -8,7 +8,7 @@ import LedgerLines, {LEDGER_OVERHANG} from "st/components/staff/ledger_lines"
 import ScoreNotes from "st/components/staff/score_notes"
 import ScoreExtras from "st/components/staff/score_extras"
 import {
-  columnLayout, columnOffsets, columnExtras, columnStems, middleRow,
+  columnLayout, columnExtras, columnStems, extrasBefore, middleRow,
   noteTypeProps, HEAD_GLYPHS, STAFF_HEIGHT, NOTE_HEAD_HEIGHT,
 } from "st/staff_rhythm"
 import styles from "st/components/staff.module.css"
@@ -150,13 +150,24 @@ export function fitStaffScale(staffWidth, span, {scale=1, keySignature=null, min
 
 // Where the bar line before the column at idx is drawn: on the boundary
 // between it and the column before, at most one column width back so a long
-// note's room never drags the line away from the bar it opens
-function barLineLeft(props, offsetLeft, idx, offsets) {
+// note's room never drags the line away from the bar it opens. A bar opening
+// with a rest, drawn `before` column widths ahead of the column's own head
+// (see extrasBefore), puts the line halfway between that rest and the head
+// before it instead, since the rest belongs to the bar the line opens
+function barLineLeft(props, offsetLeft, idx, offsets, before=0) {
   let noteWidth = props.noteWidth
   let headWidth = NOTE_HEAD_WIDTH * (props.scale || 1)
   let at = offsets[idx]
   let gap = idx > 0 ? Math.min(1, at - offsets[idx - 1]) : 1
-  return Math.round(offsetLeft + at * noteWidth - (gap * noteWidth - headWidth) / 2)
+  let line = offsetLeft + at * noteWidth - (gap * noteWidth - headWidth) / 2
+
+  if (before > 0) {
+    let opens = offsetLeft + (at - before) * noteWidth
+    let previous = idx > 0 ? offsetLeft + offsets[idx - 1] * noteWidth + headWidth : offsetLeft
+    line = Math.min(line, (previous + opens) / 2)
+  }
+
+  return Math.round(line)
 }
 
 // The boxes of the small clefs a staff draws where the clef of its columns
@@ -174,7 +185,9 @@ export function clefChangeBoxes(props) {
   let offsetLeft = keySignatureWidth(props.keySignature) * scale
   let staffHeight = STAFF_HEIGHT * scale
   let margin = CLEF_CHANGE_MARGIN * scale
-  let offsets = columnOffsets(props.notes, props.unitColumns)
+  let layout = columnLayout(props.notes, props.unitColumns)
+  let offsets = layout.offsets
+  let before = extrasBefore(props.notes, layout)
   let columnClef = idx => (props.columnClefs && props.columnClefs[idx]) || props
 
   let out = []
@@ -195,7 +208,7 @@ export function clefChangeBoxes(props) {
     let start = offsetLeft + offsets[idx - 1] * noteWidth + NOTE_HEAD_WIDTH * scale + offset + margin
     let space = gap - (NOTE_HEAD_WIDTH + ACCIDENTAL_WIDTH) * scale - 2 * margin - offset
     if (column.measure != null) {
-      space = Math.min(space, barLineLeft(props, offsetLeft, idx, offsets) - margin - start)
+      space = Math.min(space, barLineLeft(props, offsetLeft, idx, offsets, before[idx]) - margin - start)
     }
     let fullHeight = glyph.height * staffHeight
     let width = Math.min(fullHeight * glyph.aspect, space)
@@ -468,8 +481,9 @@ export default class StaffNotes extends React.Component {
   // halfway between the previous column's note head and the column, so it
   // moves with its column. The bar number is written above it, on the upper
   // staff only of a grand staff
-  renderBarLines(offsetLeft, {offsets}) {
+  renderBarLines(offsetLeft, layout) {
     let showNumbers = this.props.showAnnotations !== false
+    let before = extrasBefore(this.props.notes, layout)
 
     let out = []
     this.props.notes.forEach((column, idx) => {
@@ -478,7 +492,7 @@ export default class StaffNotes extends React.Component {
       out.push(<div
         key={`bar-line-${idx}`}
         className={styles.bar_line}
-        style={{left: `${barLineLeft(this.props, offsetLeft, idx, offsets)}px`}}
+        style={{left: `${barLineLeft(this.props, offsetLeft, idx, layout.offsets, before[idx])}px`}}
         data-measure={column.measure}
         data-label={showNumbers ? column.measure : null} />)
     })

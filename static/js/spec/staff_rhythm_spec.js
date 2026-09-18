@@ -159,15 +159,29 @@ describe("staff rhythm", function() {
       expect(columnSpan(bar())).toBeCloseTo(half + quarter, 6)
     })
 
-    it("never spans more room than the same number of even columns", function() {
-      // the exponent is below one and the unit is the mean gap, so a card
-      // always fits where a drill of the same column count fitted
+    it("spans a column width for each gap when the notes are even", function() {
+      // the unit is the mean gap, so a bar of even quarters spans exactly what
+      // a drill of the same column count does
       let columns = [
-        column(["C5"], 0, 4), column(["D5"], 4, 4), column(["E5"], 5, 3),
-        column(["F5"], 5.5, 2.5), column(["G5"], 6, 2),
+        column(["C5"], 0, 4), column(["D5"], 1, 3),
+        column(["E5"], 2, 2), column(["F5"], 3, 1),
       ]
 
-      expect(columnSpan(columns)).toBeLessThanOrEqual(columns.length - 1)
+      expect(columnAdvances(columns)).toEqual([1, 1, 1, 1])
+      expect(columnSpan(columns)).toEqual(columns.length - 1)
+    })
+
+    it("spans more than even columns once a short gap is held at the floor", function() {
+      // a dotted half note followed by four sixteenths: the sixteenths are
+      // squeezed up to MIN_COLUMN_ADVANCE and no further, so the card runs on
+      // past its column count and the staff shrinks to take it up
+      let columns = [
+        column(["C5"], 0, 4), column(["D5"], 3, 1), column(["E5"], 3.25, 0.75),
+        column(["F5"], 3.5, 0.5), column(["G5"], 3.75, 0.25),
+      ]
+
+      expect(columnAdvances(columns).slice(1)).toEqual(Array(4).fill(MIN_COLUMN_ADVANCE))
+      expect(columnSpan(columns)).toBeGreaterThan(columns.length - 1)
     })
 
     it("draws a drill without the score's rhythm one column at a time", function() {
