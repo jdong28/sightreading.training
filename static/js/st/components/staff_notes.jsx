@@ -111,11 +111,13 @@ export function restsStaff(columns, staff) {
   return null
 }
 
-// Whether a staff drawn with props draws any of the score's rests, which is
+// Whether a staff drawing columns draws any of the score's rests, which is
 // what its layout keeps room for and what drags a bar line back to the rest
-// its bar opens with
-function drawsRests(props) {
-  return restsStaff(props.unitColumns || props.notes, props.staff) != null
+// its bar opens with, and so the unit the columns are spaced in: the page fits
+// and slides a card by the same choice (see restsDrawn in
+// st/components/pages/sight_reading_page)
+export function drawsRests(columns, staff) {
+  return restsStaff(columns, staff) != null
 }
 
 // How the score writes each of the notes a staff draws in a column (see
@@ -222,7 +224,8 @@ export function clefChangeBoxes(props) {
   let offsetLeft = keySignatureWidth(props.keySignature) * scale
   let staffHeight = STAFF_HEIGHT * scale
   let margin = CLEF_CHANGE_MARGIN * scale
-  let layout = columnLayout(props.notes, props.unitColumns, {rests: drawsRests(props)})
+  let layout = columnLayout(props.notes, props.unitColumns,
+    {rests: drawsRests(props.unitColumns || props.notes, props.staff)})
   let offsets = layout.offsets
   let extrasLeft = extrasBefore(props.notes, layout)
   let columnClef = idx => (props.columnClefs && props.columnClefs[idx]) || props
@@ -306,7 +309,7 @@ export default class StaffNotes extends React.Component {
       this.layoutFor = this.props.notes
       this.layoutUnit = this.props.unitColumns
       this.layoutCache = columnLayout(this.props.notes, this.props.unitColumns,
-        {rests: drawsRests(this.props)})
+        {rests: drawsRests(this.props.unitColumns || this.props.notes, this.props.staff)})
     }
 
     return this.layoutCache

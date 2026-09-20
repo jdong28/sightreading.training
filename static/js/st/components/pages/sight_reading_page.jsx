@@ -38,7 +38,7 @@ import {isMobile} from "st/browser"
 import {getSession} from "st/app"
 
 import {StaffTwo} from "st/components/staff_two"
-import {fitNoteWidth, fitStaffScale, minNoteWidth} from "st/components/staff_notes"
+import {fitNoteWidth, fitStaffScale, minNoteWidth, drawsRests} from "st/components/staff_notes"
 import {columnAdvances, columnSpan} from "st/staff_rhythm"
 import {drillColumns} from "st/measure_cards"
 
@@ -402,6 +402,15 @@ export default class SightReadingPage extends React.Component {
     return this.unitColumnsCache
   }
 
+  // Whether the staff draws the score's rests, which fixes the unit its
+  // columns are spaced in: each side of a grand staff draws its own, and a
+  // lone staff only when the drill is on one score staff (see drawsRests).
+  // The page fits and slides a card by the same choice the staff draws it with
+  restsDrawn(columns) {
+    let staff = this.state.currentStaff
+    return (staff && staff.name == "grand") || drawsRests(columns)
+  }
+
   // The legacy staff's scale, column width and unit: the columns of the
   // piece's card (or whole section) on the staff, which fix its margins in
   // every mode. In wait mode the card is also fitted to the plate so every
@@ -422,12 +431,13 @@ export default class SightReadingPage extends React.Component {
     // its narrowest gap — not the nominal column — still holds a note head and
     // its accidental
     let loop = current.number == null
+    let rests = this.restsDrawn(unitColumns)
     let fitFor = card => {
       let unit = card == current.card ? unitColumns : drillColumns(card, {loop})
-      let narrowest = Math.min(1, ...columnAdvances(card.columns, unit))
+      let narrowest = Math.min(1, ...columnAdvances(card.columns, unit, {rests}))
 
       return {
-        span: columnSpan(card.columns, unit),
+        span: columnSpan(card.columns, unit, {rests}),
         minWidth: Math.ceil(minNoteWidth(card.columns, keySignature) / narrowest),
       }
     }
@@ -450,7 +460,9 @@ export default class SightReadingPage extends React.Component {
     if (!notes || !notes.length) { return 1 }
 
     let current = this.currentCard()
-    let [advance] = columnAdvances(notes, current ? this.unitColumns(current) : null)
+    let unitColumns = current ? this.unitColumns(current) : null
+    let [advance] = columnAdvances(notes, unitColumns,
+      {rests: this.restsDrawn(unitColumns || notes)})
     return advance > 0 ? advance : 1
   }
 

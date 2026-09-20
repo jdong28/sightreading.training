@@ -230,17 +230,17 @@ export function columnLayout(columns, unitColumns, {rests=true}={}) {
 
 // Where each column is drawn, in column widths from the first one (see
 // columnAdvances)
-export function columnOffsets(columns, unitColumns) {
-  return columnLayout(columns, unitColumns).offsets
+export function columnOffsets(columns, unitColumns, opts) {
+  return columnLayout(columns, unitColumns, opts).offsets
 }
 
 // The room the columns need in column widths, what a card is fitted to the
 // staff plate by: up to the last column, from the staff's notes rather than
 // from the first column, so the room reserved before it is fitted too, and
 // measured in the unit the staff draws the card with (see columnAdvances)
-export function columnSpan(columns, unitColumns) {
+export function columnSpan(columns, unitColumns, opts) {
   if (!columns || columns.length < 2) { return 0 }
-  let offsets = columnOffsets(columns, unitColumns)
+  let offsets = columnOffsets(columns, unitColumns, opts)
   return offsets[offsets.length - 1]
 }
 

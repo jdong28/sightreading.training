@@ -96,6 +96,31 @@ let secondsXML = (title, second) => `<?xml version="1.0" encoding="UTF-8"?>
   </part>
 </score-partwise>`
 
+// a two staff 4/4 bar both hands open on a quarter rest, the right hand then
+// playing three even quarters over a note the left hand holds under them
+let leadRestXML = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <work><work-title>Lead Rest</work-title></work>
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes>
+        <divisions>1</divisions>
+        <time><beats>4</beats><beat-type>4</beat-type></time>
+        <staves>2</staves>
+        <clef number="1"><sign>G</sign><line>2</line></clef>
+        <clef number="2"><sign>F</sign><line>4</line></clef>
+      </attributes>
+      <note><rest/><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>
+      ${["C", "D", "E"].map(step =>
+        `<note><pitch><step>${step}</step><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>`).join("")}
+      <backup><duration>4</duration></backup>
+      <note><rest/><duration>1</duration><voice>2</voice><type>quarter</type><staff>2</staff></note>
+      <note><pitch><step>C</step><octave>3</octave></pitch><duration>3</duration><dot/><voice>2</voice><type>half</type><staff>2</staff></note>
+    </measure>
+  </part>
+</score-partwise>`
+
 // C#4 is outside C major, so never a random note in that key
 const WRONG_NOTE = "C#4"
 
@@ -258,6 +283,33 @@ describe("sight reading page", function() {
         expect(accidental.left).toBeGreaterThanOrEqual(headsRight)
       }
     }
+  })
+
+  it("slides a card by the room the staff draws its columns in", async function() {
+    let {piece} = await importMusicXMLPiece("lead_rest.musicxml", leadRestXML, store)
+
+    // both hands on one treble staff, so no rest of either of them is drawn
+    window.localStorage.setItem(DRILL_STORAGE_KEY, JSON.stringify({staff: "treble", generator: "sheet music"}))
+    window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+      piece: piece.id, startMeasure: 1, endMeasure: 1, hand: BOTH_HANDS, measuresPerCard: "all",
+    }))
+
+    renderPage()
+
+    let {scale, noteWidth} = page.staffLayout()
+    let drawn = Math.floor(noteWidth * scale)
+    let heads = [...container.querySelectorAll(`.${staffStyles.note}`)]
+      .map(note => parseFloat(note.style.left)).sort((a, b) => a - b)
+
+    expect(container.querySelectorAll(`.${staffStyles.rest}`).length).toEqual(0)
+    // the bar's opening rest is never drawn, so its three even quarters are
+    // drawn a column width apart, as a drill without the score's rhythm is
+    expect(heads.length).toBeGreaterThan(1)
+    expect(heads[1] - heads[0]).toEqual(drawn)
+
+    // and the staff slides by that same room when a column is played, rather
+    // than by a width that still counts the rest
+    expect(page.columnAdvance(page.state.notes)).toEqual(1)
   })
 
   it("fits a unit with a stacked second at the wider minimum column width", async function() {
