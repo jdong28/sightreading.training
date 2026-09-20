@@ -1096,6 +1096,53 @@ describe("staves", function() {
         .toEqual(["up"])
     })
 
+    // a treble staff whose chord holds one of its notes across the beat: C5
+    // and E5 are struck together, the C5 is tied over, and a G4 is struck
+    // under the held C5 on the next beat
+    let tiedChordScore = () => `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes><divisions>1</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>1</duration><tie type="start"/><voice>1</voice><type>quarter</type><staff>1</staff><notations><tied type="start"/></notations></note>
+      <note><chord/><pitch><step>E</step><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>1</duration><tie type="stop"/><voice>1</voice><type>quarter</type><staff>1</staff><notations><tied type="stop"/></notations></note>
+      <note><chord/><pitch><step>G</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>
+      <note><pitch><step>D</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>half</type><staff>1</staff></note>
+    </measure>
+  </part>
+</score-partwise>`
+
+    it("draws one stem for a chord whose note is held over from the onset before", function() {
+      let song = parseMusicXML(tiedChordScore())
+      let columns = sectionColumns(song, 1, 1, BOTH_HANDS, {name: "treble", range: ["C4", "C6"]})
+      renderStaff(GStaff, columns, {unitColumns: columns, keySignature: new KeySignature(0)})
+
+      let staff = container.querySelector(`.${staffStyles.staff}`)
+
+      let byLeft = new Map()
+      for (let note of notesOn(staff)) {
+        let left = parseFloat(note.style.left)
+        if (!byLeft.has(left)) { byLeft.set(left, []) }
+        byLeft.get(left).push(note)
+      }
+
+      // the bar's three onsets: the chord, the chord under the held C5, and
+      // the half note, each drawn with one stem of its own
+      let onsets = [...byLeft.entries()].sort(([a], [b]) => a - b).map(([, heads]) => heads)
+      expect(onsets.map(heads => heads.length)).toEqual([2, 2, 1])
+      expect([...staff.querySelectorAll(`.${staffStyles.stem}`)].length).toEqual(3)
+
+      // the held C5 is one of the second chord, not a note of its own: the
+      // pair turns one stem up, rather than each drawing its own either way
+      let [, held] = onsets
+      expect(held.map(note => +note.dataset.midiNote).sort((a, b) => a - b)).toEqual([G4, C5])
+
+      let stems = held.map(note => note.querySelector(`.${staffStyles.stem}`)).filter(stem => stem)
+      expect(stems.map(stem => stem.dataset.stem)).toEqual(["up"])
+    })
+
     it("draws the bar line before the rest its bar opens with", function() {
       let song = parseMusicXML(leadingRestScore())
       let columns = sectionColumns(song, 1, 2, BOTH_HANDS, {name: "treble", range: ["C4", "C6"]})

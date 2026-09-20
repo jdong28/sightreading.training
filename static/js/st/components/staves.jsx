@@ -170,9 +170,15 @@ function drawnHeads(columns, props) {
   })
 
   for (let extra of columnExtras(columns, {...columnLayout(columns), staff: props.staff})) {
-    if (extra.kind == "head") {
-      push(extra.columnIdx, `${extra.columnIdx}@${extra.beat}`, extra.name, extra.beat, extra)
-    }
+    if (extra.kind != "head") { continue }
+
+    // a head drawn on its column's own onset, a chord note held over from the
+    // onset before, is one of that chord and shares its stem
+    let column = columns[extra.columnIdx]
+    let group = column && column.beat === extra.beat ?
+      extra.columnIdx : `${extra.columnIdx}@${extra.beat}`
+
+    push(extra.columnIdx, group, extra.name, extra.beat, extra)
   }
 
   return heads
