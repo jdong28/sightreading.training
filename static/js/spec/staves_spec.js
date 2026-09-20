@@ -1582,6 +1582,34 @@ describe("staves", function() {
   </part>
 </score-partwise>`
 
+    it("draws a bar line between the head before it and the rest its bar opens on", function() {
+      let song = parseMusicXML(nextBarRestScore())
+      let columns = sectionColumns(song, 1, 2, BOTH_HANDS, {name: "treble", range: ["C4", "C6"]})
+
+      // the column widths the staff fits a card of an imported piece to, where
+      // the previous bar's last head reaches past the rest that opens the next
+      for (let noteWidth of [47, 41]) {
+        renderStaff(GStaff, columns,
+          {unitColumns: columns, keySignature: new KeySignature(0), noteWidth})
+
+        let staff = container.querySelector(`.${staffStyles.staff}`)
+        let rest = staff.querySelector(`.${staffStyles.rest}`).getBoundingClientRect()
+        let barLine = staff
+          .querySelector(`.${staffStyles.bar_line}[data-measure="2"]`).getBoundingClientRect()
+        let before = notesOn(staff)
+          .map(note => note.querySelector(`.${staffStyles.primary}`).getBoundingClientRect())
+          .filter(head => head.right <= rest.left)
+          .sort((a, b) => a.right - b.right)
+          .pop()
+
+        expect(before).toBeTruthy()
+        // the line opens the bar the rest belongs to, so it is drawn clear of
+        // the last head of the bar before it and clear of the rest itself
+        expect(barLine.left).toBeGreaterThanOrEqual(before.right)
+        expect(barLine.right).toBeLessThanOrEqual(rest.left)
+      }
+    })
+
     it("keeps a bar's opening rest clear of its head once the window reaches it", function() {
       let song = parseMusicXML(nextBarRestScore())
       let columns = sectionColumns(song, 1, 2, BOTH_HANDS, {name: "treble", range: ["C4", "C6"]})
