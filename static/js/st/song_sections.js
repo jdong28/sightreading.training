@@ -1,6 +1,12 @@
 // Extracts a section of a song as a list of "flashcard" columns for the
-// sight reading staff. Rhythm is dropped: notes that start on the same beat
-// become one chord column, and columns are ordered by onset.
+// sight reading staff. Detection drops rhythm: notes that start on the same
+// beat become one chord column, columns are ordered by onset, and a tied note
+// is one column, never two.
+//
+// The columns of an imported piece also carry what the staff draws its rhythm
+// with (see st/staff_rhythm): the beat each column falls on, the notated value
+// of each of its notes, and the rests and tied continuation heads between it
+// and the next column. None of it is ever matched against what is played.
 
 import {parseNote} from "st/music"
 import SongParser from "st/song_parser"
@@ -111,11 +117,60 @@ export function countMeasures(song) {
   return Math.max(1, Math.ceil(song.getStopInBeats() / beatsPerMeasure(song) - ONSET_EPSILON))
 }
 
+// What the staff draws a note with, from the notation the importer kept on it
+// (st/musicxml), with the beat of the head its tie runs on to, if any
+function noteNotation(note) {
+  let notation = note.notation
+  if (!notation) { return null }
+
+  let next = notation.ties && notation.ties[0]
+
+  return {
+    type: notation.type,
+    dots: notation.dots || 0,
+    voice: notation.voice || null,
+    tuplet: notation.tuplet || 1,
+    tieTo: next ? next.start : null,
+  }
+}
+
+// A head the staff draws though nothing is played for it: a note another
+// voice already put in the column, or one a tie runs on to
+function drawnHead(note, staff, extra) {
+  return {kind: "head", name: note.note, staff, ...noteNotation(note), ...extra}
+}
+
+// The heads a note's ties run on to, which are drawn but never played: one
+// entry per continuation, each tied to the one before it
+function tieHeads(note, staff) {
+  let ties = (note.notation && note.notation.ties) || []
+
+  let notation = note.notation || {}
+
+  return ties.map((tie, idx) => ({
+    kind: "head",
+    beat: tie.start,
+    name: note.note,
+    staff,
+    type: tie.type,
+    dots: tie.dots || 0,
+    // a tie's continuation is the same voice, drawn the same way, as the note
+    // it runs from, which is all the score writes on it
+    voice: notation.voice || null,
+    tuplet: notation.tuplet || 1,
+    from: idx == 0 ? note.start : ties[idx - 1].start,
+    tieTo: ties[idx + 1] ? ties[idx + 1].start : null,
+  }))
+}
+
 // group notes by quantized onset into pitch sorted, deduplicated columns.
 // Each entry is [note, staff]; given clefsAt (see grandStaffClefs) the column
 // carries the staves as column.staves, one per note (the first of notes
-// sharing a pitch), and the clefs at its onset as column.clefs
-function groupByOnset(entries, clefsAt) {
+// sharing a pitch), and the clefs at its onset as column.clefs. When the notes
+// carry the score's notation the column also carries column.beat, the beat it
+// falls on, column.beats, the beats left of the extracted range after it, and
+// column.notation, what each of its notes is drawn as
+function groupByOnset(entries, clefsAt, {endBeat=null}={}) {
   let byOnset = new Map()
 
   for (let entry of entries) {
@@ -132,21 +187,60 @@ function groupByOnset(entries, clefsAt) {
     let seen = new Set()
     let notes = []
 
+    // a pitch sounded by two voices at once is one column to play, but the
+    // score writes each voice's note, so the other is drawn beside it
+    let doubled = []
+
     for (let [note, staff] of byOnset.get(key)) {
       let pitch = parseNote(note.note)
-      if (seen.has(pitch)) { continue }
+      if (seen.has(pitch)) {
+        if (note.notation) {
+          doubled.push(drawnHead(note, staff, {beat: note.start}))
+        }
+        continue
+      }
       seen.add(pitch)
-      notes.push({pitch, name: note.note, staff})
+      notes.push({pitch, name: note.note, staff, notation: noteNotation(note)})
     }
 
     notes.sort((a, b) => a.pitch - b.pitch)
     let column = notes.map(note => note.name)
+    let beat = byOnset.get(key)[0][0].start
+
     if (clefsAt) {
       column.staves = notes.map(note => note.staff)
-      column.clefs = clefsAt(byOnset.get(key)[0][0].start)
+      column.clefs = clefsAt(beat)
     }
+
+    if (clefsAt && notes.some(note => note.notation)) {
+      column.beat = beat
+      column.notation = notes.map(note => note.notation)
+      if (endBeat != null && isFinite(endBeat)) {
+        column.beats = Math.max(0, endBeat - beat)
+      }
+      column.extras = doubled
+    }
+
     return column
   })
+}
+
+// Hands each of extras to the column it is drawn after, the last one starting
+// at or before it; anything before the first column goes to it, drawn in the
+// room before its head. Extras are in beat order and stay that way
+function attachExtras(columns, extras) {
+  let drawn = columns.filter(column => column.extras)
+  if (!drawn.length) { return columns }
+
+  for (let extra of [...extras].sort((a, b) => a.beat - b.beat)) {
+    let idx = 0
+    while (idx + 1 < drawn.length && drawn[idx + 1].beat <= extra.beat + ONSET_EPSILON / 2) {
+      idx += 1
+    }
+    drawn[idx].extras.push(extra)
+  }
+
+  return columns
 }
 
 // song: MultiTrackSong (or any SongNoteList)
@@ -157,7 +251,8 @@ function groupByOnset(entries, clefsAt) {
 // opts.staves: when set, each column carries column.staves, the grand staff
 // ("upper" or "lower", see staffTracks) each of its notes is written on, and
 // column.clefs, the clef sign at its onset of each staff the tracks are on
-// (see grandStaffClefs)
+// (see grandStaffClefs). The columns then also carry column.extras, the rests
+// and tied continuation heads drawn after them
 // returns array of columns, each an ascending array of note names
 export function extractSectionColumns(song, opts={}) {
   let [firstMeasure] = measureNumberRange(song)
@@ -191,12 +286,42 @@ export function extractSectionColumns(song, opts={}) {
 
   let [startBeat, endBeat] = measureBeatRange(song, startMeasure, endMeasure)
 
-  let inRange = entries.filter(([note]) =>
-    note.start >= startBeat - ONSET_EPSILON / 2 &&
-    note.start < endBeat - ONSET_EPSILON / 2
-  )
+  let inBeatRange = beat =>
+    beat >= startBeat - ONSET_EPSILON / 2 && beat < endBeat - ONSET_EPSILON / 2
 
-  return groupByOnset(inRange, grand && grandStaffClefs(song, grand, trackIndices))
+  let inRange = entries.filter(([note]) => inBeatRange(note.start))
+
+  // the last measure of a score has no measure after it to end on, so the
+  // columns of the section take the beat the score's measures end at
+  let measuresEnd = song.metadata && song.metadata.measuresEnd
+  let columnsEnd = isFinite(endBeat) ? endBeat : measuresEnd
+
+  let columns = groupByOnset(
+    inRange, grand && grandStaffClefs(song, grand, trackIndices), {endBeat: columnsEnd})
+
+  if (!grand) {
+    return columns
+  }
+
+  // The heads a tie runs on to are drawn wherever they fall, even when the
+  // note they are tied from is in an earlier measure of the piece, so they
+  // are collected from every note of the tracks rather than from the range
+  let extras = entries
+    .flatMap(([note, staff]) => tieHeads(note, staff))
+    .filter(head => inBeatRange(head.beat))
+
+  for (let idx of trackIndices) {
+    let track = (song.tracks && song.tracks[idx]) || []
+    let staff = grand.bass.includes(idx) ? "lower" : "upper"
+
+    for (let rest of track.rests || []) {
+      // rests the score hides (a voice's padding) are not drawn
+      if (rest.hidden || !inBeatRange(rest.start)) { continue }
+      extras.push({kind: "rest", beat: rest.start, staff, ...rest})
+    }
+  }
+
+  return attachExtras(columns, extras)
 }
 
 // Drops notes that fall outside [min, max] pitch (note names), removing
@@ -207,6 +332,9 @@ export function filterColumnsToRange(columns, min, max) {
   let dropped = 0
 
   let out = []
+  // the extras of columns dropped whole, drawn with the next column kept
+  let carried = []
+
   for (let column of columns) {
     let keep = column.map(note => {
       let pitch = parseNote(note)
@@ -221,9 +349,31 @@ export function filterColumnsToRange(columns, min, max) {
       kept.clefs = column.clefs
     }
 
-    if (kept.length) {
-      out.push(kept)
+    if (column.notation) {
+      kept.beat = column.beat
+      kept.beats = column.beats
+      kept.notation = column.notation.filter((notation, idx) => keep[idx])
+      // a tied head of a note the staff can't show goes with it
+      kept.extras = [...carried, ...(column.extras || [])].filter(extra => {
+        if (extra.kind != "head") { return true }
+        let pitch = parseNote(extra.name)
+        return pitch >= minPitch && pitch <= maxPitch
+      })
     }
+
+    if (kept.length) {
+      carried = []
+      out.push(kept)
+    } else {
+      carried = kept.extras || []
+    }
+  }
+
+  // the extras of a last column dropped whole go with the column before it,
+  // where they are drawn after its onset, rather than being lost with it
+  if (carried.length && out.length) {
+    let last = out[out.length - 1]
+    last.extras = [...(last.extras || []), ...carried]
   }
 
   return [out, dropped]

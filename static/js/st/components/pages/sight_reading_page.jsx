@@ -38,7 +38,8 @@ import {isMobile} from "st/browser"
 import {getSession} from "st/app"
 
 import {StaffTwo} from "st/components/staff_two"
-import {fitNoteWidth, fitStaffScale, minNoteWidth} from "st/components/staff_notes"
+import {fitNoteWidth, fitStaffScale, minNoteWidth, drawsRests} from "st/components/staff_notes"
+import {columnAdvances, columnSpan} from "st/staff_rhythm"
 import {drillColumns} from "st/measure_cards"
 
 const DEFAULT_NOTE_WIDTH = 100
@@ -52,13 +53,10 @@ export const PLATE_STAFF_SCALE = 0.8
 
 // A piece's card (or whole section) is fitted to the plate: its columns are
 // squeezed down to the card's minNoteWidth, then the staff shrinks down to
-// MIN_FIT_SCALE. A card that still doesn't fit runs on past the plate's edge
-export const MIN_FIT_SCALE = 0.5
-
-// the distance in columns from a card's first column to its last
-function cardSpan(card) {
-  return card.columns.length - 1
-}
+// MIN_FIT_SCALE, the smallest staff still worth reading, which fits a card of
+// up to six of the score's busiest bars. A card that still doesn't fit, the
+// densest eight bar ones, runs on past the plate's edge
+export const MIN_FIT_SCALE = 0.4
 
 // the legacy renderer's scale for the window's width
 function staffScale() {
@@ -404,6 +402,15 @@ export default class SightReadingPage extends React.Component {
     return this.unitColumnsCache
   }
 
+  // Whether the staff draws the score's rests, which fixes the unit its
+  // columns are spaced in: each side of a grand staff draws its own, and a
+  // lone staff only when the drill is on one score staff (see drawsRests).
+  // The page fits and slides a card by the same choice the staff draws it with
+  restsDrawn(columns) {
+    let staff = this.state.currentStaff
+    return (staff && staff.name == "grand") || drawsRests(columns)
+  }
+
   // The legacy staff's scale, column width and unit: the columns of the
   // piece's card (or whole section) on the staff, which fix its margins in
   // every mode. In wait mode the card is also fitted to the plate so every
@@ -418,16 +425,45 @@ export default class SightReadingPage extends React.Component {
       return {scale, noteWidth, unitColumns}
     }
 
-    scale = Math.min(...this.state.notes.generator.cards.map(card =>
-      fitStaffScale(staffWidth, cardSpan(card), {
-        scale, keySignature, minWidth: minNoteWidth(card.columns, keySignature), minScale: MIN_FIT_SCALE,
-      })))
+    // What a card needs of the plate, in the unit the staff draws it with (see
+    // drillColumns and st/staff_rhythm), so the plate is fitted to what is
+    // drawn: the room its columns span, and a column width wide enough that
+    // its narrowest gap — not the nominal column — still holds a note head and
+    // its accidental
+    let loop = current.number == null
+    let rests = this.restsDrawn(unitColumns)
+    let fitFor = card => {
+      let unit = card == current.card ? unitColumns : drillColumns(card, {loop})
+      let narrowest = Math.min(1, ...columnAdvances(card.columns, unit, {rests}))
 
-    noteWidth = fitNoteWidth(staffWidth, cardSpan(current.card), {
-      scale, keySignature, maxWidth: noteWidth, minWidth: minNoteWidth(current.card.columns, keySignature),
-    })
+      return {
+        span: columnSpan(card.columns, unit, {rests}),
+        minWidth: Math.ceil(minNoteWidth(card.columns, keySignature) / narrowest),
+      }
+    }
+
+    scale = Math.min(...this.state.notes.generator.cards.map(card => {
+      let {span, minWidth} = fitFor(card)
+      return fitStaffScale(staffWidth, span, {scale, keySignature, minWidth, minScale: MIN_FIT_SCALE})
+    }))
+
+    let {span, minWidth} = fitFor(current.card)
+    noteWidth = fitNoteWidth(staffWidth, span, {scale, keySignature, maxWidth: noteWidth, minWidth})
 
     return {scale, noteWidth, unitColumns}
+  }
+
+  // How many column widths the staff slides when the head column of notes is
+  // done with, which is one for every column of a drill without the score's
+  // rhythm and a long note's own room in an imported piece
+  columnAdvance(notes) {
+    if (!notes || !notes.length) { return 1 }
+
+    let current = this.currentCard()
+    let unitColumns = current ? this.unitColumns(current) : null
+    let [advance] = columnAdvances(notes, unitColumns,
+      {rests: this.restsDrawn(unitColumns || notes)})
+    return advance > 0 ? advance : 1
   }
 
   // Begin: a fresh session in new stats, with the elapsed clock running
@@ -586,6 +622,7 @@ export default class SightReadingPage extends React.Component {
           gaEvent("sight_reading", "note", "hit");
 
           this.advancedNotes = this.state.notes
+          let advance = this.columnAdvance(this.state.notes)
           let notes = this.state.notes.clone()
           notes.shift();
           notes.pushRandom();
@@ -598,7 +635,7 @@ export default class SightReadingPage extends React.Component {
             touchedNotes: {}
           })
 
-          this.state.slider.add(1)
+          this.state.slider.add(advance)
 
           return true
         } else {
@@ -641,6 +678,7 @@ export default class SightReadingPage extends React.Component {
     }
 
     // Advance to next note
+    let advance = this.columnAdvance(this.state.notes)
     let notes = this.state.notes.clone()
     notes.shift()
     notes.pushRandom()
@@ -652,7 +690,7 @@ export default class SightReadingPage extends React.Component {
       touchedNotes: {}
     })
 
-    this.state.slider.add(1)
+    this.state.slider.add(advance)
   }
 
   pressNote(note) {
@@ -777,10 +815,18 @@ export default class SightReadingPage extends React.Component {
           if (column.length && this.state.session) {
             this.state.stats.missNotes(column);
           }
+          // the room the column leaving the staff held, which the notes slide
+          // by, so a long note holds the staff for as many beats as the score
+          // gives it
+          let advance = this.columnAdvance(this.state.notes)
           let notes = this.state.notes.clone()
           notes.shift();
           notes.pushRandom();
           this.setState({ notes })
+
+          let slider = this.state.slider
+          slider.value += advance - slider.loopPhase
+          slider.loopPhase = advance
         }.bind(this)
       })
     });

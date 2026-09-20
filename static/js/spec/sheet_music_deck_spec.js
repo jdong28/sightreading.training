@@ -50,6 +50,62 @@ describe("sheet music deck", function() {
       }
     })
 
+    it("keeps the ratio of a triplet the score writes late in the piece", function() {
+      // six 4/4 bars of whole notes, the last a triplet of quarters and a
+      // half: part 2 draws the brackets and beams from the stored ratio
+      let song = parseMusicXML(`<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    ${Array.from({length: 5}, (_, idx) => `
+    <measure number="${idx + 1}">
+      ${idx == 0 ? "<attributes><divisions>6</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>" : ""}
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>24</duration><voice>1</voice><type>whole</type></note>
+    </measure>`).join("")}
+    <measure number="6">
+      ${["D", "E", "F"].map(step => `<note><pitch><step>${step}</step><octave>5</octave></pitch><duration>4</duration><voice>1</voice><type>quarter</type><time-modification><actual-notes>3</actual-notes><normal-notes>2</normal-notes></time-modification></note>`).join("")}
+      <note><pitch><step>G</step><octave>5</octave></pitch><duration>12</duration><voice>1</voice><type>half</type></note>
+    </measure>
+  </part>
+</score-partwise>`)
+
+      let restored = songFromJSON(JSON.parse(JSON.stringify(songToJSON(song))))
+      let [start, end] = measureBeatRange(restored, 6, 6)
+      let bar6 = [...restored].filter(note => note.start >= start && note.start < end)
+
+      expect(bar6.map(note => [note.note, note.notation.type, note.notation.tuplet || 1]))
+        .toEqual([
+          ["D5", "quarter", 1.5], ["E5", "quarter", 1.5], ["F5", "quarter", 1.5],
+          ["G5", "half", 1],
+        ])
+    })
+
+    it("stores a track's rests with only what the staff draws them from", function() {
+      let song = parseMusicXML(`<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes><divisions>2</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>
+      <note><rest/><duration>2</duration><voice>1</voice><type>quarter</type></note>
+      <note><rest/><duration>4</duration><voice>1</voice><type>half</type></note>
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>quarter</type></note>
+    </measure>
+  </part>
+</score-partwise>`)
+
+      let stored = JSON.parse(JSON.stringify(songToJSON(song)))
+
+      // a rest is drawn by its notated value at a fixed staff position, so the
+      // stored piece keeps neither the length it is played for nor the voice
+      // that writes it
+      expect(stored.tracks[0].rests).toEqual([
+        {start: 0, type: "quarter"},
+        {start: 1, type: "half"},
+      ])
+      expect(songFromJSON(stored).tracks[0].rests).toEqual(stored.tracks[0].rests)
+    })
+
     it("stores notes compactly and rounds float beats", function() {
       let song = new MultiTrackSong()
       song.metadata = {beatsPerMeasure: 4}

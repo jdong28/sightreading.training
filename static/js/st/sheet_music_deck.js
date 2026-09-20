@@ -19,7 +19,12 @@ export const DECK_STORAGE_KEY = LEGACY_DECK_KEY
 
 export const MAX_PIECES = 300
 
-const SONG_FORMAT = 1
+// 1: notes, clefs and metadata only
+// 2: adds the notation the staff draws the score's rhythm with (the notated
+// value, dots, tuplet, voice and tied heads of every note, and the track's
+// rests). Pieces stored as 1 are still read, and drill as they always did,
+// drawn as whole notes until the score is imported again
+const SONG_FORMAT = 2
 
 // metadata copied into a stored piece, see parseMusicXML
 const METADATA_FIELDS = [
@@ -31,8 +36,36 @@ const METADATA_FIELDS = [
 // stored JSON; far below the onset quantization of a section
 const round = n => Math.round(n * 1e6) / 1e6
 
+// The notation of a note as it is stored: only what differs from a plain
+// undotted note of its value, so the stored song stays small
+function notationToJSON(notation) {
+  if (!notation || !notation.type) { return null }
+
+  let out = {type: notation.type}
+  for (let field of ["dots", "voice", "tuplet"]) {
+    if (notation[field]) {
+      out[field] = notation[field]
+    }
+  }
+
+  let ties = (notation.ties || []).map(tie => {
+    let head = {start: round(tie.start), type: tie.type}
+    if (tie.dots) {
+      head.dots = tie.dots
+    }
+    return head
+  })
+
+  if (ties.length) {
+    out.ties = ties
+  }
+
+  return out
+}
+
 // Song model -> plain JSON object. Each track keeps its name, clefs and its
-// notes as a flat [name, start, duration, name, start, duration, ...] list.
+// notes as a flat [name, start, duration, name, start, duration, ...] list,
+// with the notation of each note, and the track's rests, alongside.
 export function songToJSON(song) {
   let metadata = {}
   for (let field of METADATA_FIELDS) {
@@ -52,8 +85,26 @@ export function songToJSON(song) {
       out.cleffs = track.cleffs.map(([beat, sign]) => [round(beat), sign])
     }
 
+    let notation = []
     for (let note of track) {
       out.notes.push(note.note, round(note.start), round(note.duration))
+      notation.push(notationToJSON(note.notation))
+    }
+
+    if (notation.some(entry => entry)) {
+      out.notation = notation
+    }
+
+    if (Array.isArray(track.rests) && track.rests.length) {
+      out.rests = track.rests.map(rest => {
+        let stored = {start: round(rest.start), type: rest.type}
+        for (let field of ["dots", "wholeMeasure", "hidden"]) {
+          if (rest[field]) {
+            stored[field] = rest[field]
+          }
+        }
+        return stored
+      })
     }
 
     return out
@@ -64,7 +115,8 @@ export function songToJSON(song) {
 
 // plain JSON object -> MultiTrackSong. Throws on data of the wrong shape.
 export function songFromJSON(data) {
-  if (!data || data.format != SONG_FORMAT || !Array.isArray(data.tracks)) {
+  if (!data || !(data.format >= 1 && data.format <= SONG_FORMAT) ||
+      !Array.isArray(data.tracks)) {
     throw new Error("Unknown stored song format")
   }
 
@@ -87,12 +139,23 @@ export function songFromJSON(data) {
       track.cleffs = trackData.cleffs
     }
 
+    if (Array.isArray(trackData.rests)) {
+      track.rests = trackData.rests
+    }
+
     for (let i = 0; i < notes.length; i += 3) {
       let [name, start, duration] = notes.slice(i, i + 3)
       if (typeof name != "string" || typeof start != "number" || typeof duration != "number") {
         throw new Error("Malformed stored note")
       }
-      song.pushWithTrack(new SongNote(name, start, duration), trackIdx)
+
+      let note = new SongNote(name, start, duration)
+      let notation = Array.isArray(trackData.notation) && trackData.notation[i / 3]
+      if (notation) {
+        note.notation = {...notation, ties: notation.ties || []}
+      }
+
+      song.pushWithTrack(note, trackIdx)
     }
   })
 

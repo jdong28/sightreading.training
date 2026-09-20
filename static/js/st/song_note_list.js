@@ -434,6 +434,8 @@ export class MultiTrackSong extends SongNoteList {
 // note: C4, D#5, etc...
 // start: when note begings in beats
 // duration: how long note is in beats
+// notation: how an imported score draws the note (see st/staff_rhythm), set
+// by the MusicXML import; nothing about it is ever played or matched
 export class SongNote {
   constructor(note, start, duration) {
     this.id = Symbol()
@@ -443,9 +445,15 @@ export class SongNote {
   }
 
   clone() {
-    return new SongNote(
+    let note = new SongNote(
       this.note, this.start, this.duration
     )
+
+    if (this.notation) {
+      note.notation = this.notation
+    }
+
+    return note
   }
 
   inRange(min, max) {
