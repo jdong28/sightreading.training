@@ -187,6 +187,13 @@ function leadBeats(columns, rests) {
   return most
 }
 
+// The room a card keeps before the extras that lead its first column, in
+// column widths, so the bar line those extras open their bar with is drawn in
+// front of them rather than through them: the line sits halfway into this room
+// (see barLineLeft in st/components/staff_notes), which is about a note head
+// at the widths the staff fits its columns to
+const LEAD_BAR_LINE_ROOM = 0.5
+
 /**
  * Where the columns are drawn and how much room each one holds. The first
  * column is offset by the room its card keeps for the extras that fall before
@@ -199,9 +206,10 @@ function leadBeats(columns, rests) {
  * staff that draws none keeps no room for them either (see restsStaff in
  * st/components/staff_notes)
  * @returns {{offsets: number[], advances: number[], gaps: Array, unit:
- * number|null, leadBeats: number, rests: boolean}} offsets and advances in
- * column widths, gaps the beats each column holds and leadBeats the beats the
- * reserved room holds
+ * number|null, leadBeats: number, leadFrom: number, rests: boolean}} offsets
+ * and advances in column widths, gaps the beats each column holds, leadBeats
+ * the beats the reserved room holds and leadFrom where those extras start,
+ * which keeps the room their bar line is drawn in (see LEAD_BAR_LINE_ROOM)
  */
 export function columnLayout(columns, unitColumns, {rests=true}={}) {
   let advances = columnAdvances(columns, unitColumns, {rests})
@@ -210,8 +218,9 @@ export function columnLayout(columns, unitColumns, {rests=true}={}) {
   // measured over the card, not the window, so the room holds still as the
   // notes slide through the staff
   let beats = leadBeats(unitOf, rests)
+  let leadFrom = beats > 0 ? LEAD_BAR_LINE_ROOM : 0
   let offsets = []
-  let at = roomFor(beats, unit)
+  let at = leadFrom + roomFor(beats, unit)
 
   for (let advance of advances) {
     offsets.push(at)
@@ -224,6 +233,7 @@ export function columnLayout(columns, unitColumns, {rests=true}={}) {
     gaps: columns.map((column, idx) => columnBeats(columns, idx, rests)),
     unit,
     leadBeats: beats,
+    leadFrom,
     rests,
   }
 }
@@ -477,7 +487,7 @@ export function rowCenter(row, {upperRow}) {
  * @param {boolean} [opts.rests] whether the staff draws the score's rests
  * @returns {Object[]} each extra with `offset`, its own place in column widths
  */
-export function columnExtras(columns, {offsets, advances, gaps, unit, leadBeats, staff, rests=true}) {
+export function columnExtras(columns, {offsets, advances, gaps, unit, leadBeats, leadFrom, staff, rests=true}) {
   if (!offsets || !advances) { return [] }
 
   let out = []
@@ -497,7 +507,7 @@ export function columnExtras(columns, {offsets, advances, gaps, unit, leadBeats,
         // keeps its share of the room before the column, which for the first
         // one is the room the layout reserves (see columnLayout), and never
         // falls back past the column before it
-        let from = idx > 0 ? offsets[idx - 1] : 0
+        let from = idx > 0 ? offsets[idx - 1] : (leadFrom || 0)
         let span = idx > 0 ? gaps[idx - 1] : leadBeats
         let room = offsets[idx] - from
         let at = span > 0 ? offsets[idx] - room * before / span : from

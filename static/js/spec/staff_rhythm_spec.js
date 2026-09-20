@@ -241,9 +241,10 @@ describe("staff rhythm", function() {
 
       expect(layout.leadBeats).toEqual(1)
       expect(layout.offsets[0]).toBeGreaterThan(0)
-      // the rest opens the bar, so it starts where the staff's notes do, clear
-      // of the first head
-      expect(rest.offset).toEqual(0)
+      // the rest opens the bar, so it is drawn clear of the first head, after
+      // the room its bar line is drawn in
+      expect(rest.offset).toEqual(layout.leadFrom)
+      expect(layout.leadFrom).toBeGreaterThan(0)
       expect(rest.offset).toBeLessThan(layout.offsets[0])
 
       // the room is kept whatever window of the card is on the staff, so the
@@ -252,6 +253,7 @@ describe("staff rhythm", function() {
 
       // and a card with nothing before its first head keeps no room
       expect(columnLayout(bar()).offsets[0]).toEqual(0)
+      expect(columnLayout(bar()).leadFrom).toEqual(0)
     })
 
     it("places a looping card's wrap back to its first bar clear of the column before", function() {

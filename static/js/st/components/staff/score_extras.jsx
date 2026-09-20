@@ -40,6 +40,9 @@ export default class ScoreExtras extends React.PureComponent {
     // the score staff whose rests this staff draws, null for none (see
     // restsStaff in st/components/staff_notes)
     restsStaff: types.string,
+    // every column of the drill's unit, which still holds the bar the window
+    // opens in the middle of (see carriedRests)
+    unitColumns: types.array,
     // where the staff draws a bar line before each column, null for the
     // columns it draws none before (see renderBarLines in
     // st/components/staff_notes)
@@ -48,10 +51,10 @@ export default class ScoreExtras extends React.PureComponent {
 
   render() {
     let staff = this.props.restsStaff
-    let rests = staff ? this.renderRests(columnExtras(this.props.notes, {
-      ...this.props.layout,
-      staff,
-    })) : []
+    let rests = staff ? this.renderRests([
+      ...this.carriedRests(staff),
+      ...columnExtras(this.props.notes, {...this.props.layout, staff}),
+    ]) : []
 
     let ties = this.renderTies()
 
@@ -60,6 +63,34 @@ export default class ScoreExtras extends React.PureComponent {
     }
 
     return <div className={styles.score_extras}>{rests}{ties}</div>
+  }
+
+  // The whole measure rests of a bar the window opens in the middle of. Every
+  // other extra is drawn at its own beat and leaves the staff with the column
+  // it is attached to, but a whole measure rest is drawn centred in its bar
+  // (see renderRests), so it is still on the staff once that column has been
+  // played: the unit the window slides over is what still holds it
+  carriedRests(staff) {
+    let unit = this.props.unitColumns
+    let [head] = this.props.notes
+
+    if (!unit || !head || head.measure != null || head.beat == null) { return [] }
+
+    let out = []
+    let opens = unit.findIndex(column => column && column.beat === head.beat)
+
+    for (let idx = opens - 1; idx >= 0; idx--) {
+      for (let extra of unit[idx].extras || []) {
+        if (extra.kind != "rest" || !extra.wholeMeasure) { continue }
+        if (staff && extra.staff && extra.staff != staff) { continue }
+
+        out.push({...extra, columnIdx: 0})
+      }
+
+      if (unit[idx].measure != null) { break }
+    }
+
+    return out
   }
 
   // where an offset in column widths falls, in pixels from the staff's notes

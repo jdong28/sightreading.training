@@ -1009,6 +1009,32 @@ describe("staves", function() {
       expect(middle).toBeCloseTo((barLine(2) + barLine(3)) / 2, 0)
     })
 
+    it("keeps a bar's whole measure rest drawn once its opening column is played", function() {
+      let song = parseMusicXML(barRestScore())
+      let columns = sectionColumns(song, 1, 2)
+      // the window the staff draws once bar 1's first column has been played,
+      // its card still fixing the layout (see unitColumns)
+      renderStaff(GrandStaff, columns.slice(1), {unitColumns: columns, keySignature: new KeySignature(0)})
+
+      let lower = staffEl("lower")
+      let rest = lower.querySelector(`.${staffStyles.rest}`)
+
+      // the rest fills a bar the staff still draws three quarters of, so it is
+      // drawn though the column it was attached to has left the window
+      expect(rest).toBeTruthy()
+      expect(rest.dataset.restType).toEqual("whole")
+
+      let heads = notesOn(staffEl("upper"))
+        .map(note => parseFloat(note.style.left)).sort((a, b) => a - b)
+      let barLine = parseFloat(lower
+        .querySelector(`.${staffStyles.bar_line}[data-measure="2"]`).style.left)
+      let middle = parseFloat(rest.style.left) + rest.getBoundingClientRect().width / 2
+
+      expect(heads.length).toEqual(4)
+      expect(middle).toBeGreaterThan(heads[0])
+      expect(middle).toBeLessThan(barLine)
+    })
+
     it("centres a whole measure rest in its own bar when the card loops", function() {
       let song = parseMusicXML(barRestScore())
       let card = sectionCard(pieceSectionMeasures(GRAND, {
@@ -1273,8 +1299,9 @@ describe("staves", function() {
       let barLine = staff.querySelector(`.${staffStyles.bar_line}[data-measure="1"]`)
       let heads = notesOn(staff).map(note => parseFloat(note.style.left)).sort((a, b) => a - b)
 
-      // the rest belongs to the bar the line opens, so the line comes first
-      expect(parseFloat(barLine.style.left)).toBeLessThanOrEqual(parseFloat(rest.style.left))
+      // the rest belongs to the bar the line opens, so the line is drawn in
+      // front of it rather than through it
+      expect(parseFloat(barLine.style.left)).toBeLessThan(parseFloat(rest.style.left))
       expect(parseFloat(rest.style.left)).toBeLessThan(heads[0])
     })
 
@@ -1570,9 +1597,9 @@ describe("staves", function() {
       expect(rest.dataset.restType).toEqual("quarter")
       expect(heads.length).toEqual(3)
       // the rest opens the bar at the head of the window, so it keeps the room
-      // before that head, after its own bar line
+      // before that head, with its own bar line drawn in front of it
       expect(parseFloat(rest.style.left)).toBeLessThan(heads[0])
-      expect(parseFloat(barLine.style.left)).toBeLessThanOrEqual(parseFloat(rest.style.left))
+      expect(parseFloat(barLine.style.left)).toBeLessThan(parseFloat(rest.style.left))
     })
 
     it("draws a note held down on the head column of a bar that opens with a rest", function() {
