@@ -93,8 +93,11 @@ describe("staff rhythm", function() {
     it("keeps the rests of each staff, the hidden ones marked", function() {
       let rests = song.tracks[0].rests
 
-      expect(rests.map(rest => [rest.start, rest.duration, rest.type, !!rest.wholeMeasure]))
-        .toEqual([[0, 2, "half", false], [2, 4, "whole", true], [6, 4, "whole", true]])
+      // a rest is drawn by its notated value at a fixed staff position, so it
+      // keeps neither the length it is played for nor the voice that writes it
+      expect(rests.map(rest => [rest.start, rest.type, !!rest.wholeMeasure]))
+        .toEqual([[0, "half", false], [2, "whole", true], [6, "whole", true]])
+      expect(rests.every(rest => rest.duration === undefined && rest.voice === undefined)).toBe(true)
       expect(rests.every(rest => rest.hidden)).toBe(true)
     })
 
@@ -228,6 +231,34 @@ describe("staff rhythm", function() {
 
       // one of the column's two beats in, so half of the room it holds
       expect(rest.offset).toBeCloseTo(layout.advances[0] / 2, 6)
+    })
+
+    it("keeps a rest mid gap off the room the next bar's line is drawn in", function() {
+      // a quarter at beat 0 with a quarter rest a beat after it, then a bar
+      // opening on its own quarter rest, whose line the gap keeps room for
+      let leading = () => [column(["C5"], 0, 4), column(["G5"], 5, 3)]
+      let columns = leading()
+      columns[0].extras = [{kind: "rest", beat: 1, staff: "upper", type: "quarter"}]
+      columns[1].extras = [{kind: "rest", beat: 4, staff: "upper", type: "quarter"}]
+
+      let layout = columnLayout(columns)
+      let extras = columnExtras(columns, layout)
+      let rest = extras.find(extra => extra.beat == 1)
+
+      // the same gap with nothing opening the next bar, so it keeps no room
+      // for a line: the rest is drawn the same way into its column's own room,
+      // the room the line is drawn in being no part of what holds its beats
+      let plain = leading()
+      plain[0].extras = [{kind: "rest", beat: 1, staff: "upper", type: "quarter"}]
+      let plainLayout = columnLayout(plain)
+      let [plainRest] = columnExtras(plain, plainLayout)
+
+      expect(layout.advances[0]).toBeGreaterThan(plainLayout.advances[0])
+      expect(rest.offset - layout.offsets[0])
+        .toBeCloseTo(plainRest.offset - plainLayout.offsets[0], 6)
+
+      // and it stays clear of the rest the next bar opens with
+      expect(rest.offset).toBeLessThan(extras.find(extra => extra.beat == 4).offset)
     })
 
     it("reserves room before the first column for the extras that fall there", function() {

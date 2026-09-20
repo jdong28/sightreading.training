@@ -521,11 +521,13 @@ export function columnExtras(columns, {offsets, advances, gaps, unit, leadBeats,
         continue
       }
 
-      // a beat of the column's own room, so a head or rest between two
-      // columns keeps its place however that column is spaced; a column
-      // whose room isn't known goes by the card's own beat to a column width
+      // a beat of the room the column's own beats hold, so a head or rest
+      // between two columns keeps its place however that column is spaced,
+      // and the room the next bar's line is drawn in is no part of it; a
+      // column whose room isn't known goes by the card's own beat to a width
+      let room = advances[idx] - openingRoom(columns[idx + 1], rests)
       let into = beats > 0 ?
-        advances[idx] * -before / beats :
+        room * -before / beats :
         -before / (unit > 0 ? unit : 1)
 
       out.push({...extra, columnIdx: idx, offset: offsets[idx] + into})

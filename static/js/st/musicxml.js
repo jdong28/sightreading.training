@@ -189,9 +189,9 @@ function isHidden(el) {
   return el.getAttribute("print-object") == "no"
 }
 
-// The notation of a note or rest event, the drawing data of st/staff_rhythm:
-// its notated value and dots, the tuplet ratio it is played at (1 for a plain
-// note) and its voice. The stem the score writes is the direction of a beam,
+// The notated value of a note or rest event, the drawing data of
+// st/staff_rhythm: its value and dots, and the tuplet ratio it is played at
+// (1 for a plain note). The stem the score writes is the direction of a beam,
 // so the staff works out its own (see stemDirection in st/staff_rhythm)
 function notationOf(el, duration) {
   let ratio = timeModification(el)
@@ -201,11 +201,6 @@ function notationOf(el, duration) {
 
   if (value.dots) {
     out.dots = value.dots
-  }
-
-  let voice = +(childText(el, "voice") || 0)
-  if (voice) {
-    out.voice = voice
   }
 
   // the tuplet brackets and beams of part 2 (sr-score-beams-slurs-q2) are the
@@ -319,7 +314,6 @@ function walkPart(measures, partName) {
               part.rests.push({
                 measureIdx,
                 offset: start / divisions,
-                duration: duration / divisions,
                 staff,
                 // a whole measure rest is drawn centered in its bar whatever
                 // the meter, so it keeps no notated value of its own
@@ -345,6 +339,10 @@ function walkPart(measures, partName) {
           part.staves.add(staff)
 
           let ties = tieTypes(el)
+          // the voice a note is written in, which the staff turns its stem by
+          // (see columnStems in st/staff_rhythm). A rest is drawn at a fixed
+          // staff position whatever voice writes it, so it keeps none
+          let voice = +(childText(el, "voice") || 0)
 
           part.events.push({
             measureIdx,
@@ -355,6 +353,7 @@ function walkPart(measures, partName) {
             tieStart: ties.has("start"),
             tieStop: ties.has("stop"),
             ...notationOf(el, duration / divisions),
+            ...(voice ? {voice} : null),
           })
           break
         }
@@ -558,10 +557,8 @@ export function parseMusicXML(text) {
       }
       track.rests.push({
         start: measureStarts[rest.measureIdx] + rest.offset,
-        duration: rest.duration,
         type: rest.type,
         dots: rest.dots,
-        voice: rest.voice,
         wholeMeasure: rest.wholeMeasure,
         hidden: rest.hidden,
       })

@@ -97,8 +97,8 @@ export function songToJSON(song) {
 
     if (Array.isArray(track.rests) && track.rests.length) {
       out.rests = track.rests.map(rest => {
-        let stored = {start: round(rest.start), duration: round(rest.duration), type: rest.type}
-        for (let field of ["dots", "voice", "wholeMeasure", "hidden"]) {
+        let stored = {start: round(rest.start), type: rest.type}
+        for (let field of ["dots", "wholeMeasure", "hidden"]) {
           if (rest[field]) {
             stored[field] = rest[field]
           }

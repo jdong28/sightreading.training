@@ -80,6 +80,32 @@ describe("sheet music deck", function() {
         ])
     })
 
+    it("stores a track's rests with only what the staff draws them from", function() {
+      let song = parseMusicXML(`<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes><divisions>2</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>
+      <note><rest/><duration>2</duration><voice>1</voice><type>quarter</type></note>
+      <note><rest/><duration>4</duration><voice>1</voice><type>half</type></note>
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>quarter</type></note>
+    </measure>
+  </part>
+</score-partwise>`)
+
+      let stored = JSON.parse(JSON.stringify(songToJSON(song)))
+
+      // a rest is drawn by its notated value at a fixed staff position, so the
+      // stored piece keeps neither the length it is played for nor the voice
+      // that writes it
+      expect(stored.tracks[0].rests).toEqual([
+        {start: 0, type: "quarter"},
+        {start: 1, type: "half"},
+      ])
+      expect(songFromJSON(stored).tracks[0].rests).toEqual(stored.tracks[0].rests)
+    })
+
     it("stores notes compactly and rounds float beats", function() {
       let song = new MultiTrackSong()
       song.metadata = {beatsPerMeasure: 4}
