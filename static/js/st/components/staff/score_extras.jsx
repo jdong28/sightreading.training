@@ -40,6 +40,10 @@ export default class ScoreExtras extends React.PureComponent {
     // the score staff whose rests this staff draws, null for none (see
     // restsStaff in st/components/staff_notes)
     restsStaff: types.string,
+    // where the staff draws a bar line before each column, null for the
+    // columns it draws none before (see renderBarLines in
+    // st/components/staff_notes)
+    barLines: types.array,
   }
 
   render() {
@@ -76,9 +80,16 @@ export default class ScoreExtras extends React.PureComponent {
       columns[idx].beat <= previous.beat
   }
 
-  // The room the bar holding the column at idx spans, in column widths: from
-  // the last column that opens a bar to the next one, the empty columns the
-  // staff is padded with after a card, or the end of the room the columns hold
+  // Where the bar line the staff draws before the column at idx falls, in
+  // pixels, or null for a boundary it draws none at — the card's own start and
+  // end, and where a looping card wraps
+  barLine(idx) {
+    return (this.props.barLines || [])[idx] ?? null
+  }
+
+  // The room the bar holding the column at idx spans, in pixels: between the
+  // bar lines the staff draws, which a bar's own leading rests pull back from
+  // its first head, and at either end of the card the room its columns hold
   barRoom(idx) {
     let {offsets, advances} = this.props.layout
     let columns = this.props.notes
@@ -92,15 +103,16 @@ export default class ScoreExtras extends React.PureComponent {
       }
     }
 
-    let end = offsets[last] + advances[last]
+    let end = this.left(offsets[last] + advances[last])
     for (let at = start + 1; at <= last; at++) {
       if (this.opensBar(at) || columns[at].beat == null) {
-        end = offsets[at]
+        end = this.barLine(at) ?? this.left(offsets[at])
         break
       }
     }
 
-    return [offsets[start], end - offsets[start]]
+    let from = this.barLine(start) ?? this.left(offsets[start])
+    return [from, end - from]
   }
 
   // The augmentation dots of a rest, after its glyph and against the middle
@@ -148,7 +160,7 @@ export default class ScoreExtras extends React.PureComponent {
         // a whole measure rest fills a bar, so it is centred in the room the
         // bar holds rather than drawn at the beat it starts on
         let [from, room] = this.barRoom(rest.columnIdx)
-        left = this.left(from) + (room * this.props.noteWidth - width) / 2
+        left = from + (room - width) / 2
       }
 
       let line = (MIDDLE_LINE_ROWS - glyph.row) * STAFF_ROW * scale

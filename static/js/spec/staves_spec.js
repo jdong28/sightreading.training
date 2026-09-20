@@ -949,14 +949,64 @@ describe("staves", function() {
       let rest = staffEl("lower").querySelector(`.${staffStyles.rest}`)
       expect(rest.dataset.restType).toEqual("whole")
 
-      // the bar's four quarters are a column apart, so the middle of the bar
-      // is the third of them, not half way into the first one's room
       let heads = notesOn(staffEl("upper"))
         .map(note => parseFloat(note.style.left)).sort((a, b) => a - b)
       let middle = parseFloat(rest.style.left) + rest.getBoundingClientRect().width / 2
+      let barLine = n => parseFloat(staffEl("lower")
+        .querySelector(`.${staffStyles.bar_line}[data-measure="${n}"]`).style.left)
 
       expect(heads.length).toEqual(5)
-      expect(middle).toBeCloseTo(heads[2], 0)
+      // the rest fills the bar, so it is centred between the lines the bar is
+      // drawn between — about its third quarter, not half way into the first
+      // one's room
+      expect(middle).toBeCloseTo((barLine(1) + barLine(2)) / 2, 0)
+      expect(Math.abs(middle - heads[2])).toBeLessThan(heads[1] - heads[0])
+    })
+
+    // three 4/4 bars whose middle one the left hand rests out while the right
+    // hand waits three beats before its one note, so that bar's line is drawn
+    // well left of the only head in it
+    let lateEntryRestScore = () => `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes><divisions>1</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><staves>2</staves><clef number="1"><sign>G</sign><line>2</line></clef><clef number="2"><sign>F</sign><line>4</line></clef></attributes>
+      ${["C", "D", "E", "F"].map(step => `<note><pitch><step>${step}</step><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>`).join("")}
+      <backup><duration>4</duration></backup>
+      <note><pitch><step>C</step><octave>3</octave></pitch><duration>4</duration><voice>2</voice><type>whole</type><staff>2</staff></note>
+    </measure>
+    <measure number="2">
+      <note><rest/><duration>3</duration><dot/><voice>1</voice><type>half</type><staff>1</staff></note>
+      <note><pitch><step>G</step><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>
+      <backup><duration>4</duration></backup>
+      <note><rest measure="yes"/><duration>4</duration><voice>2</voice><staff>2</staff></note>
+    </measure>
+    <measure number="3">
+      <note><pitch><step>A</step><octave>5</octave></pitch><duration>4</duration><voice>1</voice><type>whole</type><staff>1</staff></note>
+      <backup><duration>4</duration></backup>
+      <note><pitch><step>C</step><octave>3</octave></pitch><duration>4</duration><voice>2</voice><type>whole</type><staff>2</staff></note>
+    </measure>
+  </part>
+</score-partwise>`
+
+    it("centres a whole measure rest between the bar lines its bar is drawn between", function() {
+      let song = parseMusicXML(lateEntryRestScore())
+      let columns = sectionColumns(song, 1, 3)
+      renderStaff(GrandStaff, columns, {unitColumns: columns, keySignature: new KeySignature(0)})
+
+      let lower = staffEl("lower")
+      let rest = lower.querySelector(`.${staffStyles.rest}`)
+      let barLine = n => parseFloat(lower
+        .querySelector(`.${staffStyles.bar_line}[data-measure="${n}"]`).style.left)
+
+      expect(rest.dataset.restType).toEqual("whole")
+      // bar 2's line is pulled back to the rests that open it, well left of
+      // the bar's only head, and the rest fills the bar between the lines
+      expect(barLine(2)).toBeLessThan(noteLeft(staffEl("upper"), G5))
+
+      let middle = parseFloat(rest.style.left) + rest.getBoundingClientRect().width / 2
+      expect(middle).toBeCloseTo((barLine(2) + barLine(3)) / 2, 0)
     })
 
     it("centres a whole measure rest in its own bar when the card loops", function() {

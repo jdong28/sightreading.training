@@ -322,6 +322,13 @@ export default class StaffNotes extends React.Component {
 
     let scale = this.props.scale || 1
     let offsetLeft = keySignatureWidth(this.props.keySignature) * scale
+    // where the staff draws a bar line before each column that opens a bar,
+    // null for the columns it draws none before: the lines themselves and the
+    // room a bar's whole measure rest fills are both measured from these, so
+    // the rest is centred between the lines it is drawn under
+    let extrasLeft = extrasBefore(this.props.notes, layout)
+    let barLines = this.props.notes.map((column, idx) => column.measure == null ?
+      null : barLineLeft(this.props, offsetLeft, idx, layout.offsets, extrasLeft[idx]))
 
     // the notes, by the clef of their column, which places them
     let byClef = new Map()
@@ -392,10 +399,11 @@ export default class StaffNotes extends React.Component {
         scale={scale}
         layout={layout}
         stems={stems}
+        barLines={barLines}
         restsStaff={restsStaff(this.props.unitColumns || this.props.notes, this.props.staff)}
         heads={songNotes} />
 
-      {this.renderBarLines(offsetLeft, layout)}
+      {this.renderBarLines(barLines)}
       {this.renderAnnotations(layout)}
     </div>
   }
@@ -527,9 +535,8 @@ export default class StaffNotes extends React.Component {
   // halfway between the previous column's note head and the column, so it
   // moves with its column. The bar number is written above it, on the upper
   // staff only of a grand staff
-  renderBarLines(offsetLeft, layout) {
+  renderBarLines(barLines) {
     let showNumbers = this.props.showAnnotations !== false
-    let before = extrasBefore(this.props.notes, layout)
 
     let out = []
     this.props.notes.forEach((column, idx) => {
@@ -538,7 +545,7 @@ export default class StaffNotes extends React.Component {
       out.push(<div
         key={`bar-line-${idx}`}
         className={styles.bar_line}
-        style={{left: `${barLineLeft(this.props, offsetLeft, idx, layout.offsets, before[idx])}px`}}
+        style={{left: `${barLines[idx]}px`}}
         data-measure={column.measure}
         data-label={showNumbers ? column.measure : null} />)
     })
