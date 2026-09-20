@@ -109,7 +109,7 @@ export const pickupScore = ({title="Pickup Minuet", clefs=[["G", 2], ["F", 4]]}=
 
 // The opening of Debussy's Rêverie as MuseScore 4 exports it, measures 1–4
 // with layout, beams, slurs and directions left out. F major, 4/4, divisions
-// 6, the upper staff in treble clef and the lower in bass clef:
+// 6, both staves in treble clef:
 //   1: two beats of hidden rests on both staves, no notes
 //   2, 3: hidden whole measure rest on staff 1; on staff 2 voice 5 plays the
 //     eighth note ostinato Bb3 C4 D4 G4~G4 D4 C4 Bb3~ (the last tied into the
@@ -123,7 +123,7 @@ export const reverieOpening = () => `<?xml version="1.0" encoding="UTF-8"?>
   </part-list>
   <part id="P1">
     <measure number="1">
-      <attributes><divisions>6</divisions><key><fifths>-1</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><staves>2</staves><clef number="1"><sign>G</sign><line>2</line></clef><clef number="2"><sign>F</sign><line>4</line></clef></attributes>
+      <attributes><divisions>6</divisions><key><fifths>-1</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><staves>2</staves><clef number="1"><sign>G</sign><line>2</line></clef><clef number="2"><sign>G</sign><line>2</line></clef></attributes>
       <note print-object="no"><rest/><duration>12</duration><voice>1</voice><type>half</type><staff>1</staff></note>
       <backup><duration>12</duration></backup>
       <note print-object="no"><rest/><duration>12</duration><voice>5</voice><type>half</type><staff>2</staff></note>
@@ -229,6 +229,28 @@ export const tiedLeadScore = () => `<?xml version="1.0" encoding="UTF-8"?>
       <note><rest/><duration>1</duration><voice>2</voice><type>quarter</type><staff>2</staff></note>
       ${noteXML("E", 2, 1, 2, "<voice>2</voice><type>quarter</type>")}
       <note><rest/><duration>2</duration><voice>2</voice><type>half</type><staff>2</staff></note>
+    </measure>
+  </part>
+</score-partwise>`
+
+// A one measure 4/4 piano piece in F major written treble over bass: the right
+// hand rests the bar out while the left hand plays the eighth note ostinato
+// A3 B3 C4 D4 C4 B3 A3 B3 in one voice over a held D3 in another. On the bass
+// staff that ostinato runs above the middle line, where the middle line alone
+// would stem it down, and its up stems reach off the top of the staff
+export const bassOstinatoScore = () => `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <work><work-title>Bass Ostinato</work-title></work>
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes><divisions>2</divisions><key><fifths>-1</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><staves>2</staves>${clefXML(1, "G", 2)}${clefXML(2, "F", 4)}</attributes>
+      <note print-object="no"><rest measure="yes"/><duration>8</duration><voice>1</voice><staff>1</staff></note>
+      <backup><duration>8</duration></backup>
+      ${[["A", 3], ["B", 3], ["C", 4], ["D", 4], ["C", 4], ["B", 3], ["A", 3], ["B", 3]]
+        .map(([step, octave]) => noteXML(step, octave, 1, 2, "<voice>5</voice><type>eighth</type>")).join("")}
+      <backup><duration>8</duration></backup>
+      ${noteXML("D", 3, 8, 2, "<voice>6</voice><type>whole</type>")}
     </measure>
   </part>
 </score-partwise>`

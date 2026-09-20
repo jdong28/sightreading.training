@@ -331,6 +331,21 @@ describe("staff rhythm", function() {
         .toEqual([[16, 92, "down"], [96, 112, "down"]])
     })
 
+    it("ties each pass of a looping card to its own neighbour", function() {
+      // a card shorter than the note buffer is drawn more than once in one
+      // window, so the same beat and note is on the staff several times
+      let pass = x => [
+        {beat: 0, name: "C5", x, y: 5, width: 8, stem: "up", tieTo: 1, tieFrom: null},
+        {beat: 1, name: "C5", x: x + 30, y: 5, width: 8, stem: "up", tieTo: null, tieFrom: 0},
+      ]
+
+      let arcs = tieArcs([...pass(10), ...pass(100)], 20)
+
+      // each pass ties its own two heads, rather than every one of them
+      // reaching back to the leftmost head on the staff
+      expect(arcs.map(arc => [arc.x1, arc.x2])).toEqual([[16, 42], [106, 132]])
+    })
+
     it("keeps a tie running off the card's start clear of the clef", function() {
       // the head the tie runs to is the first on the staff, closer to the
       // staff's notes than the stub reaches back

@@ -575,8 +575,22 @@ const TIE_END = 0.25
  * the arc joins and always in reading order, and dir the side it bulges to
  */
 export function tieArcs(heads, stub, {left=null}={}) {
-  let at = (beat, name) => heads.find(head =>
-    head.name == name && Math.abs(head.beat - beat) < BEAT_EPSILON)
+  // The head an end joins, nearest the head asking for it on side (1 ahead of
+  // it, -1 behind), rather than the first of the array: a looping card is
+  // drawn more than once in one window, so the same beat and note can be on
+  // the staff several times and each occurrence joins its own neighbour
+  let at = (beat, name, x, side) => {
+    let found = null
+
+    for (let head of heads) {
+      if (head.name != name) { continue }
+      if (Math.abs(head.beat - beat) >= BEAT_EPSILON) { continue }
+      if ((head.x - x) * side <= 0) { continue }
+      if (!found || (head.x - found.x) * side < 0) { found = head }
+    }
+
+    return found
+  }
 
   let arcs = []
   // a tie bulges away from its stem, as it does on paper
@@ -587,7 +601,7 @@ export function tieArcs(heads, stub, {left=null}={}) {
 
   for (let head of heads) {
     if (head.tieTo != null) {
-      let next = at(head.tieTo, head.name)
+      let next = at(head.tieTo, head.name, head.x, 1)
       arcs.push({
         x1: leaves(head.x, head.width), y1: head.y,
         x2: next ? meets(next.x, next.width) : meets(head.x + stub, head.width),
@@ -596,7 +610,7 @@ export function tieArcs(heads, stub, {left=null}={}) {
       })
     }
 
-    if (head.tieFrom != null && !at(head.tieFrom, head.name)) {
+    if (head.tieFrom != null && !at(head.tieFrom, head.name, head.x, -1)) {
       let x2 = meets(head.x, head.width)
       let from = leaves(head.x - stub, head.width)
       // the stub never runs back past the staff's notes, so a head with less
