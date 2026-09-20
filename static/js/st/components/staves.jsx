@@ -12,7 +12,9 @@ import {parseNote, noteName, noteStaffOffset} from "st/music"
 import StaffNotes, {
   KEY_SIGNATURE_SPACING, clefChangeBoxes, staffColumnNotes, columnNotation
 } from "st/components/staff_notes"
-import {columnStems, columnBars, middleRow, rowCenter} from "st/staff_rhythm"
+import {
+  columnStems, columnBars, columnExtras, columnLayout, headKey, middleRow, rowCenter,
+} from "st/staff_rhythm"
 import StaffSongNotes from "st/components/staff_song_notes"
 import styles from "st/components/staff.module.css"
 
@@ -126,6 +128,86 @@ function staffClefProps(props) {
   return {...props, ...columnClefs[0], columnClefs}
 }
 
+/**
+ * Every head a staff drawn with props draws over columns, in the order it
+ * draws them: the notes of each column with how the score writes them, then
+ * the heads the ties run on to and the ones another voice doubles, which are
+ * drawn but never played (see StaffNotes#convertToSongNotes). Each carries
+ * what places it — the bar and the onset it is struck on, its staff row and
+ * the clef that draws it — which is what its stem and the staff's own reach
+ * are worked out from.
+ * @param {Array} columns
+ * @param {Object} props
+ * @returns {Object[]}
+ */
+function drawnHeads(columns, props) {
+  let columnClefs = columnClefProps(columns, props.staff, props)
+  let clefAt = idx => (columnClefs && columnClefs[idx]) || props
+  let bars = columnBars(columns)
+  let heads = []
+
+  let push = (idx, group, name, beat, notation) => {
+    let spelled = props.keySignature.enharmonic(name)
+    let clef = clefAt(idx)
+
+    heads.push({
+      bar: bars[idx],
+      column: group,
+      name, beat, notation, clef,
+      row: noteStaffOffset(spelled),
+      middleRow: middleRow(clef),
+      accidental: props.keySignature.accidentalsForNote(spelled) != null,
+    })
+  }
+
+  columns.forEach((column, idx) => {
+    let [columnNotes] = staffColumnNotes(column, props)
+    let notation = columnNotation(column, columnNotes, props)
+
+    columnNotes.forEach((name, at) => {
+      push(idx, idx, name, column.beat, notation && notation[at])
+    })
+  })
+
+  for (let extra of columnExtras(columns, {...columnLayout(columns), staff: props.staff})) {
+    if (extra.kind == "head") {
+      push(extra.columnIdx, `${extra.columnIdx}@${extra.beat}`, extra.name, extra.beat, extra)
+    }
+  }
+
+  return heads
+}
+
+// The heads of columns and the stem of each, as one set so that what the staff
+// draws and the room it keeps for it are never worked out from different heads
+function drawnHeadStems(columns, props) {
+  let heads = drawnHeads(columns, props)
+  return [heads, columnStems(heads)]
+}
+
+// The stem of every head the staff draws, by what names a head (see headKey).
+// Worked out over the whole unit rather than over the window on the staff, so
+// a voice keeps one stem direction right through its bar however much of that
+// bar the window holds
+export function unitStems(props) {
+  let columns = props.unitColumns && props.unitColumns.length ? props.unitColumns : props.notes
+  let out = new Map()
+
+  if (!Array.isArray(columns) || columns instanceof SongNoteList) {
+    return out
+  }
+
+  let [heads, stems] = drawnHeadStems(columns, props)
+
+  heads.forEach((head, idx) => {
+    if (stems[idx]) {
+      out.set(headKey(head.beat, head.name, head.notation), stems[idx])
+    }
+  })
+
+  return out
+}
+
 // How far past its five lines a staff drawn with props reaches, above and
 // below, in pixels: its notes' heads and the stems drawn on them, and the clef
 // changes too big for the gaps they mark, which go above the staff. A drill
@@ -184,35 +266,18 @@ export function notesReach(props) {
 
   if (props.notes instanceof NoteList) {
     if (props.unitColumns) {
-      let columnClefs = columnClefProps(props.unitColumns, props.staff, props)
-      let bars = columnBars(props.unitColumns)
-      let heads = []
-      let headClefs = []
+      let [heads, stems] = drawnHeadStems(props.unitColumns, props)
 
-      props.unitColumns.forEach((column, idx) => {
-        let clef = (columnClefs && columnClefs[idx]) || props
-        let [columnNotes] = staffColumnNotes(column, props)
-        let notation = columnNotation(column, columnNotes, props)
-
-        columnNotes.forEach((name, at) => {
-          let [row, accidental] = drawn(name)
-          include(clef, row, accidental)
-          heads.push({
-            bar: bars[idx],
-            column: idx,
-            row,
-            middleRow: middleRow(clef),
-            notation: notation && notation[at],
-          })
-          headClefs.push(clef)
-        })
+      heads.forEach((head, idx) => {
+        include(head.clef, head.row, head.accidental)
+        includeStem(head.clef, head.row, stems[idx])
       })
 
-      columnStems(heads).forEach((stem, idx) => {
-        includeStem(headClefs[idx], heads[idx].row, stem)
-      })
-
-      clefChangeBoxes({...props, notes: props.unitColumns, columnClefs}).forEach(box => {
+      clefChangeBoxes({
+        ...props,
+        notes: props.unitColumns,
+        columnClefs: columnClefProps(props.unitColumns, props.staff, props),
+      }).forEach(box => {
         above = Math.max(above, -box.top)
       })
     }
@@ -287,7 +352,7 @@ export class Staff extends React.PureComponent {
     let staffNotes = null
 
     if (props.notes instanceof NoteList) {
-      staffNotes = <StaffNotes ref="notes" {...props}></StaffNotes>
+      staffNotes = <StaffNotes ref="notes" {...props} stems={unitStems(props)}></StaffNotes>
     }
 
     if (props.notes instanceof SongNoteList) {

@@ -254,6 +254,23 @@ describe("staff rhythm", function() {
       expect(columnLayout(bar()).offsets[0]).toEqual(0)
     })
 
+    it("places a looping card's wrap back to its first bar clear of the column before", function() {
+      // one bar of quarters drilled on a loop, opening on a quarter rest: the
+      // wrap back to its first column comes round with that rest, which opens
+      // the bar the wrap starts rather than sitting on the last column drawn
+      let first = column(["C5"], 1, 1)
+      first.extras = [{kind: "rest", beat: 0, staff: "upper", type: "quarter"}]
+      let columns = [first, column(["D5"], 2, 1), column(["E5"], 3, 1)]
+
+      let window = [columns[1], columns[2], first]
+      let layout = columnLayout(window, [...columns, first])
+      let [rest] = columnExtras(window, layout)
+
+      expect(rest.columnIdx).toEqual(2)
+      expect(rest.offset).toBeGreaterThan(layout.offsets[1])
+      expect(rest.offset).toBeLessThan(layout.offsets[2])
+    })
+
     it("places an extra carried onto a later column in the room before it", function() {
       // the column between these two was dropped whole, its notes outside the
       // staff's range (filterColumnsToRange), so its rest is drawn with the
@@ -323,14 +340,19 @@ describe("staff rhythm", function() {
         .toEqual([[8, 17]])
     })
 
-    it("runs a tie forwards even when its head has no room to reach back", function() {
-      // the head sits on the staff's own left edge, which is where the room
-      // the layout reserves puts a tie running on from the card before
-      let heads = [{beat: 2, name: "C5", x: 8, y: 5, width: 8, stem: "up", tieTo: null, tieFrom: 0}]
+    it("keeps room in front of a head a tie runs on to, so its stub is drawn", function() {
+      // a card whose first bar opens on a head tied over from the card before:
+      // the head is drawn clear of the staff's notes, with the stub's room in
+      // front of it, where a bar opening on a rest keeps none
+      let columns = [column(["C5"], 1, 3), column(["E5"], 2, 2)]
+      columns[0].extras = [{kind: "head", name: "C5", beat: 0, from: -2, type: "half"}]
 
-      let [arc] = tieArcs(heads, 20, {left: 8})
-      expect(arc.x1).toBeLessThan(arc.x2)
-      expect(arc.x2 - arc.x1).toEqual(8)
+      let tied = columnLayout(columns)
+      expect(tied.leadFrom).toBeGreaterThan(0)
+      expect(columnExtras(columns, tied)[0].offset).toEqual(tied.leadFrom)
+
+      columns[0].extras = [{kind: "rest", beat: 0, type: "quarter"}]
+      expect(columnLayout(columns).leadFrom).toEqual(0)
     })
   })
 })

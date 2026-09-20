@@ -8,7 +8,7 @@ import LedgerLines, {LEDGER_OVERHANG} from "st/components/staff/ledger_lines"
 import ScoreNotes from "st/components/staff/score_notes"
 import ScoreExtras from "st/components/staff/score_extras"
 import {
-  columnLayout, columnExtras, columnStems, columnBars, extrasBefore, middleRow,
+  columnLayout, columnExtras, extrasBefore, headKey,
   noteTypeProps, HEAD_GLYPHS, STAFF_HEIGHT, NOTE_HEAD_HEIGHT,
 } from "st/staff_rhythm"
 import styles from "st/components/staff.module.css"
@@ -253,6 +253,9 @@ export default class StaffNotes extends React.Component {
     // every column of the drill's unit, which fixes the beat proportional
     // layout while the notes slide through the staff (see st/staff_rhythm)
     unitColumns: types.array,
+    // the stem of each head of that unit, by headKey (see unitStems in
+    // st/components/staves)
+    stems: types.object,
   }
 
   /**
@@ -291,16 +294,19 @@ export default class StaffNotes extends React.Component {
     songNotes.forEach(note => group(note, "notes"))
     heldSongNotes.forEach(note => group(note, "held"))
 
-    // the stems of every head the staff draws, so the notes, their flags and
+    // the stem of every head the staff draws, worked out over the whole unit
+    // (see unitStems in st/components/staves), so the notes, their flags and
     // the ties bowing away from them all agree on which way each one turns
+    // however much of that unit is on the staff
     let stems = new Map()
-    let bars = columnBars(this.props.notes)
-    let heads = [...songNotes]
-    columnStems(heads.map(note => this.stemHead(note, bars))).forEach((stem, idx) => {
+    for (let note of songNotes) {
+      let stem = this.props.stems &&
+        this.props.stems.get(headKey(note.beat, note.note, note.notation))
+
       if (stem) {
-        stems.set(heads[idx].id, stem)
+        stems.set(note.id, stem)
       }
-    })
+    }
 
     return <div ref="notes" className={this.classNames()}>
       {this.renderClefChanges()}
@@ -375,19 +381,6 @@ export default class StaffNotes extends React.Component {
   // the clef props the column at idx is drawn in
   columnClef(idx) {
     return (this.props.columnClefs && this.props.columnClefs[idx]) || this.props
-  }
-
-  // How a head is stemmed against the others the staff draws (see columnStems
-  // in st/staff_rhythm): the bar and the column it is struck in, the row it
-  // sits on and the middle line of its own column's clef
-  stemHead(note, bars) {
-    return {
-      bar: bars[note.columnIdx],
-      column: note.getStart(),
-      row: noteStaffOffset(this.props.keySignature.enharmonic(note.note)),
-      middleRow: middleRow(this.columnClef(note.columnIdx)),
-      notation: note.notation,
-    }
   }
 
   // filter notes so only the ones visible for this staff returned

@@ -4,7 +4,7 @@ import {flushSync} from "react-dom"
 
 import {GStaff, FStaff, GrandStaff} from "st/components/staves"
 import staffStyles from "st/components/staff.module.css"
-import {minNoteWidth, ACCIDENTAL_WIDTH, NOTE_HEAD_WIDTH, GROUP_OFFSET} from "st/components/staff_notes"
+import {minNoteWidth, keySignatureWidth, ACCIDENTAL_WIDTH, NOTE_HEAD_WIDTH, GROUP_OFFSET} from "st/components/staff_notes"
 import {SPACING_EXPONENT, headGlyph, NOTE_HEAD_HEIGHT} from "st/staff_rhythm"
 import NoteList from "st/note_list"
 import {KeySignature, noteName, parseNote} from "st/music"
@@ -15,7 +15,7 @@ import {
 } from "st/measure_cards"
 import {SheetMusicGenerator} from "st/generators"
 import {pieceSectionMeasures, BOTH_HANDS, RIGHT_HAND, LEFT_HAND} from "st/data"
-import {reverieOpening, clefChangeScore, midMeasureClefScore} from "spec/helpers"
+import {reverieOpening, clefChangeScore, midMeasureClefScore, tiedLeadScore} from "spec/helpers"
 
 // MIDI pitches, so the specs don't depend on the octave numbering of names
 const E2 = 40, G2 = 43, C3 = 48, E3 = 52, F3 = 53, G3 = 55, A3 = 57, Bb3 = 58, B3 = 59, C4 = 60, D4 = 62, E4 = 64, G4 = 67, A4 = 69, C5 = 72, D5 = 74, E5 = 76, F5 = 77, G5 = 79
@@ -194,6 +194,72 @@ describe("staves", function() {
 
       expect(stems.length).toEqual(8)
       expect(new Set(stems.map(stem => stem && stem.dataset.stem))).toEqual(new Set(["up"]))
+    })
+
+    it("keeps the left hand's stems turned the same way as the window slides", function() {
+      let song = parseMusicXML(reverieOpening())
+      let columns = sectionColumns(song, 2, 2)
+
+      // the window has moved past the bar's first column, which is where the
+      // whole note the ostinato is the upper voice of sounds, so only the unit
+      // still says which voice the eighths are
+      renderStaff(GrandStaff, columns.slice(1), {unitColumns: columns})
+
+      let stems = notesOn(staffEl("lower"))
+        .filter(note => note.dataset.noteType == "eighth")
+        .map(note => note.querySelector(`.${staffStyles.stem}`))
+
+      expect(stems.length).toBeGreaterThan(0)
+      expect(new Set(stems.map(stem => stem && stem.dataset.stem))).toEqual(new Set(["up"]))
+    })
+
+    it("keeps the room between the staves clear of the left hand's stems", function() {
+      let song = parseMusicXML(reverieOpening())
+      let columns = sectionColumns(song, 2, 2)
+      container.classList.add(staffStyles.staff_wrapper)
+      renderStaff(GrandStaff, columns, {unitColumns: columns})
+
+      // the ostinato is the upper of the bar's two voices, so its stems point
+      // up, off the top of the bass staff, and the grand staff measures them
+      let lines = [...staffEl("upper").querySelectorAll(`.${staffStyles.line}`)]
+        .map(line => line.getBoundingClientRect().bottom)
+      let stemTops = [...staffEl("lower").querySelectorAll(`.${staffStyles.stem}`)]
+        .map(stem => stem.getBoundingClientRect().top)
+
+      expect(stemTops.length).toBeGreaterThan(0)
+      expect(Math.min(...stemTops)).toBeGreaterThan(Math.max(...lines))
+    })
+
+    it("draws a tie running on from the card before inside the staff's notes", function() {
+      let song = parseMusicXML(tiedLeadScore())
+      // the treble staff drops beat 2's column, which only the left hand
+      // strikes, so the head the C5 ties on to there is carried onto the
+      // column after it and leads that column's own bar
+      let columns = sectionColumns(song, 1, 1, BOTH_HANDS,
+        {name: "treble", range: [noteName(C4), noteName(C5 + 12)]})
+      let lead = columns.findIndex(column => (column.extras || [])
+        .some(extra => extra.kind == "head" && extra.beat < column.beat))
+
+      expect(lead).toBeGreaterThan(0)
+      renderStaff(GStaff, columns.slice(lead), {unitColumns: columns})
+
+      let staff = container.querySelector(`.${staffStyles.staff}`)
+      // F major, so the staff's notes start after its one flat
+      let offsetLeft = keySignatureWidth(new KeySignature(-1))
+      let heads = notesOn(staff).map(note => parseFloat(note.style.left))
+
+      // the tied head leads the staff, and the stub of its tie is drawn in
+      // the room kept in front of it rather than back over the key signature
+      expect(Math.min(...heads)).toBeGreaterThan(offsetLeft)
+
+      let ties = [...staff.querySelectorAll(`.${staffStyles.tie}`)]
+      expect(ties.length).toBeGreaterThan(0)
+      for (let tie of ties) {
+        // M x1 y1 Q cx cy x2 y2
+        let [x1, , , , x2] = tie.getAttribute("d").match(/-?[\d.]+/g).map(Number)
+        expect(x1).toBeGreaterThanOrEqual(offsetLeft)
+        expect(x1).toBeLessThan(x2)
+      }
     })
 
     it("draws no clef changes at the gaps between the cards of a drill", function() {

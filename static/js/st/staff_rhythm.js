@@ -84,7 +84,28 @@ function columnBeats(columns, idx) {
     return columnBeats(columns, repeated)
   }
 
-  return column.beats > 0 ? column.beats : null
+  if (!(column.beats > 0)) { return null }
+
+  // a looping card wraps from here back to an earlier column, which comes
+  // round with the extras that lead it, so the gap holds their beats too
+  return column.beats + columnLead(next)
+}
+
+// The most beats a column's own extras fall before it: the rest a bar opens
+// with, or a head a tie runs on to from a column the staff can't show
+function columnLead(column) {
+  let most = 0
+
+  if (!column || column.beat == null) { return most }
+
+  for (let extra of column.extras || []) {
+    let before = column.beat - extra.beat
+    if (before > most) {
+      most = before
+    }
+  }
+
+  return most
 }
 
 // How close two heads are ever drawn, in column widths. A run of notes
@@ -147,26 +168,45 @@ function roomFor(beats, unit) {
   return Math.max(Math.pow(beats / unit, SPACING_EXPONENT), MIN_COLUMN_ADVANCE)
 }
 
-// The most beats any column's extras fall before it: the rest a bar opens with,
-// or a head a tie runs on to from a column the staff can't show. The most of
-// them, because any column of a card can become the head of the window on the
-// staff, and the room before the head holds still as the window slides. Zero
-// when every extra falls after its column's own onset
+// The most beats any column's extras fall before it (see columnLead). The most
+// of them, because any column of a card can become the head of the window on
+// the staff, and the room before the head holds still as the window slides.
+// Zero when every extra falls after its column's own onset
 function leadBeats(columns) {
   let most = 0
 
   for (let column of columns || []) {
-    if (column.beat == null) { continue }
+    most = Math.max(most, columnLead(column))
+  }
+
+  return most
+}
+
+// The room a card keeps left of the leftmost extra it leads with, in column
+// widths, so the tie a head there runs on from is drawn in front of it rather
+// than clamped onto its own head. A column is never narrower than a note head
+// (see minNoteWidth in st/components/staff_notes) and a tie's stub is about a
+// head wide (TIE_STUB in st/components/staff/score_extras)
+const LEAD_STUB_ROOM = 1
+
+// Whether the extra leading its column by the most beats is a head a tie runs
+// on to rather than a rest: only a head draws a tie back past itself, so only
+// then is the stub's room kept
+function leadsWithTiedHead(columns, lead) {
+  if (!(lead > 0)) { return false }
+
+  for (let column of columns || []) {
+    if (!column || column.beat == null) { continue }
 
     for (let extra of column.extras || []) {
-      let before = column.beat - extra.beat
-      if (before > most) {
-        most = before
+      if (extra.kind == "head" &&
+        Math.abs(column.beat - extra.beat - lead) < BEAT_EPSILON) {
+        return true
       }
     }
   }
 
-  return most
+  return false
 }
 
 /**
@@ -177,8 +217,10 @@ function leadBeats(columns) {
  * @param {Array} columns the columns on the staff
  * @param {Array} [unitColumns] the whole card the columns are a window of
  * @returns {{offsets: number[], advances: number[], gaps: Array, unit:
- * number|null, leadBeats: number}} offsets and advances in column widths, gaps
- * the beats each column holds, leadBeats the beats the reserved room holds
+ * number|null, leadBeats: number, leadFrom: number}} offsets and advances in
+ * column widths, gaps the beats each column holds, leadBeats the beats the
+ * reserved room holds and leadFrom where it starts, which is past the staff's
+ * own notes when a tie runs on to the head that leads (see LEAD_STUB_ROOM)
  */
 export function columnLayout(columns, unitColumns) {
   let advances = columnAdvances(columns, unitColumns)
@@ -187,8 +229,9 @@ export function columnLayout(columns, unitColumns) {
   // measured over the card, not the window, so the room holds still as the
   // notes slide through the staff
   let beats = leadBeats(unitOf)
+  let from = leadsWithTiedHead(unitOf, beats) ? LEAD_STUB_ROOM : 0
   let offsets = []
-  let at = roomFor(beats, unit)
+  let at = from + roomFor(beats, unit)
 
   for (let advance of advances) {
     offsets.push(at)
@@ -201,6 +244,7 @@ export function columnLayout(columns, unitColumns) {
     gaps: columns.map((column, idx) => columnBeats(columns, idx)),
     unit,
     leadBeats: beats,
+    leadFrom: from,
   }
 }
 
@@ -291,7 +335,7 @@ export function columnStems(heads) {
 
   let bars = new Map()
   heads.forEach((head, idx) => {
-    let bar = head.bar || 0
+    let bar = head.bar ?? null
     if (!bars.has(bar)) {
       bars.set(bar, [])
     }
@@ -349,19 +393,27 @@ export function columnStems(heads) {
   return stems
 }
 
-// The bar each column belongs to, counting from the staff's first column: a
-// column carrying a measure number opens the next one (see cardColumn in
-// st/measure_cards). Columns without bar lines, eg. a generated drill, are
-// all one bar
+// The bar each column belongs to: the printed measure number in force at it,
+// which the column opening a bar carries (see cardColumn in st/measure_cards),
+// so a looping card's wrap back to its first column shares that column's bar.
+// Null for columns that carry no bar lines, eg. a generated drill
 export function columnBars(columns) {
-  let bar = 0
+  let bar = null
 
-  return (columns || []).map((column, idx) => {
-    if (idx > 0 && column && column.measure != null) {
-      bar += 1
+  return (columns || []).map(column => {
+    if (column && column.measure != null) {
+      bar = column.measure
     }
     return bar
   })
+}
+
+// What names a head across the unit the staff works its stems out over and the
+// window it draws of that unit: the onset it is struck on, the note it is and
+// the voice that writes it, which is what tells two voices' heads on one pitch
+// apart
+export function headKey(beat, name, notation) {
+  return `${beat}/${name}/${(notation && notation.voice) || 0}`
 }
 
 // The unscaled geometry the staff draws rhythm with, in the pixels of a
@@ -444,7 +496,7 @@ export function rowCenter(row, {upperRow}) {
  * @param {string} [opts.staff] the grand staff being drawn, when it is one of two
  * @returns {Object[]} each extra with `offset`, its own place in column widths
  */
-export function columnExtras(columns, {offsets, advances, gaps, unit, leadBeats, staff}) {
+export function columnExtras(columns, {offsets, advances, gaps, unit, leadBeats, leadFrom, staff}) {
   if (!offsets || !advances) { return [] }
 
   let out = []
@@ -463,8 +515,8 @@ export function columnExtras(columns, {offsets, advances, gaps, unit, leadBeats,
         // keeps its share of the room before the column, which for the first
         // one is the room the layout reserves (see columnLayout), and never
         // falls back past the column before it
-        let from = idx > 0 ? offsets[idx - 1] : 0
-        let span = idx > 0 ? column.beat - columns[idx - 1].beat : leadBeats
+        let from = idx > 0 ? offsets[idx - 1] : (leadFrom || 0)
+        let span = idx > 0 ? gaps[idx - 1] : leadBeats
         let room = offsets[idx] - from
         let at = span > 0 ? offsets[idx] - room * before / span : from
 
@@ -547,12 +599,9 @@ export function tieArcs(heads, stub, {left=null}={}) {
     if (head.tieFrom != null && !at(head.tieFrom, head.name)) {
       let x2 = meets(head.x, head.width)
       let from = leaves(head.x - stub, head.width)
-      // The stub never runs back past the staff's notes, and never so far
-      // right that the arc would run backwards over its own head: a head drawn
-      // at the very start of the card, which is where the room the layout
-      // reserves puts a tie running on from the card before, keeps a head's
-      // width of arc to bow over
-      let x1 = Math.min(left == null ? from : Math.max(left, from), x2 - head.width)
+      // the stub never runs back past the staff's notes, so a head with less
+      // room in front of it than the stub reaches draws a shorter one
+      let x1 = left == null ? from : Math.max(left, from)
 
       arcs.push({x1, y1: head.y, x2, y2: head.y, dir: arcDir(head)})
     }
