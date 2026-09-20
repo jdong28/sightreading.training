@@ -92,13 +92,18 @@ function columnBeats(columns, idx) {
 }
 
 // The most beats a column's own extras fall before it: the rest a bar opens
-// with, or a head a tie runs on to from a column the staff can't show
-function columnLead(column) {
+// with, or a head a tie runs on to from a column the staff can't show. A staff
+// that draws none of the score's rests (see restsStaff in
+// st/components/staff_notes) leaves them out, since it keeps no room for what
+// it never draws
+function columnLead(column, rests=true) {
   let most = 0
 
   if (!column || column.beat == null) { return most }
 
   for (let extra of column.extras || []) {
+    if (!rests && extra.kind == "rest") { continue }
+
     let before = column.beat - extra.beat
     if (before > most) {
       most = before
@@ -172,11 +177,11 @@ function roomFor(beats, unit) {
 // of them, because any column of a card can become the head of the window on
 // the staff, and the room before the head holds still as the window slides.
 // Zero when every extra falls after its column's own onset
-function leadBeats(columns) {
+function leadBeats(columns, rests) {
   let most = 0
 
   for (let column of columns || []) {
-    most = Math.max(most, columnLead(column))
+    most = Math.max(most, columnLead(column, rests))
   }
 
   return most
@@ -216,19 +221,24 @@ function leadsWithTiedHead(columns, lead) {
  * over the clef or the head of its own bar.
  * @param {Array} columns the columns on the staff
  * @param {Array} [unitColumns] the whole card the columns are a window of
+ * @param {Object} [opts]
+ * @param {boolean} [opts.rests] whether the staff draws the score's rests; a
+ * staff that draws none keeps no room for them either (see restsStaff in
+ * st/components/staff_notes)
  * @returns {{offsets: number[], advances: number[], gaps: Array, unit:
- * number|null, leadBeats: number, leadFrom: number}} offsets and advances in
- * column widths, gaps the beats each column holds, leadBeats the beats the
- * reserved room holds and leadFrom where it starts, which is past the staff's
- * own notes when a tie runs on to the head that leads (see LEAD_STUB_ROOM)
+ * number|null, leadBeats: number, leadFrom: number, rests: boolean}} offsets
+ * and advances in column widths, gaps the beats each column holds, leadBeats
+ * the beats the reserved room holds and leadFrom where it starts, which is
+ * past the staff's own notes when a tie runs on to the head that leads (see
+ * LEAD_STUB_ROOM)
  */
-export function columnLayout(columns, unitColumns) {
+export function columnLayout(columns, unitColumns, {rests=true}={}) {
   let advances = columnAdvances(columns, unitColumns)
   let unitOf = unitColumns && unitColumns.length ? unitColumns : columns
   let unit = columnUnit(unitOf)
   // measured over the card, not the window, so the room holds still as the
   // notes slide through the staff
-  let beats = leadBeats(unitOf)
+  let beats = leadBeats(unitOf, rests)
   let from = leadsWithTiedHead(unitOf, beats) ? LEAD_STUB_ROOM : 0
   let offsets = []
   let at = from + roomFor(beats, unit)
@@ -245,6 +255,7 @@ export function columnLayout(columns, unitColumns) {
     unit,
     leadBeats: beats,
     leadFrom: from,
+    rests,
   }
 }
 
@@ -494,9 +505,10 @@ export function rowCenter(row, {upperRow}) {
  * @param {number[]} opts.advances the room each column holds, in column widths
  * @param {number[]} opts.gaps the beats each column holds
  * @param {string} [opts.staff] the grand staff being drawn, when it is one of two
+ * @param {boolean} [opts.rests] whether the staff draws the score's rests
  * @returns {Object[]} each extra with `offset`, its own place in column widths
  */
-export function columnExtras(columns, {offsets, advances, gaps, unit, leadBeats, leadFrom, staff}) {
+export function columnExtras(columns, {offsets, advances, gaps, unit, leadBeats, leadFrom, staff, rests=true}) {
   if (!offsets || !advances) { return [] }
 
   let out = []
@@ -505,6 +517,7 @@ export function columnExtras(columns, {offsets, advances, gaps, unit, leadBeats,
     let beats = gaps && gaps[idx]
 
     for (let extra of column.extras || []) {
+      if (!rests && extra.kind == "rest") { continue }
       if (staff && extra.staff && extra.staff != staff) { continue }
 
       let before = column.beat - extra.beat

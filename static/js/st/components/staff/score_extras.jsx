@@ -37,10 +37,13 @@ export default class ScoreExtras extends React.PureComponent {
     noteWidth: types.number,
     // the stem each head is drawn with (see columnStems in st/staff_rhythm)
     stems: types.object,
+    // the score staff whose rests this staff draws, null for none (see
+    // restsStaff in st/components/staff_notes)
+    restsStaff: types.string,
   }
 
   render() {
-    let staff = this.restsStaff()
+    let staff = this.props.restsStaff
     let rests = staff ? this.renderRests(columnExtras(this.props.notes, {
       ...this.props.layout,
       staff,
@@ -53,25 +56,6 @@ export default class ScoreExtras extends React.PureComponent {
     }
 
     return <div className={styles.score_extras}>{rests}{ties}</div>
-  }
-
-  // The score staff whose rests this staff draws, or null for none: the side
-  // GrandStaff hands it, else, on a lone treble or bass staff, the one score
-  // staff of the drill, which a column's own clefs name whatever window is on
-  // the staff (the staves of the drill's hands, see grandStaffClefs in
-  // st/song_sections). A lone staff reading both staves of the score draws the
-  // notes of either hand, so no rest on it could say which hand it belongs to
-  restsStaff() {
-    if (this.props.staff) { return this.props.staff }
-
-    for (let column of this.props.notes) {
-      let staves = column.clefs ? Object.keys(column.clefs) : []
-      if (staves.length) {
-        return staves.length == 1 ? staves[0] : null
-      }
-    }
-
-    return null
   }
 
   // where an offset in column widths falls, in pixels from the staff's notes
@@ -211,7 +195,10 @@ export default class ScoreExtras extends React.PureComponent {
         return {
           beat: note.beat,
           name: note.note,
-          x: this.left(note.getStart()),
+          // a head another voice doubles is drawn a head's width to the right
+          // of the played one (see renderNote in st/components/staff), and the
+          // arc meets it where it is drawn
+          x: this.left(note.getStart()) + (note.doubled ? width : 0),
           y: rowCenter(row, clef) * scale,
           width,
           // the stem the staff draws on the head; a value with no stem bows

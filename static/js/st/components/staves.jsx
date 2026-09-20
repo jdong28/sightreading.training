@@ -172,10 +172,11 @@ function drawnHeads(columns, props) {
   for (let extra of columnExtras(columns, {...columnLayout(columns), staff: props.staff})) {
     if (extra.kind != "head") { continue }
 
-    // a head drawn on its column's own onset, a chord note held over from the
-    // onset before, is one of that chord and shares its stem
+    // a head a tie runs on to at its column's own onset, a chord note held
+    // over from the onset before, is one of that chord and shares its stem; a
+    // head another voice doubles is drawn beside the chord and keeps its own
     let column = columns[extra.columnIdx]
-    let group = column && column.beat === extra.beat ?
+    let group = column && extra.from != null && column.beat === extra.beat ?
       extra.columnIdx : `${extra.columnIdx}@${extra.beat}`
 
     push(extra.columnIdx, group, extra.name, extra.beat, extra)

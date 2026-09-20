@@ -81,6 +81,32 @@ export function staffColumnNotes(column, {staff, keySignature, filterPitch}) {
   return [notes.filter((n, idx) => keep[idx]), offsets.filter((o, idx) => keep[idx])]
 }
 
+// The score staff whose rests a staff drawn over columns draws, or null for
+// none: the side GrandStaff hands it, else, on a lone treble or bass staff,
+// the one score staff of the drill, which a column's own clefs name whatever
+// window is on the staff (the staves of the drill's hands, see grandStaffClefs
+// in st/song_sections). A lone staff reading both staves of the score draws
+// the notes of either hand, so no rest on it could say which hand it belongs to
+export function restsStaff(columns, staff) {
+  if (staff) { return staff }
+
+  for (let column of columns || []) {
+    let staves = column && column.clefs ? Object.keys(column.clefs) : []
+    if (staves.length) {
+      return staves.length == 1 ? staves[0] : null
+    }
+  }
+
+  return null
+}
+
+// Whether a staff drawn with props draws any of the score's rests, which is
+// what its layout keeps room for and what drags a bar line back to the rest
+// its bar opens with
+function drawsRests(props) {
+  return restsStaff(props.unitColumns || props.notes, props.staff) != null
+}
+
 // How the score writes each of the notes a staff draws in a column (see
 // staffColumnNotes), or null for a column without the score's notation
 export function columnNotation(column, columnNotes, {staff}) {
@@ -185,7 +211,7 @@ export function clefChangeBoxes(props) {
   let offsetLeft = keySignatureWidth(props.keySignature) * scale
   let staffHeight = STAFF_HEIGHT * scale
   let margin = CLEF_CHANGE_MARGIN * scale
-  let layout = columnLayout(props.notes, props.unitColumns)
+  let layout = columnLayout(props.notes, props.unitColumns, {rests: drawsRests(props)})
   let offsets = layout.offsets
   let extrasLeft = extrasBefore(props.notes, layout)
   let columnClef = idx => (props.columnClefs && props.columnClefs[idx]) || props
@@ -268,7 +294,8 @@ export default class StaffNotes extends React.Component {
     if (this.layoutFor != this.props.notes || this.layoutUnit != this.props.unitColumns) {
       this.layoutFor = this.props.notes
       this.layoutUnit = this.props.unitColumns
-      this.layoutCache = columnLayout(this.props.notes, this.props.unitColumns)
+      this.layoutCache = columnLayout(this.props.notes, this.props.unitColumns,
+        {rests: drawsRests(this.props)})
     }
 
     return this.layoutCache
@@ -351,6 +378,7 @@ export default class StaffNotes extends React.Component {
         scale={scale}
         layout={layout}
         stems={stems}
+        restsStaff={restsStaff(this.props.unitColumns || this.props.notes, this.props.staff)}
         heads={songNotes} />
 
       {this.renderBarLines(offsetLeft, layout)}

@@ -277,6 +277,33 @@ describe("staves", function() {
       }
     })
 
+    it("ends a tie on the head it joins when another voice doubles it", function() {
+      let song = parseMusicXML(reverieOpening())
+      let columns = sectionColumns(song, 2, 3)
+      renderStaff(GrandStaff, columns, {unitColumns: columns})
+
+      let lower = staffEl("lower")
+      // bar 3 opens on the Bb3 the ostinato ties into, which the whole note of
+      // the other voice also strikes: the tied head, written as the eighth the
+      // ostinato runs in, is drawn beside the whole note that is played
+      let [doubled] = notesOn(lower).filter(note =>
+        parseFloat(note.style.marginLeft) > 0 && note.dataset.noteType == "eighth")
+      expect(doubled).toBeTruthy()
+
+      let width = headGlyph(doubled.dataset.noteType, NOTE_HEAD_HEIGHT).width
+      let drawn = parseFloat(doubled.style.left) + parseFloat(doubled.style.marginLeft)
+
+      // the arc meets the head where it is drawn, not a head's width short of
+      // it on the played note beside it
+      let ends = [...lower.querySelectorAll(`.${staffStyles.tie}`)]
+        .map(tie => tie.getAttribute("d").match(/-?[\d.]+/g).map(Number)[4])
+      let nearest = ends.reduce((near, x2) =>
+        Math.abs(x2 - drawn) < Math.abs(near - drawn) ? x2 : near)
+
+      expect(nearest).toBeGreaterThan(drawn)
+      expect(nearest).toBeLessThan(drawn + width)
+    })
+
     it("draws no clef changes at the gaps between the cards of a drill", function() {
       let song = parseMusicXML(reverieOpening())
       let measures = pieceSectionMeasures(GRAND, {startMeasure: 2, endMeasure: 4, hand: BOTH_HANDS}, song)
@@ -1225,6 +1252,85 @@ describe("staves", function() {
 
       expect(notesOn(staff).length).toEqual(3)
       expect(rests.map(rest => rest.dataset.restType)).toEqual(["quarter"])
+    })
+
+    // two bars whose second opens on a quarter rest in both hands, so nothing
+    // is struck on its down beat
+    let bothHandsRestScore = () => `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes><divisions>1</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><staves>2</staves><clef number="1"><sign>G</sign><line>2</line></clef><clef number="2"><sign>F</sign><line>4</line></clef></attributes>
+      ${["C", "D", "E", "F"].map(step => `<note><pitch><step>${step}</step><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>`).join("")}
+      <backup><duration>4</duration></backup>
+      <note><pitch><step>C</step><octave>3</octave></pitch><duration>4</duration><voice>2</voice><type>whole</type><staff>2</staff></note>
+    </measure>
+    <measure number="2">
+      <note><rest/><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>
+      ${["G", "A", "G"].map(step => `<note><pitch><step>${step}</step><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>`).join("")}
+      <backup><duration>4</duration></backup>
+      <note><rest/><duration>1</duration><voice>2</voice><type>quarter</type><staff>2</staff></note>
+      <note><pitch><step>C</step><octave>3</octave></pitch><duration>3</duration><dot/><voice>2</voice><type>half</type><staff>2</staff></note>
+    </measure>
+  </part>
+</score-partwise>`
+
+    it("keeps no room for rests a lone staff reading both staves never draws", function() {
+      let song = parseMusicXML(bothHandsRestScore())
+      // both hands on one treble staff: no rest on it could say which hand it
+      // belongs to, so none is drawn and none is spaced for either
+      let columns = sectionColumns(song, 1, 2, BOTH_HANDS, {name: "treble", range: ["C4", "C6"]})
+      renderStaff(GStaff, columns, {unitColumns: columns, keySignature: new KeySignature(0)})
+
+      let staff = container.querySelector(`.${staffStyles.staff}`)
+      let lefts = notesOn(staff).map(note => parseFloat(note.style.left)).sort((a, b) => a - b)
+      let barLine = n =>
+        parseFloat(staff.querySelector(`.${staffStyles.bar_line}[data-measure="${n}"]`).style.left)
+
+      expect(staff.querySelectorAll(`.${staffStyles.rest}`).length).toEqual(0)
+      // the card opens on its first head rather than on room kept for a rest
+      expect(lefts[0]).toEqual(0)
+
+      // and bar 2's line stays on the head that opens it, the room the card's
+      // own first bar line keeps in front of the first head of all
+      let opens = lefts.find(left => left > barLine(2))
+      expect(opens - barLine(2)).toBeCloseTo(lefts[0] - barLine(1), 0)
+    })
+
+    // a treble bar whose two voices strike the same C5 at once, which the
+    // score writes twice though only one of them is played
+    let sharedPitchScore = () => `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes><divisions>2</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>4</duration><voice>1</voice><type>half</type><staff>1</staff></note>
+      <note><chord/><pitch><step>E</step><octave>5</octave></pitch><duration>4</duration><voice>1</voice><type>half</type><staff>1</staff></note>
+      <note><pitch><step>D</step><octave>5</octave></pitch><duration>4</duration><voice>1</voice><type>half</type><staff>1</staff></note>
+      <backup><duration>8</duration></backup>
+      <note><pitch><step>G</step><octave>4</octave></pitch><duration>4</duration><voice>2</voice><type>half</type><staff>1</staff></note>
+      <note><chord/><pitch><step>C</step><octave>5</octave></pitch><duration>4</duration><voice>2</voice><type>half</type><staff>1</staff></note>
+      <note><pitch><step>F</step><octave>4</octave></pitch><duration>4</duration><voice>2</voice><type>half</type><staff>1</staff></note>
+    </measure>
+  </part>
+</score-partwise>`
+
+    it("stems a chord from the note it is struck on, not the head another voice doubles", function() {
+      let song = parseMusicXML(sharedPitchScore())
+      let columns = sectionColumns(song, 1, 1, BOTH_HANDS, {name: "treble", range: ["C4", "C6"]})
+      renderStaff(GStaff, columns, {unitColumns: columns, keySignature: new KeySignature(0)})
+
+      let staff = container.querySelector(`.${staffStyles.staff}`)
+
+      // the C5 the lower voice shares with the upper one is drawn beside the
+      // played chord, so it is never the head that chord's stem runs from
+      let doubled = notesOn(staff).filter(note => parseFloat(note.style.marginLeft) > 0)
+      expect(doubled.length).toEqual(1)
+
+      expect(stemOf(staff, G4)).toBeTruthy()
+      expect(stemOf(staff, G4).dataset.stem).toEqual("down")
     })
 
     // a treble staff whose first tie joins eighths and whose second joins whole
