@@ -258,7 +258,8 @@ export function notesReach(props) {
 
   // A stem runs from the middle of its head to its far end, and its flags are
   // stacked back along it, so the stem's end is the furthest the staff draws
-  // from that head (see columnStems and renderRhythm in st/components/staff)
+  // from that head (see columnStems in st/staff_rhythm and renderRhythm in
+  // st/components/staff/score_notes)
   let includeStem = (clef, row, stem) => {
     if (!stem || !stem.height) { return }
 

@@ -221,8 +221,8 @@ export const tiedLeadScore = () => `<?xml version="1.0" encoding="UTF-8"?>
   <part id="P1">
     <measure number="1">
       <attributes><divisions>1</divisions><key><fifths>-1</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><staves>2</staves>${clefXML(1, "G", 2)}${clefXML(2, "F", 4)}</attributes>
-      ${noteXML("C", 5, 1, 1, `<tie type="start"/><voice>1</voice><type>quarter</type><notations><tied type="start"/></notations>`)}
-      ${noteXML("C", 5, 1, 1, `<tie type="stop"/><voice>1</voice><type>quarter</type><notations><tied type="stop"/></notations>`)}
+      ${noteXML("C", 5, 1, 1, '<tie type="start"/><voice>1</voice><type>quarter</type><notations><tied type="start"/></notations>')}
+      ${noteXML("C", 5, 1, 1, '<tie type="stop"/><voice>1</voice><type>quarter</type><notations><tied type="stop"/></notations>')}
       ${noteXML("C", 5, 1, 1, "<voice>1</voice><type>quarter</type>")}
       ${noteXML("C", 5, 1, 1, "<voice>1</voice><type>quarter</type>")}
       <backup><duration>4</duration></backup>
