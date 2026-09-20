@@ -185,31 +185,11 @@ function drawnHeads(columns, props) {
   return heads
 }
 
-// everything drawnHeads reads besides the columns themselves
-function headStemsKey(columns, props) {
-  return [columns, props.keySignature, props.filterPitch, props.upperRow, props.lowerRow]
-}
-
-// The last unit walked for each staff: GrandStaff measures both of its staves
-// and each of them walks the same unit again to draw itself and to measure its
-// own reach, so one walk a staff serves them all
-const headStemsCache = new Map()
-
 // The heads of columns and the stem of each, as one set so that what the staff
 // draws and the room it keeps for it are never worked out from different heads
 function drawnHeadStems(columns, props) {
-  let key = headStemsKey(columns, props)
-  let cached = headStemsCache.get(props.staff)
-
-  if (cached && cached.key.every((part, idx) => part === key[idx])) {
-    return cached.result
-  }
-
   let heads = drawnHeads(columns, props)
-  let result = [heads, columnStems(heads)]
-  headStemsCache.set(props.staff, {key, result})
-
-  return result
+  return [heads, columnStems(heads)]
 }
 
 // The stem of every head the staff draws, by what names a head (see headKey).

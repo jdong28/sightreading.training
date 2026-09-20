@@ -355,19 +355,15 @@ describe("staff rhythm", function() {
         .toEqual([[8, 17]])
     })
 
-    it("keeps room in front of a head a tie runs on to, so its stub is drawn", function() {
-      // a card whose first bar opens on a head tied over from the card before:
-      // the head is drawn clear of the staff's notes, with the stub's room in
-      // front of it, where a bar opening on a rest keeps none
-      let columns = [column(["C5"], 1, 3), column(["E5"], 2, 2)]
-      columns[0].extras = [{kind: "head", name: "C5", beat: 0, from: -2, type: "half"}]
+    it("runs a tie forwards from the staff's notes when its head has no room to reach back", function() {
+      // the head the tie runs to is drawn on the staff's own left edge, so the
+      // stub has nowhere to run back into: it is shortened rather than drawn
+      // over the clef and key signature, and the arc still reads left to right
+      let heads = [{beat: 2, name: "C5", x: 8, y: 5, width: 8, stem: "up", tieTo: null, tieFrom: 0}]
 
-      let tied = columnLayout(columns)
-      expect(tied.leadFrom).toBeGreaterThan(0)
-      expect(columnExtras(columns, tied)[0].offset).toEqual(tied.leadFrom)
-
-      columns[0].extras = [{kind: "rest", beat: 0, type: "quarter"}]
-      expect(columnLayout(columns).leadFrom).toEqual(0)
+      let [arc] = tieArcs(heads, 20, {left: 8})
+      expect(arc.x1).toBeGreaterThanOrEqual(8)
+      expect(arc.x1).toBeLessThan(arc.x2)
     })
   })
 })

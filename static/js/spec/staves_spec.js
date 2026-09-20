@@ -263,9 +263,9 @@ describe("staves", function() {
       let offsetLeft = keySignatureWidth(new KeySignature(-1))
       let heads = notesOn(staff).map(note => parseFloat(note.style.left))
 
-      // the tied head leads the staff, and the stub of its tie is drawn in
-      // the room kept in front of it rather than back over the key signature
-      expect(Math.min(...heads)).toBeGreaterThan(offsetLeft)
+      // the tied head leads the staff, and no head is drawn back over the
+      // key signature to make room for the stub of its tie
+      expect(Math.min(...heads)).toBeGreaterThanOrEqual(offsetLeft)
 
       let ties = [...staff.querySelectorAll(`.${staffStyles.tie}`)]
       expect(ties.length).toBeGreaterThan(0)
@@ -1252,6 +1252,39 @@ describe("staves", function() {
 
       expect(notesOn(staff).length).toEqual(3)
       expect(rests.map(rest => rest.dataset.restType)).toEqual(["quarter"])
+    })
+
+    // a treble bar whose last onset is above the staff's range, with the
+    // bar's closing rest drawn after it
+    let highLastNoteScore = () => `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes><divisions>1</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>
+      <note><pitch><step>D</step><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>
+      <note><pitch><step>E</step><octave>6</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>
+      <note><rest/><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>
+    </measure>
+  </part>
+</score-partwise>`
+
+    it("keeps the rest of a last column the staff's range drops whole", function() {
+      let song = parseMusicXML(highLastNoteScore())
+      // the E6 the bar ends on is above the staff, so its column goes whole
+      // and takes the bar's closing rest with it unless that rest is kept
+      let columns = sectionColumns(song, 1, 1, BOTH_HANDS, {name: "treble", range: ["C4", "C6"]})
+      renderStaff(GStaff, columns, {unitColumns: columns, keySignature: new KeySignature(0)})
+
+      let staff = container.querySelector(`.${staffStyles.staff}`)
+      let heads = notesOn(staff).map(note => parseFloat(note.style.left))
+      let rests = [...staff.querySelectorAll(`.${staffStyles.rest}`)]
+
+      expect(heads.length).toEqual(2)
+      expect(rests.map(rest => rest.dataset.restType)).toEqual(["quarter"])
+      // the rest falls after the last head the staff can show
+      expect(parseFloat(rests[0].style.left)).toBeGreaterThan(Math.max(...heads))
     })
 
     // two bars whose second opens on a quarter rest in both hands, so nothing

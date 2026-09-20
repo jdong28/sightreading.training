@@ -369,6 +369,13 @@ export function filterColumnsToRange(columns, min, max) {
     }
   }
 
+  // the extras of a last column dropped whole go with the column before it,
+  // where they are drawn after its onset, rather than being lost with it
+  if (carried.length && out.length) {
+    let last = out[out.length - 1]
+    last.extras = [...(last.extras || []), ...carried]
+  }
+
   return [out, dropped]
 }
 

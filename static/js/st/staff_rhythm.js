@@ -187,33 +187,6 @@ function leadBeats(columns, rests) {
   return most
 }
 
-// The room a card keeps left of the leftmost extra it leads with, in column
-// widths, so the tie a head there runs on from is drawn in front of it rather
-// than clamped onto its own head. A column is never narrower than a note head
-// (see minNoteWidth in st/components/staff_notes) and a tie's stub is about a
-// head wide (TIE_STUB in st/components/staff/score_extras)
-const LEAD_STUB_ROOM = 1
-
-// Whether the extra leading its column by the most beats is a head a tie runs
-// on to rather than a rest: only a head draws a tie back past itself, so only
-// then is the stub's room kept
-function leadsWithTiedHead(columns, lead) {
-  if (!(lead > 0)) { return false }
-
-  for (let column of columns || []) {
-    if (!column || column.beat == null) { continue }
-
-    for (let extra of column.extras || []) {
-      if (extra.kind == "head" &&
-        Math.abs(column.beat - extra.beat - lead) < BEAT_EPSILON) {
-        return true
-      }
-    }
-  }
-
-  return false
-}
-
 /**
  * Where the columns are drawn and how much room each one holds. The first
  * column is offset by the room its card keeps for the extras that fall before
@@ -226,11 +199,9 @@ function leadsWithTiedHead(columns, lead) {
  * staff that draws none keeps no room for them either (see restsStaff in
  * st/components/staff_notes)
  * @returns {{offsets: number[], advances: number[], gaps: Array, unit:
- * number|null, leadBeats: number, leadFrom: number, rests: boolean}} offsets
- * and advances in column widths, gaps the beats each column holds, leadBeats
- * the beats the reserved room holds and leadFrom where it starts, which is
- * past the staff's own notes when a tie runs on to the head that leads (see
- * LEAD_STUB_ROOM)
+ * number|null, leadBeats: number, rests: boolean}} offsets and advances in
+ * column widths, gaps the beats each column holds and leadBeats the beats the
+ * reserved room holds
  */
 export function columnLayout(columns, unitColumns, {rests=true}={}) {
   let advances = columnAdvances(columns, unitColumns)
@@ -239,9 +210,8 @@ export function columnLayout(columns, unitColumns, {rests=true}={}) {
   // measured over the card, not the window, so the room holds still as the
   // notes slide through the staff
   let beats = leadBeats(unitOf, rests)
-  let from = leadsWithTiedHead(unitOf, beats) ? LEAD_STUB_ROOM : 0
   let offsets = []
-  let at = from + roomFor(beats, unit)
+  let at = roomFor(beats, unit)
 
   for (let advance of advances) {
     offsets.push(at)
@@ -254,7 +224,6 @@ export function columnLayout(columns, unitColumns, {rests=true}={}) {
     gaps: columns.map((column, idx) => columnBeats(columns, idx)),
     unit,
     leadBeats: beats,
-    leadFrom: from,
     rests,
   }
 }
@@ -508,7 +477,7 @@ export function rowCenter(row, {upperRow}) {
  * @param {boolean} [opts.rests] whether the staff draws the score's rests
  * @returns {Object[]} each extra with `offset`, its own place in column widths
  */
-export function columnExtras(columns, {offsets, advances, gaps, unit, leadBeats, leadFrom, staff, rests=true}) {
+export function columnExtras(columns, {offsets, advances, gaps, unit, leadBeats, staff, rests=true}) {
   if (!offsets || !advances) { return [] }
 
   let out = []
@@ -528,7 +497,7 @@ export function columnExtras(columns, {offsets, advances, gaps, unit, leadBeats,
         // keeps its share of the room before the column, which for the first
         // one is the room the layout reserves (see columnLayout), and never
         // falls back past the column before it
-        let from = idx > 0 ? offsets[idx - 1] : (leadFrom || 0)
+        let from = idx > 0 ? offsets[idx - 1] : 0
         let span = idx > 0 ? gaps[idx - 1] : leadBeats
         let room = offsets[idx] - from
         let at = span > 0 ? offsets[idx] - room * before / span : from
