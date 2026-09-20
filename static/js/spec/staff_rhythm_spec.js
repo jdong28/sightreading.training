@@ -303,22 +303,34 @@ describe("staff rhythm", function() {
 
     it("runs a tie off the card when the head it joins isn't on it", function() {
       let heads = [
-        {beat: 0, name: "C5", x: 10, y: 5, stem: "up", tieTo: 2, tieFrom: null},
-        {beat: 2, name: "C5", x: 90, y: 5, stem: "up", tieTo: 4, tieFrom: 0},
+        {beat: 0, name: "C5", x: 10, y: 5, width: 8, stem: "up", tieTo: 2, tieFrom: null},
+        {beat: 2, name: "C5", x: 90, y: 5, width: 8, stem: "up", tieTo: 4, tieFrom: 0},
       ]
 
+      // each end is anchored on the head it joins: a tie leaves the right of
+      // one head and meets the left of the next
       let arcs = tieArcs(heads, 20)
       expect(arcs.map(arc => [arc.x1, arc.x2, arc.dir]))
-        .toEqual([[10, 90, "down"], [90, 110, "down"]])
+        .toEqual([[16, 92, "down"], [96, 112, "down"]])
     })
 
     it("keeps a tie running off the card's start clear of the clef", function() {
       // the head the tie runs to is the first on the staff, closer to the
       // staff's notes than the stub reaches back
-      let heads = [{beat: 2, name: "C5", x: 15, y: 5, stem: "up", tieTo: null, tieFrom: 0}]
+      let heads = [{beat: 2, name: "C5", x: 15, y: 5, width: 8, stem: "up", tieTo: null, tieFrom: 0}]
 
       expect(tieArcs(heads, 20, {left: 8}).map(arc => [arc.x1, arc.x2]))
-        .toEqual([[8, 15]])
+        .toEqual([[8, 17]])
+    })
+
+    it("runs a tie forwards even when its head has no room to reach back", function() {
+      // the head sits on the staff's own left edge, which is where the room
+      // the layout reserves puts a tie running on from the card before
+      let heads = [{beat: 2, name: "C5", x: 8, y: 5, width: 8, stem: "up", tieTo: null, tieFrom: 0}]
+
+      let [arc] = tieArcs(heads, 20, {left: 8})
+      expect(arc.x1).toBeLessThan(arc.x2)
+      expect(arc.x2 - arc.x1).toEqual(8)
     })
   })
 })

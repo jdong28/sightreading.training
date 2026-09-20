@@ -36,7 +36,7 @@ const MAX_DOTS = 2
 const BEAT_EPSILON = 1e-6
 
 // how much longer dots make a note: one dot is 1.5x, two 1.75x
-export function dotFactor(dots) {
+function dotFactor(dots) {
   return 2 - Math.pow(2, -(dots || 0))
 }
 
@@ -223,10 +223,13 @@ export function columnSpan(columns, unitColumns) {
 // The stem direction of a group of notes sharing a staff, a column and a
 // voice: away from the voice the group is not (an upper voice stems up and a
 // lower voice down), else away from the middle line, which is what a single
-// voice does. The direction the score writes is not kept at all (st/musicxml):
-// it is the direction of the beam the note belongs to, and until beams are
-// drawn a lone note under it would stem the wrong way and hang its flag over
-// the notes around it
+// voice does. A voice's position is its place in the bar, not in the column
+// (see columnStems), so a voice turns its stems the same way right through a
+// bar the other voice only strikes part of, as it is written on paper. The
+// direction the score writes is not kept at all (st/musicxml): it is the
+// direction of the beam the note belongs to, and until beams are drawn a lone
+// note under it would stem the wrong way and hang its flag over the notes
+// around it
 // rows: the staff rows of the group's notes
 // middleRow: the staff's middle line
 // opts.voicePosition: "upper" or "lower" when two voices share the staff
@@ -243,32 +246,11 @@ export function stemDirection(rows, middleRow, {voicePosition}={}) {
   return furthest >= middleRow ? "down" : "up"
 }
 
-// Groups the notes a staff draws in one column by voice, since each voice
-// carries its own stem. Entries are in the order the notes are drawn, each
-// {voice, indices} into notes, and a group's notes share one stem
-// notations: the notation of each note, or null for a note without one
-export function voiceGroups(notations) {
-  let groups = []
-  let byVoice = new Map()
-
-  notations.forEach((notation, idx) => {
-    let voice = (notation && notation.voice) || 0
-    if (!byVoice.has(voice)) {
-      let group = {voice, indices: []}
-      byVoice.set(voice, group)
-      groups.push(group)
-    }
-    byVoice.get(voice).indices.push(idx)
-  })
-
-  return groups
-}
-
-// Where each voice of a staff's column sits relative to the others, by the
-// notes it holds: {voice: "upper"|"lower"} when two or more voices share the
-// column, so their stems point away from each other, else an empty object
+// Where each voice of a staff's bar sits relative to the others, by the notes
+// it holds: {voice: "upper"|"lower"} when two or more voices share the bar,
+// so their stems point away from each other, else an empty object
 // rowsByVoice: Map of voice -> the staff rows of its notes
-export function voicePositions(rowsByVoice) {
+function voicePositions(rowsByVoice) {
   let voices = [...rowsByVoice.keys()]
   if (voices.length < 2) { return {} }
 
@@ -287,71 +269,99 @@ export function voicePositions(rowsByVoice) {
 
 /**
  * The stem the staff draws each head with, so everything drawn from a stem —
- * its flags, and the ties bowing away from it — agrees with it. The heads of
- * a voice's column share one stem, drawn from the lowest note of a group
+ * its flags, and the ties bowing away from it — agrees with it. The heads one
+ * voice strikes at once share one stem, drawn from the lowest note of a group
  * stemming up and the highest of one stemming down; the others carry only the
- * direction it turns. Only notated values that carry a stem have one, so a
- * column of whole notes, and every note without notation, has none.
- * @param {Object[]} notes the heads one staff draws, each with its notation
- * @param {Object} opts
- * @param {function} opts.rowOf the staff row a note is drawn on
- * @param {number} opts.middleRow the staff's middle line
- * @returns {Map} note id -> {dir}, with {height, flags} on the head that
- * carries the stem
+ * direction it turns. A voice's position is settled over the whole bar, so
+ * every stem of a voice sharing a bar with another turns the same way, rather
+ * than only in the columns where the other voice also strikes. Only notated
+ * values that carry a stem have one, so a column of whole notes, and every
+ * head without notation, has none.
+ * @param {Object[]} heads the heads one staff draws, each {bar, column, row,
+ * middleRow, notation}: the bar and the column it is struck in, the staff row
+ * it is drawn on, the middle line of its own column's clef, and how the score
+ * writes it
+ * @returns {Array} one entry per head, in the order they were given: null for
+ * a head with no stem, else {dir}, with {height, flags} on the head that
+ * carries its group's stem
  */
-export function columnStems(notes, {rowOf, middleRow}) {
-  let byColumn = new Map()
+export function columnStems(heads) {
+  let stems = heads.map(() => null)
+  let voiceOf = head => (head.notation && head.notation.voice) || 0
 
-  for (let note of notes) {
-    let key = note.getStart()
-    if (!byColumn.has(key)) {
-      byColumn.set(key, [])
+  let bars = new Map()
+  heads.forEach((head, idx) => {
+    let bar = head.bar || 0
+    if (!bars.has(bar)) {
+      bars.set(bar, [])
     }
-    byColumn.get(key).push(note)
-  }
+    bars.get(bar).push(idx)
+  })
 
-  let stems = new Map()
-
-  for (let columnNotes of byColumn.values()) {
+  for (let bar of bars.values()) {
     let rowsByVoice = new Map()
-    for (let note of columnNotes) {
-      let voice = (note.notation && note.notation.voice) || 0
+    for (let idx of bar) {
+      let voice = voiceOf(heads[idx])
       if (!rowsByVoice.has(voice)) {
         rowsByVoice.set(voice, [])
       }
-      rowsByVoice.get(voice).push(rowOf(note))
+      rowsByVoice.get(voice).push(heads[idx].row)
     }
 
     let positions = voicePositions(rowsByVoice)
 
-    for (let group of voiceGroups(columnNotes.map(note => note.notation))) {
-      let groupNotes = group.indices.map(idx => columnNotes[idx])
-      if (!groupNotes.some(note => note.notation)) { continue }
+    // the heads of one voice struck at once, which share the stem
+    let groups = new Map()
+    for (let idx of bar) {
+      let key = `${heads[idx].column}/${voiceOf(heads[idx])}`
+      if (!groups.has(key)) {
+        groups.set(key, [])
+      }
+      groups.get(key).push(idx)
+    }
 
-      // the shortest value of the group carries the stem's flags, as the
-      // one stem is drawn for all of them
-      let flags = Math.max(...groupNotes.map(note =>
-        noteTypeProps(note.notation && note.notation.type).flags))
-
-      if (!groupNotes.some(note => noteTypeProps(note.notation && note.notation.type).stem)) {
+    for (let group of groups.values()) {
+      let notations = group.map(idx => heads[idx].notation)
+      if (!notations.some(notation => notation && noteTypeProps(notation.type).stem)) {
         continue
       }
 
-      let rows = groupNotes.map(note => rowOf(note))
-      let dir = stemDirection(rows, middleRow, {voicePosition: positions[group.voice]})
+      // the shortest value of the group carries the stem's flags, as the
+      // one stem is drawn for all of them
+      let flags = Math.max(...notations.map(notation =>
+        noteTypeProps(notation && notation.type).flags))
+
+      let rows = group.map(idx => heads[idx].row)
+      let dir = stemDirection(rows, heads[group[0]].middleRow,
+        {voicePosition: positions[voiceOf(heads[group[0]])]})
 
       let anchorRow = dir == "up" ? Math.min(...rows) : Math.max(...rows)
-      let anchor = groupNotes[rows.indexOf(anchorRow)]
+      let anchor = group[rows.indexOf(anchorRow)]
       let span = Math.max(...rows) - Math.min(...rows)
 
-      for (let note of groupNotes) {
-        stems.set(note.id, note == anchor ?
-          {dir, height: STEM_LENGTH + span * STAFF_ROW, flags} : {dir})
+      for (let idx of group) {
+        stems[idx] = idx == anchor ?
+          {dir, height: STEM_LENGTH + span * STAFF_ROW, flags} : {dir}
       }
     }
   }
 
   return stems
+}
+
+// The bar each column belongs to, counting from the staff's first column: a
+// column carrying a measure number opens the next one (see cardColumn in
+// st/measure_cards). Columns without bar lines, eg. a generated drill, are
+// all one bar
+export function columnBars(columns) {
+  let bar = 0
+
+  return (columns || []).map((column, idx) => {
+    if (idx > 0 && column && column.measure != null) {
+      bar += 1
+    }
+    return bar
+  })
 }
 
 // The unscaled geometry the staff draws rhythm with, in the pixels of a
@@ -365,7 +375,7 @@ export const STAFF_ROW = STAFF_HEIGHT / 8
 export const NOTE_HEAD_HEIGHT = STAFF_HEIGHT * 0.2
 export const STEM_WIDTH = STAFF_SPACE * 0.13
 // a stem is three and a half spaces long, as it is on paper
-export const STEM_LENGTH = STAFF_SPACE * 3.5
+const STEM_LENGTH = STAFF_SPACE * 3.5
 export const DOT_SIZE = STAFF_SPACE * 0.26
 // the space between a head or rest and its first augmentation dot, and between dots
 export const DOT_GAP = DOT_SIZE
@@ -391,7 +401,7 @@ export const FLAG_GLYPH = {
 // The rests, by notated value: the glyph, its size in unscaled pixels, the
 // staff row it is drawn against counting from the middle line, and where on
 // the glyph that row falls (0 its top, 1 its bottom)
-export const REST_GLYPHS = {
+const REST_GLYPHS = {
   whole: {src: "/static/svg/rest_whole.svg", width: STAFF_SPACE * 1.2, height: STAFF_SPACE * 0.5, row: 2, anchor: 0},
   half: {src: "/static/svg/rest_half.svg", width: STAFF_SPACE * 1.2, height: STAFF_SPACE * 0.5, row: 0, anchor: 1},
   quarter: {src: "/static/svg/rest_quarter.svg", width: STAFF_SPACE * 0.9, height: STAFF_SPACE * 2.5, row: 0, anchor: 0.5},
@@ -494,19 +504,23 @@ export function extrasBefore(columns, layout) {
   return out
 }
 
+// where a tie leaves and meets a head, as a share of the head's width
+const TIE_START = 0.75
+const TIE_END = 0.25
+
 /**
- * The arcs drawn for the ties between heads. A tie whose other head is not on
- * the staff, because it is on the card before or after this one, is drawn as
- * a stub running off that side.
+ * The arcs drawn for the ties between heads, each running from the head it
+ * leaves to the head it meets. A tie whose other head is not on the staff,
+ * because it is on the card before or after this one, is drawn as a stub
+ * running off that side.
  * @param {Object[]} heads {beat, name, x, y, width, stem, tieTo, tieFrom}, in
  * the pixels of the staff's scale
  * @param {number} stub how far a tie with no head to run to reaches
  * @param {Object} [opts]
  * @param {number} [opts.left] the furthest left a stub reaches back to, so a
  * tie running off this card stays clear of the clef and key signature
- * @returns {Object[]} {x1, y1, w1, x2, y2, w2, dir}, w1 and w2 the width of
- * the head at each end, so the arc is anchored on the heads it joins, and dir
- * the side the arc bulges to
+ * @returns {Object[]} {x1, y1, x2, y2, dir}, the ends anchored on the heads
+ * the arc joins and always in reading order, and dir the side it bulges to
  */
 export function tieArcs(heads, stub, {left=null}={}) {
   let at = (beat, name) => heads.find(head =>
@@ -515,26 +529,32 @@ export function tieArcs(heads, stub, {left=null}={}) {
   let arcs = []
   // a tie bulges away from its stem, as it does on paper
   let arcDir = head => head.stem == "up" ? "down" : "up"
+  // a tie leaves a head near its right edge and meets one near its left
+  let leaves = (x, width) => x + width * TIE_START
+  let meets = (x, width) => x + width * TIE_END
 
   for (let head of heads) {
     if (head.tieTo != null) {
       let next = at(head.tieTo, head.name)
       arcs.push({
-        x1: head.x, y1: head.y, w1: head.width,
-        x2: next ? next.x : head.x + stub,
+        x1: leaves(head.x, head.width), y1: head.y,
+        x2: next ? meets(next.x, next.width) : meets(head.x + stub, head.width),
         y2: next ? next.y : head.y,
-        w2: next ? next.width : head.width,
         dir: arcDir(head),
       })
     }
 
     if (head.tieFrom != null && !at(head.tieFrom, head.name)) {
-      let from = head.x - stub
-      arcs.push({
-        x1: left == null ? from : Math.max(left, from), y1: head.y, w1: head.width,
-        x2: head.x, y2: head.y, w2: head.width,
-        dir: arcDir(head),
-      })
+      let x2 = meets(head.x, head.width)
+      let from = leaves(head.x - stub, head.width)
+      // The stub never runs back past the staff's notes, and never so far
+      // right that the arc would run backwards over its own head: a head drawn
+      // at the very start of the card, which is where the room the layout
+      // reserves puts a tie running on from the card before, keeps a head's
+      // width of arc to bow over
+      let x1 = Math.min(left == null ? from : Math.max(left, from), x2 - head.width)
+
+      arcs.push({x1, y1: head.y, x2, y2: head.y, dir: arcDir(head)})
     }
   }
 

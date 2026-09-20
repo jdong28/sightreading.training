@@ -109,7 +109,7 @@ export const pickupScore = ({title="Pickup Minuet", clefs=[["G", 2], ["F", 4]]}=
 
 // The opening of Debussy's Rêverie as MuseScore 4 exports it, measures 1–4
 // with layout, beams, slurs and directions left out. F major, 4/4, divisions
-// 6, both staves in treble clef:
+// 6, the upper staff in treble clef and the lower in bass clef:
 //   1: two beats of hidden rests on both staves, no notes
 //   2, 3: hidden whole measure rest on staff 1; on staff 2 voice 5 plays the
 //     eighth note ostinato Bb3 C4 D4 G4~G4 D4 C4 Bb3~ (the last tied into the
@@ -123,7 +123,7 @@ export const reverieOpening = () => `<?xml version="1.0" encoding="UTF-8"?>
   </part-list>
   <part id="P1">
     <measure number="1">
-      <attributes><divisions>6</divisions><key><fifths>-1</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><staves>2</staves><clef number="1"><sign>G</sign><line>2</line></clef><clef number="2"><sign>G</sign><line>2</line></clef></attributes>
+      <attributes><divisions>6</divisions><key><fifths>-1</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><staves>2</staves><clef number="1"><sign>G</sign><line>2</line></clef><clef number="2"><sign>F</sign><line>4</line></clef></attributes>
       <note print-object="no"><rest/><duration>12</duration><voice>1</voice><type>half</type><staff>1</staff></note>
       <backup><duration>12</duration></backup>
       <note print-object="no"><rest/><duration>12</duration><voice>5</voice><type>half</type><staff>2</staff></note>

@@ -23,10 +23,6 @@ const MIDDLE_LINE_ROWS = 4
 // how far a tie whose other head is on another card reaches off this one
 const TIE_STUB = STAFF_SPACE * 1.4
 
-// where a tie leaves and meets a head, as a share of the head's width
-const TIE_START = 0.75
-const TIE_END = 0.25
-
 // how far a tie sits from the middle of its heads, and how deep it bows
 const TIE_OFFSET = STAFF_SPACE * 0.5
 const TIE_DEPTH = STAFF_SPACE * 0.45
@@ -235,10 +231,7 @@ export default class ScoreExtras extends React.PureComponent {
     return <svg className={styles.ties} key="ties">
       {arcs.map((arc, idx) => {
         let bow = arc.dir == "up" ? -1 : 1
-        // each end is anchored on the head it joins, whose width is its own
-        // notated value's (see headGlyph)
-        let x1 = arc.x1 + arc.w1 * TIE_START
-        let x2 = arc.x2 + arc.w2 * TIE_END
+        let {x1, x2} = arc
         let y1 = arc.y1 + bow * TIE_OFFSET * scale
         let y2 = arc.y2 + bow * TIE_OFFSET * scale
         let cy = (y1 + y2) / 2 + bow * TIE_DEPTH * scale

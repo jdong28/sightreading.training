@@ -49,7 +49,7 @@ describe("musicxml", function() {
     expect(song.metadata.measureKeySignatures).toEqual([-1, -1, -1, -1])
     expect(song.metadata.measuresEnd).toEqual(14)
 
-    expect(song.tracks.map(t => t.cleffs)).toEqual([[[0, "g"]], [[0, "g"]]])
+    expect(song.tracks.map(t => t.cleffs)).toEqual([[[0, "g"]], [[0, "f"]]])
 
     // staff 1: G5 and D5 of measure 4
     expect(tuples(song.tracks[0])).toEqual([["G5", 10, 2], ["D5", 12, 2]])

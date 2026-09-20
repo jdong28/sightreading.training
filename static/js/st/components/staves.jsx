@@ -10,8 +10,9 @@ import ChordList from "st/chord_list"
 import {parseNote, noteName, noteStaffOffset} from "st/music"
 
 import StaffNotes, {
-  KEY_SIGNATURE_SPACING, clefChangeBoxes, staffColumnNotes
+  KEY_SIGNATURE_SPACING, clefChangeBoxes, staffColumnNotes, columnNotation
 } from "st/components/staff_notes"
+import {columnStems, columnBars, middleRow, rowCenter} from "st/staff_rhythm"
 import StaffSongNotes from "st/components/staff_song_notes"
 import styles from "st/components/staff.module.css"
 
@@ -126,12 +127,12 @@ function staffClefProps(props) {
 }
 
 // How far past its five lines a staff drawn with props reaches, above and
-// below, in pixels: its notes' heads, and the clef changes too big for the
-// gaps they mark, which go above the staff. A drill measures the whole unit
-// its notes are a window of rather than the window, so the staff holds its
-// place as the window slides, plus the notes held down that aren't in its
-// head, which land wherever the player's wrong note falls (see
-// StaffNotes#convertHeldToSongNotes)
+// below, in pixels: its notes' heads and the stems drawn on them, and the clef
+// changes too big for the gaps they mark, which go above the staff. A drill
+// measures the whole unit its notes are a window of rather than the window, so
+// the staff holds its place as the window slides, plus the notes held down
+// that aren't in its head, which land wherever the player's wrong note falls
+// (see StaffNotes#convertHeldToSongNotes)
 export function notesReach(props) {
   let height = DEFAULT_HEIGHT * (props.scale || 1)
   let above = 0
@@ -165,13 +166,50 @@ export function notesReach(props) {
     })
   }
 
+  // A stem runs from the middle of its head to its far end, and its flags are
+  // stacked back along it, so the stem's end is the furthest the staff draws
+  // from that head (see columnStems and renderRhythm in st/components/staff)
+  let includeStem = (clef, row, stem) => {
+    if (!stem || !stem.height) { return }
+
+    let center = rowCenter(row, clef) * (props.scale || 1)
+    let reach = stem.height * (props.scale || 1)
+
+    if (stem.dir == "up") {
+      above = Math.max(above, reach - center)
+    } else {
+      below = Math.max(below, center + reach - height)
+    }
+  }
+
   if (props.notes instanceof NoteList) {
     if (props.unitColumns) {
       let columnClefs = columnClefProps(props.unitColumns, props.staff, props)
+      let bars = columnBars(props.unitColumns)
+      let heads = []
+      let headClefs = []
 
       props.unitColumns.forEach((column, idx) => {
+        let clef = (columnClefs && columnClefs[idx]) || props
         let [columnNotes] = staffColumnNotes(column, props)
-        columnNotes.forEach(name => include((columnClefs && columnClefs[idx]) || props, ...drawn(name)))
+        let notation = columnNotation(column, columnNotes, props)
+
+        columnNotes.forEach((name, at) => {
+          let [row, accidental] = drawn(name)
+          include(clef, row, accidental)
+          heads.push({
+            bar: bars[idx],
+            column: idx,
+            row,
+            middleRow: middleRow(clef),
+            notation: notation && notation[at],
+          })
+          headClefs.push(clef)
+        })
+      })
+
+      columnStems(heads).forEach((stem, idx) => {
+        includeStem(headClefs[idx], heads[idx].row, stem)
       })
 
       clefChangeBoxes({...props, notes: props.unitColumns, columnClefs}).forEach(box => {

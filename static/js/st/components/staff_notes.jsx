@@ -8,7 +8,7 @@ import LedgerLines, {LEDGER_OVERHANG} from "st/components/staff/ledger_lines"
 import ScoreNotes from "st/components/staff/score_notes"
 import ScoreExtras from "st/components/staff/score_extras"
 import {
-  columnLayout, columnExtras, columnStems, extrasBefore, middleRow,
+  columnLayout, columnExtras, columnStems, columnBars, extrasBefore, middleRow,
   noteTypeProps, HEAD_GLYPHS, STAFF_HEIGHT, NOTE_HEAD_HEIGHT,
 } from "st/staff_rhythm"
 import styles from "st/components/staff.module.css"
@@ -294,14 +294,13 @@ export default class StaffNotes extends React.Component {
     // the stems of every head the staff draws, so the notes, their flags and
     // the ties bowing away from them all agree on which way each one turns
     let stems = new Map()
-    for (let {clef, notes} of byClef.values()) {
-      for (let [id, stem] of columnStems(notes, {
-        rowOf: note => noteStaffOffset(this.props.keySignature.enharmonic(note.note)),
-        middleRow: middleRow(clef),
-      })) {
-        stems.set(id, stem)
+    let bars = columnBars(this.props.notes)
+    let heads = [...songNotes]
+    columnStems(heads.map(note => this.stemHead(note, bars))).forEach((stem, idx) => {
+      if (stem) {
+        stems.set(heads[idx].id, stem)
       }
-    }
+    })
 
     return <div ref="notes" className={this.classNames()}>
       {this.renderClefChanges()}
@@ -376,6 +375,19 @@ export default class StaffNotes extends React.Component {
   // the clef props the column at idx is drawn in
   columnClef(idx) {
     return (this.props.columnClefs && this.props.columnClefs[idx]) || this.props
+  }
+
+  // How a head is stemmed against the others the staff draws (see columnStems
+  // in st/staff_rhythm): the bar and the column it is struck in, the row it
+  // sits on and the middle line of its own column's clef
+  stemHead(note, bars) {
+    return {
+      bar: bars[note.columnIdx],
+      column: note.getStart(),
+      row: noteStaffOffset(this.props.keySignature.enharmonic(note.note)),
+      middleRow: middleRow(this.columnClef(note.columnIdx)),
+      notation: note.notation,
+    }
   }
 
   // filter notes so only the ones visible for this staff returned

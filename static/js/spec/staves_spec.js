@@ -18,7 +18,7 @@ import {pieceSectionMeasures, BOTH_HANDS, RIGHT_HAND, LEFT_HAND} from "st/data"
 import {reverieOpening, clefChangeScore, midMeasureClefScore} from "spec/helpers"
 
 // MIDI pitches, so the specs don't depend on the octave numbering of names
-const G2 = 43, C3 = 48, E3 = 52, F3 = 53, G3 = 55, A3 = 57, Bb3 = 58, B3 = 59, C4 = 60, D4 = 62, E4 = 64, G4 = 67, A4 = 69, C5 = 72, D5 = 74, E5 = 76, F5 = 77, G5 = 79
+const E2 = 40, G2 = 43, C3 = 48, E3 = 52, F3 = 53, G3 = 55, A3 = 57, Bb3 = 58, B3 = 59, C4 = 60, D4 = 62, E4 = 64, G4 = 67, A4 = 69, C5 = 72, D5 = 74, E5 = 76, F5 = 77, G5 = 79
 
 const GRAND = {name: "grand", range: ["C2", "C6"]}
 
@@ -121,8 +121,8 @@ describe("staves", function() {
       expect(pitches(columns[18])).toEqual([D5])
       expect(columns[18].staves).toEqual(["upper"])
 
-      // both staves open in treble clef
-      expect(columns.every(column => column.clefs.upper == "g" && column.clefs.lower == "g")).toBe(true)
+      // the score's own clefs: treble over bass
+      expect(columns.every(column => column.clefs.upper == "g" && column.clefs.lower == "f")).toBe(true)
 
       // other sections are still bare note names
       let plain = extractSectionColumns(song, {startMeasure: 2, endMeasure: 4})
@@ -138,7 +138,7 @@ describe("staves", function() {
       let generator = new SheetMusicGenerator(card.columns.map((column, idx) => cardColumn(card, idx)), {card})
       let first = generator.nextNote()
       expect(first.staves).toEqual(["lower"])
-      expect(first.clefs).toEqual({upper: "g", lower: "g"})
+      expect(first.clefs).toEqual({upper: "g", lower: "f"})
       expect(first.measure).toEqual(2)
 
       // a staff range drops the note and its staff together
@@ -146,10 +146,10 @@ describe("staves", function() {
         {startMeasure: 2, endMeasure: 2, hand: BOTH_HANDS}, song)
       expect(narrow[0].columns.every(column => column.length == column.staves.length)).toBe(true)
       expect(narrow[0].columns.map(pitches)[0]).toEqual([C4])
-      expect(narrow[0].columns[0].clefs).toEqual({upper: "g", lower: "g"})
+      expect(narrow[0].columns[0].clefs).toEqual({upper: "g", lower: "f"})
     })
 
-    it("draws the Rêverie ostinato on the lower staff in treble clef", function() {
+    it("draws the Rêverie ostinato on the lower staff in the score's bass clef", function() {
       let song = parseMusicXML(reverieOpening())
       renderStaff(GrandStaff, sectionColumns(song, 2, 3))
 
@@ -164,19 +164,36 @@ describe("staves", function() {
       expect(notesOn(lower).length).toEqual(14 + 3 + 1)
 
       expect(clefImage(upper)).toContain("clefs.G")
-      expect(clefImage(lower)).toContain("clefs.G")
+      expect(clefImage(lower)).toContain("clefs.F")
 
-      // positioned and ledgered for the treble clef: Bb3 hangs below the C4
-      // ledger line, where the bass clef would put it above the staff
+      // positioned and ledgered for the bass clef: Bb3 sits a step above the
+      // staff's top line, where the treble clef would hang it below the staff
       let bFlat = notesOn(lower).find(note => +note.dataset.midiNote == Bb3)
-      expect(bFlat.style.top).toEqual("137%")
+      expect(bFlat.style.top).toEqual("-13%")
+      // the ostinato's G4 reaches above the bass staff on ledger lines
       expect(ledgerLines(lower)).toBeGreaterThan(0)
 
-      // the key signature is drawn on both staves in treble clef
-      for (let el of [upper, lower]) {
+      // the key signature is drawn on each staff in that staff's own clef
+      for (let [el, top] of [[upper, "50%"], [lower, "75%"]]) {
         let flat = el.querySelector(`.${staffStyles.key_signature} [data-note]`)
-        expect(flat.style.top).toEqual("50%")
+        expect(flat.style.top).toEqual(top)
       }
+    })
+
+    it("turns every eighth of Rêverie bar 2 the same way in the left hand", function() {
+      let song = parseMusicXML(reverieOpening())
+      renderStaff(GrandStaff, sectionColumns(song, 2, 2))
+
+      let lower = staffEl("lower")
+      // the voice holding the whole note under the ostinato sounds only on
+      // the bar's first onset, but the ostinato is the bar's upper voice
+      // right through it, so every one of its eighths stems the same way
+      let stems = notesOn(lower)
+        .filter(note => note.dataset.noteType == "eighth")
+        .map(note => note.querySelector(`.${staffStyles.stem}`))
+
+      expect(stems.length).toEqual(8)
+      expect(new Set(stems.map(stem => stem && stem.dataset.stem))).toEqual(new Set(["up"]))
     })
 
     it("draws no clef changes at the gaps between the cards of a drill", function() {
@@ -197,7 +214,7 @@ describe("staves", function() {
 
       // a gap at the head keeps the clef of the card after it
       renderStaff(GrandStaff, [[], ...notes.slice(0, 7)])
-      expect(clefImage(staffEl("lower"))).toContain("clefs.G")
+      expect(clefImage(staffEl("lower"))).toContain("clefs.F")
       expect(clefChanges(staffEl("lower")).length).toEqual(0)
     })
 
@@ -221,26 +238,26 @@ describe("staves", function() {
     it("keeps a wrong held note on the staff whose clef draws it nearest, inside the wrapper", function() {
       let song = parseMusicXML(reverieOpening())
       container.classList.add(staffStyles.staff_wrapper)
-      renderStaff(GrandStaff, sectionColumns(song, 2, 2), {heldNotes: {[noteName(D4)]: true, [noteName(G2)]: true}})
+      renderStaff(GrandStaff, sectionColumns(song, 2, 2), {heldNotes: {[noteName(D4)]: true, [noteName(E2)]: true}})
 
-      // both staves are in treble clef here, so the lower one draws the notes
-      // hanging below them
+      // the score's treble over bass layout: D4 is a step under the upper
+      // staff and E2 two steps under the lower one, so each goes to the nearer
       let held = el => notesOn(el).filter(note => note.classList.contains(staffStyles.held))
       let lower = staffEl("lower")
-      expect(held(staffEl("upper")).map(note => +note.dataset.midiNote)).toEqual([])
-      expect(held(lower).map(note => +note.dataset.midiNote)).toEqual([D4, G2])
+      expect(held(staffEl("upper")).map(note => +note.dataset.midiNote)).toEqual([D4])
+      expect(held(lower).map(note => +note.dataset.midiNote)).toEqual([E2])
 
-      // G2 sits on the ledger lines below that staff, which makes room for it
-      let g2 = notesOn(lower).find(note => +note.dataset.midiNote == G2).getBoundingClientRect()
+      // E2 sits on the ledger lines below that staff, which makes room for it
+      let e2 = notesOn(lower).find(note => +note.dataset.midiNote == E2).getBoundingClientRect()
       let lines = [...lower.querySelectorAll(`.${staffStyles.ledger_line}`)]
         .map(line => line.getBoundingClientRect().top)
       expect(lines.length).toBeGreaterThan(0)
-      expect(Math.max(...lines)).toBeGreaterThan(g2.top)
-      expect(Math.max(...lines)).toBeLessThan(g2.bottom)
+      expect(Math.max(...lines)).toBeGreaterThan(e2.top)
+      expect(Math.max(...lines)).toBeLessThan(e2.bottom)
 
       let wrapper = container.getBoundingClientRect()
-      expect(g2.top).toBeGreaterThanOrEqual(wrapper.top)
-      expect(g2.bottom).toBeLessThanOrEqual(wrapper.bottom)
+      expect(e2.top).toBeGreaterThanOrEqual(wrapper.top)
+      expect(e2.bottom).toBeLessThanOrEqual(wrapper.bottom)
     })
 
     it("makes room for a score note hanging below the treble clef of its staff", function() {
@@ -511,14 +528,14 @@ describe("staves", function() {
       let left = sectionColumns(song, 2, 4, LEFT_HAND)
       renderStaff(GrandStaff, left)
       expect(notesOn(staffEl("upper")).length).toEqual(0)
-      expect(clefImage(staffEl("lower"))).toContain("clefs.G")
+      expect(clefImage(staffEl("lower"))).toContain("clefs.F")
       expect(notePitches(staffEl("lower"))).not.toContain(G5)
 
-      // a single bass staff shows the left hand in the treble clef it's written in
+      // a single bass staff shows the left hand in the bass clef it's written in
       renderStaff(FStaff, left)
       let single = container.querySelector(`.${staffStyles.staff}`)
-      expect(clefImage(single)).toContain("clefs.G")
-      expect(noteTop(single, Bb3)).toEqual("137%")
+      expect(clefImage(single)).toContain("clefs.F")
+      expect(noteTop(single, Bb3)).toEqual("-13%")
 
       let right = sectionColumns(song, 2, 4, RIGHT_HAND)
       expect(right.map(pitches)).toEqual([[G5], [D5]])
@@ -530,12 +547,13 @@ describe("staves", function() {
     it("keeps a staff on its own in its clef when it shows both hands", function() {
       let song = parseMusicXML(reverieOpening())
 
-      // measures 2 and 3 have only the left hand, which the score writes in treble clef
-      renderStaff(FStaff, sectionColumns(song, 2, 3))
+      // measures 2 and 3 have only the left hand, which the score writes in
+      // bass clef, but the staff reads both hands so it keeps its own treble
+      renderStaff(GStaff, sectionColumns(song, 2, 3))
       let single = container.querySelector(`.${staffStyles.staff}`)
-      expect(clefImage(single)).toContain("clefs.F")
+      expect(clefImage(single)).toContain("clefs.G")
       expect(clefChanges(single).length).toEqual(0)
-      expect(noteTop(single, Bb3)).toEqual("-13%")
+      expect(noteTop(single, Bb3)).toEqual("137%")
     })
 
     it("draws a clef change on the lower staff", function() {
