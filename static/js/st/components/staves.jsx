@@ -10,7 +10,7 @@ import ChordList from "st/chord_list"
 import {parseNote, noteName, noteStaffOffset} from "st/music"
 
 import StaffNotes, {
-  KEY_SIGNATURE_SPACING, clefChangeBoxes, staffColumnNotes, columnNotation
+  KEY_SIGNATURE_SPACING, clefChangeBoxes, staffColumnNotes, columnNotation, doubledHead
 } from "st/components/staff_notes"
 import {
   columnStems, columnBars, columnExtras, columnLayout, headKey, middleRow, rowCenter,
@@ -176,8 +176,9 @@ function drawnHeads(columns, props) {
     // over from the onset before, is one of that chord and shares its stem; a
     // head another voice doubles is drawn beside the chord and keeps its own
     let column = columns[extra.columnIdx]
-    let group = column && extra.from != null && column.beat === extra.beat ?
-      extra.columnIdx : `${extra.columnIdx}@${extra.beat}`
+    let held = column && extra.from != null && column.beat === extra.beat &&
+      !doubledHead(column, extra, props)
+    let group = held ? extra.columnIdx : `${extra.columnIdx}@${extra.beat}`
 
     push(extra.columnIdx, group, extra.name, extra.beat, extra)
   }

@@ -289,6 +289,23 @@ describe("staff rhythm", function() {
       expect(rest.offset).toBeLessThan(layout.offsets[1])
     })
 
+    it("keeps no wrap gap for a rest the staff never draws", function() {
+      // a looping card whose bar opens on a quarter rest: the wrap back to
+      // that column comes round with the rest, so the gap before it holds the
+      // rest's beat — but only on a staff that draws the score's rests
+      let first = column(["C5"], 1, 1)
+      first.extras = [{kind: "rest", beat: 0, staff: "upper", type: "quarter"}]
+      let looped = [first, column(["D5"], 2, 1), column(["E5"], 3, 1), first]
+
+      expect(columnLayout(looped, looped).gaps[2]).toEqual(2)
+      expect(columnUnit(looped)).toBeCloseTo(1.25, 6)
+
+      let bare = columnLayout(looped, looped, {rests: false})
+      expect(bare.gaps[2]).toEqual(1)
+      expect(bare.advances[2]).toEqual(1)
+      expect(columnUnit(looped, {rests: false})).toEqual(1)
+    })
+
     it("measures a card's room in the unit the staff draws it with", function() {
       // a bar of a quarter, a quarter and a half, drilled on a loop: the wrap
       // back to its first column is part of the unit the staff spaces it by

@@ -70,7 +70,7 @@ export function noteTypeProps(type) {
 // its start, holds the staff for as long as the column it repeats, never the
 // beats the card has left after that column. Columns without beats, eg. a
 // generated drill, hold one column each
-function columnBeats(columns, idx) {
+function columnBeats(columns, idx, rests=true) {
   let column = columns[idx]
   if (!column || column.beat == null) { return null }
 
@@ -81,14 +81,14 @@ function columnBeats(columns, idx) {
 
   let repeated = columns.findIndex(other => other && other.beat === column.beat)
   if (repeated >= 0 && repeated < idx) {
-    return columnBeats(columns, repeated)
+    return columnBeats(columns, repeated, rests)
   }
 
   if (!(column.beats > 0)) { return null }
 
   // a looping card wraps from here back to an earlier column, which comes
   // round with the extras that lead it, so the gap holds their beats too
-  return column.beats + columnLead(next)
+  return column.beats + columnLead(next, rests)
 }
 
 // The most beats a column's own extras fall before it: the rest a bar opens
@@ -133,12 +133,12 @@ export const SPACING_EXPONENT = 0.55
 // The beat a column width measures: the mean gap between the columns, so a
 // section of even notes draws a column width apart, exactly as a drill
 // without the score's rhythm does. Null when no column carries its beats
-export function columnUnit(columns) {
+export function columnUnit(columns, {rests=true}={}) {
   let total = 0
   let gaps = 0
 
   for (let idx = 0; idx < columns.length; idx++) {
-    let beats = columnBeats(columns, idx)
+    let beats = columnBeats(columns, idx, rests)
     if (beats > 0) {
       total += beats
       gaps += 1
@@ -153,14 +153,14 @@ export function columnUnit(columns) {
 // through the staff). Every column holds one width when the columns carry no
 // beats, which is what a generated drill and a piece imported before the
 // score's rhythm was kept draw
-export function columnAdvances(columns, unitColumns=columns) {
-  let unit = columnUnit(unitColumns && unitColumns.length ? unitColumns : columns)
+export function columnAdvances(columns, unitColumns=columns, {rests=true}={}) {
+  let unit = columnUnit(unitColumns && unitColumns.length ? unitColumns : columns, {rests})
   if (!unit) {
     return columns.map(() => 1)
   }
 
   return columns.map((column, idx) => {
-    let beats = columnBeats(columns, idx)
+    let beats = columnBeats(columns, idx, rests)
     if (!(beats > 0)) { return 1 }
     return roomFor(beats, unit)
   })
@@ -204,9 +204,9 @@ function leadBeats(columns, rests) {
  * reserved room holds
  */
 export function columnLayout(columns, unitColumns, {rests=true}={}) {
-  let advances = columnAdvances(columns, unitColumns)
+  let advances = columnAdvances(columns, unitColumns, {rests})
   let unitOf = unitColumns && unitColumns.length ? unitColumns : columns
-  let unit = columnUnit(unitOf)
+  let unit = columnUnit(unitOf, {rests})
   // measured over the card, not the window, so the room holds still as the
   // notes slide through the staff
   let beats = leadBeats(unitOf, rests)
@@ -221,7 +221,7 @@ export function columnLayout(columns, unitColumns, {rests=true}={}) {
   return {
     offsets,
     advances,
-    gaps: columns.map((column, idx) => columnBeats(columns, idx)),
+    gaps: columns.map((column, idx) => columnBeats(columns, idx, rests)),
     unit,
     leadBeats: beats,
     rests,

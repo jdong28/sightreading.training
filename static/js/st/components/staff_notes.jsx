@@ -81,6 +81,17 @@ export function staffColumnNotes(column, {staff, keySignature, filterPitch}) {
   return [notes.filter((n, idx) => keep[idx]), offsets.filter((o, idx) => keep[idx])]
 }
 
+// Whether a head the staff draws on a column is one that column already plays:
+// another voice sounds the same note at the same onset, so the score writes
+// the two side by side and the drawn head sits beside the played one (see
+// renderNote in st/components/staff) rather than joining its chord
+export function doubledHead(column, extra, props) {
+  if (!column || column.beat !== extra.beat) { return false }
+
+  let [columnNotes] = staffColumnNotes(column, props)
+  return columnNotes.includes(extra.name)
+}
+
 // The score staff whose rests a staff drawn over columns draws, or null for
 // none: the side GrandStaff hands it, else, on a lone treble or bass staff,
 // the one score staff of the drill, which a column's own clefs name whatever
@@ -493,8 +504,7 @@ export default class StaffNotes extends React.Component {
 
       // a head another voice sounds at the same beat sits beside the one
       // that is played, as the score writes the two voices
-      sNote.doubled = notes.some(note =>
-        note.note == sNote.note && note.getStart() == sNote.getStart())
+      sNote.doubled = doubledHead(this.props.notes[head.columnIdx], head, this.props)
 
       notes.push(sNote)
     }

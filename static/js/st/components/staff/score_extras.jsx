@@ -105,10 +105,14 @@ export default class ScoreExtras extends React.PureComponent {
 
   // The augmentation dots of a rest, after its glyph and against the middle
   // line, as they are drawn on a head
-  renderRestDots(rest, key, {left, width, scale}) {
+  renderRestDots(rest, key, {left, width, scale, glyph}) {
     let dots = rest.wholeMeasure ? 0 : (rest.dots || 0)
     let size = DOT_SIZE * scale
     let out = []
+    // the rest's own row, and the space above it when that row is a line, so
+    // a dot is never drawn on a staff line
+    let row = MIDDLE_LINE_ROWS - glyph.row
+    let against = (row % 2 == 0 ? row - 1 : row) * STAFF_ROW * scale
 
     for (let i = 0; i < dots; i++) {
       out.push(<img
@@ -116,7 +120,7 @@ export default class ScoreExtras extends React.PureComponent {
         className={styles.rest_dot}
         style={{
           left: `${left + width + (DOT_GAP + i * (DOT_SIZE + DOT_GAP)) * scale}px`,
-          top: `${MIDDLE_LINE_ROWS * STAFF_ROW * scale - size / 2}px`,
+          top: `${against - size / 2}px`,
           width: `${size}px`,
           height: `${size}px`,
         }}
@@ -161,7 +165,7 @@ export default class ScoreExtras extends React.PureComponent {
         }}
         src={glyph.src} />)
 
-      out.push(...this.renderRestDots(rest, `rest-${idx}`, {left, width, scale}))
+      out.push(...this.renderRestDots(rest, `rest-${idx}`, {left, width, scale, glyph}))
     })
 
     return out

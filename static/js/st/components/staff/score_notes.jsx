@@ -14,7 +14,7 @@ import {parseNote, noteStaffOffset} from "st/music"
 import * as types from "prop-types"
 import {
   noteTypeProps, headGlyph, NOTE_HEAD_HEIGHT, STEM_WIDTH, DOT_SIZE, DOT_GAP,
-  FLAG_GLYPH,
+  FLAG_GLYPH, STAFF_ROW,
 } from "st/staff_rhythm"
 import styles from "st/components/staff.module.css"
 
@@ -45,9 +45,12 @@ export default class ScoreNotes extends React.PureComponent {
 
   // the stem, its flags and the augmentation dots drawn on a note, in the
   // pixels of the staff's scale
-  renderRhythm(note, stem, headWidth, scale) {
+  renderRhythm(note, stem, headWidth, scale, fromTop) {
     let parts = []
     let dots = (note.notation && note.notation.dots) || 0
+    // a dot never sits on a staff line: a head on a line takes it in the
+    // space above, where a head already in a space keeps it beside itself
+    let clearLine = fromTop % 2 == 0 ? STAFF_ROW * scale : 0
 
     // only the head that carries the group's stem draws it
     if (stem && stem.height) {
@@ -84,6 +87,7 @@ export default class ScoreNotes extends React.PureComponent {
         className={styles.aug_dot}
         style={{
           left: `${headWidth + DOT_GAP * scale + i * (DOT_SIZE + DOT_GAP) * scale}px`,
+          marginTop: `${-clearLine}px`,
           width: `${DOT_SIZE * scale}px`,
           height: `${DOT_SIZE * scale}px`,
         }}
@@ -155,7 +159,7 @@ export default class ScoreNotes extends React.PureComponent {
       parts.push(<img key="sharp" className={classNames(styles.accidental, styles.sharp)} src="/static/svg/sharp.svg" />)
     }
 
-    parts.push(...this.renderRhythm(note, stems.get(note.id), glyph.width, scale))
+    parts.push(...this.renderRhythm(note, stems.get(note.id), glyph.width, scale, fromTop))
 
     return <div
       key={`note-${idx}`}

@@ -5,7 +5,7 @@ import {flushSync} from "react-dom"
 import {GStaff, FStaff, GrandStaff} from "st/components/staves"
 import staffStyles from "st/components/staff.module.css"
 import {minNoteWidth, keySignatureWidth, ACCIDENTAL_WIDTH, NOTE_HEAD_WIDTH, GROUP_OFFSET} from "st/components/staff_notes"
-import {SPACING_EXPONENT, headGlyph, NOTE_HEAD_HEIGHT} from "st/staff_rhythm"
+import {SPACING_EXPONENT, headGlyph, NOTE_HEAD_HEIGHT, STAFF_ROW} from "st/staff_rhythm"
 import NoteList from "st/note_list"
 import {KeySignature, noteName, parseNote} from "st/music"
 import {parseMusicXML} from "st/musicxml"
@@ -1059,6 +1059,10 @@ describe("staves", function() {
       let dot = dots[0].getBoundingClientRect()
       expect(dot.width).toBeGreaterThan(0)
       expect(dot.left).toBeGreaterThanOrEqual(rest.right)
+
+      // and in the space above the line the rest is drawn against, never on it
+      let middle = upper.querySelector(`.${staffStyles.line3}`).getBoundingClientRect()
+      expect(dot.bottom).toBeLessThanOrEqual(middle.top)
     })
 
     // a treble staff bar opening on a quarter rest in the hand that plays it,
@@ -1140,6 +1144,45 @@ describe("staves", function() {
     </measure>
   </part>
 </score-partwise>`
+
+    // a treble bar whose chord holds a C5 across the beat while the other
+    // voice strikes that same C5 under it
+    let tiedDoubledScore = () => `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes><divisions>1</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>1</duration><tie type="start"/><voice>1</voice><type>quarter</type><staff>1</staff><notations><tied type="start"/></notations></note>
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>1</duration><tie type="stop"/><voice>1</voice><type>quarter</type><staff>1</staff><notations><tied type="stop"/></notations></note>
+      <note><chord/><pitch><step>E</step><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>
+      <note><pitch><step>D</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>half</type><staff>1</staff></note>
+      <backup><duration>4</duration></backup>
+      <note><rest/><duration>1</duration><voice>2</voice><type>quarter</type><staff>1</staff></note>
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>1</duration><voice>2</voice><type>quarter</type><staff>1</staff></note>
+      <note><rest/><duration>2</duration><voice>2</voice><type>half</type><staff>1</staff></note>
+    </measure>
+  </part>
+</score-partwise>`
+
+    it("keeps a tie's head out of the chord's stem when another voice doubles it", function() {
+      let song = parseMusicXML(tiedDoubledScore())
+      let columns = sectionColumns(song, 1, 1, BOTH_HANDS, {name: "treble", range: ["C4", "C6"]})
+      renderStaff(GStaff, columns, {unitColumns: columns, keySignature: new KeySignature(0)})
+
+      let staff = container.querySelector(`.${staffStyles.staff}`)
+
+      // the C5 held across the beat is drawn beside the C5 the other voice
+      // strikes there, so it is not one of the chord that is played
+      let doubled = notesOn(staff).filter(note => parseFloat(note.style.marginLeft) > 0)
+      expect(doubled.length).toEqual(1)
+      expect(+doubled[0].dataset.midiNote).toEqual(C5)
+
+      // the chord's stem runs from the note struck with it, and the head
+      // drawn beside them keeps a stem of its own
+      expect(stemOf(staff, E5)).toBeTruthy()
+      expect(doubled[0].querySelector(`.${staffStyles.stem}`)).toBeTruthy()
+    })
 
     it("draws one stem for a chord whose note is held over from the onset before", function() {
       let song = parseMusicXML(tiedChordScore())
@@ -1252,6 +1295,41 @@ describe("staves", function() {
 
       expect(notesOn(staff).length).toEqual(3)
       expect(rests.map(rest => rest.dataset.restType)).toEqual(["quarter"])
+    })
+
+    // a treble bar of a dotted quarter on a line (D5), a dotted quarter in a
+    // space (C5) and a quarter to fill it
+    let dottedScore = () => `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes><divisions>4</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>
+      <note><pitch><step>D</step><octave>5</octave></pitch><duration>6</duration><dot/><voice>1</voice><type>quarter</type><staff>1</staff></note>
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>6</duration><dot/><voice>1</voice><type>quarter</type><staff>1</staff></note>
+      <note><pitch><step>E</step><octave>5</octave></pitch><duration>4</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>
+    </measure>
+  </part>
+</score-partwise>`
+
+    it("draws an augmentation dot clear of the staff line its head sits on", function() {
+      let song = parseMusicXML(dottedScore())
+      let columns = sectionColumns(song, 1, 1, BOTH_HANDS, {name: "treble", range: ["C4", "C6"]})
+      renderStaff(GStaff, columns, {unitColumns: columns, keySignature: new KeySignature(0)})
+
+      let staff = container.querySelector(`.${staffStyles.staff}`)
+      // how far above its own head's middle a note's dot is drawn
+      let dotRise = pitch => {
+        let el = head(staff, pitch)
+        let dot = el.querySelector(`.${staffStyles.aug_dot}`).getBoundingClientRect()
+        let glyph = el.querySelector(`.${staffStyles.primary}`).getBoundingClientRect()
+        return (glyph.top + glyph.bottom) / 2 - (dot.top + dot.bottom) / 2
+      }
+
+      // D5 is on the fourth line, so its dot goes in the space above it; C5
+      // is already in a space and keeps its dot beside the head
+      expect(dotRise(D5)).toBeCloseTo(STAFF_ROW, 0)
+      expect(dotRise(C5)).toBeCloseTo(0, 0)
     })
 
     // a treble bar whose last onset is above the staff's range, with the
