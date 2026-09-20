@@ -1,6 +1,6 @@
 // What an imported piece draws between its columns: the score's rests, at the
-// beat they fall on, and the arcs of its ties, including the ones running off
-// the card to a head on the card before or after it.
+// beat they fall on, and the arcs of its ties and slurs, including the ones
+// running off the card to a head on the card before or after it.
 //
 // None of this is played: the rests and the heads a tie runs on to are drawn
 // where the score puts them, while the columns the player answers are
@@ -11,8 +11,9 @@ import * as types from "prop-types"
 
 import {noteStaffOffset} from "st/music"
 import {
-  columnExtras, tieArcs, restGlyph, rowCenter, headGlyph, stemDirection,
-  middleRow, STAFF_ROW, STAFF_SPACE, NOTE_HEAD_HEIGHT, DOT_SIZE, DOT_GAP,
+  columnExtras, tieArcs, slurArcs, restGlyph, rowCenter, headGlyph,
+  stemDirection, middleRow, STAFF_ROW, STAFF_SPACE, NOTE_HEAD_HEIGHT,
+  DOT_SIZE, DOT_GAP,
 } from "st/staff_rhythm"
 import styles from "st/components/staff.module.css"
 
@@ -20,12 +21,16 @@ import styles from "st/components/staff.module.css"
 // below its top line whatever clef it is in
 const MIDDLE_LINE_ROWS = 4
 
-// how far a tie whose other head is on another card reaches off this one
+// how far a tie or a slur whose other head is on another card reaches off
+// this one
 const TIE_STUB = STAFF_SPACE * 1.4
 
 // how far a tie sits from the middle of its heads, and how deep it bows
 const TIE_OFFSET = STAFF_SPACE * 0.5
 const TIE_DEPTH = STAFF_SPACE * 0.45
+
+// how far a slur clears the heads it arches over, beyond where a tie sits
+const SLUR_CLEARANCE = STAFF_SPACE * 0.6
 
 export default class ScoreExtras extends React.PureComponent {
   static propTypes = {
@@ -43,9 +48,8 @@ export default class ScoreExtras extends React.PureComponent {
     // every column of the drill's unit, which still holds the bar the window
     // opens in the middle of (see carriedRests)
     unitColumns: types.array,
-    // where the staff draws a bar line before each column, null for the
-    // columns it draws none before (see renderBarLines in
-    // st/components/staff_notes)
+    // the bar lines the staff draws with each column, in reading order (see
+    // barLineBoxes in st/components/staff_notes)
     barLines: types.array,
   }
 
@@ -56,13 +60,13 @@ export default class ScoreExtras extends React.PureComponent {
       ...columnExtras(this.props.notes, {...this.props.layout, staff}),
     ]) : []
 
-    let ties = this.renderTies()
+    let arcs = this.renderArcs()
 
-    if (!rests.length && !ties) {
+    if (!rests.length && !arcs) {
       return null
     }
 
-    return <div className={styles.score_extras}>{rests}{ties}</div>
+    return <div className={styles.score_extras}>{rests}{arcs}</div>
   }
 
   // The whole measure rests of a bar the window opens in the middle of. Every
@@ -111,17 +115,17 @@ export default class ScoreExtras extends React.PureComponent {
       columns[idx].beat <= previous.beat
   }
 
-  // Where the bar line the staff draws before the column at idx falls, in
-  // pixels, or null for a boundary it draws none at — the card's own start and
-  // end, and where a looping card wraps
-  barLine(idx) {
-    return (this.props.barLines || [])[idx] ?? null
+  // every bar line the staff draws, in reading order
+  barLineXs() {
+    return (this.props.barLines || []).flatMap(lines =>
+      (lines || []).map(line => line.left))
   }
 
-  // The room the bar holding the column at idx spans, in pixels: between the
-  // bar lines the staff draws, which a bar's own leading rests pull back from
-  // its first head, and at either end of the card the room its columns hold
-  barRoom(idx) {
+  // The room the card gives the bar holding the column at idx, in pixels:
+  // from that bar's first column back to the column before it, where its line
+  // is drawn, out to where the next bar of the card starts. At either end of
+  // the card it is the room the card's own columns hold
+  cardRoom(idx) {
     let {offsets, advances} = this.props.layout
     let columns = this.props.notes
     let last = columns.length - 1
@@ -137,13 +141,35 @@ export default class ScoreExtras extends React.PureComponent {
     let end = this.left(offsets[last] + advances[last])
     for (let at = start + 1; at <= last; at++) {
       if (this.opensBar(at) || columns[at].beat == null) {
-        end = this.barLine(at) ?? this.left(offsets[at])
+        end = this.left(offsets[at])
         break
       }
     }
 
-    let from = this.barLine(start) ?? this.left(offsets[start])
-    return [from, end - from]
+    // back to the column the bar's line is drawn after, so that line counts
+    // as one of the bar's own; the card's first bar reaches back past its
+    // notes, where its own line is drawn
+    return [start > 0 ? this.left(offsets[start - 1]) : -Infinity,
+      this.left(offsets[start]), end]
+  }
+
+  // The room the bar a rest fills spans, in pixels: between the bar lines the
+  // staff draws either side of it, which a bar's own leading rests pull back
+  // from its first head, and at either end of the card the room its columns
+  // hold. A rest carried onto the staff from a bar that opened before the
+  // window has no place of its own, so its bar runs from where the window does
+  barRoom(rest) {
+    let [low, from, end] = this.cardRoom(rest.columnIdx)
+    let at = rest.offset != null ? this.left(rest.offset) : from
+
+    let lines = this.barLineXs().filter(x => x >= low && x <= end)
+    let before = lines.filter(x => x <= at + 0.5)
+    let after = lines.filter(x => x > at + 0.5)
+
+    let start = before.length ? Math.max(...before) : from
+    let stop = after.length ? Math.min(...after) : end
+
+    return [start, stop - start]
   }
 
   // The augmentation dots of a rest, after its glyph and against the middle
@@ -190,7 +216,7 @@ export default class ScoreExtras extends React.PureComponent {
       if (rest.wholeMeasure) {
         // a whole measure rest fills a bar, so it is centred in the room the
         // bar holds rather than drawn at the beat it starts on
-        let [from, room] = this.barRoom(rest.columnIdx)
+        let [from, room] = this.barRoom(rest)
         left = from + (room - width) / 2
       }
 
@@ -225,57 +251,82 @@ export default class ScoreExtras extends React.PureComponent {
     return stem ? stem.dir : null
   }
 
-  // The tie arcs between the heads on the staff, bowing away from the stems
-  // they belong to. A tie with no head to run to on this card runs off its
-  // edge instead
-  renderTies() {
+  // Every head on the staff as the arcs of its ties and slurs are anchored
+  // on it, in the pixels of the staff's scale
+  arcHeads() {
     let scale = this.props.scale || 1
     let key = this.props.keySignature
 
-    let heads = this.props.heads
-      .filter(note => note.notation && (note.notation.tieTo != null || note.tiedFrom != null))
-      .map(note => {
-        let clef = this.columnClef(note.columnIdx)
-        let row = noteStaffOffset(key.enharmonic(note.note))
-        let width = headGlyph(note.notation.type, NOTE_HEAD_HEIGHT * scale).width
+    return this.props.heads.map(note => {
+      let clef = this.columnClef(note.columnIdx)
+      let row = noteStaffOffset(key.enharmonic(note.note))
+      let width = headGlyph(note.notation && note.notation.type, NOTE_HEAD_HEIGHT * scale).width
 
-        return {
-          beat: note.beat,
-          name: note.note,
-          // a head another voice doubles is drawn a head's width to the right
-          // of the played one (see renderNote in st/components/staff), and the
-          // arc meets it where it is drawn
-          x: this.left(note.getStart()) + (note.doubled ? width : 0),
-          y: rowCenter(row, clef) * scale,
-          width,
-          // the stem the staff draws on the head; a value with no stem bows
-          // its tie away from the middle line, as a single voice's stem turns
-          // there
-          stem: this.headStem(note) || stemDirection([row], middleRow(clef)),
-          tieTo: note.notation.tieTo,
-          tieFrom: note.tiedFrom ?? null,
-        }
-      })
+      return {
+        beat: note.beat,
+        name: note.note,
+        // a head another voice doubles is drawn a head's width to the right
+        // of the played one (see renderNote in st/components/staff), and the
+        // arc meets it where it is drawn
+        x: this.left(note.getStart()) + (note.doubled ? width : 0),
+        y: rowCenter(row, clef) * scale,
+        width,
+        // the stem the staff draws on the head; a value with no stem bows
+        // its arcs away from the middle line, as a single voice's stem turns
+        // there
+        stem: this.headStem(note) || stemDirection([row], middleRow(clef)),
+        slurs: (note.notation && note.notation.slurs) || null,
+        tieTo: note.notation ? note.notation.tieTo : null,
+        tieFrom: note.tiedFrom ?? null,
+      }
+    })
+  }
+
+  // The path of one arc, bowed away from the stems of the heads it joins and,
+  // for a slur, arched past the heads it spans
+  arcPath(arc, key, scale, cls) {
+    let bow = arc.dir == "up" ? -1 : 1
+    let {x1, x2} = arc
+    let y1 = arc.y1 + bow * TIE_OFFSET * scale
+    let y2 = arc.y2 + bow * TIE_OFFSET * scale
+    let apex = (y1 + y2) / 2 + bow * TIE_DEPTH * scale
+
+    if (arc.clear != null) {
+      let over = arc.clear + bow * (TIE_OFFSET + SLUR_CLEARANCE) * scale
+      apex = bow < 0 ? Math.min(apex, over) : Math.max(apex, over)
+    }
+
+    // the quadratic's own middle sits half way between its ends and its
+    // control point, so the control point goes twice as far as the apex
+    let cy = 2 * apex - (y1 + y2) / 2
+
+    return <path
+      key={key}
+      className={cls}
+      data-tie={arc.dir}
+      d={`M${x1.toFixed(1)} ${y1.toFixed(1)}Q${((x1 + x2) / 2).toFixed(1)} ${cy.toFixed(1)} ${x2.toFixed(1)} ${y2.toFixed(1)}`} />
+  }
+
+  // The arcs between the heads on the staff: the ties of the score, which
+  // join two heads of one pitch, and its slurs, which join different ones and
+  // arch clear of everything between. An arc with no head to run to on this
+  // card runs off its edge instead
+  renderArcs() {
+    let scale = this.props.scale || 1
+    let heads = this.arcHeads()
 
     if (!heads.length) { return null }
 
-    let arcs = tieArcs(heads, TIE_STUB * scale, {left: this.props.offsetLeft || 0})
-    if (!arcs.length) { return null }
+    let left = this.props.offsetLeft || 0
+    let ties = tieArcs(heads.filter(head => head.tieTo != null || head.tieFrom != null),
+      TIE_STUB * scale, {left})
+    let slurs = slurArcs(heads, TIE_STUB * scale, {left})
+
+    if (!ties.length && !slurs.length) { return null }
 
     return <svg className={styles.ties} key="ties">
-      {arcs.map((arc, idx) => {
-        let bow = arc.dir == "up" ? -1 : 1
-        let {x1, x2} = arc
-        let y1 = arc.y1 + bow * TIE_OFFSET * scale
-        let y2 = arc.y2 + bow * TIE_OFFSET * scale
-        let cy = (y1 + y2) / 2 + bow * TIE_DEPTH * scale
-
-        return <path
-          key={`tie-${idx}`}
-          className={styles.tie}
-          data-tie={arc.dir}
-          d={`M${x1.toFixed(1)} ${y1.toFixed(1)}Q${((x1 + x2) / 2).toFixed(1)} ${cy.toFixed(1)} ${x2.toFixed(1)} ${y2.toFixed(1)}`} />
-      })}
+      {ties.map((arc, idx) => this.arcPath(arc, `tie-${idx}`, scale, styles.tie))}
+      {slurs.map((arc, idx) => this.arcPath(arc, `slur-${idx}`, scale, styles.slur))}
     </svg>
   }
 }

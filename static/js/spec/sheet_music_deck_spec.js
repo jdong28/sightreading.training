@@ -16,7 +16,7 @@ import {
 } from "st/data"
 
 import {setAppStore} from "st/storage"
-import {openTestStore, pickupScore, noteXML, reverieOpening, keyChangeScore} from "spec/helpers"
+import {openTestStore, pickupScore, noteXML, reverieOpening, tripletScore, keyChangeScore} from "spec/helpers"
 
 let tuples = notes => [...notes]
   .map(n => [n.note, n.start, n.duration])
@@ -78,6 +78,62 @@ describe("sheet music deck", function() {
           ["D5", "quarter", 1.5], ["E5", "quarter", 1.5], ["F5", "quarter", 1.5],
           ["G5", "half", 1],
         ])
+    })
+
+    it("stores the beam, slur and tuplet spans of a note and of its tied heads", function() {
+      let song = parseMusicXML(reverieOpening())
+      let stored = JSON.parse(JSON.stringify(songToJSON(song)))
+
+      expect(stored.format).toEqual(3)
+
+      let restored = songFromJSON(stored)
+      let eighths = [...restored.tracks[1]].filter(note => note.notation.type == "eighth")
+      let [opens] = eighths
+
+      expect(opens.notation.beams).toEqual({1: "begin"})
+      expect(opens.notation.slurs).toEqual([{type: "start", number: 2}])
+      // the head its tie runs on to keeps its own spans, which is where the
+      // next bar's slur starts and its second beam group opens
+      let tied = eighths.find(note => note.notation.ties.length)
+      expect(tied.notation.ties[0].beams).toEqual({1: "begin"})
+
+      // the Bb3 a bar ends on is tied into the next bar, whose slur opens on
+      // that drawn head
+      let across = eighths.find(note => note.note == "Bb3" && note.notation.ties.length)
+      expect(across.notation.ties[0].slurs).toEqual([{type: "start", number: 2}])
+
+      let triplet = songFromJSON(JSON.parse(JSON.stringify(songToJSON(parseMusicXML(tripletScore())))))
+      let [first] = [...triplet.tracks[0]]
+      expect([first.notation.tuplet, first.notation.tupletNotes]).toEqual([1.5, 3])
+      expect(first.notation.tuplets).toEqual([{type: "start", number: 1}])
+    })
+
+    it("reads a piece stored before the beams and slurs were kept", function() {
+      let song = parseMusicXML(reverieOpening())
+      let stored = JSON.parse(JSON.stringify(songToJSON(song)))
+
+      // a piece stored as format 2, which kept the notated values but none of
+      // the spans: it drills the same and is drawn with a flag on every beamed
+      // note until the score is imported again
+      stored.format = 2
+      for (let track of stored.tracks) {
+        for (let notation of track.notation || []) {
+          if (!notation) { continue }
+          delete notation.beams
+          delete notation.slurs
+          for (let tie of notation.ties || []) {
+            delete tie.beams
+            delete tie.slurs
+          }
+        }
+      }
+
+      let restored = songFromJSON(stored)
+      let eighths = [...restored.tracks[1]].filter(note => note.notation.type == "eighth")
+
+      expect(eighths.length).toEqual(19)
+      expect(eighths.every(note => !note.notation.beams && !note.notation.slurs)).toBe(true)
+      expect(tuples(restored)).toEqual(tuples(song))
     })
 
     it("stores a track's rests with only what the staff draws them from", function() {

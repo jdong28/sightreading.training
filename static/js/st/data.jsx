@@ -198,7 +198,19 @@ export function pieceSectionMeasures(staff, settings, song) {
         startMeasure: number, endMeasure: number, track: tracks, staves: true,
       })
       let [visible] = filterColumnsToRange(columns, staff.range[0], staff.range[1])
-      return {number, columns: visible}
+      if (visible.length || visible.beat == null) {
+        return {number, columns: visible}
+      }
+
+      // Every drilled hand rests this measure out, so it hands the drill no
+      // column to answer. The card carries it as a bar of its own all the
+      // same (see sectionCard), so its rests, bar line and number are drawn
+      // and the cursor moves straight past it
+      return {
+        number,
+        columns: visible,
+        bar: {beat: visible.beat, beats: visible.beats, extras: visible.extras || []},
+      }
     })
 }
 

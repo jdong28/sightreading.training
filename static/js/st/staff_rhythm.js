@@ -59,6 +59,24 @@ export function typeForBeats(beats) {
   return {type: type || TYPES_BY_LENGTH[TYPES_BY_LENGTH.length - 1], dots: 0}
 }
 
+// The unscaled geometry the staff draws rhythm with, in the pixels of a
+// DEFAULT_HEIGHT staff (st/components/staves), which the staff's scale
+// multiplies like every other offset in staff.module.css
+export const STAFF_HEIGHT = 120
+// the space between two staff lines, and the step between two staff rows
+export const STAFF_SPACE = STAFF_HEIGHT / 4
+export const STAFF_ROW = STAFF_HEIGHT / 8
+// a note head is 20% of the staff tall, see .note in staff.module.css
+export const NOTE_HEAD_HEIGHT = STAFF_HEIGHT * 0.2
+export const STEM_WIDTH = STAFF_SPACE * 0.13
+// a stem is three and a half spaces long, as it is on paper
+const STEM_LENGTH = STAFF_SPACE * 3.5
+export const DOT_SIZE = STAFF_SPACE * 0.26
+// the space between a head or rest and its first augmentation dot, and between dots
+export const DOT_GAP = DOT_SIZE
+// how far a head hangs above the line of its row, see .note's transform
+const HEAD_ABOVE_ROW = 0.47
+
 // how the notated value type is drawn, falling back to a quarter note
 export function noteTypeProps(type) {
   return NOTE_TYPES[type] || NOTE_TYPES.quarter
@@ -92,10 +110,12 @@ function columnBeats(columns, idx, rests=true) {
 }
 
 // The most beats a column's own extras fall before it: the rest a bar opens
-// with, or a head a tie runs on to from a column the staff can't show. A staff
-// that draws none of the score's rests (see restsStaff in
-// st/components/staff_notes) leaves them out, since it keeps no room for what
-// it never draws
+// with, or a head a tie runs on to from a column the staff can't show, and the
+// bars drawn before it that hold no column at all (see cardColumn in
+// st/measure_cards), which keep the room their own beats are worth however
+// little of them is drawn. A staff that draws none of the score's rests (see
+// restsStaff in st/components/staff_notes) leaves those out, since it keeps no
+// room for what it never draws
 function columnLead(column, rests=true) {
   let most = 0
 
@@ -105,6 +125,13 @@ function columnLead(column, rests=true) {
     if (!rests && extra.kind == "rest") { continue }
 
     let before = column.beat - extra.beat
+    if (before > most) {
+      most = before
+    }
+  }
+
+  for (let bar of column.bars || []) {
+    let before = column.beat - bar.beat
     if (before > most) {
       most = before
     }
@@ -151,9 +178,9 @@ export function columnUnit(columns, {rests=true}={}) {
 // The room kept before the extras a column's bar opens with, in column
 // widths, so the bar line those extras belong to is drawn in front of them
 // rather than through them: the line sits halfway into this room (see
-// barLineLeft in st/components/staff_notes), which is about a note head at the
+// barLineBoxes in st/components/staff_notes), which is about a note head at the
 // widths the staff fits its columns to
-const OPENING_EXTRA_ROOM = 0.5
+export const OPENING_EXTRA_ROOM = 0.5
 
 // The room a column keeps before the extras that lead it (see
 // OPENING_EXTRA_ROOM), and none for a column nothing is drawn before
@@ -266,9 +293,8 @@ export function columnSpan(columns, unitColumns, opts) {
 // (see columnStems), so a voice turns its stems the same way right through a
 // bar the other voice only strikes part of, as it is written on paper. The
 // direction the score writes is not kept at all (st/musicxml): it is the
-// direction of the beam the note belongs to, and until beams are drawn a lone
-// note under it would stem the wrong way and hang its flag over the notes
-// around it
+// direction of the beam the note belongs to, which the staff works out for
+// itself from the heads the beam joins (see beamChains)
 // rows: the staff rows of the group's notes
 // middleRow: the staff's middle line
 // opts.voicePosition: "upper" or "lower" when two voices share the staff
@@ -306,23 +332,243 @@ function voicePositions(rowsByVoice) {
   return out
 }
 
+// the beam the score writes at level (1 the primary beam) on the heads of a
+// stem group, which share one stem and so one beam: "begin", "continue",
+// "end", "forward hook", "backward hook", or null for none
+function beamMark(group, level) {
+  for (let notation of group.notations) {
+    let value = notation && notation.beams && notation.beams[level]
+    if (value) { return value }
+  }
+
+  return null
+}
+
+// the slur or tuplet spans the heads of a stem group start or stop
+function spansOf(group, key) {
+  let out = []
+
+  for (let notation of group.notations) {
+    for (let span of (notation && notation[key]) || []) {
+      out.push(span)
+    }
+  }
+
+  return out
+}
+
+/**
+ * The beam groups of the stem groups of one voice of one bar, in the order
+ * they are struck: each a run of groups the score joins with a primary beam,
+ * from its "begin" to its "end". A run whose begin or end is not among the
+ * groups — the score's group runs on past the card, or past the notes this
+ * staff draws — is kept all the same and marked open at that side, so the
+ * staff can draw its beam running off to the card's edge, the way a tie
+ * running off the card is drawn (see tieArcs).
+ * @param {Object[]} groups stem groups in x order
+ * @returns {Object[]} {groups, openStart, openEnd}
+ */
+function beamChains(groups) {
+  let chains = []
+  let open = null
+
+  for (let group of groups) {
+    let mark = beamMark(group, 1)
+
+    if (!mark) {
+      open = null
+      continue
+    }
+
+    if (mark == "begin" || !open) {
+      open = {groups: [], openStart: mark != "begin", openEnd: true}
+      chains.push(open)
+    }
+
+    open.groups.push(group)
+
+    if (mark == "end") {
+      open.openEnd = false
+      open = null
+    }
+  }
+
+  // a lone group beamed to nothing at either side is an unbeamed note, which
+  // draws its own flags
+  return chains.filter(chain =>
+    chain.groups.length > 1 || chain.openStart || chain.openEnd)
+}
+
+/**
+ * The beams drawn over a chain: one entry per level (1 an eighth's beam, 2 a
+ * sixteenth's), spanning the run of groups short enough to carry it. A level
+ * only one group is short enough for draws a partial hook, pointing the way
+ * the score writes it, or, when that group opens or ends an open chain, the
+ * stub that runs off the card.
+ * @param {Object} chain see beamChains
+ * @returns {Object[]} {level, from, to, hook, openStart, openEnd}, from and
+ * to indices into the chain's groups
+ */
+function beamSegments(chain) {
+  let groups = chain.groups
+  let last = groups.length - 1
+  let levels = Math.max(...groups.map(group => group.flags))
+  let out = []
+
+  for (let level = 1; level <= levels; level++) {
+    let run = []
+
+    let flush = () => {
+      if (!run.length) { return }
+
+      let from = run[0]
+      let to = run[run.length - 1]
+      let openStart = from == 0 && chain.openStart
+      let openEnd = to == last && chain.openEnd
+      let segment = {level, from, to, openStart, openEnd}
+
+      if (run.length == 1 && !openStart && !openEnd) {
+        let mark = beamMark(groups[from], level)
+        segment.hook = mark == "backward hook" || from == last ? "backward" : "forward"
+      }
+
+      out.push(segment)
+      run = []
+    }
+
+    groups.forEach((group, idx) => {
+      if (group.flags >= level) {
+        run.push(idx)
+      } else {
+        flush()
+      }
+    })
+
+    flush()
+  }
+
+  return out
+}
+
+// how long a stem is in staff rows, and the least a beamed one is shortened
+// to so its beam still clears the heads under it (see STEM_LENGTH)
+const STEM_ROWS = STEM_LENGTH / STAFF_ROW
+const MIN_BEAM_STEM_ROWS = STEM_ROWS - 2
+
+// How far a beam ever climbs: an engraver keeps it near level, so it rises at
+// most this many staff rows over the whole group, and no more steeply than
+// this over one column width. A group whose outer heads are level draws a
+// level beam
+export const MAX_BEAM_RISE = 2
+const MAX_BEAM_SLOPE = 1.2
+
+// The staff row a beam chain's beam runs at, as a function of a group's x in
+// column widths: the line through the stem ends of the chain's outer groups,
+// its rise limited the way an engraver limits it, pushed clear of any head
+// between them that reaches past it
+function beamLine(chain, dir) {
+  let groups = chain.groups
+  let far = group => dir == "up" ?
+    Math.max(...group.rows) : Math.min(...group.rows)
+  let end = group => far(group) + (dir == "up" ? STEM_ROWS : -STEM_ROWS)
+
+  let first = groups[0]
+  let last = groups[groups.length - 1]
+  let run = last.x - first.x
+  let limit = Math.min(MAX_BEAM_RISE, run > 0 ? run * MAX_BEAM_SLOPE : 0)
+  let rise = Math.max(-limit, Math.min(limit, end(last) - end(first)))
+  let slope = run > 0 ? rise / run : 0
+  let at = x => end(first) + slope * (x - first.x)
+
+  let shift = 0
+  for (let group of groups) {
+    let clear = far(group) + (dir == "up" ? MIN_BEAM_STEM_ROWS : -MIN_BEAM_STEM_ROWS)
+    let off = clear - at(group.x)
+    shift = dir == "up" ? Math.max(shift, off) : Math.min(shift, off)
+  }
+
+  return x => at(x) + shift
+}
+
+// The notes a tuplet of this ratio (actual over normal notes) is written
+// with, eg. 3 for a triplet's 3/2, when the score didn't write the count
+// itself: the smallest whole number of normal notes the ratio spells
+function tupletCount(ratio) {
+  for (let normal = 1; normal <= 8; normal++) {
+    let actual = ratio * normal
+    if (Math.abs(actual - Math.round(actual)) < BEAT_EPSILON) {
+      return Math.round(actual)
+    }
+  }
+
+  return 0
+}
+
+/**
+ * The tuplets of the stem groups of one voice of one bar: a run of groups the
+ * score writes a <tuplet> start and stop around, else a run played at one
+ * ratio. The number drawn over a tuplet is the notes it is written with (3
+ * over a triplet), and the bracket is left out when the run is exactly one
+ * beam group, which the beam itself already marks out.
+ * @param {Object[]} groups stem groups in x order
+ * @param {Object[]} chains the beam chains of the same groups
+ * @returns {Object[]} {groups, notes, bracket}
+ */
+function tupletChains(groups, chains) {
+  let out = []
+  let open = null
+
+  for (let group of groups) {
+    let ratio = group.tuplet
+
+    if (!ratio || ratio == 1) {
+      open = null
+      continue
+    }
+
+    let marks = spansOf(group, "tuplets").map(span => span.type)
+
+    if (!open || open.ratio != ratio || marks.includes("start")) {
+      open = {groups: [], ratio, notes: group.tupletNotes || tupletCount(ratio)}
+      out.push(open)
+    }
+
+    open.groups.push(group)
+
+    if (marks.includes("stop")) {
+      open = null
+    }
+  }
+
+  let beamed = chain => chain.groups.join(",")
+
+  return out.filter(tuplet => tuplet.notes > 1).map(tuplet => ({
+    ...tuplet,
+    bracket: !chains.some(chain => beamed(chain) == beamed(tuplet)),
+  }))
+}
+
 /**
  * The stem the staff draws each head with, so everything drawn from a stem —
- * its flags, and the ties bowing away from it — agrees with it. The heads one
- * voice strikes at once share one stem, drawn from the lowest note of a group
+ * its flags, the beams joining it to its neighbours, the tuplet drawn over
+ * it, and the ties bowing away from it — agrees with it. The heads one voice
+ * strikes at once share one stem, drawn from the lowest note of a group
  * stemming up and the highest of one stemming down; the others carry only the
  * direction it turns. A voice's position is settled over the whole bar, so
  * every stem of a voice sharing a bar with another turns the same way, rather
- * than only in the columns where the other voice also strikes. Only notated
- * values that carry a stem have one, so a column of whole notes, and every
- * head without notation, has none.
+ * than only in the columns where the other voice also strikes. A group the
+ * score beams to its neighbours turns with the whole beam group and reaches
+ * its beam instead of drawing flags. Only notated values that carry a stem
+ * have one, so a column of whole notes, and every head without notation, has
+ * none.
  * @param {Object[]} heads the heads one staff draws, each {bar, column, row,
- * middleRow, notation}: the bar and the column it is struck in, the staff row
- * it is drawn on, the middle line of its own column's clef, and how the score
- * writes it
+ * middleRow, notation, x}: the bar and the column it is struck in, the staff
+ * row it is drawn on, the middle line of its own column's clef, how the score
+ * writes it, and where its column falls in column widths
  * @returns {Array} one entry per head, in the order they were given: null for
  * a head with no stem, else {dir}, with {height, flags} on the head that
- * carries its group's stem
+ * carries its group's stem, and {beam, tuplet} on it when the score beams it
+ * to its neighbours or writes a tuplet over it
  */
 export function columnStems(heads) {
   let stems = heads.map(() => null)
@@ -336,6 +582,8 @@ export function columnStems(heads) {
     }
     bars.get(bar).push(idx)
   })
+
+  let chainId = 0
 
   for (let bar of bars.values()) {
     let rowsByVoice = new Map()
@@ -359,28 +607,108 @@ export function columnStems(heads) {
       groups.get(key).push(idx)
     }
 
+    let stemmed = []
+
     for (let group of groups.values()) {
       let notations = group.map(idx => heads[idx].notation)
       if (!notations.some(notation => notation && noteTypeProps(notation.type).stem)) {
         continue
       }
 
-      // the shortest value of the group carries the stem's flags, as the
-      // one stem is drawn for all of them
-      let flags = Math.max(...notations.map(notation =>
-        noteTypeProps(notation && notation.type).flags))
+      let first = heads[group[0]]
+      let notation = notations.find(entry => entry) || {}
 
-      let rows = group.map(idx => heads[idx].row)
-      let dir = stemDirection(rows, heads[group[0]].middleRow,
-        {voicePosition: positions[voiceOf(heads[group[0]])]})
+      stemmed.push({
+        heads: group,
+        notations,
+        rows: group.map(idx => heads[idx].row),
+        // the shortest value of the group carries the stem's flags, as the
+        // one stem is drawn for all of them
+        flags: Math.max(...notations.map(entry =>
+          noteTypeProps(entry && entry.type).flags)),
+        x: first.x || 0,
+        voice: voiceOf(first),
+        middleRow: first.middleRow,
+        tuplet: notation.tuplet || 1,
+        tupletNotes: notation.tupletNotes || 0,
+      })
+    }
+
+    stemmed.sort((a, b) => a.x - b.x)
+
+    // the beams and tuplets of each voice, which are drawn over the groups of
+    // that voice alone
+    let byVoice = new Map()
+    for (let group of stemmed) {
+      if (!byVoice.has(group.voice)) {
+        byVoice.set(group.voice, [])
+      }
+      byVoice.get(group.voice).push(group)
+    }
+
+    for (let voice of byVoice.values()) {
+      let chains = beamChains(voice)
+
+      for (let chain of chains) {
+        chain.id = `beam-${chainId++}`
+        // the whole group turns one way, decided by its own heads the way a
+        // single stem is (see stemDirection)
+        chain.dir = stemDirection(
+          voice.flatMap(group => chain.groups.includes(group) ? group.rows : []),
+          chain.groups[0].middleRow,
+          {voicePosition: positions[chain.groups[0].voice]})
+        chain.segments = beamSegments(chain)
+        chain.line = beamLine(chain, chain.dir)
+
+        chain.groups.forEach((group, index) => {
+          group.beam = {
+            group: chain.id,
+            index,
+            size: chain.groups.length,
+            segments: chain.segments,
+            dir: chain.dir,
+          }
+          group.dir = chain.dir
+          group.endRow = chain.line(group.x)
+        })
+      }
+
+      tupletChains(voice, chains).forEach((tuplet, idx) => {
+        let id = `tuplet-${chainId++}`
+        tuplet.groups.forEach((group, index) => {
+          group.tupletSpan = {
+            group: id,
+            index,
+            size: tuplet.groups.length,
+            notes: tuplet.notes,
+            bracket: tuplet.bracket,
+          }
+        })
+      })
+    }
+
+    for (let group of stemmed) {
+      let rows = group.rows
+      let dir = group.dir || stemDirection(rows, group.middleRow,
+        {voicePosition: positions[group.voice]})
 
       let anchorRow = dir == "up" ? Math.min(...rows) : Math.max(...rows)
-      let anchor = group[rows.indexOf(anchorRow)]
+      let anchor = group.heads[rows.indexOf(anchorRow)]
       let span = Math.max(...rows) - Math.min(...rows)
 
-      for (let idx of group) {
-        stems[idx] = idx == anchor ?
-          {dir, height: STEM_LENGTH + span * STAFF_ROW, flags} : {dir}
+      let height = group.beam ?
+        Math.abs(group.endRow - anchorRow) * STAFF_ROW :
+        STEM_LENGTH + span * STAFF_ROW
+
+      for (let idx of group.heads) {
+        stems[idx] = idx == anchor ? {
+          dir, height,
+          // a beamed note's value is written by the beams joining it to its
+          // neighbours, never by a flag of its own
+          flags: group.beam ? 0 : group.flags,
+          ...(group.beam ? {beam: group.beam} : null),
+          ...(group.tupletSpan ? {tuplet: group.tupletSpan} : null),
+        } : {dir}
       }
     }
   }
@@ -411,24 +739,6 @@ export function headKey(beat, name, notation) {
   return `${beat}/${name}/${(notation && notation.voice) || 0}`
 }
 
-// The unscaled geometry the staff draws rhythm with, in the pixels of a
-// DEFAULT_HEIGHT staff (st/components/staves), which the staff's scale
-// multiplies like every other offset in staff.module.css
-export const STAFF_HEIGHT = 120
-// the space between two staff lines, and the step between two staff rows
-export const STAFF_SPACE = STAFF_HEIGHT / 4
-export const STAFF_ROW = STAFF_HEIGHT / 8
-// a note head is 20% of the staff tall, see .note in staff.module.css
-export const NOTE_HEAD_HEIGHT = STAFF_HEIGHT * 0.2
-export const STEM_WIDTH = STAFF_SPACE * 0.13
-// a stem is three and a half spaces long, as it is on paper
-const STEM_LENGTH = STAFF_SPACE * 3.5
-export const DOT_SIZE = STAFF_SPACE * 0.26
-// the space between a head or rest and its first augmentation dot, and between dots
-export const DOT_GAP = DOT_SIZE
-// how far a head hangs above the line of its row, see .note's transform
-const HEAD_ABOVE_ROW = 0.47
-
 // the glyph, and how wide it is for its height, of each head
 export const HEAD_GLYPHS = {
   whole: {src: "/static/svg/noteheads.s0.svg", aspect: 465.648 / 275.721},
@@ -444,6 +754,23 @@ export const FLAG_GLYPH = {
   height: STAFF_SPACE * 2.25,
   spacing: STAFF_SPACE * 0.8,
 }
+
+// The beams joining a group's stems: half a staff space thick with a quarter
+// space between them, as they are engraved. A beam whose group runs on past
+// the card reaches this far past the last stem it joins, the way a tie
+// running off the card draws a stub, and the hook of a lone short note in a
+// group is this wide
+export const BEAM_THICKNESS = STAFF_SPACE * 0.5
+export const BEAM_GAP = STAFF_SPACE * 0.25
+export const BEAM_STUB = STAFF_SPACE * 1.2
+export const BEAM_HOOK = STAFF_SPACE * 0.9
+
+// A tuplet's number, and the bracket around it when the group is not one
+// beam: how far past the stems it sits, how tall the number is drawn and how
+// far the bracket's ends hook back towards them
+export const TUPLET_OFFSET = STAFF_SPACE * 0.5
+export const TUPLET_SIZE = STAFF_SPACE * 0.9
+export const TUPLET_HOOK = STAFF_SPACE * 0.35
 
 // The rests, by notated value: the glyph, its size in unscaled pixels, the
 // staff row it is drawn against counting from the middle line, and where on
@@ -475,9 +802,35 @@ export function middleRow({upperRow, lowerRow}) {
 }
 
 // How far the head of a note on row sits below the top of the staff, in
-// unscaled pixels, measured to the middle of the head
+// unscaled pixels, measured to the middle of the head. The row is rounded the
+// way the head's own top is (see renderNote in st/components/staff/score_notes,
+// which writes it as a whole percent of the staff), so a beam, a stem's end
+// and a tie all meet the head exactly where it is drawn
 export function rowCenter(row, {upperRow}) {
-  return (upperRow - row) * STAFF_ROW + (0.5 - HEAD_ABOVE_ROW) * NOTE_HEAD_HEIGHT
+  return Math.floor((upperRow - row) * 25 / 2) / 100 * STAFF_HEIGHT +
+    (0.5 - HEAD_ABOVE_ROW) * NOTE_HEAD_HEIGHT
+}
+
+/**
+ * Where something the score writes `beat` beats before the column at idx is
+ * drawn, in column widths: its share of the room the layout keeps in front of
+ * that column, never back into the room the column's bar line is drawn in.
+ * This is where a rest a bar opens with, a head a tie runs on to from a column
+ * the staff can't show, and the start of a bar that holds no column at all
+ * (see cardColumn in st/measure_cards) all fall.
+ * @param {Array} columns the columns on the staff
+ * @param {Object} layout see columnLayout
+ * @param {number} idx the column it falls before
+ * @param {number} beat
+ * @returns {number}
+ */
+export function beforeOffset(columns, {offsets, gaps, leadBeats}, idx, beat) {
+  let from = (idx > 0 ? offsets[idx - 1] : 0) + OPENING_EXTRA_ROOM
+  let span = idx > 0 ? gaps[idx - 1] : leadBeats
+  let room = offsets[idx] - from
+  let before = columns[idx].beat - beat
+
+  return Math.max(from, span > 0 ? offsets[idx] - room * before / span : from)
 }
 
 /**
@@ -508,16 +861,13 @@ export function columnExtras(columns, {offsets, advances, gaps, unit, leadBeats,
 
       if (before > 0) {
         // An extra falling before its column: the rest a bar opens with, or
-        // one carried onto this column from a column the staff can't show. It
-        // keeps its share of the room before the column, which for the first
-        // one is the room the layout reserves (see columnLayout), and never
-        // falls back into the room its bar line is drawn in
-        let from = (idx > 0 ? offsets[idx - 1] : 0) + OPENING_EXTRA_ROOM
-        let span = idx > 0 ? gaps[idx - 1] : leadBeats
-        let room = offsets[idx] - from
-        let at = span > 0 ? offsets[idx] - room * before / span : from
-
-        out.push({...extra, columnIdx: idx, offset: Math.max(from, at)})
+        // one carried onto this column from a column the staff can't show
+        // (see beforeOffset)
+        out.push({
+          ...extra,
+          columnIdx: idx,
+          offset: beforeOffset(columns, {offsets, gaps, leadBeats}, idx, extra.beat),
+        })
         continue
       }
 
@@ -533,24 +883,6 @@ export function columnExtras(columns, {offsets, advances, gaps, unit, leadBeats,
       out.push({...extra, columnIdx: idx, offset: offsets[idx] + into})
     }
   })
-
-  return out
-}
-
-// How far left of its own column, in column widths, the extras a column opens
-// its bar with reach: the leftmost extra placed before the column (see
-// columnExtras), and zero for a column whose extras all fall after its onset.
-// Every staff's extras count, so the bar line the staves draw on the boundary
-// is the same one on each of them
-export function extrasBefore(columns, layout) {
-  let out = columns.map(() => 0)
-
-  for (let extra of columnExtras(columns, layout)) {
-    let back = layout.offsets[extra.columnIdx] - extra.offset
-    if (back > out[extra.columnIdx]) {
-      out[extra.columnIdx] = back
-    }
-  }
 
   return out
 }
@@ -618,6 +950,87 @@ export function tieArcs(heads, stub, {left=null}={}) {
 
       arcs.push({x1, y1: head.y, x2, y2: head.y, dir: arcDir(head)})
     }
+  }
+
+  return arcs
+}
+
+// where a slur leaves and meets a head, as a share of the head's width: it
+// runs from the middle of one head to the middle of another, where a tie,
+// joining two heads of one pitch, runs between their facing edges
+const SLUR_ANCHOR = 0.5
+
+/**
+ * The arcs drawn for the score's slurs, matched by the number the score
+ * writes on them so nested and overlapping slurs each find their own end. A
+ * slur is drawn exactly as a tie is (see tieArcs) and differs only in where
+ * it ends, since a tie joins two heads of one pitch and a slur joins
+ * different ones. A slur whose other head is not on the staff, because it is
+ * on the card before or after this one, runs off that side as a tie does.
+ * @param {Object[]} heads {x, y, width, stem, slurs}, in the pixels of the
+ * staff's scale, every head the staff draws so the arcs clear the ones they
+ * arch over
+ * @param {number} stub how far a slur with no head to run to reaches
+ * @param {Object} [opts]
+ * @param {number} [opts.left] the furthest left a stub reaches back to
+ * @returns {Object[]} {x1, y1, x2, y2, dir, clear}, the ends in reading
+ * order, dir the side the arc bulges to and clear the y of the head it must
+ * arch past, or null when it spans none
+ */
+export function slurArcs(heads, stub, {left=null}={}) {
+  let sorted = [...heads].sort((a, b) => a.x - b.x)
+  let arcs = []
+  let open = new Map()
+
+  // a slur bulges away from the stems of the heads it joins, as it does on
+  // paper, unless the score says which side it is drawn on
+  let arcDir = (head, placement) => placement ?
+    (placement == "above" ? "up" : "down") :
+    (head.stem == "up" ? "down" : "up")
+
+  let anchor = head => head.x + head.width * SLUR_ANCHOR
+
+  // the head the arc arches past: the highest one it spans when it bulges up,
+  // the lowest when it bulges down
+  let clearance = (dir, x1, x2) => {
+    let ys = sorted.filter(head => head.x >= x1 - 1 && head.x <= x2 + 1)
+      .map(head => head.y)
+
+    if (!ys.length) { return null }
+    return dir == "up" ? Math.min(...ys) : Math.max(...ys)
+  }
+
+  let push = (dir, x1, y1, x2, y2) =>
+    arcs.push({x1, y1, x2, y2, dir, clear: clearance(dir, x1, x2)})
+
+  for (let head of sorted) {
+    for (let span of head.slurs || []) {
+      if (span.type == "start") {
+        open.set(span.number, {head, placement: span.placement})
+        continue
+      }
+
+      let from = open.get(span.number)
+      open.delete(span.number)
+
+      if (from) {
+        push(arcDir(from.head, from.placement || span.placement),
+          anchor(from.head), from.head.y, anchor(head), head.y)
+        continue
+      }
+
+      // the head the slur starts on is on the card before this one, so it
+      // runs in from the edge, never back past the staff's notes
+      let x2 = anchor(head)
+      let x1 = left == null ? x2 - stub : Math.max(left, x2 - stub)
+      push(arcDir(head, span.placement), x1, head.y, x2, head.y)
+    }
+  }
+
+  // the head a slur stops on is on the card after this one
+  for (let {head, placement} of open.values()) {
+    let x1 = anchor(head)
+    push(arcDir(head, placement), x1, head.y, x1 + stub, head.y)
   }
 
   return arcs

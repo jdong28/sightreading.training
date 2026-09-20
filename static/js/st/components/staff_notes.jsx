@@ -6,9 +6,10 @@ import {parseNote, noteStaffOffset, MIDDLE_C_PITCH} from "st/music"
 import {SongNoteList, SongNote} from "st/song_note_list"
 import LedgerLines, {LEDGER_OVERHANG} from "st/components/staff/ledger_lines"
 import ScoreNotes from "st/components/staff/score_notes"
+import ScoreBeams from "st/components/staff/score_beams"
 import ScoreExtras from "st/components/staff/score_extras"
 import {
-  columnLayout, columnExtras, extrasBefore, headKey,
+  columnLayout, columnExtras, beforeOffset, headKey, OPENING_EXTRA_ROOM,
   noteTypeProps, HEAD_GLYPHS, STAFF_HEIGHT, NOTE_HEAD_HEIGHT,
 } from "st/staff_rhythm"
 import styles from "st/components/staff.module.css"
@@ -187,26 +188,107 @@ export function fitStaffScale(staffWidth, span, {scale=1, keySignature=null, min
   return Math.max(Math.min(minScale, scale), Math.min(scale, fit))
 }
 
-// Where the bar line before the column at idx is drawn: on the boundary
-// between it and the column before, at most one column width back so a long
-// note's room never drags the line away from the bar it opens. A bar opening
-// with a rest, drawn `before` column widths ahead of the column's own head
-// (see extrasBefore), puts the line halfway between that rest and the head
-// before it instead, since the rest belongs to the bar the line opens
-function barLineLeft(props, offsetLeft, idx, offsets, before=0) {
+// onsets closer than this are the same beat, so a bar line never falls on the
+// wrong side of what opens its bar
+const BAR_BEAT_EPSILON = 1e-6
+
+/**
+ * Where the bar lines the staff draws with each column fall, in pixels: one
+ * for the bar the column itself opens, and one for each column-less bar the
+ * card carries before it — a measure every drilled hand rests through, which
+ * is drawn without ever handing the player a column (see cardColumn in
+ * st/measure_cards).
+ *
+ * The line of the bar a column opens sits on the boundary between the last
+ * thing the bar before it draws and the first thing of its own, which for a
+ * bar opening on a rest is that rest, since the rest belongs to the bar the
+ * line opens; it is never more than a column width back from what it opens,
+ * so a long note's room can't drag it away from its bar. A bar without a
+ * column of its own is drawn wherever its own first beat falls in the room
+ * kept before the column after it (see beforeOffset), whether or not the
+ * score prints anything inside it.
+ * @param {Object} props the staff's
+ * @param {number} offsetLeft where the notes start, in pixels
+ * @param {Object} layout see columnLayout in st/staff_rhythm
+ * @returns {Object[][]} per column, its lines in reading order, each
+ * {measure, beat, left}
+ */
+export function barLineBoxes(props, offsetLeft, layout) {
   let noteWidth = props.noteWidth
   let headWidth = NOTE_HEAD_WIDTH * (props.scale || 1)
-  let at = offsets[idx]
-  let gap = idx > 0 ? Math.min(1, at - offsets[idx - 1]) : 1
-  let line = offsetLeft + at * noteWidth - (gap * noteWidth - headWidth) / 2
+  let offsets = layout.offsets
+  let at = offset => offsetLeft + offset * noteWidth
 
-  if (before > 0) {
-    let opens = offsetLeft + (at - before) * noteWidth
-    let previous = idx > 0 ? offsetLeft + offsets[idx - 1] * noteWidth + headWidth : offsetLeft
-    line = Math.min(line, (previous + opens) / 2)
+  // every staff's extras, so the two staves of a grand staff draw the same
+  // lines however the score shares the notes out between them
+  let byColumn = new Map()
+  for (let extra of columnExtras(props.notes, layout)) {
+    if (!byColumn.has(extra.columnIdx)) {
+      byColumn.set(extra.columnIdx, [])
+    }
+    byColumn.get(extra.columnIdx).push(extra)
   }
 
-  return Math.round(line)
+  return props.notes.map((column, idx) => {
+    let bars = (column.bars || [])
+      .map(bar => ({measure: bar.number, beat: bar.beat}))
+      .sort((a, b) => a.beat - b.beat)
+
+    if (column.measure != null) {
+      // the bar the column itself opens starts wherever the bar before it
+      // leaves off, so the first thing drawn after that is what its line
+      // opens: a rest its bar opens with, else the column's own head
+      bars.push({measure: column.measure, own: true})
+    }
+
+    if (!bars.length) { return [] }
+
+    let columnAt = at(offsets[idx])
+    let points = [{beat: -Infinity, x: idx > 0 ? at(offsets[idx - 1]) + headWidth : offsetLeft}]
+
+    for (let extra of byColumn.get(idx) || []) {
+      points.push({beat: extra.beat, x: at(extra.offset)})
+    }
+
+    points.push({beat: column.beat ?? Infinity, x: columnAt})
+
+    let low = -Infinity
+
+    return bars.map(bar => {
+      let after = points.filter(point => point.beat > low + BAR_BEAT_EPSILON)
+      let beat = bar.own ?
+        Math.min(column.beat ?? Infinity, ...after.map(point => point.beat)) :
+        bar.beat
+
+      low = beat
+
+      if (!bar.own) {
+        // A bar of its own that holds no column: it opens where its own first
+        // beat falls, and its line is drawn in the room kept in front of that
+        return {
+          measure: bar.measure,
+          beat,
+          left: Math.round(at(beforeOffset(props.notes, layout, idx, beat) -
+            OPENING_EXTRA_ROOM / 2)),
+        }
+      }
+
+      let opensBar = point => point.beat >= beat - BAR_BEAT_EPSILON
+      let before = points.filter(point => !opensBar(point)).map(point => point.x)
+      let opens = Math.min(columnAt, ...points.filter(opensBar).map(point => point.x))
+      let previous = before.length ? Math.max(...before) : offsetLeft
+
+      // The bar the column opens is drawn on the boundary before it, at most
+      // one column width back so a long note's room never drags the line away
+      // from the bar it opens. A bar opening on a rest puts the line before
+      // that rest instead, since the rest belongs to the bar
+      let gap = idx > 0 ? Math.min(1, offsets[idx] - offsets[idx - 1]) : 1
+      let own = columnAt - (gap * noteWidth - headWidth) / 2
+      let line = opens < columnAt - 0.5 ? Math.min(own, (previous + opens) / 2) : own
+
+      return {measure: bar.measure, beat, left: Math.round(line)}
+    })
+  })
 }
 
 // The boxes of the small clefs a staff draws where the clef of its columns
@@ -227,7 +309,7 @@ export function clefChangeBoxes(props) {
   let layout = columnLayout(props.notes, props.unitColumns,
     {rests: drawsRests(props.unitColumns || props.notes, props.staff)})
   let offsets = layout.offsets
-  let extrasLeft = extrasBefore(props.notes, layout)
+  let barLines = barLineBoxes(props, offsetLeft, layout)
   let columnClef = idx => (props.columnClefs && props.columnClefs[idx]) || props
 
   let out = []
@@ -247,8 +329,9 @@ export function clefChangeBoxes(props) {
     let gap = (offsets[idx] - offsets[idx - 1]) * noteWidth
     let start = offsetLeft + offsets[idx - 1] * noteWidth + NOTE_HEAD_WIDTH * scale + offset + margin
     let space = gap - (NOTE_HEAD_WIDTH + ACCIDENTAL_WIDTH) * scale - 2 * margin - offset
-    if (column.measure != null) {
-      space = Math.min(space, barLineLeft(props, offsetLeft, idx, offsets, extrasLeft[idx]) - margin - start)
+    let lines = barLines[idx]
+    if (lines.length) {
+      space = Math.min(space, lines[lines.length - 1].left - margin - start)
     }
     let fullHeight = glyph.height * staffHeight
     let width = Math.min(fullHeight * glyph.aspect, space)
@@ -326,9 +409,7 @@ export default class StaffNotes extends React.Component {
     // null for the columns it draws none before: the lines themselves and the
     // room a bar's whole measure rest fills are both measured from these, so
     // the rest is centred between the lines it is drawn under
-    let extrasLeft = extrasBefore(this.props.notes, layout)
-    let barLines = this.props.notes.map((column, idx) => column.measure == null ?
-      null : barLineLeft(this.props, offsetLeft, idx, layout.offsets, extrasLeft[idx]))
+    let barLines = barLineBoxes(this.props, offsetLeft, layout)
 
     // the notes, by the clef of their column, which places them
     let byClef = new Map()
@@ -392,6 +473,17 @@ export default class StaffNotes extends React.Component {
           scale={scale}
         />,
       ])}
+
+      <ScoreBeams
+        offsetLeft={offsetLeft}
+        keySignature={this.props.keySignature}
+        columnClefs={this.props.columnClefs}
+        upperRow={this.props.upperRow}
+        lowerRow={this.props.lowerRow}
+        heads={songNotes}
+        stems={stems}
+        noteWidth={this.props.noteWidth}
+        scale={scale} />
 
       <ScoreExtras
         {...this.props}
@@ -531,23 +623,24 @@ export default class StaffNotes extends React.Component {
     this.refs.notes.style.transform = `translate3d(${amount}px, 0, 0)`;
   }
 
-  // A bar line before each column that starts a measure, on the boundary
-  // halfway between the previous column's note head and the column, so it
-  // moves with its column. The bar number is written above it, on the upper
-  // staff only of a grand staff
+  // A bar line before each column that starts a measure, and before each
+  // column-less bar drawn ahead of one, on the boundary halfway between what
+  // the bar before it draws last and what its own bar opens with, so it moves
+  // with its bar. The bar number is written above it, on the upper staff only
+  // of a grand staff
   renderBarLines(barLines) {
     let showNumbers = this.props.showAnnotations !== false
 
     let out = []
-    this.props.notes.forEach((column, idx) => {
-      if (column.measure == null) { return }
-
-      out.push(<div
-        key={`bar-line-${idx}`}
-        className={styles.bar_line}
-        style={{left: `${barLines[idx]}px`}}
-        data-measure={column.measure}
-        data-label={showNumbers ? column.measure : null} />)
+    barLines.forEach((lines, idx) => {
+      lines.forEach((line, at) => {
+        out.push(<div
+          key={`bar-line-${idx}-${at}`}
+          className={styles.bar_line}
+          style={{left: `${line.left}px`}}
+          data-measure={line.measure}
+          data-label={showNumbers ? line.measure : null} />)
+      })
     })
 
     return out

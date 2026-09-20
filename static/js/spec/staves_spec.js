@@ -5,7 +5,9 @@ import {flushSync} from "react-dom"
 import {GStaff, FStaff, GrandStaff} from "st/components/staves"
 import staffStyles from "st/components/staff.module.css"
 import {minNoteWidth, keySignatureWidth, ACCIDENTAL_WIDTH, NOTE_HEAD_WIDTH, GROUP_OFFSET} from "st/components/staff_notes"
-import {SPACING_EXPONENT, headGlyph, NOTE_HEAD_HEIGHT, STAFF_ROW} from "st/staff_rhythm"
+import {
+  SPACING_EXPONENT, headGlyph, NOTE_HEAD_HEIGHT, STAFF_ROW, MAX_BEAM_RISE,
+} from "st/staff_rhythm"
 import NoteList from "st/note_list"
 import {KeySignature, noteName, parseNote} from "st/music"
 import {parseMusicXML} from "st/musicxml"
@@ -16,7 +18,8 @@ import {
 import {SheetMusicGenerator} from "st/generators"
 import {pieceSectionMeasures, BOTH_HANDS, RIGHT_HAND, LEFT_HAND} from "st/data"
 import {
-  reverieOpening, clefChangeScore, midMeasureClefScore, tiedLeadScore, bassOstinatoScore
+  reverieOpening, tripletScore, restBarScore, clefChangeScore, midMeasureClefScore,
+  tiedLeadScore, bassOstinatoScore
 } from "spec/helpers"
 
 // MIDI pitches, so the specs don't depend on the octave numbering of names
@@ -1663,6 +1666,265 @@ describe("staves", function() {
       // one column width apart, as they always were
       expect(notesOn(staff).map(note => parseFloat(note.style.left)))
         .toEqual([0, 60])
+    })
+  })
+
+  describe("beams, slurs and tuplets", function() {
+    let beamsOn = el => [...el.querySelectorAll(`.${staffStyles.beam}`)]
+    let slursOn = el => [...el.querySelectorAll(`.${staffStyles.slur}`)]
+    let flagsOn = el => [...el.querySelectorAll(`.${staffStyles.flag}`)]
+    let stemsOn = el => [...el.querySelectorAll(`.${staffStyles.stem}`)]
+    let numbersOn = el => [...el.querySelectorAll(`.${staffStyles.tuplet_number}`)]
+    let bracketsOn = el => [...el.querySelectorAll(`.${staffStyles.tuplet_bracket}`)]
+
+    // the points of an svg path, in the pixels of the staff's notes
+    let pathPoints = path => (path.getAttribute("d").match(/-?[\d.]+ -?[\d.]+/g) || [])
+      .map(pair => pair.split(" ").map(Number))
+
+    // the edge of a beam the stems of its group end on, as [[x1, y1], [x2, y2]]
+    let beamEdge = path => pathPoints(path).slice(0, 2)
+
+    // where a stem's far end falls, in the pixels of the staff's notes
+    let stemEnd = (el, stem) => {
+      let notes = el.querySelector(`.${staffStyles.staff_notes}`).getBoundingClientRect()
+      let box = stem.getBoundingClientRect()
+      return {
+        x: (box.left + box.right) / 2 - notes.left,
+        y: (stem.dataset.stem == "up" ? box.top : box.bottom) - notes.top,
+      }
+    }
+
+    // where an arc bulges to, the middle of its quadratic curve
+    let arcApex = path => {
+      let [[, y1], [, cy], [, y2]] = pathPoints(path)
+      return (y1 + 2 * cy + y2) / 4
+    }
+
+    // the vertical middle of every note head, in the pixels of the staff's notes
+    let headMiddles = el => {
+      let notes = el.querySelector(`.${staffStyles.staff_notes}`).getBoundingClientRect()
+      return notesOn(el).map(note => {
+        let box = note.getBoundingClientRect()
+        return (box.top + box.bottom) / 2 - notes.top
+      })
+    }
+
+    // the Rêverie's opening bars on the grand staff, its left hand ostinato
+    // drawn on the lower staff
+    let reverieColumns = (start, end) =>
+      sectionColumns(parseMusicXML(reverieOpening()), start, end)
+
+    let renderReverie = (start, end, {window=null}={}) => {
+      let columns = reverieColumns(start, end)
+      renderStaff(GrandStaff, window ? columns.slice(window) : columns,
+        {unitColumns: columns, keySignature: new KeySignature(-1)})
+      return columns
+    }
+
+    it("beams the group the score writes instead of drawing a flag on each head", function() {
+      renderReverie(2, 2)
+      let lower = staffEl("lower")
+
+      // the bar's eighths are written as two beamed groups of four
+      expect(beamsOn(lower).length).toEqual(2)
+      expect(flagsOn(lower).length).toEqual(0)
+      expect(beamsOn(lower).map(beam => beam.dataset.beam)).toEqual(["1", "1"])
+
+      // and every stem of the groups turns the same way
+      expect(eighthStems(lower)).toEqual(new Set(["up"]))
+    })
+
+    it("runs every stem of a beamed group to its beam, over a bounded slope", function() {
+      renderReverie(2, 2)
+      let lower = staffEl("lower")
+      let ends = stemsOn(lower).map(stem => stemEnd(lower, stem))
+
+      for (let beam of beamsOn(lower)) {
+        let [[x1, y1], [x2, y2]] = beamEdge(beam)
+        let onBeam = ends.filter(end => end.x >= x1 - 1 && end.x <= x2 + 1)
+
+        // the beam joins four stems, each of which ends on it
+        expect(onBeam.length).toEqual(4)
+        for (let end of onBeam) {
+          expect(end.y).toBeCloseTo(y1 + (end.x - x1) * (y2 - y1) / (x2 - x1), 0)
+        }
+
+        // an engraver keeps a beam near level, and level over a level group
+        expect(Math.abs(y2 - y1)).toBeLessThanOrEqual(MAX_BEAM_RISE * STAFF_ROW + 0.5)
+      }
+
+      // the ostinato climbs to its G4 and falls back, and each beam follows
+      // its own group up or down
+      let [up, down] = beamsOn(lower).map(beam => {
+        let [[, y1], [, y2]] = beamEdge(beam)
+        return y2 - y1
+      })
+      expect(up).toBeLessThan(0)
+      expect(down).toBeGreaterThan(0)
+    })
+
+    // a 4/4 treble bar of four eighths on one pitch, then a half note
+    let levelBeamScore = () => `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes><divisions>2</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>
+      ${["begin", "continue", "continue", "end"].map(beam =>
+        `<note><pitch><step>G</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>eighth</type><beam number="1">${beam}</beam></note>`).join("")}
+      <note><pitch><step>G</step><octave>4</octave></pitch><duration>4</duration><voice>1</voice><type>half</type></note>
+    </measure>
+  </part>
+</score-partwise>`
+
+    it("draws a level beam over a level group", function() {
+      let song = parseMusicXML(levelBeamScore())
+      let columns = sectionColumns(song, 1, 1, BOTH_HANDS, {name: "treble", range: ["C4", "C6"]})
+      renderStaff(GStaff, columns, {unitColumns: columns, keySignature: new KeySignature(0)})
+
+      let staff = container.querySelector(`.${staffStyles.staff}`)
+      let [beam, ...rest] = beamsOn(staff)
+      let [[, y1], [, y2]] = beamEdge(beam)
+
+      expect(rest.length).toEqual(0)
+      expect(y2).toBeCloseTo(y1, 3)
+    })
+
+    it("draws the score's slur from its first head to its last, clear of the heads between", function() {
+      renderReverie(2, 2)
+      let lower = staffEl("lower")
+      let [slur, ...rest] = slursOn(lower)
+
+      expect(rest.length).toEqual(0)
+
+      // the ostinato stems up, so its slur bulges below the heads
+      expect(slur.dataset.tie).toEqual("down")
+
+      let [[x1], , [x2]] = pathPoints(slur)
+      let heads = notesOn(lower).map(note => parseFloat(note.style.left)).sort((a, b) => a - b)
+
+      // it runs from the bar's first eighth to its last, which are the first
+      // and last heads the lower staff draws
+      expect(x1).toBeGreaterThan(heads[0] - 1)
+      expect(x2).toBeGreaterThan(heads[heads.length - 2])
+
+      // and arches clear of every head it spans
+      expect(arcApex(slur)).toBeGreaterThan(Math.max(...headMiddles(lower)))
+    })
+
+    it("carries a beam group and a slur cut by the card's edge off it", function() {
+      // the window the staff draws once the card's first two columns are
+      // played, which cuts the opening beam group and the slur over it
+      renderReverie(2, 3, {window: 2})
+      let lower = staffEl("lower")
+
+      let [beam] = beamsOn(lower)
+      let [[x1, y1], [x2, y2]] = beamEdge(beam)
+      let ends = stemsOn(lower).map(stem => stemEnd(lower, stem))
+      let first = ends.reduce((low, end) => end.x < low.x ? end : low)
+
+      // the beam runs off the card's edge, past the first stem it still joins
+      expect(x1).toBeLessThan(first.x - 1)
+      expect(first.y).toBeCloseTo(y1 + (first.x - x1) * (y2 - y1) / (x2 - x1), 0)
+
+      // and the slur the cut group opened runs in from the card's edge to the
+      // head it stops on, where the bar after it draws its own slur whole
+      let [cut, whole] = slursOn(lower).map(slur => {
+        let [[x1], , [x2]] = pathPoints(slur)
+        return {x1, x2}
+      })
+
+      expect(cut.x1).toBeGreaterThanOrEqual(0)
+      expect(cut.x2).toBeLessThan(whole.x1)
+      expect(cut.x2 - cut.x1).toBeLessThan((whole.x2 - whole.x1) / 2)
+    })
+
+    it("numbers a tuplet, bracketing it only when its beam doesn't mark it out", function() {
+      let song = parseMusicXML(tripletScore())
+      let treble = {name: "treble", range: ["C4", "C6"]}
+
+      let columns = sectionColumns(song, 1, 1, BOTH_HANDS, treble)
+      renderStaff(GStaff, columns, {unitColumns: columns, keySignature: new KeySignature(0)})
+      let staff = container.querySelector(`.${staffStyles.staff}`)
+
+      // a triplet of quarter notes carries no beam, so its number is bracketed
+      expect(numbersOn(staff).map(number => number.dataset.tuplet)).toEqual(["3"])
+      expect(bracketsOn(staff).length).toEqual(2)
+
+      let [number] = numbersOn(staff)
+      let heads = notesOn(staff).map(note => parseFloat(note.style.left)).sort((a, b) => a - b)
+      let middle = +number.getAttribute("x")
+      expect(middle).toBeGreaterThan(heads[0])
+      expect(middle).toBeLessThan(heads[3])
+
+      columns = sectionColumns(song, 2, 2, BOTH_HANDS, treble)
+      renderStaff(GStaff, columns, {unitColumns: columns, keySignature: new KeySignature(0)})
+      staff = container.querySelector(`.${staffStyles.staff}`)
+
+      // a triplet of beamed eighths is marked out by its own beam, so the
+      // number is drawn over it alone
+      expect(numbersOn(staff).map(number => number.dataset.tuplet)).toEqual(["3"])
+      expect(bracketsOn(staff).length).toEqual(0)
+      expect(beamsOn(staff).length).toEqual(1)
+    })
+
+    it("draws a bar both hands rest out without giving the drill a column", function() {
+      let song = parseMusicXML(restBarScore())
+      let measures = pieceSectionMeasures(GRAND, {startMeasure: 1, endMeasure: 3, hand: BOTH_HANDS}, song)
+      let card = sectionCard(measures)
+
+      // the resting bar hands the player nothing to answer
+      expect(measures.map(measure => measure.columns.length)).toEqual([1, 0, 1])
+      expect(card.columns.length).toEqual(2)
+
+      let columns = cardColumns(card)
+      expect(columns.map(column => column.measure)).toEqual([1, 3])
+      expect(columns[1].bars).toEqual([{number: 2, beat: 4, beats: 4}])
+
+      renderStaff(GrandStaff, columns, {unitColumns: columns, keySignature: new KeySignature(0)})
+      let lower = staffEl("lower")
+
+      // its bar line and number are drawn where the score puts them
+      let lines = [...lower.querySelectorAll(`.${staffStyles.bar_line}`)]
+      expect(lines.map(line => line.dataset.measure)).toEqual(["1", "2", "3"])
+
+      let at = n => parseFloat(lines.find(line => line.dataset.measure == `${n}`).style.left)
+      expect(at(1)).toBeLessThan(at(2))
+      expect(at(2)).toBeLessThan(at(3))
+
+      // with its whole measure rest centred between them
+      let rest = lower.querySelector(`.${staffStyles.rest}`)
+      expect(rest.dataset.restType).toEqual("whole")
+      let middle = parseFloat(rest.style.left) + rest.getBoundingClientRect().width / 2
+      expect(middle).toBeCloseTo((at(2) + at(3)) / 2, 0)
+
+      // and the numbers are written on the upper staff of a grand staff
+      expect([...staffEl("upper").querySelectorAll(`.${staffStyles.bar_line}[data-label]`)]
+        .map(line => line.dataset.label)).toEqual(["1", "2", "3"])
+    })
+
+    it("draws a piece stored before the spans were kept with a flag on every eighth", function() {
+      let song = parseMusicXML(reverieOpening())
+
+      // a piece stored as format 2, which kept no beams or slurs
+      for (let track of song.tracks) {
+        for (let note of track) {
+          delete note.notation.beams
+          delete note.notation.slurs
+          for (let tie of note.notation.ties) {
+            delete tie.beams
+            delete tie.slurs
+          }
+        }
+      }
+
+      let columns = sectionColumns(song, 2, 2)
+      renderStaff(GrandStaff, columns, {unitColumns: columns, keySignature: new KeySignature(-1)})
+      let lower = staffEl("lower")
+
+      expect(beamsOn(lower).length).toEqual(0)
+      expect(slursOn(lower).length).toEqual(0)
+      expect(flagsOn(lower).length).toEqual(8)
     })
   })
 

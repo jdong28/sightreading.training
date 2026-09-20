@@ -117,6 +117,20 @@ export function countMeasures(song) {
   return Math.max(1, Math.ceil(song.getStopInBeats() / beatsPerMeasure(song) - ONSET_EPSILON))
 }
 
+// The spans of the score a head is drawn with: the beams it is joined to its
+// neighbours by, and the slurs and tuplets it starts or stops (st/musicxml).
+// A head carries them wherever it is drawn, so a beam group, slur or tuplet
+// whose other end falls on another column, or on a head that is only drawn
+// (see tieHeads), is matched without the renderer reading the song again
+function notationSpans(notation) {
+  return {
+    beams: notation.beams || null,
+    slurs: notation.slurs || null,
+    tuplets: notation.tuplets || null,
+    tupletNotes: notation.tupletNotes || 0,
+  }
+}
+
 // What the staff draws a note with, from the notation the importer kept on it
 // (st/musicxml), with the beat of the head its tie runs on to, if any
 function noteNotation(note) {
@@ -130,6 +144,7 @@ function noteNotation(note) {
     dots: notation.dots || 0,
     voice: notation.voice || null,
     tuplet: notation.tuplet || 1,
+    ...notationSpans(notation),
     tieTo: next ? next.start : null,
   }
 }
@@ -155,9 +170,11 @@ function tieHeads(note, staff) {
     type: tie.type,
     dots: tie.dots || 0,
     // a tie's continuation is the same voice, drawn the same way, as the note
-    // it runs from, which is all the score writes on it
+    // it runs from, which is all the score writes on it besides the spans of
+    // its own head, eg. the slur a phrase stops on a tied note
     voice: notation.voice || null,
-    tuplet: notation.tuplet || 1,
+    tuplet: tie.tuplet || notation.tuplet || 1,
+    ...notationSpans(tie),
     from: idx == 0 ? note.start : ties[idx - 1].start,
     tieTo: ties[idx + 1] ? ties[idx + 1].start : null,
   }))
@@ -227,10 +244,22 @@ function groupByOnset(entries, clefsAt, {endBeat=null}={}) {
 
 // Hands each of extras to the column it is drawn after, the last one starting
 // at or before it; anything before the first column goes to it, drawn in the
-// room before its head. Extras are in beat order and stay that way
-function attachExtras(columns, extras) {
+// room before its head. Extras are in beat order and stay that way.
+//
+// A range with no columns at all — a measure every drilled hand rests through
+// — keeps its extras, and the beats it covers, on the array itself, so a card
+// can draw that bar's rests, bar line and number without ever handing the
+// player a column to answer (see sectionCard in st/measure_cards)
+function attachExtras(columns, extras, bar) {
   let drawn = columns.filter(column => column.extras)
-  if (!drawn.length) { return columns }
+  if (!drawn.length) {
+    if (bar && bar.beat != null) {
+      columns.beat = bar.beat
+      columns.beats = bar.beats
+      columns.extras = [...extras].sort((a, b) => a.beat - b.beat)
+    }
+    return columns
+  }
 
   for (let extra of [...extras].sort((a, b) => a.beat - b.beat)) {
     let idx = 0
@@ -321,7 +350,10 @@ export function extractSectionColumns(song, opts={}) {
     }
   }
 
-  return attachExtras(columns, extras)
+  return attachExtras(columns, extras, {
+    beat: startBeat,
+    beats: isFinite(columnsEnd) ? Math.max(0, columnsEnd - startBeat) : 0,
+  })
 }
 
 // Drops notes that fall outside [min, max] pitch (note names), removing
@@ -374,6 +406,23 @@ export function filterColumnsToRange(columns, min, max) {
   if (carried.length && out.length) {
     let last = out[out.length - 1]
     last.extras = [...(last.extras || []), ...carried]
+  }
+
+  // Nothing of the range is drawn on this staff, either because it held no
+  // columns or because every one of them was out of range, so it keeps what a
+  // column-less bar keeps: the extras still drawn and the beats it covers
+  // (see attachExtras)
+  if (!out.length) {
+    let first = columns.beat != null ? columns : columns[0]
+    if (first && first.beat != null) {
+      out.beat = first.beat
+      out.beats = first.beats
+      out.extras = [...(columns.extras || []), ...carried].filter(extra => {
+        if (extra.kind != "head") { return true }
+        let pitch = parseNote(extra.name)
+        return pitch >= minPitch && pitch <= maxPitch
+      })
+    }
   }
 
   return [out, dropped]

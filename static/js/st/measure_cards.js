@@ -23,6 +23,8 @@ export const MAX_MEASURES_PER_CARD = 8
  * @property {string[][]} columns each may carry `staves`, the grand staff
  * of each of its notes, and `clefs`, the clef sign of each staff at its onset
  * (see extractSectionColumns in st/song_sections)
+ * @property {Object} [bar] {beat, beats, extras}, what a measure with no
+ * columns of its own still draws: a measure every drilled hand rests through
  */
 
 /**
@@ -32,6 +34,8 @@ export const MAX_MEASURES_PER_CARD = 8
  * @property {number[]} measures bar numbers, in order
  * @property {string[][]} columns the columns of every measure, in order
  * @property {number[]} columnMeasures index into measures for each column
+ * @property {Array[]} columnBars the column-less bars drawn with each column,
+ * null for the columns that carry none (see sectionCard)
  */
 
 /**
@@ -60,32 +64,65 @@ export function measureCards(measures, perCard) {
 export function sectionCard(measures) {
   let columns = []
   let columnMeasures = []
+  let columnBars = []
+  // the bars of measures with no columns, waiting for the column they are
+  // drawn before
+  let pending = []
 
   measures.forEach((measure, idx) => {
-    for (let column of measure.columns) {
+    if (!measure.columns.length) {
+      if (measure.bar) {
+        pending.push({number: measure.number, ...measure.bar})
+      }
+      return
+    }
+
+    measure.columns.forEach((column, at) => {
       columns.push(column)
       columnMeasures.push(idx)
-    }
+      columnBars.push(at == 0 && pending.length ? pending : null)
+      if (at == 0) {
+        pending = []
+      }
+    })
   })
 
-  return {
+  // the card ends on bars nothing is played in, which are drawn after its
+  // last column rather than lost with the measures that hold them
+  if (pending.length && columns.length) {
+    let last = columns.length - 1
+    columnBars[last] = [...(columnBars[last] || []), ...pending]
+  }
+
+  let card = {
     startMeasure: measures[0].number,
     endMeasure: measures[measures.length - 1].number,
     measures: measures.map(measure => measure.number),
     columns,
     columnMeasures,
   }
+
+  if (columnBars.some(bars => bars)) {
+    card.columnBars = columnBars
+  }
+
+  return card
 }
 
 // what a copy of a column keeps for the staff to draw it with: the score's
-// staves and clefs (st/song_sections) and its rhythm (st/staff_rhythm)
-export const COLUMN_DRAW_KEYS = ["staves", "clefs", "beat", "beats", "notation", "extras"]
+// staves and clefs (st/song_sections), its rhythm (st/staff_rhythm) and the
+// column-less bars drawn with it (see sectionCard)
+export const COLUMN_DRAW_KEYS =
+  ["staves", "clefs", "beat", "beats", "notation", "extras", "bars"]
 
 /**
  * A copy of the card's column for the staff. When the card has more than
  * one measure, the first column of each measure carries its bar number as
- * `measure`, where the staff draws a bar line. Everything the staff draws the
- * column with is kept (see COLUMN_DRAW_KEYS)
+ * `measure`, where the staff draws a bar line, and the column-less bars the
+ * card carries before it as `bars`, each of which draws a bar line and a
+ * number of its own; what those bars draw joins the column's extras, so the
+ * staff places it by beat like every other extra. Everything the staff draws
+ * the column with is kept (see COLUMN_DRAW_KEYS)
  * @param {MeasureCard} card
  * @param {number} idx
  * @returns {string[]}
@@ -103,6 +140,17 @@ export function cardColumn(card, idx) {
 
   if (card.measures.length > 1 && (idx == 0 || card.columnMeasures[idx - 1] != measureIdx)) {
     column.measure = card.measures[measureIdx]
+  }
+
+  let bars = card.columnBars && card.columnBars[idx]
+  if (bars && bars.length && card.measures.length > 1) {
+    column.bars = bars.map(({number, beat, beats}) => ({number, beat, beats}))
+
+    let extras = bars.flatMap(bar => bar.extras || [])
+    if (extras.length) {
+      column.extras = [...extras, ...(source.extras || [])]
+        .sort((a, b) => a.beat - b.beat)
+    }
   }
 
   return column

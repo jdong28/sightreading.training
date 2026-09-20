@@ -14,6 +14,7 @@ import StaffNotes, {
 } from "st/components/staff_notes"
 import {
   columnStems, columnBars, columnExtras, columnLayout, headKey, middleRow, rowCenter,
+  BEAM_THICKNESS, TUPLET_OFFSET, TUPLET_SIZE,
 } from "st/staff_rhythm"
 import StaffSongNotes from "st/components/staff_song_notes"
 import styles from "st/components/staff.module.css"
@@ -133,9 +134,10 @@ function staffClefProps(props) {
  * draws them: the notes of each column with how the score writes them, then
  * the heads the ties run on to and the ones another voice doubles, which are
  * drawn but never played (see StaffNotes#convertToSongNotes). Each carries
- * what places it — the bar and the onset it is struck on, its staff row and
- * the clef that draws it — which is what its stem and the staff's own reach
- * are worked out from.
+ * what places it — the bar and the onset it is struck on, where it falls in
+ * column widths, its staff row and the clef that draws it — which is what its
+ * stem, the beam and tuplet over it and the staff's own reach are worked out
+ * from.
  * @param {Array} columns
  * @param {Object} props
  * @returns {Object[]}
@@ -144,16 +146,17 @@ function drawnHeads(columns, props) {
   let columnClefs = columnClefProps(columns, props.staff, props)
   let clefAt = idx => (columnClefs && columnClefs[idx]) || props
   let bars = columnBars(columns)
+  let layout = columnLayout(columns)
   let heads = []
 
-  let push = (idx, group, name, beat, notation) => {
+  let push = (idx, group, name, beat, notation, x) => {
     let spelled = props.keySignature.enharmonic(name)
     let clef = clefAt(idx)
 
     heads.push({
       bar: bars[idx],
       column: group,
-      name, beat, notation, clef,
+      name, beat, notation, clef, x,
       row: noteStaffOffset(spelled),
       middleRow: middleRow(clef),
       accidental: props.keySignature.accidentalsForNote(spelled) != null,
@@ -165,11 +168,11 @@ function drawnHeads(columns, props) {
     let notation = columnNotation(column, columnNotes, props)
 
     columnNotes.forEach((name, at) => {
-      push(idx, idx, name, column.beat, notation && notation[at])
+      push(idx, idx, name, column.beat, notation && notation[at], layout.offsets[idx])
     })
   })
 
-  for (let extra of columnExtras(columns, {...columnLayout(columns), staff: props.staff})) {
+  for (let extra of columnExtras(columns, {...layout, staff: props.staff})) {
     if (extra.kind != "head") { continue }
 
     // a head a tie runs on to at its column's own onset, a chord note held
@@ -180,7 +183,8 @@ function drawnHeads(columns, props) {
       !doubledHead(column, extra, props)
     let group = held ? extra.columnIdx : `${extra.columnIdx}@${extra.beat}`
 
-    push(extra.columnIdx, group, extra.name, extra.beat, extra)
+    push(extra.columnIdx, group, extra.name, extra.beat, extra,
+      held ? layout.offsets[extra.columnIdx] : extra.offset)
   }
 
   return heads
@@ -196,7 +200,9 @@ function drawnHeadStems(columns, props) {
 // The stem of every head the staff draws, by what names a head (see headKey).
 // Worked out over the whole unit rather than over the window on the staff, so
 // a voice keeps one stem direction right through its bar however much of that
-// bar the window holds
+// bar the window holds. A looping card draws its first column again where it
+// wraps, which is the same head struck again: it keeps the stem, and so the
+// beam group, of the column it repeats
 export function unitStems(props) {
   let columns = props.unitColumns && props.unitColumns.length ? props.unitColumns : props.notes
   let out = new Map()
@@ -208,8 +214,9 @@ export function unitStems(props) {
   let [heads, stems] = drawnHeadStems(columns, props)
 
   heads.forEach((head, idx) => {
-    if (stems[idx]) {
-      out.set(headKey(head.beat, head.name, head.notation), stems[idx])
+    let key = headKey(head.beat, head.name, head.notation)
+    if (stems[idx] && !out.has(key)) {
+      out.set(key, stems[idx])
     }
   })
 
@@ -258,13 +265,21 @@ export function notesReach(props) {
 
   // A stem runs from the middle of its head to its far end, and its flags are
   // stacked back along it, so the stem's end is the furthest the staff draws
-  // from that head (see columnStems in st/staff_rhythm and renderRhythm in
+  // from that head, bar the beam hanging off it and the tuplet number over it
+  // (see columnStems in st/staff_rhythm and renderRhythm in
   // st/components/staff/score_notes)
   let includeStem = (clef, row, stem) => {
     if (!stem || !stem.height) { return }
 
-    let center = rowCenter(row, clef) * (props.scale || 1)
-    let reach = stem.height * (props.scale || 1)
+    let scale = props.scale || 1
+    let center = rowCenter(row, clef) * scale
+    let past = stem.beam ? BEAM_THICKNESS * scale : 0
+
+    if (stem.tuplet) {
+      past = Math.max(past, (TUPLET_OFFSET + TUPLET_SIZE) * scale)
+    }
+
+    let reach = stem.height * scale + past
 
     if (stem.dir == "up") {
       above = Math.max(above, reach - center)

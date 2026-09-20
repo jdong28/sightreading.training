@@ -1,6 +1,6 @@
 import {parseMusicXML, MusicXMLError, COMPRESSED_MESSAGE} from "st/musicxml"
 import {SongNote, measureStartsUntil, clickStartsMeasure} from "st/song_note_list"
-import {reverieOpening} from "spec/helpers"
+import {reverieOpening, tripletScore} from "spec/helpers"
 
 // [note, start, duration] tuples of a note list, in document order
 let tuples = notes => [...notes].map(n => [n.note, n.start, n.duration])
@@ -646,6 +646,52 @@ describe("musicxml", function() {
     let song = parseMusicXML(xml)
     expect(song.tracks.length).toEqual(1)
     expect(tuples(song.tracks[0])).toEqual([["C4", 0, 4]])
+  })
+
+  it("keeps the beam groups and slurs the score writes on its notes", function() {
+    let song = parseMusicXML(reverieOpening())
+    // the eighth notes of the left hand's ostinato, bar by bar; its first bar
+    // opens the phrase
+    let eighths = [...song.tracks[1]].filter(note => note.notation.type == "eighth")
+    let ostinato = eighths.slice(0, 7)
+
+    expect(ostinato.map(note => note.notation.beams[1]))
+      .toEqual(["begin", "continue", "continue", "end", "continue", "continue", "end"])
+
+    // the G4 tied across the middle of the bar is one note to play, and the
+    // head its tie runs on to carries the beam that opens the second group
+    let tied = ostinato.find(note => note.notation.ties.length)
+    expect([tied.note, tied.duration]).toEqual(["G4", 1])
+    expect(tied.notation.ties.map(head => head.beams[1])).toEqual(["begin"])
+
+    // one slur over the whole bar, from its first eighth to its last
+    expect(ostinato[0].notation.slurs).toEqual([{type: "start", number: 2}])
+    expect(ostinato[ostinato.length - 1].notation.slurs)
+      .toEqual([{type: "stop", number: 2}])
+
+    // the next bar opens its slur on a head a tie runs on to, which is drawn
+    // but never played: the Bb3 its last eighth is tied into
+    let across = ostinato[ostinato.length - 1]
+    expect(across.notation.ties.map(head => head.slurs))
+      .toEqual([[{type: "start", number: 2}]])
+  })
+
+  it("keeps the tuplet spans and the notes a tuplet is written with", function() {
+    let song = parseMusicXML(tripletScore())
+    let notes = [...song.tracks[0]]
+
+    expect(notes.map(note => note.notation.tuplet))
+      .toEqual([1.5, 1.5, 1.5, undefined, 1.5, 1.5, 1.5, undefined])
+    expect(notes.map(note => note.notation.tupletNotes))
+      .toEqual([3, 3, 3, undefined, 3, 3, 3, undefined])
+    expect(notes.map(note => note.notation.tuplets && note.notation.tuplets[0].type))
+      .toEqual(["start", undefined, "stop", undefined, "start", undefined, "stop", undefined])
+
+    // a quarter note triplet carries no beams; the eighth note triplet is one
+    // beam group of its own
+    expect(notes.slice(0, 3).map(note => note.notation.beams)).toEqual([undefined, undefined, undefined])
+    expect(notes.slice(4, 7).map(note => note.notation.beams[1]))
+      .toEqual(["begin", "continue", "end"])
   })
 
   it("refuses compressed .mxl content", function() {

@@ -37,7 +37,10 @@ export const LIBRARY_FORMAT = "sightreading-library"
 // 3: pieces carry the score's rhythm (song format 2, see st/sheet_music_deck);
 // version 2 pieces are read as they are and drill unchanged, drawn as whole
 // notes until their score is imported again
-export const LIBRARY_VERSION = 3
+// 4: pieces carry the score's beam, slur and tuplet spans (song format 3);
+// version 3 pieces drill unchanged, drawn with a flag on every beamed note
+// and no slurs until their score is imported again
+export const LIBRARY_VERSION = 4
 
 // sessions started within this many days are loaded into the cache
 export const RECENT_SESSION_DAYS = 30

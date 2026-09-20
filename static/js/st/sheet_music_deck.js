@@ -24,7 +24,11 @@ export const MAX_PIECES = 300
 // value, dots, tuplet, voice and tied heads of every note, and the track's
 // rests). Pieces stored as 1 are still read, and drill as they always did,
 // drawn as whole notes until the score is imported again
-const SONG_FORMAT = 2
+// 3: adds the beam, slur and tuplet spans of every note, which the staff
+// draws beams, slur curves and tuplet brackets from. A piece stored as 2
+// still drills the same, drawn with a flag on every beamed note and no slurs,
+// until the score is imported again
+const SONG_FORMAT = 3
 
 // metadata copied into a stored piece, see parseMusicXML
 const METADATA_FIELDS = [
@@ -36,25 +40,26 @@ const METADATA_FIELDS = [
 // stored JSON; far below the onset quantization of a section
 const round = n => Math.round(n * 1e6) / 1e6
 
-// The notation of a note as it is stored: only what differs from a plain
-// undotted note of its value, so the stored song stays small
+// what a stored note's notation keeps besides its ties: only what differs
+// from a plain undotted note of its value, so the stored song stays small
+const NOTATION_FIELDS = [
+  "dots", "voice", "tuplet", "tupletNotes", "beams", "slurs", "tuplets",
+]
+
+// The notation of a note as it is stored, with the heads its ties run on to,
+// which keep their own notation the same way
 function notationToJSON(notation) {
   if (!notation || !notation.type) { return null }
 
   let out = {type: notation.type}
-  for (let field of ["dots", "voice", "tuplet"]) {
+  for (let field of NOTATION_FIELDS) {
     if (notation[field]) {
       out[field] = notation[field]
     }
   }
 
-  let ties = (notation.ties || []).map(tie => {
-    let head = {start: round(tie.start), type: tie.type}
-    if (tie.dots) {
-      head.dots = tie.dots
-    }
-    return head
-  })
+  let ties = (notation.ties || [])
+    .map(tie => ({start: round(tie.start), ...notationToJSON(tie)}))
 
   if (ties.length) {
     out.ties = ties

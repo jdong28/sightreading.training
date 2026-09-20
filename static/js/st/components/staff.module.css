@@ -346,11 +346,39 @@
             overflow: visible;
         }
 
-        .tie {
+        .tie, .slur {
             fill: none;
             stroke: black;
             stroke-width: calc(2px * var(--staff-scale, 1));
             stroke-linecap: round;
+        }
+
+        /* the beams and tuplets over the stems, see ScoreBeams */
+        .beams {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            overflow: visible;
+            pointer-events: none;
+        }
+
+        .beam {
+            fill: black;
+            stroke: none;
+        }
+
+        .tuplet_bracket {
+            fill: none;
+            stroke: black;
+            stroke-width: calc(1.5px * var(--staff-scale, 1));
+        }
+
+        .tuplet_number {
+            fill: black;
+            font-family: var(--font-display);
+            font-style: italic;
         }
     }
 

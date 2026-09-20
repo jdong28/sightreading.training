@@ -5,7 +5,8 @@
 // generated drill and of a piece imported before the score's rhythm was kept,
 // is drawn as the whole note it always was.
 //
-// Beams are not drawn yet, so a beamed eighth draws its own flag.
+// A head the score beams to its neighbours carries no flag of its own: its
+// stem runs to the beam ScoreBeams draws over the group instead.
 
 import * as React from "react"
 import classNames from "classnames"

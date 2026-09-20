@@ -17,7 +17,8 @@
 //     so the staff can draw the continuation heads and their tie arcs
 //   - every note keeps the notation the staff draws it with (see
 //     st/staff_rhythm): the notated value, dots, tuplet ratio, voice and tie
-//     flags. Rests are kept the same way, on the track of their staff, so the
+//     flags, and the beam, slur and tuplet spans the score writes on it.
+//     Rests are kept the same way, on the track of their staff, so the
 //     staff can draw them at their beat
 //
 // Not supported: compressed .mxl files (zip containers). They are refused
@@ -156,6 +157,50 @@ function tieTypes(noteEl) {
   return types
 }
 
+// The beams the score writes on a note, by beam number (1 the primary beam):
+// {1: "begin", 2: "forward hook"}, or null when the note carries none. The
+// staff joins the heads of a begin..end run into one beam group (see
+// beamGroups in st/staff_rhythm), so a beamed eighth draws no flag of its own
+function beamsOf(noteEl) {
+  let out = null
+
+  for (let beam of childEls(noteEl, "beam")) {
+    let number = +(beam.getAttribute("number") || 1)
+    let value = beam.textContent.trim()
+    if (!(number > 0) || !value) { continue }
+    out = out || {}
+    out[number] = value
+  }
+
+  return out
+}
+
+// The slur or tuplet spans a <notations> element starts and stops, as
+// [{type, number, placement}] in the order they are written: the number tells
+// nested and overlapping spans apart, and the placement, when the score
+// writes one, says which side of the heads the slur is drawn on
+function spansOf(noteEl, name) {
+  let notations = childEl(noteEl, "notations")
+  if (!notations) { return null }
+
+  let out = []
+
+  for (let el of childEls(notations, name)) {
+    let type = el.getAttribute("type")
+    if (type != "start" && type != "stop") { continue }
+
+    let span = {type, number: +(el.getAttribute("number") || 1) || 1}
+    let placement = el.getAttribute("placement")
+    if (placement == "above" || placement == "below") {
+      span.placement = placement
+    }
+
+    out.push(span)
+  }
+
+  return out.length ? out : null
+}
+
 // The notated value of a note or rest: its <type> when the score writes one,
 // else the value its duration spells. Returns {type, dots}, the notated value
 // and the number of augmentation dots, or null when neither can be named.
@@ -172,15 +217,17 @@ function notatedValue(el, beats, ratio) {
   return typeForBeats(beats * ratio)
 }
 
-// actual-notes / normal-notes of a <time-modification>, eg. 3/2 for a
-// triplet, or 1 for a note played as it is written
+// The <time-modification> of a note as [ratio, actualNotes]: the ratio
+// actual-notes / normal-notes, eg. 3/2 for a triplet, and the number of notes
+// the tuplet is written with, which is the number drawn over its bracket (see
+// tupletGroups in st/staff_rhythm). [1, 0] for a note played as it is written
 function timeModification(el) {
   let mod = childEl(el, "time-modification")
-  if (!mod) { return 1 }
+  if (!mod) { return [1, 0] }
 
   let actual = +(childText(mod, "actual-notes") || 0)
   let normal = +(childText(mod, "normal-notes") || 0)
-  return actual > 0 && normal > 0 ? actual / normal : 1
+  return actual > 0 && normal > 0 ? [actual / normal, actual] : [1, 0]
 }
 
 // The rests the score hides (MuseScore writes the invisible rests it pads a
@@ -190,11 +237,13 @@ function isHidden(el) {
 }
 
 // The notated value of a note or rest event, the drawing data of
-// st/staff_rhythm: its value and dots, and the tuplet ratio it is played at
-// (1 for a plain note). The stem the score writes is the direction of a beam,
-// so the staff works out its own (see stemDirection in st/staff_rhythm)
+// st/staff_rhythm: its value and dots, the tuplet it is played at (its ratio
+// and the number of notes it is written with), and the beam, slur and tuplet
+// spans the score writes on it. The stem the score writes is the direction of
+// a beam, so the staff works out its own (see stemDirection in
+// st/staff_rhythm)
 function notationOf(el, duration) {
-  let ratio = timeModification(el)
+  let [ratio, actual] = timeModification(el)
   let value = notatedValue(el, duration, ratio) || {type: "quarter", dots: 0}
 
   let out = {type: value.type}
@@ -203,10 +252,26 @@ function notationOf(el, duration) {
     out.dots = value.dots
   }
 
-  // the tuplet brackets and beams of part 2 (sr-score-beams-slurs-q2) are the
-  // ratio's consumer; nothing draws it yet
   if (ratio != 1) {
     out.tuplet = ratio
+    if (actual) {
+      out.tupletNotes = actual
+    }
+  }
+
+  let beams = beamsOf(el)
+  if (beams) {
+    out.beams = beams
+  }
+
+  let slurs = spansOf(el, "slur")
+  if (slurs) {
+    out.slurs = slurs
+  }
+
+  let tuplets = spansOf(el, "tuplet")
+  if (tuplets) {
+    out.tuplets = tuplets
   }
 
   return out
@@ -573,6 +638,10 @@ export function parseMusicXML(text) {
       dots: event.dots,
       voice: event.voice,
       tuplet: event.tuplet,
+      tupletNotes: event.tupletNotes,
+      beams: event.beams,
+      slurs: event.slurs,
+      tuplets: event.tuplets,
     })
 
     for (let event of part.events) {
