@@ -7,7 +7,7 @@ import {shiftNotationOctaves} from "st/song_parser"
 import {
   RandomNotes, SweepRangeNotes, MiniSteps, TriadNotes, SevenOpenNotes,
   ProgressionGenerator, PositionGenerator, IntervalGenerator, SheetMusicGenerator,
-  allKeySignatures
+  allKeySignatures, currentDrillMode
 } from "st/generators"
 
 import {
@@ -204,11 +204,12 @@ export function pieceSectionMeasures(staff, settings, song) {
 
 // The measures of the piece section as flashcards (see st/measure_cards), or
 // null for pasted notation, a section that is one whole section card or a
-// section without notes on the staff. No more than MAX_MEASURES_PER_CARD bars
-// are ever shown at once, so a whole section longer than that is walked in
-// order as capped cards, wrapping back to the section's start. The deck of the
-// latest settings is kept so a rebuilt generator carries on from the card
-// being shown
+// section without notes on the staff. A card is fitted to the plate in the
+// wait mode only, so that is where the cap holds: a whole section longer than
+// MAX_MEASURES_PER_CARD is walked in order as capped cards, wrapping back to
+// the section's start, while a scrolling one runs on as the single looping
+// card. The deck of the latest settings is kept so a rebuilt generator carries
+// on from the card being shown
 let cardDeck = null
 
 export function measureCardDeck(staff, settings) {
@@ -218,6 +219,10 @@ export function measureCardDeck(staff, settings) {
   }
 
   let wholeSection = !(Number(settings.measuresPerCard) >= 1)
+  if (wholeSection && currentDrillMode() != "wait") {
+    return null
+  }
+
   let perCard = wholeSection ? MAX_MEASURES_PER_CARD : settings.measuresPerCard
   let order = wholeSection ? IN_ORDER : settings.order
 

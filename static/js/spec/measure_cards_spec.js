@@ -91,6 +91,17 @@ describe("measure cards", function() {
         .toEqual([[0, 1, 2], [3, 4, 5], [6]])
     })
 
+    it("leaves a pool of one measure unnumbered, whatever the card size", function() {
+      let pool = pickupMeasures().slice(1, 2)
+
+      for (let size of [1, 2, MAX_MEASURES_PER_CARD]) {
+        let cards = measureCards(pool, size)
+        expect(cards.map(card => card.numbered)).toEqual([false])
+        expect(cards.map(card => measureMarks(cardColumns(card))))
+          .toEqual([[null, null, null]])
+      }
+    })
+
     it("marks the first column of each measure of a numbered card", function() {
       let measures = [...pickupMeasures(), {number: 3, columns: []}, {number: 4, columns: [["F5"]]}]
       let card = sectionCard(measures)

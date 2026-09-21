@@ -38,8 +38,9 @@ export const MAX_MEASURES_PER_CARD = 3
 
 /**
  * Groups the pool into cards of perCard contiguous measures, the last card
- * shorter when the pool doesn't divide evenly. Cards of more than one measure
- * are numbered, the short last card of the deck along with them.
+ * shorter when the pool doesn't divide evenly. A deck of cards of more than
+ * one measure is numbered, its short last card along with the rest; a deck of
+ * single bars, a pool of one among them, draws no bar lines.
  * @param {PoolMeasure[]} measures
  * @param {number} perCard
  * @returns {MeasureCard[]}
@@ -49,7 +50,9 @@ export function measureCards(measures, perCard) {
   let cards = []
 
   for (let i = 0; i < measures.length; i += size) {
-    cards.push(sectionCard(measures.slice(i, i + size), {numbered: size > 1}))
+    cards.push(sectionCard(measures.slice(i, i + size), {
+      numbered: size > 1 && measures.length > 1,
+    }))
   }
 
   return cards

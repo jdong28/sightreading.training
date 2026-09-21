@@ -17,8 +17,8 @@ import {setAppStore} from "st/storage"
 import {importMusicXMLPiece, addPiece} from "st/sheet_music_deck"
 import {parseMusicXML} from "st/musicxml"
 import {SHEET_MUSIC_STORAGE_KEY, BOTH_HANDS} from "st/data"
-import {MAX_MEASURES_PER_CARD, RANDOM_ORDER, cardColumns} from "st/measure_cards"
-import {DRILL_STORAGE_KEY} from "st/generators"
+import {MAX_MEASURES_PER_CARD, RANDOM_ORDER, MeasureCardGenerator, cardColumns} from "st/measure_cards"
+import {DRILL_STORAGE_KEY, SheetMusicGenerator} from "st/generators"
 import {scopeEvent} from "st/events"
 import NoteStats from "st/note_stats"
 import {KeySignature} from "st/music"
@@ -573,6 +573,63 @@ describe("sight reading page", function() {
     }))
     expect(plateLabel()).toEqual("3 ♩ a bar · measures 1–3")
     expect(numberedBarLines().slice(0, 4)).toEqual(["1", "2", "3", "1"])
+  })
+
+  it("scrolls the whole section as one card and walks it in capped cards while waiting", async function() {
+    let {piece} = await importMusicXMLPiece("salon_octet.musicxml", octetXML, store)
+
+    window.localStorage.setItem(DRILL_STORAGE_KEY, JSON.stringify({
+      staff: "grand", generator: "sheet music", mode: "scroll",
+    }))
+    window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+      piece: piece.id, startMeasure: 1, endMeasure: 8, hand: BOTH_HANDS, measuresPerCard: "all",
+    }))
+
+    renderPage()
+    let generator = () => page.state.notes.generator
+    let wholeSection = [1, 2, 3, 4, 5, 6, 7, 8]
+
+    // nothing is fitted to the plate while scrolling, so the section runs on
+    // as one looping card, without the blank stretch between cards
+    expect(page.state.mode).toEqual("scroll")
+    expect(generator() instanceof SheetMusicGenerator).toBe(true)
+    expect(page.currentCard().card.measures).toEqual(wholeSection)
+    expect(page.currentCard().number).toBe(null)
+    expect([...page.state.notes].some(column => !column.length)).toBe(false)
+
+    // waiting fits the card to the plate, where the cap holds
+    flushSync(() => page.setMode("wait"))
+    expect(generator() instanceof MeasureCardGenerator).toBe(true)
+    expect(generator().cards.map(card => card.measures)).toEqual([[1, 2, 3], [4, 5, 6], [7, 8]])
+    expect(page.currentCard().card.measures).toEqual([1, 2, 3])
+
+    flushSync(() => page.setMode("scroll"))
+    expect(generator() instanceof SheetMusicGenerator).toBe(true)
+    expect(page.currentCard().card.measures).toEqual(wholeSection)
+  })
+
+  it("draws no bar line for a section of a single measure", async function() {
+    let {piece} = await importMusicXMLPiece("salon_octet.musicxml", octetXML, store)
+
+    window.localStorage.setItem(DRILL_STORAGE_KEY, JSON.stringify({staff: "grand", generator: "sheet music"}))
+    window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+      piece: piece.id, startMeasure: 3, endMeasure: 3, hand: BOTH_HANDS, measuresPerCard: "2",
+    }))
+
+    let el = renderPage()
+    let barLines = () => el.querySelectorAll(`.${staffStyles.bar_line}`).length
+
+    expect(page.currentCard().card.measures).toEqual([3])
+    expect(barLines()).toEqual(0)
+
+    // the lone bar is drawn the same way at every card size
+    for (let size of [String(MAX_MEASURES_PER_CARD), "1", "all"]) {
+      flushSync(() => page.setGenerator(page.state.currentGenerator, {
+        ...page.state.currentGeneratorSettings, measuresPerCard: size,
+      }))
+      expect(page.currentCard().card.measures).toEqual([3])
+      expect(barLines()).toEqual(0)
+    }
   })
 
   it("offers the order control only once a card size is picked", async function() {

@@ -213,6 +213,12 @@ export default class SightReadingPage extends React.Component {
       }
     }
 
+    // a piece's whole section drill is capped to cards in the wait mode only
+    // (see measureCardDeck), so its generator is rebuilt when the mode changes
+    if (prevState.mode != this.state.mode && this.currentPieceSection()) {
+      this.refreshNoteList()
+    }
+
     if (prevState.currentStaff != this.state.currentStaff ||
         prevState.currentGenerator != this.state.currentGenerator ||
         prevState.currentGeneratorSettings != this.state.currentGeneratorSettings ||
