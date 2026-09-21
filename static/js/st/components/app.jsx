@@ -1,5 +1,6 @@
 import SightReadingPage from "st/components/pages/sight_reading_page"
 import ScorePage from "st/components/pages/score_page"
+import ScoreEnginesPage from "st/components/pages/score_engines_page"
 import SetupPage from "st/components/pages/setup_page"
 import OnboardingPage from "st/components/pages/onboarding_page"
 import LoginPage from "st/components/pages/login_page"
@@ -141,6 +142,7 @@ class Layout extends React.Component {
           />
         } />
         <Route path="/sheet-music" element={<ScorePage {...pageProps} />} />
+        <Route path="/score-engines" element={<ScoreEnginesPage />} />
         <Route path="/staff2" element={<SightReadingPage useStaffTwo={true} {...pageProps} />} />
         <Route path="/setup" element={<SetupPage />} />
         <Route path="/login" element={<LoginPage/>} />

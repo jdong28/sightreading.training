@@ -4,7 +4,15 @@ include_rules
 : js/st/main.jsx | js/st/song_parser_peg.js js/st/staff_assets.jsx |> !esbuild_bundle |> main.js | main.css main.css.map main.js.map
 : js/service_worker.js |> !esbuild_bundle |> service_worker.js | service_worker.js.map
 
+: js/st/score_render/index.ts |> ^ esbuild %f^ $(TOP)/node_modules/.bin/esbuild %f --log-level=warning --bundle --format=esm --sourcemap --outfile=%o |> score_engines.js | score_engines.js.map
+
+# the engraving engines bundle's Verovio modules, LGPL, served unmodified as
+# their own files beside it (see js/st/score_render/verovio.ts)
+: $(TOP)/node_modules/verovio/dist/verovio-module.mjs |> cp %f %o |> verovio-module.mjs
+: $(TOP)/node_modules/verovio/dist/verovio.mjs |> cp %f %o |> verovio.mjs
+
 : main.js |> !minify |> main.min.js
+: score_engines.js |> ^ minify %f > %o^ $(TOP)/node_modules/.bin/esbuild --minify --format=esm %f --log-level=error --outfile=%o |> score_engines.min.js
 : main.css |> !minify_css |> main.min.css
 : service_worker.js |> !minify |> service_worker.min.js
 

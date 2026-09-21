@@ -114,6 +114,23 @@ describe("app routing", function() {
       expect(drawerText(el)).not.toContain("Clef")
     })
 
+    it("renders the engraving engines page at /score-engines, kept out of the navigation", function() {
+      let el = renderApp("/score-engines")
+
+      expect(document.title).toEqual("Engraving engines | Sight Reading Trainer")
+      expect(el.querySelector("main h1").textContent).toEqual("Engraving engines")
+      expect(el.textContent).toContain("No pieces imported yet")
+      expect([...el.querySelectorAll("nav a")].map(a => a.getAttribute("href"))).not.toContain("/score-engines")
+    })
+
+    it("links the score page's drawer to the engraving engines page", function() {
+      let el = renderApp("/sheet-music")
+      let link = [...el.querySelectorAll(`.${drawerStyles.drawer} a`)]
+        .find(a => a.textContent == "Compare engraving engines")
+      expect(link).toBeDefined()
+      expect(link.getAttribute("href")).toMatch(/^\/score-engines/)
+    })
+
     it("imports a compressed .mxl file picked in the score page's deck, and picks it", async function() {
       let el = renderApp("/sheet-music")
       let drawer = el.querySelector(`.${drawerStyles.drawer}`)
