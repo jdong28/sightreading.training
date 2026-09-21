@@ -1,0 +1,75 @@
+/* The engine card on the trainer's plate: the engine's drawing in Salon ink
+   on the plate's paper, as on the engines page, and the drill's marks as
+   classes on the drawn heads (st/score_render/card_join), which change colour
+   and glow only, never the layout: the column to play in gilt, those done
+   faded back, those missed in oxblood */
+
+.score_card {
+    position: relative;
+    min-height: 150px;
+    transition: opacity .2s ease;
+
+    &.drawing {
+        opacity: .55;
+    }
+}
+
+.plate {
+    :global(svg) {
+        display: block;
+        max-width: 100%;
+        height: auto;
+    }
+
+    /* OSMD's page background rect would cover the plate */
+    :global(svg > rect:first-child) {
+        fill: transparent;
+    }
+
+    :global(svg [fill]:not([fill="none"]):not([fill="transparent"])) {
+        fill: var(--salon-ink);
+    }
+
+    :global(svg [stroke]:not([stroke="none"]):not([stroke="transparent"])) {
+        stroke: var(--salon-ink);
+    }
+
+    /* Verovio draws with currentColor; its part labels are chrome */
+    :global(svg) {
+        color: var(--salon-ink);
+    }
+
+    :global(g.label), :global(g.labelAbbr) {
+        display: none;
+    }
+
+    :global(.score_note_done),
+    :global(.score_note_done *) {
+        fill: var(--salon-ink-muted) !important;
+        stroke: var(--salon-ink-muted) !important;
+        color: var(--salon-ink-muted) !important;
+        opacity: .5;
+    }
+
+    :global(.score_note_current),
+    :global(.score_note_current *) {
+        fill: var(--salon-gilt) !important;
+        stroke: var(--salon-gilt) !important;
+        color: var(--salon-gilt) !important;
+        opacity: 1;
+    }
+
+    :global(.score_note_current) {
+        /* room kept round it when scrolled to, so the system shows */
+        scroll-margin: 90px 0;
+        filter: drop-shadow(0 0 2px var(--salon-gilt-light)) drop-shadow(0 0 5px var(--salon-gilt-light));
+    }
+
+    :global(.score_note_missed),
+    :global(.score_note_missed *) {
+        fill: var(--salon-oxblood) !important;
+        stroke: var(--salon-oxblood) !important;
+        color: var(--salon-oxblood) !important;
+        opacity: 1;
+    }
+}

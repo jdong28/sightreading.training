@@ -10,8 +10,9 @@ import styles from "./sight_reading_page.module.css"
 import staffStyles from "st/components/staff.module.css"
 
 import {noteName, parseNote} from "st/music"
-import {STAVES, GENERATORS, sheetMusicPiece, wholeSectionDrill, RIGHT_HAND, LEFT_HAND} from "st/data"
-import {pieceSong} from "st/sheet_music_deck"
+import {STAVES, GENERATORS, sheetMusicPiece, wholeSectionDrill, handTracks, RIGHT_HAND, LEFT_HAND} from "st/data"
+import {pieceSong, pieceSource} from "st/sheet_music_deck"
+import {parseMusicXML} from "st/musicxml"
 import {getAppStore} from "st/storage"
 import {
   ProgrammeDrawer, generatorLabel, staffLabel, keyLabel
@@ -42,6 +43,9 @@ import {StaffTwo} from "st/components/staff_two"
 import {fitNoteWidth, fitStaffScale, minNoteWidth, drawsRests} from "st/components/staff_notes"
 import {columnAdvances, columnSpan} from "st/staff_rhythm"
 import {drillColumns} from "st/measure_cards"
+import {ScoreCard} from "st/components/score_card"
+import {loadScoreEngines} from "st/score_render/load"
+import {joinable} from "st/score_render/card_join"
 
 const DEFAULT_NOTE_WIDTH = 100
 const DEFAULT_SPEED = 4
@@ -148,11 +152,33 @@ export const EXERCISES_PROGRAMME = {
   // place of the exercise's name and key.
   // staffFor(settings), the staff the generator's settings (defaults filled
   // in) are drawn on, which then follows them in place of a clef setting.
+  // engine, the key of the engraving engine (st/score_render) that draws an
+  // imported piece's cards from its source MusicXML in wait mode, in place of
+  // the app's own staff (see engineCard)
+}
+
+export const MISSING_ENGINE_SOURCE = "Drawn on the trainer's staff: this piece was imported " +
+  "before the app kept each piece's score. Import its file again in the programme (its stats are " +
+  "kept) to practise from the engraved score."
+
+// the score staff each track of the score's song model reads (see
+// st/musicxml), null when the score can't be read
+function trackStaves(musicXML) {
+  try {
+    return parseMusicXML(musicXML).tracks.map(track => track.scoreStaff)
+  } catch (err) {
+    console.warn("Couldn't read the piece's score", err)
+    return null
+  }
 }
 
 export default class SightReadingPage extends React.Component {
   static defaultProps = {
     programme: EXERCISES_PROGRAMME,
+    // where an imported piece's source MusicXML is read, and the engines
+    // that draw it are loaded, for the programme's engine
+    readSource: pieceSource,
+    loadEngines: loadScoreEngines,
   }
 
   constructor(props) {
@@ -226,6 +252,13 @@ export default class SightReadingPage extends React.Component {
       session: false,
       sessionStartedAt: null,
       clockNow: null,
+
+      // the source MusicXML of the drilled piece, for the programme's
+      // engine: {piece, status: "loading" | "ready" | "missing" | "failed",
+      // musicXML, measureStarts}
+      engineSource: null,
+      // the columns of the engine card a miss was counted on this pass
+      engineMissed: [],
     }
   }
 
@@ -261,6 +294,149 @@ export default class SightReadingPage extends React.Component {
         prevState.stats != this.state.stats)
     {
       this.flushSectionPractice()
+    }
+
+    this.updateEngineCard(prevState)
+  }
+
+  // Keeps the engine card's inputs in step with the drill: the source of the
+  // drilled piece read, the notes rebuilt when cards go between the engine
+  // (uncapped) and the app's staff (capped to the plate), and the misses
+  // marked on the card cleared when a new pass of it starts
+  updateEngineCard(prevState) {
+    if (!this.programme.engine) { return }
+
+    this.loadEngineSource()
+
+    if (this.state.notes && this.state.currentGenerator &&
+        this.engineCards() != !!this.notesForEngine)
+    {
+      this.refreshNoteList()
+      return
+    }
+
+    // a card whose columns can't be joined (a piece stored without the
+    // score's rhythm), or whose hand's staves can't be told in the score, is
+    // drawn by the app's staff
+    let current = this.engineCards() && this.currentCard()
+    if (current && (!joinable(current.card.columns) || this.engineStaves() === undefined)) {
+      this.setState({engineSource: {...this.state.engineSource, status: "failed"}})
+      return
+    }
+
+    if (prevState.notes != this.state.notes && this.state.engineMissed.length) {
+      let before = this.cardHead(prevState.notes)
+      let after = this.cardHead(this.state.notes)
+      if (before.generator != after.generator || before.index == null ||
+          after.index == null || after.index <= before.index)
+      {
+        this.setState({engineMissed: []})
+      }
+    }
+  }
+
+  // the generator of notes and the index in its card of their head column
+  cardHead(notes) {
+    let index = notes && notes.length ? notes.currentColumn().cardIndex : null
+    return {generator: notes && notes.generator, index: index ?? null}
+  }
+
+  // reads the drilled piece's source MusicXML, once for each piece
+  loadEngineSource() {
+    let settings = this.currentSettings()
+    let piece = this.currentPieceSection() ? sheetMusicPiece(settings) : null
+    let source = this.state.engineSource
+
+    if (!piece) {
+      if (source) { this.setState({engineSource: null}) }
+      return
+    }
+
+    if (source && source.piece == piece) { return }
+
+    this.setState({engineSource: {piece, status: "loading"}})
+
+    let measureStarts = pieceSong(piece).metadata?.measureStarts || null
+    this.props.readSource(piece.id)
+      .catch(err => {
+        console.warn("Couldn't read the piece's score", err)
+        return null
+      })
+      .then(musicXML => {
+        if (this.unmounted || this.state.engineSource?.piece != piece) { return }
+        this.setState({engineSource: {
+          piece,
+          status: musicXML ? "ready" : "missing",
+          musicXML,
+          measureStarts,
+          trackStaves: musicXML ? trackStaves(musicXML) : null,
+        }})
+      })
+  }
+
+  // whether the drill's cards are drawn by the programme's engine: an
+  // imported piece whose source is stored, in wait mode
+  engineCards() {
+    let source = this.state.engineSource
+    return !!(this.programme.engine && this.state.mode == "wait" &&
+      source && source.status == "ready" && this.currentPieceSection())
+  }
+
+  // whether the plate waits before it knows which staff draws the card: on
+  // the piece's source, or on the plate's width for the engine
+  engineCardPending() {
+    let source = this.state.engineSource
+    if (!this.programme.engine || this.state.mode != "wait" || !source) { return false }
+    return source.status == "loading" || (this.engineCards() && !this.state.staffWidth)
+  }
+
+  // The score staves the drill's tracks read, the ones the engine draws:
+  // null for every staff, undefined when the stored song's tracks can't be
+  // told among the score's
+  engineStaves() {
+    let settings = this.currentSettings()
+    let song = pieceSong(sheetMusicPiece(settings))
+    let tracks = handTracks(song, settings.hand)
+    if (!tracks) { return null }
+
+    let all = this.state.engineSource?.trackStaves
+    if (!all || all.length != song.tracks.length) { return undefined }
+
+    let cache = this.engineStavesCache
+    if (!cache || cache.all != all || cache.tracks != tracks.join(",")) {
+      cache = this.engineStavesCache = {
+        all, tracks: tracks.join(","), staves: tracks.map(idx => all[idx]),
+      }
+    }
+    return cache.staves
+  }
+
+  // the engine card's props for the card at the head of the drill, or null
+  // when the app's staff draws it
+  engineCard() {
+    if (!this.engineCards() || !this.notesForEngine) { return null }
+
+    let current = this.currentCard()
+    let width = this.state.staffWidth
+    let staves = this.engineStaves()
+    if (!current || !width || !joinable(current.card.columns) || staves === undefined) { return null }
+
+    let {card} = current
+    let source = this.state.engineSource
+    let head = this.cardHead(this.state.notes).index
+
+    return {
+      engine: this.programme.engine,
+      musicXML: source.musicXML,
+      measureStarts: source.measureStarts,
+      fromMeasure: card.startMeasure,
+      toMeasure: card.endMeasure,
+      hand: "both",
+      staves,
+      width,
+      columns: card.columns,
+      head,
+      missed: this.state.engineMissed,
     }
   }
 
@@ -361,11 +537,16 @@ export default class SightReadingPage extends React.Component {
       ...this.state.currentGeneratorSettings
     }
 
+    // cards an engine draws aren't capped to the plate
+    let engineCards = this.engineCards()
+    this.notesForEngine = engineCards
+
     let generatorInstance = generator.create.call(
       generator,
       this.state.currentStaff,
       this.state.keySignature,
-      generatorSettings
+      generatorSettings,
+      {engineCards}
     )
 
     var notes
@@ -601,10 +782,17 @@ export default class SightReadingPage extends React.Component {
         gaEvent("sight_reading", "note", "miss");
         this.state.stats.missNotes(missed);
 
+        let {index} = this.cardHead(this.state.notes)
+        let engineMissed = this.state.engineMissed
+        if (index != null && !engineMissed.includes(index)) {
+          engineMissed = [...engineMissed, index]
+        }
+
         this.setState({
           noteShaking: true,
           heldNotes: {},
           touchedNotes: {},
+          engineMissed,
         });
 
         setTimeout(() => this.setState({noteShaking: false}), 500);
@@ -1229,6 +1417,7 @@ export default class SightReadingPage extends React.Component {
 
   renderStaffPlate() {
     let staff
+    let engineCard = this.engineCard()
 
     if (this.state.currentStaff) {
       // new renderer with mode notes only
@@ -1245,6 +1434,15 @@ export default class SightReadingPage extends React.Component {
            height = {STAFF_TWO_HEIGHT}
            maxScale = {0.3 * PLATE_STAFF_SCALE}
           />
+      } else if (engineCard) {
+        staff = <ScoreCard
+          {...engineCard}
+          loadEngines={this.props.loadEngines}
+          onError={this._onEngineError ||= () => this.setState({
+            engineSource: {...this.state.engineSource, status: "failed"},
+          })} />
+      } else if (this.engineCardPending()) {
+        staff = null
       } else {
         let {scale, noteWidth, unitColumns} = this.staffLayout()
         staff = this.state.currentStaff.render.call(this, {
@@ -1269,7 +1467,22 @@ export default class SightReadingPage extends React.Component {
         className={classNames(staffStyles.staff_wrapper, styles.staff_wrapper)}>
         {staff}
       </div>
+      {this.renderEngineSourceNote()}
     </Plate>
+  }
+
+  // why a piece is drawn on the app's staff rather than from its score
+  renderEngineSourceNote() {
+    let source = this.state.engineSource
+    if (!this.programme.engine || this.state.mode != "wait" || !source) { return null }
+
+    if (source.status == "missing") {
+      return <p className={styles.plate_note} data-engine-note>
+        {MISSING_ENGINE_SOURCE}
+      </p>
+    }
+
+    return null
   }
 
   renderTransport() {

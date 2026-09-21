@@ -121,7 +121,7 @@ export function measuresDescription(song) {
 }
 
 // the track indices to drill for a hand setting
-function handTracks(song, hand) {
+export function handTracks(song, hand) {
   let staves = staffTracks(song)
 
   switch (hand) {
@@ -218,14 +218,18 @@ export function wholeSectionDrill(settings) {
   return !(Number(settings.measuresPerCard) >= 1)
 }
 
-export function measureCardDeck(staff, settings) {
+// opts.capped false is the engine card (st/score_render), drawn by an engine
+// that lays out as many measures as it is given, so a whole section is one
+// looping card however long it is, still a deck so its measures' stats are
+// recorded
+export function measureCardDeck(staff, settings, {capped=true}={}) {
   let piece = sheetMusicPiece(settings)
   if (!piece) {
     return null
   }
 
   let wholeSection = wholeSectionDrill(settings)
-  if (wholeSection && currentDrillMode(SCORE_DRILL_STORAGE_KEY) != "wait") {
+  if (wholeSection && capped && currentDrillMode(SCORE_DRILL_STORAGE_KEY) != "wait") {
     return null
   }
 
@@ -234,7 +238,7 @@ export function measureCardDeck(staff, settings) {
 
   let key = JSON.stringify([
     piece.id, staff.name, staff.range, settings.startMeasure, settings.endMeasure,
-    settings.hand, settings.measuresPerCard, order,
+    settings.hand, settings.measuresPerCard, order, capped,
   ])
 
   if (cardDeck && cardDeck.key == key && cardDeck.piece == piece) {
@@ -242,10 +246,12 @@ export function measureCardDeck(staff, settings) {
   }
 
   let measures = pieceSectionMeasures(staff, settings, pieceSong(piece))
-  let cards = measureCards(measures, perCard)
+  let cards = wholeSection && !capped ?
+    (measures.length ? [sectionCard(measures)] : []) :
+    measureCards(measures, perCard)
 
   // a whole section the cap already fits stays the single looping card
-  let deck = wholeSection && cards.length < 2 ? null :
+  let deck = wholeSection && capped && cards.length < 2 ? null :
     new MeasureCardDeck(cards, {pieceId: piece.id, order})
 
   if (deck && !deck.playable) {
@@ -698,8 +704,10 @@ const ALL_GENERATORS = [
       return metadata && !Array.isArray(metadata.measureKeySignatures) ?
         "Re-import to follow the score key" : null
     },
-    create: function(staff, keySignature, settings) {
-      let deck = measureCardDeck(staff, settings)
+    // opts.engineCards: the page draws each card with an engraving engine,
+    // so a card isn't capped to what the plate fits (see measureCardDeck)
+    create: function(staff, keySignature, settings, opts={}) {
+      let deck = measureCardDeck(staff, settings, {capped: !opts.engineCards})
       if (deck) {
         let recordNotes = settings.startMeasure != settings.endMeasure
         return new MeasureCardGenerator(deck, {recordNotes})

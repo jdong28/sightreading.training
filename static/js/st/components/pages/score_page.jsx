@@ -2,7 +2,9 @@
 // trainer (st/components/pages/sight_reading_page) with the score's programme
 // in place of the exercises': the page owns which piece, which measures and
 // which hand are drilled, in its own drawer, and the trainer hands each card
-// of them to the staff to draw
+// of them to the staff to draw: in wait mode the piece's own score, drawn by
+// an engraving engine from its source MusicXML (st/components/score_card),
+// else the app's staff
 
 import * as React from "react"
 
@@ -43,11 +45,14 @@ export const SCORE_PROGRAMME = {
   // a piece without a key the trainer can draw in is drawn in C major
   userKey: () => allKeySignatures()[0],
   staffFor: settings => scoreStaff(settings),
+  // a piece with its source stored is drawn from its score in wait mode
+  engine: "osmd",
 }
 
-// the midi input's messages reach the trainer through the forwarded ref
+// the midi input's messages reach the trainer through the forwarded ref; a
+// spec may hand it another programme, eg. without the engine
 const ScorePage = React.forwardRef((props, ref) =>
-  <SightReadingPage ref={ref} {...props} programme={SCORE_PROGRAMME} />
+  <SightReadingPage ref={ref} programme={SCORE_PROGRAMME} {...props} />
 )
 
 ScorePage.displayName = "ScorePage"

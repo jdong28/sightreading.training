@@ -6,7 +6,7 @@ import {MemoryRouter} from "react-router-dom"
 import SightReadingPage, {
   formatElapsed, accuracyPercent, romanNumeral, MIN_FIT_SCALE, PLATE_STAFF_SCALE
 } from "st/components/pages/sight_reading_page"
-import ScorePage from "st/components/pages/score_page"
+import ScorePage, {SCORE_PROGRAMME} from "st/components/pages/score_page"
 import {GStaff} from "st/components/staves"
 import NoteList from "st/note_list"
 import {
@@ -194,22 +194,24 @@ describe("sight reading page", function() {
     }
   })
 
-  let renderPage = (component=SightReadingPage) => {
+  let renderPage = (component=SightReadingPage, props={}) => {
     container = document.createElement("div")
     document.body.appendChild(container)
     root = createRoot(container)
     flushSync(() => {
       // the programme drawer links to the setup page
       root.render(React.createElement(MemoryRouter, {},
-        React.createElement(component, {ref: p => page = p})))
+        React.createElement(component, {ref: p => page = p, ...props})))
     })
     // the mount's own state updates
     flushSync(() => {})
     return container
   }
 
-  // the trainer drilling an imported piece, as the score page
-  let renderScorePage = () => renderPage(ScorePage)
+  // the trainer drilling an imported piece, as the score page, on the app's
+  // own staff (as in scroll mode, or for a piece stored without its score);
+  // the engine card has its own specs (see score_card_spec)
+  let renderScorePage = () => renderPage(ScorePage, {programme: {...SCORE_PROGRAMME, engine: null}})
 
   let click = button => flushSync(() => button.click())
 
