@@ -194,7 +194,7 @@ export function pieceSectionMeasures(staff, settings, song) {
     .filter(number => number >= start && number <= end)
     .map(number => {
       let columns = extractSectionColumns(song, {
-        startMeasure: number, endMeasure: number, track: tracks, staves: true,
+        startMeasure: number, endMeasure: number, track: tracks, notation: true,
       })
       let [visible] = filterColumnsToRange(columns, staff.range[0], staff.range[1])
       return {number, columns: visible}
