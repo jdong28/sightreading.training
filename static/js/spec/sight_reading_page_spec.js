@@ -404,12 +404,30 @@ describe("sight reading page", function() {
 
     // the smallest staff still worth reading: a card that doesn't fit at it
     // runs past the plate's edge rather than shrinking further
-    expect(MIN_FIT_SCALE).toEqual(0.4)
-    expect(page.staffLayout().scale).toEqual(0.4)
+    expect(MIN_FIT_SCALE).toEqual(0.35)
+    expect(page.staffLayout().scale).toEqual(0.35)
 
     // and a plate with room for the card keeps the staff at its full size
     flushSync(() => page.setState({staffWidth: 1240}))
     expect(page.staffLayout().scale).toEqual(page.state.scale)
+  })
+
+  it("fits a card that overflowed at the old 0.4 floor", async function() {
+    let {piece} = await importMusicXMLPiece("seconds.musicxml", secondsXML("Seconds", true), store)
+
+    window.localStorage.setItem(DRILL_STORAGE_KEY, JSON.stringify({staff: "grand", generator: "sheet music"}))
+    window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+      piece: piece.id, startMeasure: 1, endMeasure: 8, hand: BOTH_HANDS, measuresPerCard: "all",
+    }))
+
+    renderPage()
+    // a plate whose fit is below the old 0.4 floor (it would have clamped
+    // there and run past the edge) but above the new one
+    flushSync(() => page.setState({staffWidth: 700}))
+
+    let scale = page.staffLayout().scale
+    expect(scale).toBeGreaterThan(MIN_FIT_SCALE)
+    expect(scale).toBeLessThan(0.4)
   })
 
   it("fits a card of the score's busiest bars inside the plate", async function() {

@@ -113,7 +113,7 @@ describe("staves", function() {
   // the columns of the four measures of a clefChangeScore as one card
   let clefChangeCard = opts => {
     let song = parseMusicXML(clefChangeScore(opts))
-    let [card] = measureCards(pieceSectionMeasures(GRAND, {startMeasure: 1, endMeasure: 4, hand: BOTH_HANDS}, song), 4)
+    let card = sectionCard(pieceSectionMeasures(GRAND, {startMeasure: 1, endMeasure: 4, hand: BOTH_HANDS}, song))
     return card.columns.map((column, idx) => cardColumn(card, idx))
   }
 
@@ -398,8 +398,8 @@ describe("staves", function() {
       // C4 before the change sits above the bass staff, and the narrowest
       // column leaves no room on the staff, so the clef goes above them both
       let song = parseMusicXML(clefChangeScore({notes: [["C", 3], ["C", 4], ["D", 4], ["E", 4]]}))
-      let [card] = measureCards(
-        pieceSectionMeasures(GRAND, {startMeasure: 1, endMeasure: 4, hand: LEFT_HAND}, song), 4)
+      let card = sectionCard(
+        pieceSectionMeasures(GRAND, {startMeasure: 1, endMeasure: 4, hand: LEFT_HAND}, song))
       let columns = cardColumns(card)
 
       container.classList.add(staffStyles.staff_wrapper)
@@ -427,8 +427,8 @@ describe("staves", function() {
       // the lower staff changes to treble clef inside the card, and the C4
       // before the change pushes that clef above the staff
       let song = parseMusicXML(clefChangeScore({notes: [["C", 3], ["C", 4], ["D", 4], ["E", 4]]}))
-      let [card] = measureCards(
-        pieceSectionMeasures(GRAND, {startMeasure: 1, endMeasure: 4, hand: BOTH_HANDS}, song), 4)
+      let card = sectionCard(
+        pieceSectionMeasures(GRAND, {startMeasure: 1, endMeasure: 4, hand: BOTH_HANDS}, song))
       let unitColumns = cardColumns(card)
       let keySignature = new KeySignature(-1)
 
@@ -698,7 +698,7 @@ describe("staves", function() {
         notes: [["C", 4], ["E", 4], ["G", 2], ["B", 2]],
       }))
 
-      let [card] = measureCards(pieceSectionMeasures(GRAND, {startMeasure: 1, endMeasure: 4, hand: BOTH_HANDS}, song), 4)
+      let card = sectionCard(pieceSectionMeasures(GRAND, {startMeasure: 1, endMeasure: 4, hand: BOTH_HANDS}, song))
       renderStaff(GrandStaff, card.columns.map((column, idx) => cardColumn(card, idx)))
 
       let lower = staffEl("lower")

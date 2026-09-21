@@ -53,10 +53,11 @@ export const PLATE_STAFF_SCALE = 0.8
 
 // A piece's card (or whole section) is fitted to the plate: its columns are
 // squeezed down to the card's minNoteWidth, then the staff shrinks down to
-// MIN_FIT_SCALE, the smallest staff still worth reading, which fits a card of
-// up to six of the score's busiest bars. A card that still doesn't fit, the
-// densest eight bar ones, runs on past the plate's edge
-export const MIN_FIT_SCALE = 0.4
+// MIN_FIT_SCALE, the smallest staff still worth reading. Together with
+// MAX_MEASURES_PER_CARD (st/measure_cards), this fits even the score's
+// busiest three bar cards on the normal (non-fullscreen) plate with a little
+// room to spare
+export const MIN_FIT_SCALE = 0.35
 
 // the legacy renderer's scale for the window's width
 function staffScale() {

@@ -14,7 +14,7 @@ import {getAppStore} from "st/storage"
 export const IN_ORDER = "in order"
 export const RANDOM_ORDER = "random"
 
-export const MAX_MEASURES_PER_CARD = 8
+export const MAX_MEASURES_PER_CARD = 3
 
 /**
  * The notes of one measure of the pool.

@@ -2,7 +2,7 @@ import MersenneTwister from "mersennetwister"
 
 import {
   measureCards, sectionCard, cardColumn, measureWeight, cardWeights, nextCardIndex,
-  MeasureCardDeck, MeasureCardGenerator, IN_ORDER, RANDOM_ORDER
+  MeasureCardDeck, MeasureCardGenerator, IN_ORDER, RANDOM_ORDER, MAX_MEASURES_PER_CARD
 } from "st/measure_cards"
 
 import {SheetMusicGenerator, generatorDefaultSettings} from "st/generators"
@@ -74,6 +74,18 @@ describe("measure cards", function() {
       expect(measureCards(pickupMeasures(), 0).map(c => c.measures)).toEqual([[0], [1], [2]])
       expect(measureCards(pickupMeasures(), 50).map(c => c.measures)).toEqual([[0, 1, 2]])
       expect(measureCards([], 2)).toEqual([])
+    })
+
+    it("splits a section longer than the cap into cards of at most the cap", function() {
+      expect(MAX_MEASURES_PER_CARD).toEqual(3)
+
+      let measures = Array.from({length: 7}, (_, idx) => ({number: idx, columns: [["C4"]]}))
+      expect(measureCards(measures, 50).map(c => c.measures)).toEqual([
+        [0, 1, 2], [3, 4, 5], [6],
+      ])
+      // a requested size above the cap is capped the same way
+      expect(measureCards(measures, MAX_MEASURES_PER_CARD + 4).map(c => c.measures))
+        .toEqual([[0, 1, 2], [3, 4, 5], [6]])
     })
 
     it("marks the first column of each measure of a card with more than one measure", function() {
@@ -421,7 +433,7 @@ describe("measure cards", function() {
       expect(input("order").values.map(v => v.name)).toEqual([IN_ORDER, RANDOM_ORDER])
       expect(input("measuresPerCard").default).toEqual(WHOLE_SECTION)
       expect(input("measuresPerCard").values.map(v => v.name))
-        .toEqual([WHOLE_SECTION, "1", "2", "3", "4", "5", "6", "7", "8"])
+        .toEqual([WHOLE_SECTION, ...Array.from({length: MAX_MEASURES_PER_CARD}, (_, idx) => `${idx + 1}`)])
     })
 
     it("keeps a saved drill without a card size on the whole section loop, however long", async function() {
