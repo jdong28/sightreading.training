@@ -701,7 +701,9 @@ export default class SightReadingPage extends React.Component {
 
         // every key is up without the column matched: it counts as missed
         // (once) and is played afresh from the next key down
-        this.missColumn(column.filter((n) => !this.state.heldNotes[n]))
+        let touched = Object.keys(this.state.touchedNotes)
+        this.missColumn(column.filter((n) => !this.state.heldNotes[n]),
+          this.state.notes.blamedNotes(touched, this.state.anyOctave))
         this.slipped = false
         this.setState({heldNotes: {}, touchedNotes: {}})
         break
@@ -773,7 +775,7 @@ export default class SightReadingPage extends React.Component {
         // the hit, whichever press is checked first
         let stray = notes.strayNotes(touched, anyOctave)
         if (stray.includes(note) || (matched && stray.length && this.missedNotes != notes)) {
-          this.missColumn(notes.currentColumn())
+          this.missColumn(notes.currentColumn(), notes.blamedNotes(touched, anyOctave))
         }
 
         if (matched) {
@@ -813,15 +815,16 @@ export default class SightReadingPage extends React.Component {
   // Counts the head column of notes as missed, at most once however many
   // slips and releases it takes to complete it, shaking the notes and
   // marking the column on an engine card each time. missed are the column's
-  // notes the stats count against
-  missColumn(missed) {
+  // notes the stats count against, blamed those the miss is put down to (see
+  // NoteList#blamedNotes)
+  missColumn(missed, blamed) {
     if (this.missedNotes != this.state.notes) {
       this.missedNotes = this.state.notes
       gaEvent("sight_reading", "note", "miss");
-      this.state.stats.missNotes(missed);
+      this.state.stats.missNotes(missed, blamed);
     } else if (!this.slipped) {
       // the grade of the measure cards counts every try gone wrong
-      this.state.stats.slipNotes(missed)
+      this.state.stats.slipNotes(missed, blamed)
     }
     // one slip a try, from a key down to every key up
     this.slipped = true

@@ -982,6 +982,25 @@ describe("sight reading page", function() {
       ])
     })
 
+    it("blames a hands-together miss on the staff of the note not held", async function() {
+      await renderSection({measuresPerCard: "1"})
+      let column = page.currentCard().card.columns[0]
+      let noteOn = staff => column.find((note, idx) => column.staves[idx] == staff)
+      let lower = noteOn("lower")
+      expect(noteOn("upper")).toBeDefined()
+
+      flushSync(() => page.pressNote(lower))
+      flushSync(() => page.pressNote(WRONG_NOTE))
+      flushSync(() => page.releaseNote(WRONG_NOTE))
+      flushSync(() => page.releaseNote(lower))
+      expect(page.state.stats.misses).toEqual(1)
+      playHead()
+      await finished()
+
+      let [review] = await reviews()
+      expect([review.itemId, review.staffMisses]).toEqual([`${piece.id}:both:1-1`, {upper: 1, lower: 0}])
+    })
+
     it("writes one review a lap of a looping card", async function() {
       await renderSection({endMeasure: 2, measuresPerCard: WHOLE_SECTION})
       for (let i = 0; i < 5; i++) {

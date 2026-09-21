@@ -376,7 +376,7 @@ export class MeasureCardGenerator {
     }
   }
 
-  notePlayed({type, notes=[], stats}) {
+  notePlayed({type, notes=[], blamed=notes, stats}) {
     if (!this.deck.card) { return }
 
     if (stats) {
@@ -394,9 +394,9 @@ export class MeasureCardGenerator {
       }
     } else if (type == "miss" || type == "slip") {
       let pass = this.playedPass()
-      pass.miss(notes, {counted: type == "miss", time: this.now()})
+      pass.miss(blamed, {counted: type == "miss", time: this.now()})
       if (type == "miss" && stats) {
-        stats.countClefs(columnClefs(pass.card.columns[pass.head], notes), "miss")
+        stats.countClefs(columnClefs(pass.card.columns[pass.head], blamed), "miss")
       }
       this.lastDone = null
     }

@@ -9,7 +9,7 @@
 // only adds its hits, misses and time to those items' totals, as does the
 // rest of the card played after it: a pass is only graded when it was played
 // from its first column to its last in one go. Items are per hand setting,
-// and the misses are also split by the score staff of the notes not held.
+// and the misses are also split by the score staff of the notes blamed.
 
 import {itemId, newItem, itemWithPractice, RECENT_ATTEMPTS, STAVES} from "st/srs/records"
 import {gradeAttempt, attemptPace, GRADE_ALGO} from "st/srs/grade"
@@ -79,7 +79,7 @@ export class AttemptPass {
 
   /**
    * A miss on the head column.
-   * @param {string[]} notes the column's notes not held, which say the hand
+   * @param {string[]} notes the column's notes the miss is blamed on, which say the hand
    * @param {Object} [opts]
    * @param {boolean} [opts.counted=true] false for a further slip on a column
    * the stats already counted missed, which only the grade reads
