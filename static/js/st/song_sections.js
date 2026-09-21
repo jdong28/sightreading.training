@@ -328,10 +328,12 @@ function markSlurs(columns, entries) {
 // A range holding no column at all — a measure every drilled hand rests
 // through — keeps its extras, and the beats it covers, on the array itself, so
 // a card can draw that bar's rests, bar line and number without ever handing
-// the player a column to answer (see sectionCard in st/measure_cards)
+// the player a column to answer (see sectionCard in st/measure_cards). Only a
+// song carrying the score's notation keeps one: nothing places a bar against
+// columns that carry no beat of their own (see groupByOnset)
 function attachExtras(columns, extras, bar) {
   if (!columns.length) {
-    if (bar.beat != null) {
+    if (bar && bar.beat != null) {
       columns.beat = bar.beat
       columns.beats = bar.beats
       columns.extras = [...extras].sort((a, b) => a.beat - b.beat)
@@ -431,10 +433,12 @@ export function extractSectionColumns(song, opts={}) {
     }
   }
 
-  return attachExtras(markSlurs(columns, entries), extras, {
+  let notated = entries.some(([note]) => note.notation)
+
+  return attachExtras(markSlurs(columns, entries), extras, notated ? {
     beat: startBeat,
     beats: isFinite(columnsEnd) ? Math.max(0, columnsEnd - startBeat) : 0,
-  })
+  } : null)
 }
 
 // Drops notes that fall outside [min, max] pitch (note names), removing

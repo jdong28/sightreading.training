@@ -523,25 +523,12 @@ function beamLine(chain, dir) {
   return x => at(x) + shift
 }
 
-// The notes a tuplet of this ratio (actual over normal notes) is written
-// with, eg. 3 for a triplet's 3/2, when the score didn't write the count
-// itself: the smallest whole number of normal notes the ratio spells
-function tupletCount(ratio) {
-  for (let normal = 1; normal <= 8; normal++) {
-    let actual = ratio * normal
-    if (Math.abs(actual - Math.round(actual)) < BEAT_EPSILON) {
-      return Math.round(actual)
-    }
-  }
-
-  return 0
-}
-
 /**
  * The tuplets of the stem groups of one voice of one bar: a run of groups the
  * score writes a <tuplet> start and stop around, else a run played at one
- * ratio. The number drawn over a tuplet is the notes it is written with (3
- * over a triplet), and the bracket is left out when the run is exactly one
+ * ratio. The number drawn over a tuplet is the notes the score writes it with
+ * (3 over a triplet), so a run of a piece stored before that count was kept
+ * draws none at all, and the bracket is left out when the run is exactly one
  * beam group, which the beam itself already marks out.
  * @param {Object[]} groups stem groups in x order
  * @param {Object[]} chains the beam chains of the same groups
@@ -562,7 +549,7 @@ function tupletChains(groups, chains) {
     let marks = spansOf(group, "tuplets").map(span => span.type)
 
     if (!open || open.ratio != ratio || marks.includes("start")) {
-      open = {groups: [], ratio, notes: group.tupletNotes || tupletCount(ratio)}
+      open = {groups: [], ratio, notes: group.tupletNotes || 0}
       out.push(open)
     }
 

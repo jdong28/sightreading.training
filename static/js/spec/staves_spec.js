@@ -2135,6 +2135,40 @@ describe("staves", function() {
         .map(line => line.dataset.measure)).toEqual(["1", "3"])
     })
 
+    it("draws no bar for a measure a piece stored without the score's rhythm holds nothing in", function() {
+      // a format 1 piece whose measures 2 and 4 hold no note at all: it kept
+      // no notation, so nothing of it places a bar line
+      let song = songFromJSON({
+        format: 1,
+        metadata: {
+          beatsPerMeasure: 4,
+          measureStarts: [0, 4, 8, 12],
+          measureNumbers: [1, 2, 3, 4],
+          measuresEnd: 16,
+        },
+        tracks: [
+          {notes: ["C5", 0, 4, "E5", 8, 4]},
+          {notes: ["C4", 0, 4, "E4", 8, 4]},
+        ],
+      })
+
+      let treble = {name: "treble", range: ["C4", "C6"]}
+      let measures = pieceSectionMeasures(treble, {startMeasure: 1, endMeasure: 4, hand: BOTH_HANDS}, song)
+
+      expect(measures.map(measure => measure.columns.length)).toEqual([1, 0, 1, 0])
+      expect(measures.some(measure => measure.bar)).toBe(false)
+
+      let columns = cardColumns(sectionCard(measures))
+      expect(columns.every(column => !column.bars)).toBe(true)
+
+      renderStaff(GStaff, columns, {unitColumns: columns, keySignature: new KeySignature(0)})
+      let staff = container.querySelector(`.${staffStyles.staff}`)
+
+      // only the bars the card plays are drawn, in reading order
+      expect([...staff.querySelectorAll(`.${staffStyles.bar_line}`)]
+        .map(line => line.dataset.measure)).toEqual(["1", "3"])
+    })
+
     it("draws a piece stored before the spans were kept with a flag on every eighth", function() {
       let song = parseMusicXML(reverieOpening())
 
