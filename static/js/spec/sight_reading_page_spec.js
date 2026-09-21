@@ -608,6 +608,32 @@ describe("sight reading page", function() {
     expect(page.currentCard().card.measures).toEqual(wholeSection)
   })
 
+  it("keeps a card size drill on its card through a mode toggle", async function() {
+    let {piece} = await importMusicXMLPiece("salon_octet.musicxml", octetXML, store)
+
+    window.localStorage.setItem(DRILL_STORAGE_KEY, JSON.stringify({staff: "grand", generator: "sheet music"}))
+    window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+      piece: piece.id, startMeasure: 1, endMeasure: 8, hand: BOTH_HANDS, measuresPerCard: "2",
+    }))
+
+    let el = renderPage()
+    let plateLabel = () => el.querySelector("[aria-live]").previousElementSibling.textContent
+
+    click(buttonNamed(el, "Begin"))
+    let drilling = page.state.notes.generator
+    play(page.state.notes.currentColumn())
+    expect(plateLabel()).toEqual("3 ♩ a bar · Card 1 · measures 1–2 of 1–8")
+
+    // a card size plays the same either way, so the mode leaves the deck be
+    flushSync(() => page.setMode("scroll"))
+    flushSync(() => page.setMode("wait"))
+    expect(page.state.notes.generator).toBe(drilling)
+
+    // the card's last measure is still the one to play, so it is done with
+    play(page.state.notes.currentColumn())
+    expect(plateLabel()).toEqual("3 ♩ a bar · Card 2 · measures 3–4 of 1–8")
+  })
+
   it("draws no bar line for a section of a single measure", async function() {
     let {piece} = await importMusicXMLPiece("salon_octet.musicxml", octetXML, store)
 

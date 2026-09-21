@@ -158,18 +158,6 @@ export function currentScrollSpeed() {
   return Math.round(Math.min(max, Math.max(min, speed)))
 }
 
-// the largest of a select's numeric-named options at or below value, or null
-// if value isn't numeric or none qualify (eg. a stored measuresPerCard from
-// before MAX_MEASURES_PER_CARD shrank clamps to the new top option instead
-// of falling back to the select's default)
-function closestNumericOption(values, value) {
-  let target = Number(value)
-  if (!isFinite(target)) { return null }
-
-  let candidates = values.map(v => Number(v.name)).filter(n => isFinite(n) && n <= target)
-  return candidates.length ? String(Math.max(...candidates)) : null
-}
-
 // strip any values that don't make sense
 export function fixGeneratorSettings(generator, settings) {
   let out = {}
@@ -187,7 +175,7 @@ export function fixGeneratorSettings(generator, settings) {
           if (typeof input.values != "function") {
             let found = input.values.find(v => v.name == currentValue)
             if (!found) {
-              currentValue = closestNumericOption(input.values, currentValue)
+              currentValue = null
             }
           }
           break

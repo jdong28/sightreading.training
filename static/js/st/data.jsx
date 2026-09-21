@@ -212,13 +212,19 @@ export function pieceSectionMeasures(staff, settings, song) {
 // on from the card being shown
 let cardDeck = null
 
+// whether the drill plays the whole section rather than cards of a few
+// measures, the one card size whose deck depends on the drill mode
+export function wholeSectionDrill(settings) {
+  return !(Number(settings.measuresPerCard) >= 1)
+}
+
 export function measureCardDeck(staff, settings) {
   let piece = sheetMusicPiece(settings)
   if (!piece) {
     return null
   }
 
-  let wholeSection = !(Number(settings.measuresPerCard) >= 1)
+  let wholeSection = wholeSectionDrill(settings)
   if (wholeSection && currentDrillMode() != "wait") {
     return null
   }
@@ -661,7 +667,7 @@ export const GENERATORS = [
           {name: WHOLE_SECTION},
           ...Array.from({length: MAX_MEASURES_PER_CARD}, (_, idx) => ({name: `${idx + 1}`})),
         ],
-        hint: `All plays the whole section in order, up to ${MAX_MEASURES_PER_CARD} measures at a time. A number shows that many measures of the section at a time, like a flashcard.`,
+        hint: `All plays the whole section in order: up to ${MAX_MEASURES_PER_CARD} measures at a time in wait mode, continuously in scroll mode. A number shows that many measures of the section at a time, like a flashcard.`,
         visible: settings => !!sheetMusicPiece(settings),
       },
       {

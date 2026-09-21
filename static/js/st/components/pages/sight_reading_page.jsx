@@ -10,7 +10,7 @@ import styles from "./sight_reading_page.module.css"
 import staffStyles from "st/components/staff.module.css"
 
 import {noteName, parseNote} from "st/music"
-import {STAVES, GENERATORS, sheetMusicPiece, RIGHT_HAND, LEFT_HAND} from "st/data"
+import {STAVES, GENERATORS, sheetMusicPiece, wholeSectionDrill, RIGHT_HAND, LEFT_HAND} from "st/data"
 import {pieceSong} from "st/sheet_music_deck"
 import {getAppStore} from "st/storage"
 import {
@@ -214,8 +214,10 @@ export default class SightReadingPage extends React.Component {
     }
 
     // a piece's whole section drill is capped to cards in the wait mode only
-    // (see measureCardDeck), so its generator is rebuilt when the mode changes
-    if (prevState.mode != this.state.mode && this.currentPieceSection()) {
+    // (see measureCardDeck), so that is the one drill rebuilt on a mode change
+    if (prevState.mode != this.state.mode && this.currentPieceSection() &&
+        wholeSectionDrill(this.currentSettings()))
+    {
       this.refreshNoteList()
     }
 
