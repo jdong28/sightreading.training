@@ -152,20 +152,20 @@ function columnTrail(columns, idx) {
   return most
 }
 
-// The beat the bars a column carries that hold no column open at, Infinity for
-// a column carrying none: everything the score writes from there on belongs to
-// those bars rather than to the room before the column's own head
-export function barsOpenAt(column) {
-  let opens = Infinity
+// The beat the bars a column carries that hold no column close at, -Infinity
+// for a column carrying none: everything the score writes before it belongs to
+// those bars, and everything from there on to the column's own bar
+export function barsCloseAt(column) {
+  let closes = -Infinity
 
-  if (!column || column.beat == null) { return opens }
+  if (!column || column.beat == null) { return closes }
 
   for (let bar of column.bars || []) {
     if (!(bar.beats > 0) || bar.beat >= column.beat) { continue }
-    opens = Math.min(opens, bar.beat)
+    closes = Math.max(closes, bar.beat + bar.beats)
   }
 
-  return opens
+  return closes
 }
 
 // The most beats a column's own extras fall before it: the rest a bar opens
@@ -589,15 +589,20 @@ function tupletChains(groups, chains) {
     let marks = spansOf(group, "tuplets").map(span => span.type)
 
     if (!open || open.ratio != ratio || marks.includes("start")) {
-      open = {groups: [], ratio, notes: group.tupletNotes || 0}
+      open = {groups: [], ratio, notes: group.tupletNotes || 0, marked: false}
       out.push(open)
     }
 
+    open.marked = open.marked || marks.length > 0
     open.groups.push(group)
 
-    // a score writing <time-modification> but no <tuplet> spans marks nothing
-    // out, so a run splits at the notes actual-notes already states
-    if (marks.includes("stop") || (open.notes > 1 && open.groups.length >= open.notes)) {
+    // a score writing <time-modification> but no <tuplet> span marks nothing
+    // out, so a run of its own splits at the notes actual-notes states; a run
+    // the score does write a span on ends where that span says, however many
+    // heads it is written over
+    let counted = !open.marked && open.notes > 1 && open.groups.length >= open.notes
+
+    if (marks.includes("stop") || counted) {
       open = null
     }
   }
@@ -891,8 +896,12 @@ export function rowCenter(row, {upperRow}) {
  */
 export function beforeOffset(columns, layout, idx, beat) {
   let previous = idx > 0 ? columns[idx - 1] : null
+  // a looping card comes round to a column it has already drawn, so the column
+  // before it on the staff is no part of the bar being placed
+  let precedes = previous && previous.beat != null &&
+    previous.beat + (previous.beats > 0 ? previous.beats : 0) <= beat
 
-  if (previous && previous.beat != null && beat >= barsOpenAt(columns[idx])) {
+  if (precedes && beat < barsCloseAt(columns[idx])) {
     return afterOffset(columns, layout, idx - 1, beat)
   }
 

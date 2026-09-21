@@ -1076,6 +1076,130 @@ describe("staves", function() {
       expect(staffEl("lower").querySelectorAll(`.${staffStyles.rest}`).length).toEqual(0)
     })
 
+    // three 4/4 grand staff bars: whole notes, then a bar every hand rests
+    // through, then a bar the right hand plays four quarters in while the left
+    // hand rests it out
+    let restedBarThenRestingHandScore = () => `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    ${[1, 2, 3].map(number => `
+    <measure number="${number}">
+      ${number == 1 ? `<attributes><divisions>1</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><staves>2</staves><clef number="1"><sign>G</sign><line>2</line></clef><clef number="2"><sign>F</sign><line>4</line></clef></attributes>` : ""}
+      ${number == 2 ? `<note><rest measure="yes"/><duration>4</duration><voice>1</voice><staff>1</staff></note>` :
+        number == 3 ? ["C", "D", "E", "F"].map(step => `<note><pitch><step>${step}</step><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>`).join("") :
+        `<note><pitch><step>C</step><octave>5</octave></pitch><duration>4</duration><voice>1</voice><type>whole</type><staff>1</staff></note>`}
+      <backup><duration>4</duration></backup>
+      ${number == 1 ? `<note><pitch><step>C</step><octave>3</octave></pitch><duration>4</duration><voice>2</voice><type>whole</type><staff>2</staff></note>` :
+        `<note><rest measure="yes"/><duration>4</duration><voice>2</voice><staff>2</staff></note>`}
+    </measure>`).join("")}
+  </part>
+</score-partwise>`
+
+    it("carries the whole measure rest of a bar that also holds one with no column", function() {
+      let song = parseMusicXML(restedBarThenRestingHandScore())
+      let columns = sectionColumns(song, 1, 3)
+
+      // measure 3's opening column holds the rested bar before it and its own
+      // hand's whole measure rest
+      expect(columns[1].bars).toEqual([{number: 2, beat: 4, beats: 4}])
+
+      renderStaff(GrandStaff, columns.slice(2), {unitColumns: columns, keySignature: new KeySignature(0)})
+      let lower = staffEl("lower")
+      let rests = [...lower.querySelectorAll(`.${staffStyles.rest}`)]
+
+      // the left hand rests measure 3 out, so its rest is still drawn once the
+      // bar's opening column is played, while the rested bar's has left with it
+      expect(rests.map(rest => rest.dataset.restType)).toEqual(["whole"])
+      expect(parseFloat(rests[0].style.left)).toBeGreaterThanOrEqual(0)
+    })
+
+    // the same three bars, but measure 3 opens on a quarter rest in both hands
+    let restedBarThenLeadingRestScore = () => `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    ${[1, 2, 3].map(number => `
+    <measure number="${number}">
+      ${number == 1 ? `<attributes><divisions>1</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><staves>2</staves><clef number="1"><sign>G</sign><line>2</line></clef><clef number="2"><sign>F</sign><line>4</line></clef></attributes>` : ""}
+      ${number == 2 ? `<note><rest measure="yes"/><duration>4</duration><voice>1</voice><staff>1</staff></note>` :
+        number == 3 ? `<note><rest/><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>` +
+          ["D", "E", "F"].map(step => `<note><pitch><step>${step}</step><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>`).join("") :
+        `<note><pitch><step>C</step><octave>5</octave></pitch><duration>4</duration><voice>1</voice><type>whole</type><staff>1</staff></note>`}
+      <backup><duration>4</duration></backup>
+      ${number == 2 ? `<note><rest measure="yes"/><duration>4</duration><voice>2</voice><staff>2</staff></note>` :
+        number == 3 ? `<note><rest/><duration>1</duration><voice>2</voice><type>quarter</type><staff>2</staff></note><note><pitch><step>C</step><octave>3</octave></pitch><duration>3</duration><dot/><voice>2</voice><type>half</type><staff>2</staff></note>` :
+        `<note><pitch><step>C</step><octave>3</octave></pitch><duration>4</duration><voice>2</voice><type>whole</type><staff>2</staff></note>`}
+    </measure>`).join("")}
+  </part>
+</score-partwise>`
+
+    it("keeps the rest a bar opens with in front of its head, not on it, after a rested bar", function() {
+      let song = parseMusicXML(restedBarThenLeadingRestScore())
+      let columns = sectionColumns(song, 1, 3)
+      renderStaff(GrandStaff, columns, {unitColumns: columns, keySignature: new KeySignature(0)})
+
+      let upper = staffEl("upper")
+      let rests = [...upper.querySelectorAll(`.${staffStyles.rest}`)]
+      let opening = rests.find(rest => rest.dataset.restType == "quarter")
+      expect(opening).toBeTruthy()
+
+      // measure 3's own opening rest belongs to its bar, not to the rested bar
+      // before it, so it sits in the room kept in front of the bar's first head
+      let at = parseFloat(opening.style.left)
+      let head = headBoxes(upper).sort((a, b) => a.left - b.left)
+        .find(box => box.left >= at)
+      expect(head).toBeTruthy()
+      expect(at + opening.getBoundingClientRect().width).toBeLessThanOrEqual(head.left)
+    })
+
+    // three 4/4 grand staff bars whose first one every hand rests through
+    let openingRestBarScore = () => `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    ${[1, 2, 3].map(number => `
+    <measure number="${number}">
+      ${number == 1 ? `<attributes><divisions>1</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><staves>2</staves><clef number="1"><sign>G</sign><line>2</line></clef><clef number="2"><sign>F</sign><line>4</line></clef></attributes>` : ""}
+      ${number == 1 ? `<note><rest measure="yes"/><duration>4</duration><voice>1</voice><staff>1</staff></note>` :
+        `<note><pitch><step>${number == 2 ? "C" : "E"}</step><octave>5</octave></pitch><duration>4</duration><voice>1</voice><type>whole</type><staff>1</staff></note>`}
+      <backup><duration>4</duration></backup>
+      ${number == 1 ? `<note><rest measure="yes"/><duration>4</duration><voice>2</voice><staff>2</staff></note>` :
+        `<note><pitch><step>${number == 2 ? "C" : "E"}</step><octave>3</octave></pitch><duration>4</duration><voice>2</voice><type>whole</type><staff>2</staff></note>`}
+    </measure>`).join("")}
+  </part>
+</score-partwise>`
+
+    it("draws the rested bar a looping card opens on again where the loop wraps", function() {
+      let song = parseMusicXML(openingRestBarScore())
+      let card = sectionCard(pieceSectionMeasures(GRAND, {
+        startMeasure: 1, endMeasure: 3, hand: BOTH_HANDS,
+      }, song))
+      let columns = drillColumns(card, {loop: true})
+
+      // the rested bar hangs on the card's first column, which the loop draws
+      // again at its end
+      expect(columns.length).toEqual(3)
+      expect(columns[2].bars).toEqual([{number: 1, beat: 0, beats: 4}])
+
+      renderStaff(GrandStaff, columns, {unitColumns: columns, keySignature: new KeySignature(0)})
+      let lower = staffEl("lower")
+
+      let lines = [...lower.querySelectorAll(`.${staffStyles.bar_line}[data-measure="1"]`)]
+        .map(line => parseFloat(line.style.left))
+      let heads = notesOn(lower).map(note => parseFloat(note.style.left)).sort((a, b) => a - b)
+      let rests = [...lower.querySelectorAll(`.${staffStyles.rest}`)]
+        .map(rest => parseFloat(rest.style.left))
+
+      // the wrap draws the bar again after the notes before it, never back
+      // over them or off the left of the plate
+      expect(lines.length).toEqual(2)
+      expect(lines[0]).toBeGreaterThanOrEqual(0)
+      expect(lines[1]).toBeGreaterThan(heads[1])
+      expect(Math.min(...rests)).toBeGreaterThanOrEqual(0)
+      expect(Math.max(...rests)).toBeGreaterThan(heads[1])
+    })
+
     it("centres a whole measure rest in its own bar when the card loops", function() {
       let song = parseMusicXML(barRestScore())
       let card = sectionCard(pieceSectionMeasures(GRAND, {
@@ -2029,6 +2153,44 @@ describe("staves", function() {
       expect(middles[0]).toBeLessThan(heads[2])
       expect(middles[1]).toBeGreaterThan(heads[3])
       expect(middles[1]).toBeLessThan(heads[5])
+    })
+
+    // a 4/4 treble bar whose quarter note triplet writes its middle member as
+    // two beamed eighths, with the <tuplet> spans the score marks it out by
+    let markedTripletScore = () => `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes><divisions>6</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>4</duration><voice>1</voice><type>quarter</type><time-modification><actual-notes>3</actual-notes><normal-notes>2</normal-notes></time-modification><notations><tuplet type="start" bracket="yes"/></notations></note>
+      <note><pitch><step>D</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><time-modification><actual-notes>3</actual-notes><normal-notes>2</normal-notes></time-modification><beam number="1">begin</beam></note>
+      <note><pitch><step>E</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><time-modification><actual-notes>3</actual-notes><normal-notes>2</normal-notes></time-modification><beam number="1">end</beam></note>
+      <note><pitch><step>F</step><octave>5</octave></pitch><duration>4</duration><voice>1</voice><type>quarter</type><time-modification><actual-notes>3</actual-notes><normal-notes>2</normal-notes></time-modification><notations><tuplet type="stop"/></notations></note>
+      <note><pitch><step>G</step><octave>5</octave></pitch><duration>12</duration><voice>1</voice><type>half</type></note>
+    </measure>
+  </part>
+</score-partwise>`
+
+    it("keeps a tuplet the score marks out whole however many heads it is written over", function() {
+      let song = parseMusicXML(markedTripletScore())
+      let columns = sectionColumns(song, 1, 1, BOTH_HANDS, {name: "treble", range: ["C4", "C6"]})
+      renderStaff(GStaff, columns, {unitColumns: columns, keySignature: new KeySignature(0)})
+
+      let staff = container.querySelector(`.${staffStyles.staff}`)
+      let heads = notesOn(staff).map(note => parseFloat(note.style.left)).sort((a, b) => a - b)
+      expect(heads.length).toEqual(5)
+
+      // the score's start and stop spans mark out one triplet of four heads,
+      // so one number is drawn over it and none over its tail
+      let numbers = numbersOn(staff)
+      expect(numbers.map(number => number.dataset.tuplet)).toEqual(["3"])
+      expect(bracketsOn(staff).length).toEqual(2)
+
+      let middle = +numbers[0].getAttribute("x")
+      expect(middle).toBeGreaterThan(heads[0])
+      expect(middle).toBeLessThan(heads[3])
+      expect(middle).toBeGreaterThan(heads[1])
     })
 
     it("draws a bar both hands rest out without giving the drill a column", function() {

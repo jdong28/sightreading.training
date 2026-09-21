@@ -12,7 +12,7 @@ import * as types from "prop-types"
 import {noteStaffOffset} from "st/music"
 import {
   columnExtras, tieArcs, slurArcs, restGlyph, rowCenter, headGlyph,
-  stemDirection, middleRow, barsOpenAt, STAFF_ROW, STAFF_SPACE,
+  stemDirection, middleRow, barsCloseAt, STAFF_ROW, STAFF_SPACE,
   NOTE_HEAD_HEIGHT, DOT_SIZE, DOT_GAP,
 } from "st/staff_rhythm"
 import styles from "st/components/staff.module.css"
@@ -89,12 +89,12 @@ export default class ScoreExtras extends React.PureComponent {
     let opens = unit.findIndex(column => column && column.beat === head.beat)
 
     for (let idx = opens - 1; idx >= 0; idx--) {
-      let carried = barsOpenAt(unit[idx])
+      let ownBar = barsCloseAt(unit[idx])
 
       for (let extra of unit[idx].extras || []) {
         if (extra.kind != "rest" || !extra.wholeMeasure) { continue }
         if (staff && extra.staff && extra.staff != staff) { continue }
-        if (extra.beat >= carried) { continue }
+        if (extra.beat < ownBar) { continue }
 
         out.push({...extra, columnIdx: 0})
       }
