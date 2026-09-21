@@ -9,6 +9,7 @@ import {
   itemId, newItem, itemFromSectionStats, legacyReview, itemWithPractice, validItem,
   validReview
 } from "st/srs/records"
+import {applyGrade} from "st/srs/schedule"
 
 import {openTestStore, TEST_DB_NAME} from "spec/helpers"
 
@@ -228,15 +229,14 @@ describe("spaced repetition records", function() {
       expect((await storedReviews(store)).length).toEqual(migrated.length + 1)
     })
 
-    it("keeps card weights as they were", async function() {
+    it("seeds no due dates from the migrated totals", async function() {
       let weightRows = [section("p1", 1, 1, {hits: 3, misses: 8}), section("p1", 2, 2, {hits: 9, misses: 0})]
       let cards = [{measures: [1]}, {measures: [2]}, {measures: [1, 2]}, {measures: [3]}]
-      let before = cardWeights(cards, weightRows)
 
       await versionThreeDatabase(weightRows, [pieceData("p1", "Minuet", 1000)])
       let store = await open({keep: true})
-      expect(cardWeights(cards, store.sectionStats("p1"))).toEqual(before)
-      expect(before).toEqual([3, 1, 2, 1])
+      expect(store.items("p1").map(item => [item.state, item.due])).toEqual([["tracked", undefined], ["tracked", undefined]])
+      expect(cardWeights(cards, store.items("p1"))).toEqual([3, 3, 3, 3])
     })
   })
 
@@ -269,7 +269,6 @@ describe("spaced repetition records", function() {
         expect(store.sectionStats("a")).toEqual([
           {pieceId: "a", startMeasure: 2, endMeasure: 2, hits: 7, misses: 4, attempts: 3, lastPracticed: 3000, elapsedMs: 800},
         ])
-        expect(cardWeights([{measures: [2]}], store.sectionStats("a"))).toEqual([1 + 4 / 8])
 
         // the same array until an item changes
         expect(store.sectionStats()).toBe(store.sectionStats())
@@ -286,8 +285,11 @@ describe("spaced repetition records", function() {
         spyOn(store.backend, "write").and.callThrough()
         let stored = await store.recordAttempt({item, review, related: [parent], session})
         expect(store.backend.write).toHaveBeenCalledTimes(1)
-        expect(stored).toEqual(item)
 
+        // the graded measure is scheduled in the same write, the range isn't
+        item = applyGrade(item, review.grade, review.at)
+        expect(item.state).toEqual("learning")
+        expect(stored).toEqual(item)
         expect(store.item("a:both:1-1")).toEqual(item)
         expect(store.item("a:both:1-2").state).toEqual("split")
         expect(store.recentSessions().map(s => s.id)).toEqual(["s1"])
@@ -355,7 +357,7 @@ describe("spaced repetition records", function() {
         store.backend.write.and.callThrough()
         expect(await store.reviews({pieceId: "a"})).toEqual([])
         await store.recordAttempt({item, review})
-        expect(store.items()).toEqual([item])
+        expect(store.items()).toEqual([applyGrade(item, review.grade, review.at)])
       })
 
       it("removes a piece's items, reviews and study with it", async function() {
@@ -404,16 +406,19 @@ describe("spaced repetition records", function() {
         await store.recordAttempt({item: practicedItem("b", 1, 1, 1000), review: attempt("b", 1, 1, 3000)})
         await store.recordAttempt({item: practicedItem("a", 10, 10, 1000), review: attempt("a", 10, 10, 2000)})
         await store.recordAttempt({item: practicedItem("a", 2, 2, 1000), review: attempt("a", 2, 2, 1000)})
+        await store.recordSectionPractice({pieceId: "a", startMeasure: 1, endMeasure: 4, hits: 1, misses: 0, at: 1000})
 
         expect((await store.backend.getAll("items")).map(item => item.id))
-          .toEqual(["a:both:10-10", "a:both:2-2", "b:both:1-1"])
+          .toEqual(["a:both:1-4", "a:both:10-10", "a:both:2-2", "b:both:1-1"])
         expect(await store.backend.getAllKeys("reviews")).toEqual([
           ["a:both:10-10", 2000], ["a:both:2-2", 1000], ["b:both:1-1", 3000],
         ])
         expect((await store.backend.getAllFrom("reviews", "at", 1500)).map(review => review.at)).toEqual([2000, 3000])
 
-        // tracked items have no due date, so none is in the due index
-        expect(await store.backend.getAllFrom("items", "due", 0)).toEqual([])
+        // scheduled measures are in the due index in due order; a tracked
+        // range has no due date
+        expect((await store.backend.getAllFrom("items", "due", 0)).map(item => item.id))
+          .toEqual(["a:both:2-2", "a:both:10-10", "b:both:1-1"])
       })
     })
   }
@@ -446,8 +451,10 @@ describe("spaced repetition records", function() {
     it("keeps a stored item's schedule when an older library brings newer totals", async function() {
       let store = await open()
       await store.putPiece(pieceData("a", "First", 1000))
-      let item = practicedItem("a", 1, 1, 1000, {state: "review", s: 3.2, d: 5, due: 99999, reps: 2, elapsedMs: 50})
-      await store.recordAttempt({item, review: attempt("a", 1, 1, 1000)})
+      let item = await store.recordAttempt({
+        item: practicedItem("a", 1, 1, 1000, {elapsedMs: 50}), review: attempt("a", 1, 1, 1000),
+      })
+      expect(item.state).toEqual("learning")
 
       let library = {
         format: LIBRARY_FORMAT,

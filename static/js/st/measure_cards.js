@@ -1,17 +1,19 @@
 // Measure flashcards for the sheet music generator: the measures of a piece
 // section (the pool, the score's own bar numbers) are grouped into cards of
 // any number of measures, and the staff shows one card at a time, in order or
-// picked at random weighted toward the measures played worst.
+// picked at random weighted toward the weakest measures.
 //
 // Each pass through a card is collected as an attempt (st/srs/attempt): when
 // it is done it is graded and written to the local store (st/storage) as a
 // review of every measure of the card (and of the card's range), adding its
-// hits, misses and time to their items, whose single measure totals are what
-// weight the random picks.
+// hits, misses and time to their items and scheduling each measure's item
+// (st/srs/schedule). The random picks favour the measures whose recall the
+// scheduler predicts lowest and those missed lately (practiceWeight).
 
 import {addNoteListener} from "st/note_stats"
 import {getAppStore} from "st/storage"
 import {AttemptPass, passAttempts, passPractice, columnClefs} from "st/srs/attempt"
+import {practiceWeight} from "st/srs/schedule"
 
 export const IN_ORDER = "in order"
 export const RANDOM_ORDER = "random"
@@ -114,31 +116,28 @@ export function cardColumns(card) {
 }
 
 /**
- * How much a measure is favored by random picks, from its single measure
- * section stats: 1 when never missed, growing with the misses per hit.
- * @param {{hits: number, misses: number}} [stats]
- * @returns {number}
- */
-export function measureWeight(stats) {
-  return stats ? 1 + stats.misses / (stats.hits + 1) : 1
-}
-
-/**
- * The weight of each card, the mean weight of its measures.
+ * The weight of each card in random picks, weakest first: the mean
+ * practiceWeight (st/srs/schedule) of its measures' items under the hand
+ * setting, a measure never graded weighing as an even chance of recall.
  * @param {MeasureCard[]} cards
- * @param {Object[]} sectionStats section stats records of the piece
+ * @param {ItemRecord[]} items the piece's items
+ * @param {Object} [opts]
+ * @param {string} [opts.hand] the hand setting the cards are played in
+ * @param {number} [opts.now]
+ * @param {SchedulerSettings} [opts.settings]
  * @returns {number[]}
  */
-export function cardWeights(cards, sectionStats) {
+export function cardWeights(cards, items, {hand="both", now=Date.now(), settings}={}) {
   let byMeasure = new Map()
-  for (let stats of sectionStats) {
-    if (stats.startMeasure == stats.endMeasure) {
-      byMeasure.set(stats.startMeasure, stats)
+  for (let item of items) {
+    if (item.hand == hand && item.startMeasure == item.endMeasure && !item.beats) {
+      byMeasure.set(item.startMeasure, item)
     }
   }
 
   return cards.map(card => {
-    let total = card.measures.reduce((sum, n) => sum + measureWeight(byMeasure.get(n)), 0)
+    let total = card.measures.reduce((sum, n) =>
+      sum + practiceWeight(byMeasure.get(n) || null, now, settings), 0)
     return total / card.measures.length
   })
 }
@@ -197,14 +196,16 @@ export class MeasureCardDeck {
    * one of HANDS (st/srs/records)
    * @param {string} opts.order
    * @param {function(): number} [opts.random]
-   * @param {LocalStore} [opts.store] where the measure stats are read, the app's store by default
+   * @param {function(): number} [opts.now]
+   * @param {LocalStore} [opts.store] where the measures' items are read, the app's store by default
    */
-  constructor(cards, {pieceId, hand="both", order, random=Math.random, store}) {
+  constructor(cards, {pieceId, hand="both", order, random=Math.random, now=Date.now, store}) {
     this.cards = cards
     this.pieceId = pieceId
     this.hand = hand
     this.order = order
     this.random = random
+    this.now = now
     this.store = store
 
     this.index = null
@@ -232,8 +233,10 @@ export class MeasureCardDeck {
 
   /** Moves on to the next card */
   advance() {
-    let weights = this.order == RANDOM_ORDER ?
-      cardWeights(this.cards, this.getStore().sectionStats(this.pieceId)) : null
+    let store = this.getStore()
+    let weights = this.order == RANDOM_ORDER ? cardWeights(this.cards, store.items(this.pieceId), {
+      hand: this.hand, now: this.now(), settings: store.schedulerSettings(),
+    }) : null
 
     this.index = nextCardIndex(this.cards, this.index, {
       order: this.order, weights, random: this.random,

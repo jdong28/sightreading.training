@@ -776,7 +776,8 @@ const ALL_GENERATORS = [
           {name: IN_ORDER},
           {name: RANDOM_ORDER},
         ],
-        hint: "Random picks the measures you miss most more often.",
+        hint: "Random picks the weakest measures more often: those you are likeliest " +
+          "to have forgotten, and those you missed lately.",
         visible: settings => !!sheetMusicPiece(settings) && Number(settings.measuresPerCard) >= 1,
       },
     ],

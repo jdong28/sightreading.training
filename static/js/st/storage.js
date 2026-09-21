@@ -4,8 +4,9 @@
 // One database holds the stores in STORES: the imported sheet music pieces
 // (the deck, see st/sheet_music_deck), the source score each piece was
 // imported from, the practice records of spaced repetition (items, the log of
-// reviews and studies, see st/srs/records), and practice sessions.
-// init() loads the pieces, items, studies and recent sessions into an
+// reviews and studies, see st/srs/records), practice sessions, and in meta
+// the scheduler's and practice settings (st/srs/schedule).
+// init() loads the pieces, items, studies, recent sessions and settings into an
 // in-memory cache so the UI reads synchronously (eg. a generator's settings
 // inputs on every render); a piece's source and the reviews are read on
 // demand. Every
@@ -24,6 +25,12 @@ import {
   validItem, validReview, validStudy, newItem, itemId, itemFromSectionStats,
   legacyReview, itemWithPractice, itemForPiece, reviewForPiece, sectionStatsOf
 } from "st/srs/records"
+import {
+  applyGrade, predictedRecall, replay, schedulable, scheduled,
+  validSchedulerSettings, validPracticeSettings,
+  SCHEDULER_SETTINGS_KEY, PRACTICE_SETTINGS_KEY,
+  DEFAULT_SCHEDULER_SETTINGS, DEFAULT_PRACTICE_SETTINGS
+} from "st/srs/schedule"
 import {
   SOURCE_ENCODING, compressSource, decompressSource, isCompressedSource,
   bytesToBase64, base64ToBytes
@@ -151,6 +158,8 @@ const STORES = {
  * @property {ItemRecord[]} [items] since version 5
  * @property {ReviewRecord[]} [reviews] since version 5
  * @property {StudyRecord[]} [studies] since version 5
+ * @property {Object[]} [settings] the scheduler and practice settings records
+ * (st/srs/schedule), since version 5
  * @property {SectionStatsRecord[]} [sectionStats] before version 5
  * @property {SessionRecord[]} sessions
  */
@@ -169,6 +178,7 @@ const STORES = {
  * @property {number} updatedSections items replaced by more recently practiced ones
  * @property {number} addedReviews
  * @property {number} addedStudies studies of pieces that had none
+ * @property {number} importedSettings settings records, which replace this library's
  * @property {number} addedSessions
  * @property {number} existingSessions
  */
@@ -605,6 +615,7 @@ export class LocalStore {
         this.backend = await openIndexedDBBackend(this.name, this.openTimeout)
       }
       await this.migrateLegacyDeck()
+      await this.setUpScheduler()
       await this.loadCache()
       return
     } catch (e) {
@@ -616,6 +627,7 @@ export class LocalStore {
 
     this.backend = new MemoryBackend()
     await this.migrateLegacyDeck()
+    await this.setUpScheduler()
     await this.loadCache()
   }
 
@@ -658,12 +670,51 @@ export class LocalStore {
     }
   }
 
+  // Writes the settings records the first time the store opens with the
+  // scheduler, and schedules the single measures graded before it by
+  // replaying their reviews, so every schedule is the one its log gives. A
+  // failed set up is retried on the next init
+  async setUpScheduler() {
+    try {
+      if (await this.backend.get("meta", SCHEDULER_SETTINGS_KEY)) {
+        return
+      }
+
+      let [items, reviews] = await Promise.all([
+        this.backend.getAll("items"),
+        this.backend.getAll("reviews"),
+      ])
+
+      let graded = new Map()
+      for (let review of reviews) {
+        if (review.kind == "attempt") {
+          graded.set(review.itemId, [...graded.get(review.itemId) || [], review])
+        }
+      }
+
+      let replayed = items
+        .filter(item => schedulable(item) && !scheduled(item) && graded.has(item.id))
+        .map(item => replay(graded.get(item.id), {item}))
+
+      let practice = await this.backend.get("meta", PRACTICE_SETTINGS_KEY)
+      await this.backend.write([
+        ...replayed.map(item => ({store: "items", put: item})),
+        {store: "meta", put: DEFAULT_SCHEDULER_SETTINGS},
+        ...(practice ? [] : [{store: "meta", put: DEFAULT_PRACTICE_SETTINGS}]),
+      ])
+    } catch (e) {
+      console.warn("Couldn't set up the practice scheduler:", e)
+    }
+  }
+
   async loadCache() {
-    let [pieces, items, studies, sessions] = await Promise.all([
+    let [pieces, items, studies, sessions, scheduler, practice] = await Promise.all([
       this.backend.getAll("pieces"),
       this.backend.getAll("items"),
       this.backend.getAll("studies"),
       this.backend.getAllFrom("sessions", "startedAt", Date.now() - RECENT_SESSION_DAYS * DAY),
+      this.backend.get("meta", SCHEDULER_SETTINGS_KEY),
+      this.backend.get("meta", PRACTICE_SETTINGS_KEY),
     ])
 
     this.cache = {
@@ -671,6 +722,10 @@ export class LocalStore {
       items,
       studies,
       sessions: sessions.sort(byStart),
+      settings: {
+        scheduler: validSchedulerSettings(scheduler) ? scheduler : DEFAULT_SCHEDULER_SETTINGS,
+        practice: validPracticeSettings(practice) ? practice : DEFAULT_PRACTICE_SETTINGS,
+      },
     }
   }
 
@@ -751,6 +806,36 @@ export class LocalStore {
   /** @returns {SessionRecord[]} sessions of the last RECENT_SESSION_DAYS, oldest first */
   recentSessions() {
     return this.cache.sessions
+  }
+
+  /** @returns {SchedulerSettings} the scheduler's parameters (st/srs/schedule) */
+  schedulerSettings() {
+    return this.cache.settings.scheduler
+  }
+
+  /** @returns {PracticeSettings} */
+  practiceSettings() {
+    return this.cache.settings.practice
+  }
+
+  /**
+   * Replaces the scheduler or the practice settings record, by its key.
+   * Items keep the schedules they have; the new settings apply to the
+   * attempts after.
+   * @param {SchedulerSettings|PracticeSettings} settings
+   * @returns {Promise<Object>}
+   */
+  putSettings(settings) {
+    return this.mutate(async () => {
+      let name = settingsName(settings)
+      if (!name) {
+        throw new Error("Not valid settings")
+      }
+
+      await this.backend.write([{store: "meta", put: settings}])
+      this.cache = {...this.cache, settings: {...this.cache.settings, [name]: settings}}
+      return settings
+    })
   }
 
   /**
@@ -876,6 +961,11 @@ export class LocalStore {
    * the attempt left it, any other items the attempt changed (related) and
    * the session it was played in. The item and the related items replace the
    * stored ones of their id.
+   *
+   * A graded review of a single measure item also schedules it (see
+   * applyGrade in st/srs/schedule, under schedulerSettings()): the item is
+   * written with the schedule the grade gives from the one it carries, and
+   * the review with the recall that schedule predicted (r), when it had one.
    * @param {Object|function(LocalStore): Object} attempt, or a function
    * building it from this store once the writes before it are done, eg. to
    * add to an item as stored
@@ -889,6 +979,16 @@ export class LocalStore {
     return this.mutate(async () => {
       let {item, review, related=[], session} =
         typeof attempt == "function" ? attempt(this) : attempt
+
+      if (item && review && review.kind == "attempt" && schedulable(item)) {
+        let settings = this.schedulerSettings()
+        let r = predictedRecall(item, review.at, settings)
+        item = applyGrade(item, review.grade, review.at, settings)
+        if (r != null) {
+          review = {...review, r}
+        }
+      }
+
       let items = [item, ...related]
       if (!items.every(validItem) || new Set(items.map(i => i.id)).size != items.length) {
         throw new Error("Not a valid item")
@@ -1054,6 +1154,7 @@ export class LocalStore {
         items: this.cache.items,
         reviews,
         studies: this.cache.studies,
+        settings: [this.cache.settings.scheduler, this.cache.settings.practice],
         sessions: sessions.sort(byStart),
       }
     })
@@ -1089,7 +1190,7 @@ export class LocalStore {
       let report = {
         addedPieces: 0, existingPieces: 0, invalidPieces: 0, fullPieces: 0, addedSources: 0,
         addedSections: 0, updatedSections: 0, addedReviews: 0, addedStudies: 0,
-        addedSessions: 0, existingSessions: 0,
+        importedSettings: 0, addedSessions: 0, existingSessions: 0,
       }
 
       let importedPieces = data.version < 2 ?
@@ -1240,6 +1341,16 @@ export class LocalStore {
         }
       }
 
+      let settings = {...this.cache.settings}
+      for (let record of data.version >= 5 && Array.isArray(data.settings) ? data.settings : []) {
+        let name = settingsName(record)
+        if (name) {
+          settings[name] = record
+          ops.push({store: "meta", put: record})
+          report.importedSettings += 1
+        }
+      }
+
       let sessionIds = new Set((await this.backend.getAll("sessions")).map(session => session.id))
       let recentSessions = [...this.cache.sessions]
       let recentSince = now - RECENT_SESSION_DAYS * DAY
@@ -1270,6 +1381,7 @@ export class LocalStore {
         items,
         studies,
         sessions: recentSessions.sort(byStart),
+        settings,
       }
 
       return report
@@ -1297,7 +1409,16 @@ export class LocalStore {
   }
 }
 
-const emptyCache = () => ({pieces: [], items: [], studies: [], sessions: []})
+const emptyCache = () => ({
+  pieces: [], items: [], studies: [], sessions: [],
+  settings: {scheduler: DEFAULT_SCHEDULER_SETTINGS, practice: DEFAULT_PRACTICE_SETTINGS},
+})
+
+// the cache's name of a valid settings record, null for anything else
+function settingsName(record) {
+  return validSchedulerSettings(record) ? "scheduler" :
+    validPracticeSettings(record) ? "practice" : null
+}
 
 let appStore = new LocalStore()
 
