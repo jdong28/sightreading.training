@@ -10,7 +10,8 @@ import ChordList from "st/chord_list"
 import {parseNote, noteName, noteStaffOffset} from "st/music"
 
 import StaffNotes, {
-  KEY_SIGNATURE_SPACING, clefChangeBoxes, staffColumnNotes, columnNotation, doubledHead
+  KEY_SIGNATURE_SPACING, clefChangeBoxes, staffColumnNotes, columnNotation, doubledHead,
+  drawsRests,
 } from "st/components/staff_notes"
 import {
   columnStems, columnBars, columnExtras, columnLayout, headKey, middleRow, rowCenter,
@@ -146,7 +147,11 @@ function drawnHeads(columns, props) {
   let columnClefs = columnClefProps(columns, props.staff, props)
   let clefAt = idx => (columnClefs && columnClefs[idx]) || props
   let bars = columnBars(columns)
-  let layout = columnLayout(columns)
+  // laid out the way the staff draws these columns, so the x each head
+  // carries — and the beam slope and stem heights worked out from it —
+  // agrees with where the column lands (see StaffNotes#columnLayout)
+  let layout = columnLayout(columns, undefined,
+    {rests: drawsRests(columns, props.staff)})
   let heads = []
 
   let push = (idx, group, name, beat, notation, x) => {

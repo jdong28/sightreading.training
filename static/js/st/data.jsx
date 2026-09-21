@@ -209,7 +209,7 @@ export function pieceSectionMeasures(staff, settings, song) {
       return {
         number,
         columns: visible,
-        bar: {beat: visible.beat, beats: visible.beats, extras: visible.extras || []},
+        bar: {beat: visible.beat, extras: visible.extras || []},
       }
     })
 }

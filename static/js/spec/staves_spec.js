@@ -1868,6 +1868,97 @@ describe("staves", function() {
       expect(beamsOn(staff).length).toEqual(1)
     })
 
+    // a 4/4 treble bar holding a quarter note triplet and, after it, a beamed
+    // run of three eighths: two runs of three stem groups that mark out
+    // different notes of the bar
+    let tripletAndRunScore = () => `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes><divisions>6</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>
+      ${[["E", "start"], ["C", null], ["E", "stop"]].map(([step, tuplet]) =>
+        `<note><pitch><step>${step}</step><octave>5</octave></pitch><duration>4</duration><voice>1</voice><type>quarter</type><time-modification><actual-notes>3</actual-notes><normal-notes>2</normal-notes></time-modification>${tuplet ? `<notations><tuplet type="${tuplet}"${tuplet == "start" ? ' bracket="yes"' : ""}/></notations>` : ""}</note>`).join("")}
+      ${[["D", "begin"], ["E", "continue"], ["F", "end"]].map(([step, beam]) =>
+        `<note><pitch><step>${step}</step><octave>5</octave></pitch><duration>3</duration><voice>1</voice><type>eighth</type><beam number="1">${beam}</beam></note>`).join("")}
+      <note><rest/><duration>3</duration><voice>1</voice><type>eighth</type></note>
+    </measure>
+  </part>
+</score-partwise>`
+
+    it("brackets a tuplet a beam run of the same length elsewhere in the bar doesn't mark out", function() {
+      let song = parseMusicXML(tripletAndRunScore())
+      let columns = sectionColumns(song, 1, 1, BOTH_HANDS, {name: "treble", range: ["C4", "C6"]})
+      renderStaff(GStaff, columns, {unitColumns: columns, keySignature: new KeySignature(0)})
+
+      let staff = container.querySelector(`.${staffStyles.staff}`)
+
+      // the eighths are the bar's one beam group, and it marks out no tuplet
+      expect(beamsOn(staff).length).toEqual(1)
+
+      // so the quarter note triplet, which carries no beam of its own, keeps
+      // its bracket however many groups that run happens to hold
+      expect(numbersOn(staff).map(number => number.dataset.tuplet)).toEqual(["3"])
+      expect(bracketsOn(staff).length).toEqual(2)
+
+      // and the bracket sits over the triplet, left of the beamed run
+      let heads = notesOn(staff).map(note => parseFloat(note.style.left)).sort((a, b) => a - b)
+      let [number] = numbersOn(staff)
+      expect(+number.getAttribute("x")).toBeLessThan(heads[3])
+    })
+
+    // three 4/4 treble bars under one slur, written from the first head of
+    // bar 1 to the last of bar 3, so nothing in bar 2 marks it
+    let longSlurScore = () => `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    ${[["C", "D", "E", "F"], ["G", "F", "E", "D"], ["C", "D", "E", "F"]].map((steps, idx) => `
+    <measure number="${idx + 1}">
+      ${idx == 0 ? "<attributes><divisions>1</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>" : ""}
+      ${steps.map((step, at) => {
+        let slur = idx == 0 && at == 0 ? "start" : (idx == 2 && at == 3 ? "stop" : null)
+        return `<note><pitch><step>${step}</step><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type>${slur ? `<notations><slur number="1" type="${slur}"/></notations>` : ""}</note>`
+      }).join("")}
+    </measure>`).join("")}
+  </part>
+</score-partwise>`
+
+    it("draws a slur passing over a card that holds neither of its ends", function() {
+      let song = parseMusicXML(longSlurScore())
+      let treble = {name: "treble", range: ["C4", "C6"]}
+      let render = measure => {
+        let columns = sectionColumns(song, measure, measure, BOTH_HANDS, treble)
+        renderStaff(GStaff, columns, {unitColumns: columns, keySignature: new KeySignature(0)})
+        return container.querySelector(`.${staffStyles.staff}`)
+      }
+
+      // the card the slur starts on draws a stub running off its right edge
+      let first = render(1)
+      expect(slursOn(first).length).toEqual(1)
+
+      // the middle card holds neither end of the slur, so the arc passes
+      // right over it rather than disappearing while the phrase is played
+      let middle = render(2)
+      let [slur, ...rest] = slursOn(middle)
+      expect(rest.length).toEqual(0)
+
+      // the bar's heads all sit above the middle line and stem down, so the
+      // arc bulges over them
+      expect(slur.dataset.tie).toEqual("up")
+      expect(arcApex(slur)).toBeLessThan(Math.min(...headMiddles(middle)))
+
+      // and it runs off both edges, past every head on the staff
+      let [[x1], , [x2]] = pathPoints(slur)
+      let heads = notesOn(middle).map(note => parseFloat(note.style.left)).sort((a, b) => a - b)
+      expect(x1).toBeLessThanOrEqual(heads[0])
+      expect(x2).toBeGreaterThan(heads[heads.length - 1])
+
+      // the card the slur stops on draws its own stub, running in from the left
+      let last = render(3)
+      expect(slursOn(last).length).toEqual(1)
+    })
+
     it("draws a bar both hands rest out without giving the drill a column", function() {
       let song = parseMusicXML(restBarScore())
       let measures = pieceSectionMeasures(GRAND, {startMeasure: 1, endMeasure: 3, hand: BOTH_HANDS}, song)
@@ -1879,7 +1970,7 @@ describe("staves", function() {
 
       let columns = cardColumns(card)
       expect(columns.map(column => column.measure)).toEqual([1, 3])
-      expect(columns[1].bars).toEqual([{number: 2, beat: 4, beats: 4}])
+      expect(columns[1].bars).toEqual([{number: 2, beat: 4}])
 
       renderStaff(GrandStaff, columns, {unitColumns: columns, keySignature: new KeySignature(0)})
       let lower = staffEl("lower")

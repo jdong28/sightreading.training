@@ -242,20 +242,98 @@ function groupByOnset(entries, clefsAt, {endBeat=null}={}) {
   })
 }
 
+// The slurs of the score as spans of beats: from the head each one starts on
+// to the head it stops on, matched by the number the score writes on it and
+// kept per staff, the way its rests are, so a staff never draws the other
+// hand's phrasing. A slur the score never closes spans nothing
+function slurSpans(entries) {
+  let events = []
+
+  for (let [note, staff] of entries) {
+    let notation = note.notation
+    if (!notation) { continue }
+
+    for (let span of notation.slurs || []) {
+      events.push({beat: note.start, staff: staff || null, ...span})
+    }
+
+    // a phrase can stop on a head a tie runs on to, which is drawn where the
+    // tie puts it rather than at the note's own onset
+    for (let tie of notation.ties || []) {
+      for (let span of tie.slurs || []) {
+        events.push({beat: tie.start, staff: staff || null, ...span})
+      }
+    }
+  }
+
+  events.sort((a, b) => a.beat - b.beat)
+
+  let open = new Map()
+  let spans = []
+
+  for (let event of events) {
+    let key = `${event.number}:${event.staff || ""}`
+
+    if (event.type == "start") {
+      open.set(key, event)
+      continue
+    }
+
+    let from = open.get(key)
+    open.delete(key)
+
+    if (from) {
+      spans.push({
+        number: event.number,
+        staff: event.staff,
+        placement: from.placement || event.placement || null,
+        from: from.beat,
+        to: event.beat,
+      })
+    }
+  }
+
+  return spans
+}
+
+// Marks every column a slur of the score is open right across — started
+// before it and stopped after it, so neither of its own heads is drawn in the
+// column — with that slur, as column.slurs. It is what lets a card falling
+// wholly inside a long phrase draw the arc passing over it rather than losing
+// the slur until its ends come round again (see slurArcs in st/staff_rhythm)
+function markSlurs(columns, entries) {
+  let spans = slurSpans(entries)
+  if (!spans.length) { return columns }
+
+  for (let column of columns) {
+    if (column.beat == null) { continue }
+
+    let through = spans.filter(span =>
+      span.from < column.beat - ONSET_EPSILON / 2 &&
+      span.to > column.beat + ONSET_EPSILON / 2)
+
+    if (through.length) {
+      column.slurs = through.map(({number, staff, placement}) =>
+        ({number, staff, placement}))
+    }
+  }
+
+  return columns
+}
+
 // Hands each of extras to the column it is drawn after, the last one starting
 // at or before it; anything before the first column goes to it, drawn in the
 // room before its head. Extras are in beat order and stay that way.
 //
 // A range with no columns at all — a measure every drilled hand rests through
-// — keeps its extras, and the beats it covers, on the array itself, so a card
+// — keeps its extras, and the beat it opens on, on the array itself, so a card
 // can draw that bar's rests, bar line and number without ever handing the
 // player a column to answer (see sectionCard in st/measure_cards)
-function attachExtras(columns, extras, bar) {
+function attachExtras(columns, extras, startBeat) {
   let drawn = columns.filter(column => column.extras)
   if (!drawn.length) {
-    if (bar && bar.beat != null) {
-      columns.beat = bar.beat
-      columns.beats = bar.beats
+    if (startBeat != null) {
+      columns.beat = startBeat
       columns.extras = [...extras].sort((a, b) => a.beat - b.beat)
     }
     return columns
@@ -350,10 +428,7 @@ export function extractSectionColumns(song, opts={}) {
     }
   }
 
-  return attachExtras(columns, extras, {
-    beat: startBeat,
-    beats: isFinite(columnsEnd) ? Math.max(0, columnsEnd - startBeat) : 0,
-  })
+  return attachExtras(markSlurs(columns, entries), extras, startBeat)
 }
 
 // Drops notes that fall outside [min, max] pitch (note names), removing
@@ -384,6 +459,9 @@ export function filterColumnsToRange(columns, min, max) {
     if (column.notation) {
       kept.beat = column.beat
       kept.beats = column.beats
+      if (column.slurs) {
+        kept.slurs = column.slurs
+      }
       kept.notation = column.notation.filter((notation, idx) => keep[idx])
       // a tied head of a note the staff can't show goes with it
       kept.extras = [...carried, ...(column.extras || [])].filter(extra => {
@@ -408,21 +486,16 @@ export function filterColumnsToRange(columns, min, max) {
     last.extras = [...(last.extras || []), ...carried]
   }
 
-  // Nothing of the range is drawn on this staff, either because it held no
-  // columns or because every one of them was out of range, so it keeps what a
-  // column-less bar keeps: the extras still drawn and the beats it covers
-  // (see attachExtras)
-  if (!out.length) {
-    let first = columns.beat != null ? columns : columns[0]
-    if (first && first.beat != null) {
-      out.beat = first.beat
-      out.beats = first.beats
-      out.extras = [...(columns.extras || []), ...carried].filter(extra => {
-        if (extra.kind != "head") { return true }
-        let pitch = parseNote(extra.name)
-        return pitch >= minPitch && pitch <= maxPitch
-      })
-    }
+  // The range held no columns at all — a measure every drilled hand rests
+  // through — so it keeps what a column-less bar keeps: the extras still
+  // drawn and the beats it covers (see attachExtras)
+  if (!out.length && columns.beat != null) {
+    out.beat = columns.beat
+    out.extras = (columns.extras || []).filter(extra => {
+      if (extra.kind != "head") { return true }
+      let pitch = parseNote(extra.name)
+      return pitch >= minPitch && pitch <= maxPitch
+    })
   }
 
   return [out, dropped]

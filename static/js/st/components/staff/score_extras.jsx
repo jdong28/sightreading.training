@@ -29,7 +29,9 @@ const TIE_STUB = STAFF_SPACE * 1.4
 const TIE_OFFSET = STAFF_SPACE * 0.5
 const TIE_DEPTH = STAFF_SPACE * 0.45
 
-// how far a slur clears the heads it arches over, beyond where a tie sits
+// how deep a slur bows, and how far it clears the heads it arches over
+// beyond where a tie sits
+const SLUR_DEPTH = STAFF_SPACE * 0.9
 const SLUR_CLEARANCE = STAFF_SPACE * 0.6
 
 export default class ScoreExtras extends React.PureComponent {
@@ -284,21 +286,21 @@ export default class ScoreExtras extends React.PureComponent {
 
   // The path of one arc, bowed away from the stems of the heads it joins and,
   // for a slur, arched past the heads it spans
-  arcPath(arc, key, scale, cls) {
+  arcPath(arc, key, scale, cls, depth) {
     let bow = arc.dir == "up" ? -1 : 1
     let {x1, x2} = arc
     let y1 = arc.y1 + bow * TIE_OFFSET * scale
     let y2 = arc.y2 + bow * TIE_OFFSET * scale
-    let apex = (y1 + y2) / 2 + bow * TIE_DEPTH * scale
-
-    if (arc.clear != null) {
-      let over = arc.clear + bow * (TIE_OFFSET + SLUR_CLEARANCE) * scale
-      apex = bow < 0 ? Math.min(apex, over) : Math.max(apex, over)
-    }
+    let mid = (y1 + y2) / 2
+    let cy = mid + bow * depth * scale
 
     // the quadratic's own middle sits half way between its ends and its
-    // control point, so the control point goes twice as far as the apex
-    let cy = 2 * apex - (y1 + y2) / 2
+    // control point, so a head is cleared by a control point twice as far out
+    // as the apex has to reach
+    if (arc.clear != null) {
+      let over = 2 * (arc.clear + bow * (TIE_OFFSET + SLUR_CLEARANCE) * scale) - mid
+      cy = bow < 0 ? Math.min(cy, over) : Math.max(cy, over)
+    }
 
     return <path
       key={key}
@@ -320,13 +322,42 @@ export default class ScoreExtras extends React.PureComponent {
     let left = this.props.offsetLeft || 0
     let ties = tieArcs(heads.filter(head => head.tieTo != null || head.tieFrom != null),
       TIE_STUB * scale, {left})
-    let slurs = slurArcs(heads, TIE_STUB * scale, {left})
+    let slurs = slurArcs(heads, TIE_STUB * scale,
+      {left, through: this.passingSlurs()})
 
     if (!ties.length && !slurs.length) { return null }
 
     return <svg className={styles.ties} key="ties">
-      {ties.map((arc, idx) => this.arcPath(arc, `tie-${idx}`, scale, styles.tie))}
-      {slurs.map((arc, idx) => this.arcPath(arc, `slur-${idx}`, scale, styles.slur))}
+      {ties.map((arc, idx) => this.arcPath(arc, `tie-${idx}`, scale, styles.tie, TIE_DEPTH))}
+      {slurs.map((arc, idx) => this.arcPath(arc, `slur-${idx}`, scale, styles.slur, SLUR_DEPTH))}
     </svg>
+  }
+
+  // The slurs of the score open right across every column on the staff: both
+  // heads they run between are drawn on other cards, so nothing here marks
+  // them and the arc is drawn passing over the whole staff (see slurArcs). A
+  // staff reading one score staff draws only that staff's slurs, as it draws
+  // only its rests
+  passingSlurs() {
+    let columns = this.props.notes
+    if (!columns || !columns.length) { return [] }
+
+    let staff = this.props.staff
+    let keyOf = span => `${span.number}:${span.staff || ""}`
+    let open = new Map()
+
+    for (let span of columns[0].slurs || []) {
+      if (staff && span.staff && span.staff != staff) { continue }
+      open.set(keyOf(span), span)
+    }
+
+    for (let idx = 1; idx < columns.length && open.size; idx++) {
+      let here = new Set((columns[idx].slurs || []).map(keyOf))
+      for (let key of [...open.keys()]) {
+        if (!here.has(key)) { open.delete(key) }
+      }
+    }
+
+    return [...open.values()]
   }
 }

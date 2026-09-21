@@ -540,11 +540,12 @@ function tupletChains(groups, chains) {
     }
   }
 
-  let beamed = chain => chain.groups.join(",")
+  let sameGroups = (a, b) =>
+    a.length == b.length && a.every((group, idx) => group === b[idx])
 
   return out.filter(tuplet => tuplet.notes > 1).map(tuplet => ({
     ...tuplet,
-    bracket: !chains.some(chain => beamed(chain) == beamed(tuplet)),
+    bracket: !chains.some(chain => sameGroups(chain.groups, tuplet.groups)),
   }))
 }
 
@@ -973,11 +974,14 @@ const SLUR_ANCHOR = 0.5
  * @param {number} stub how far a slur with no head to run to reaches
  * @param {Object} [opts]
  * @param {number} [opts.left] the furthest left a stub reaches back to
+ * @param {Object[]} [opts.through] the slurs open right across these heads,
+ * neither started nor stopped on any of them, which are drawn running off
+ * both sides of the staff
  * @returns {Object[]} {x1, y1, x2, y2, dir, clear}, the ends in reading
  * order, dir the side the arc bulges to and clear the y of the head it must
  * arch past, or null when it spans none
  */
-export function slurArcs(heads, stub, {left=null}={}) {
+export function slurArcs(heads, stub, {left=null, through=null}={}) {
   let sorted = [...heads].sort((a, b) => a.x - b.x)
   let arcs = []
   let open = new Map()
@@ -1003,8 +1007,14 @@ export function slurArcs(heads, stub, {left=null}={}) {
   let push = (dir, x1, y1, x2, y2) =>
     arcs.push({x1, y1, x2, y2, dir, clear: clearance(dir, x1, x2)})
 
+  // the slurs some head on the staff starts or stops, which draw their own
+  // arc and so are never drawn passing over it
+  let marked = new Set()
+
   for (let head of sorted) {
     for (let span of head.slurs || []) {
+      marked.add(span.number)
+
       if (span.type == "start") {
         open.set(span.number, {head, placement: span.placement})
         continue
@@ -1031,6 +1041,22 @@ export function slurArcs(heads, stub, {left=null}={}) {
   for (let {head, placement} of open.values()) {
     let x1 = anchor(head)
     push(arcDir(head, placement), x1, head.y, x1 + stub, head.y)
+  }
+
+  // A slur both of whose heads are on other cards passes right over this one,
+  // so it is drawn running off both sides rather than disappearing while the
+  // middle of the phrase is played
+  if (sorted.length) {
+    let first = sorted[0]
+    let last = sorted[sorted.length - 1]
+
+    for (let span of through || []) {
+      if (marked.has(span.number)) { continue }
+      let x1 = first.x - stub
+      push(arcDir(first, span.placement),
+        left == null ? x1 : Math.max(left, x1), first.y,
+        anchor(last) + stub, last.y)
+    }
   }
 
   return arcs
