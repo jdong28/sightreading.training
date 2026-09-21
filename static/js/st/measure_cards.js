@@ -40,13 +40,20 @@ export const MAX_MEASURES_PER_CARD = 3
  * Groups the pool into cards of perCard contiguous measures, the last card
  * shorter when the pool doesn't divide evenly. A deck of cards of more than
  * one measure is numbered, its short last card along with the rest; a deck of
- * single bars, a pool of one among them, draws no bar lines.
+ * single bars, a pool of one among them, draws no bar lines. Cards the app's
+ * staff draws are capped to MAX_MEASURES_PER_CARD, what it fits on the plate;
+ * an engine's (opts.capped false) take any size.
  * @param {PoolMeasure[]} measures
  * @param {number} perCard
+ * @param {Object} [opts]
+ * @param {boolean} [opts.capped]
  * @returns {MeasureCard[]}
  */
-export function measureCards(measures, perCard) {
-  let size = Math.min(MAX_MEASURES_PER_CARD, Math.max(1, Math.floor(perCard) || 1))
+export function measureCards(measures, perCard, {capped=true}={}) {
+  let size = Math.max(1, Math.floor(perCard) || 1)
+  if (capped) {
+    size = Math.min(MAX_MEASURES_PER_CARD, size)
+  }
   let cards = []
 
   for (let i = 0; i < measures.length; i += size) {

@@ -1,0 +1,160 @@
+/* st/components/number_picker: a parchment field between two large gilt
+   edged step buttons, with an optional gilt slider under them */
+
+.number_picker {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 0;
+}
+
+.stepper {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+
+.step_button {
+    flex: none;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border: 1px solid var(--salon-rule-strong);
+    border-radius: 50%;
+    background: var(--salon-paper);
+    color: var(--salon-ink);
+    font-family: var(--font-display);
+    font-size: 24px;
+    line-height: 1;
+    cursor: pointer;
+    touch-action: manipulation;
+    user-select: none;
+    -webkit-user-select: none;
+
+    &:hover:not(:disabled) {
+        border-color: var(--salon-gilt);
+        background: var(--salon-paper-warm);
+    }
+
+    &:active:not(:disabled) {
+        background: var(--salon-band);
+    }
+
+    &:focus-visible {
+        outline: none;
+        box-shadow: 0 0 0 3px rgba(125,44,44,.25);
+    }
+
+    &:disabled {
+        opacity: .4;
+        cursor: default;
+    }
+}
+
+.field {
+    flex: 0 1 76px;
+    width: 76px;
+    min-width: 0;
+    height: 44px;
+    box-sizing: border-box;
+    padding: 0 6px;
+    border: 1px solid var(--salon-rule-strong);
+    border-radius: 3px;
+    background: var(--salon-paper);
+    color: var(--salon-ink);
+    font-family: var(--font-display);
+    font-size: 22px;
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+
+    &:focus {
+        outline: none;
+        border-color: var(--salon-gilt);
+        box-shadow: 0 0 0 3px rgba(125,44,44,.18);
+    }
+
+    &::placeholder {
+        color: var(--salon-ink-muted);
+        font-style: italic;
+        font-size: 17px;
+    }
+}
+
+/* a value picked outside the picker, eg. the whole section */
+.unset {
+    background: var(--salon-paper-warm);
+}
+
+.caption {
+    min-width: 0;
+    margin-left: 4px;
+    font-family: var(--font-display);
+    font-size: 15px;
+    font-style: italic;
+    color: var(--salon-ink-soft);
+    white-space: nowrap;
+}
+
+/* the gilt track of the tempo control (see the programme drawer) on a native
+   range input, so it keeps the keyboard and screen reader behaviour */
+.slider {
+    display: block;
+    width: 100%;
+    height: 24px;
+    margin: 0;
+    background: transparent;
+    appearance: none;
+    -webkit-appearance: none;
+    cursor: pointer;
+
+    &::-webkit-slider-runnable-track {
+        height: 4px;
+        background: var(--salon-rule-light);
+        border-radius: 999px;
+    }
+
+    &::-moz-range-track {
+        height: 4px;
+        background: var(--salon-rule-light);
+        border-radius: 999px;
+    }
+
+    &::-moz-range-progress {
+        height: 4px;
+        background: var(--salon-gilt);
+        border-radius: 999px;
+    }
+
+    &::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        width: 18px;
+        height: 18px;
+        margin-top: -7px;
+        background: var(--salon-paper);
+        border: 1px solid var(--salon-gilt);
+        border-radius: 50%;
+        box-shadow: 0 1px 4px rgba(36,31,24,.28);
+    }
+
+    &::-moz-range-thumb {
+        width: 18px;
+        height: 18px;
+        background: var(--salon-paper);
+        border: 1px solid var(--salon-gilt);
+        border-radius: 50%;
+        box-shadow: 0 1px 4px rgba(36,31,24,.28);
+    }
+
+    &:focus {
+        outline: none;
+    }
+
+    &:focus-visible::-webkit-slider-thumb {
+        box-shadow: 0 1px 4px rgba(36,31,24,.28), 0 0 0 3px rgba(125,44,44,.25);
+    }
+
+    &:focus-visible::-moz-range-thumb {
+        box-shadow: 0 1px 4px rgba(36,31,24,.28), 0 0 0 3px rgba(125,44,44,.25);
+    }
+}

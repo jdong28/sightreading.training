@@ -17,6 +17,7 @@ import {parseNote} from "st/music"
 import {setAppStore} from "st/storage"
 import {SCORE_DRILL_STORAGE_KEY} from "st/generators"
 import staffStyles from "st/components/staff.module.css"
+import drawerStyles from "st/components/sight_reading/programme_drawer.module.css"
 
 import {openTestStore, reverieOpening, pickupScore, noteXML} from "spec/helpers"
 
@@ -400,6 +401,46 @@ describe("score page engine card", function() {
     expect(el.textContent).toContain("measures 1–4")
   })
 
+  // the programme drawer, opened
+  let openDrawer = el => {
+    flushSync(() => el.querySelector("button[aria-label=\"Programme\"]").click())
+    return el.querySelector(`.${drawerStyles.drawer}`)
+  }
+
+  let perCardPicker = drawer => drawer.querySelector("[role=\"spinbutton\"][aria-label=\"measures per card\"]")
+
+  it("picks a card size past the staff's cap for the score's cards, capping it again in scroll mode", async function() {
+    await drillPiece(reverieOpening(), {startMeasure: 1, endMeasure: 4, measuresPerCard: "2"})
+    let el = renderScorePage()
+    await cardDrawn()
+
+    let drawer = openDrawer(el)
+    let input = perCardPicker(drawer)
+    expect(input.getAttribute("aria-valuemax")).toEqual("4")
+    expect(drawer.textContent).toContain("of 4")
+    expect(drawer.textContent).not.toContain("Cards stop")
+
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(input, "4")
+    flushSync(() => input.dispatchEvent(new Event("input", {bubbles: true})))
+    flushSync(() => input.dispatchEvent(new KeyboardEvent("keydown", {key: "Enter", bubbles: true})))
+    flushSync(() => {})
+
+    expect(4).toBeGreaterThan(MAX_MEASURES_PER_CARD)
+    expect(page.state.currentGeneratorSettings.measuresPerCard).toEqual(4)
+    let {card} = page.currentCard()
+    expect(card.measures).toEqual([1, 2, 3, 4])
+    await waitFor(() => el.querySelector("[data-score-card] svg"), {message: "the four measure card"})
+
+    // the app's staff draws scroll mode's cards, so the cap is back and says why
+    flushSync(() => page.setMode("scroll"))
+    flushSync(() => {})
+    expect(perCardPicker(drawer).getAttribute("aria-valuemax")).toEqual(`${MAX_MEASURES_PER_CARD}`)
+    expect(perCardPicker(drawer).value).toEqual(`${MAX_MEASURES_PER_CARD}`)
+    expect(drawer.textContent).toContain(`max ${MAX_MEASURES_PER_CARD}`)
+    expect(drawer.textContent).toContain(`Cards stop at ${MAX_MEASURES_PER_CARD} measures in scroll mode`)
+    expect(page.currentCard().card.measures.length).toEqual(MAX_MEASURES_PER_CARD)
+  })
+
   it("draws a piece stored without its score on the app's staff, saying how to draw it from the score", async function() {
     let {piece} = await addPiece("Rêverie", parseMusicXML(reverieOpening()), store)
     window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
@@ -439,9 +480,12 @@ describe("score page engine card", function() {
     await waitFor(() => el.querySelector(`.${staffStyles.staff_notes}`), {message: "the app's staff"})
 
     expect(el.querySelector("[data-score-card]")).toBe(null)
-    // capped again to what the staff fits
+    // capped again to what the staff fits, which the card size says
     let {card} = page.currentCard()
     expect(card.endMeasure - card.startMeasure + 1).toBeLessThanOrEqual(MAX_MEASURES_PER_CARD)
+    let drawer = openDrawer(el)
+    expect(perCardPicker(drawer).getAttribute("aria-valuemax")).toEqual(`${MAX_MEASURES_PER_CARD}`)
+    expect(drawer.textContent).toContain("while the score can't be drawn")
   })
 
   it("records each measure's stats as a whole section longer than the staff's card cap is played on one card", async function() {

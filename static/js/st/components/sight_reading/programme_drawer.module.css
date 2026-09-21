@@ -308,12 +308,12 @@
     }
 }
 
-.number_input {
-    display: block;
-    width: 100%;
-    box-sizing: border-box;
-    padding: 7px 10px;
-    font-size: 13px;
+/* preset pills (eg. the whole section) beside a measure picker */
+.measure_row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
 }
 
 .text_input_row {

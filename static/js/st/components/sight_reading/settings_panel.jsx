@@ -1,6 +1,7 @@
 import * as React from "react"
 import classNames from "classnames"
 import Slider from "st/components/slider"
+import NumberPicker from "st/components/number_picker"
 import Select from "st/components/select"
 import {Pill} from "st/components/salon"
 import {scoreEnginesPath} from "st/score_render/route"
@@ -383,6 +384,9 @@ export class ScoreDrawer extends React.PureComponent {
     setMode: types.func.isRequired,
     scrollSpeed: types.number.isRequired,
     setScrollSpeed: types.func.isRequired,
+    // why the app's staff draws the cards, capping how many measures each
+    // has, or null when the engine draws them (see the trainer's cardCap)
+    cardCap: types.string,
   }
 
   render() {
@@ -397,7 +401,8 @@ export class ScoreDrawer extends React.PureComponent {
             currentKey={this.props.currentKey}
             currentStaff={staff}
             currentSettings={this.props.currentGeneratorSettings}
-            setGenerator={this.props.setGenerator} />
+            setGenerator={this.props.setGenerator}
+            context={{cardCap: this.props.cardCap === undefined ? "" : this.props.cardCap, mode: this.props.mode}} />
           {this.renderKeyHint()}
         </SettingsGroup> : null}
 
@@ -445,6 +450,9 @@ export class GeneratorSettings extends React.PureComponent {
     // class names by this panel's style names, used in place of its styles
     // when the inputs are rendered outside the panel, eg. on the setup page
     classes: types.object,
+    // what the page tells its inputs, eg. the score page's cardCap (see the
+    // sheet music generator's measures per card in st/data)
+    context: types.object,
   }
 
   constructor(props) {
@@ -500,8 +508,8 @@ export class GeneratorSettings extends React.PureComponent {
           case "text":
             fn = this.renderText
             break
-          case "number":
-            fn = this.renderNumber
+          case "measure":
+            fn = this.renderMeasure
             break
           case "deck":
             fn = this.renderDeck
@@ -513,7 +521,7 @@ export class GeneratorSettings extends React.PureComponent {
 
         // multi control inputs are not wrapped in a label so clicking the
         // label text does not focus an arbitrary control
-        let el = ["toggles", "text", "deck", "select", "noteRange"].includes(input.type) ? "div" : "label"
+        let el = ["toggles", "text", "deck", "select", "noteRange", "measure"].includes(input.type) ? "div" : "label"
 
         let inside = React.createElement(el, null, ...[
           <div className={this.styles.input_label}>{input.label || input.name}</div>,
@@ -601,47 +609,53 @@ export class GeneratorSettings extends React.PureComponent {
       options={options} />
   }
 
-  // the raw text is kept while it does not parse (eg. emptied to retype) and
-  // the clamped number is committed as soon as it does
-  renderNumber(input, idx) {
-    let drafts = this.state.drafts || {}
-    let draft = drafts[input.name]
-    let currentValue = this.cachedSettings[input.name]
+  // A measure number (see st/components/number_picker) in the range
+  // input.bounds gives for the settings, optionally beside preset choice
+  // pills (eg. the whole section), which leave the number unset.
+  // input.value reads the number from the settings and input.update turns a
+  // picked one into the settings update, eg. to drag the end measure along
+  // with the start; both take the panel's context too
+  renderMeasure(input, idx) {
+    let settings = this.cachedSettings
+    let context = this.props.context || {}
+    let label = input.label || input.name
+    let {min, max, caption} = input.bounds(settings, context)
+    let value = input.value ? input.value(settings, context) : settings[input.name]
+    let hint = typeof input.hint == "function" ? input.hint(settings, context) : input.hint
+    let presets = input.presets || []
+    let preset = presets.find(p => p.name == settings[input.name])
 
-    let setDraft = text => this.setState({
-      drafts: {...drafts, [input.name]: text}
-    })
-
-    let hint = typeof input.hint == "function" ?
-      input.hint(this.cachedSettings) : input.hint
-
-    let numberInput = <input
-      type="number"
-      className={this.styles.number_input}
-      min={input.min}
-      max={input.max}
-      value={draft != null ? draft : (currentValue == null ? "" : currentValue)}
-      onBlur={() => setDraft(null)}
-      onChange={e => {
-        let text = e.target.value
-        let value = parseInt(text, 10)
-        if (isNaN(value)) {
-          setDraft(text)
-          return
-        }
-        if (input.min != null) { value = Math.max(input.min, value) }
-        if (input.max != null) { value = Math.min(input.max, value) }
-        setDraft(null)
-        this.updateInputValue(input, value)
-      }} />
-
-    if (!hint) {
-      return numberInput
-    }
+    let picker = <NumberPicker
+      label={label}
+      min={min}
+      max={Math.max(min, max)}
+      value={preset ? null : value}
+      placeholder={preset ? preset.label || preset.name : undefined}
+      caption={caption}
+      onChange={value => this.updateSettings(
+        input.update ? input.update(settings, value, context) : {[input.name]: value}
+      )} />
 
     return <>
-      {numberInput}
-      <div className={this.styles.input_hint}>{hint}</div>
+      {presets.length ?
+        <div className={this.styles.measure_row}>
+          <div className={this.styles.pills} role="group" aria-label={`${label} presets`}>
+            {presets.map(option =>
+              <Pill
+                variant="choice"
+                key={option.name}
+                className={this.styles.small_pill}
+                selected={option == preset}
+                onClick={() => {
+                  if (option != preset) {
+                    this.updateInputValue(input, option.name)
+                  }
+                }}>{option.label || option.name}</Pill>
+            )}
+          </div>
+          {picker}
+        </div> : picker}
+      {hint ? <div className={this.styles.input_hint}>{hint}</div> : null}
     </>
   }
 
