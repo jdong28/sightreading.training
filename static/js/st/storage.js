@@ -829,9 +829,9 @@ export class LocalStore {
    * section stats follow their piece (also when it matched a stored piece of
    * another id). A source is added only to a piece without one that holds
    * the same song, so importing a library fills in the sources of pieces
-   * stored before them but never gives a piece the source of another song. Section stats
-   * replace stored stats only when practiced more recently. Sessions are
-   * added unless one of the same id is stored.
+   * stored before them but never gives a piece the source of another song.
+   * Section stats replace stored stats only when practiced more recently.
+   * Sessions are added unless one of the same id is stored.
    * @param {LibraryExport} data
    * @param {Object} [opts]
    * @param {number} [opts.maxPieces] the most pieces the library holds
