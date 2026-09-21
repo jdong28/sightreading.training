@@ -57,7 +57,7 @@ export const PLATE_STAFF_SCALE = 0.8
 // MAX_MEASURES_PER_CARD (st/measure_cards), this fits even the score's
 // busiest three bar cards on the normal (non-fullscreen) plate with a little
 // room to spare
-export const MIN_FIT_SCALE = 0.35
+export const MIN_FIT_SCALE = 0.25
 
 // the legacy renderer's scale for the window's width
 function staffScale() {

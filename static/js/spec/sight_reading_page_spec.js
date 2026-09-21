@@ -324,7 +324,7 @@ describe("sight reading page", function() {
 
     renderPage()
     // a plate too narrow for the card's columns at any allowed width
-    flushSync(() => page.setState({staffWidth: 150}))
+    flushSync(() => page.setState({staffWidth: 120}))
 
     let columnsOf = () => page.state.notes.generator.cards[0].columns
     let layout = page.staffLayout()
@@ -364,7 +364,7 @@ describe("sight reading page", function() {
 
     let el = renderPage()
     // a plate narrow enough that the card is fitted at its narrowest columns
-    flushSync(() => page.setState({staffWidth: 200}))
+    flushSync(() => page.setState({staffWidth: 160}))
     expect(page.staffLayout().scale).toEqual(MIN_FIT_SCALE)
 
     await Promise.all([...el.querySelectorAll("img")].map(img => img.decode()))
@@ -401,19 +401,19 @@ describe("sight reading page", function() {
     }))
 
     renderPage()
-    flushSync(() => page.setState({staffWidth: 200}))
+    flushSync(() => page.setState({staffWidth: 160}))
 
     // the smallest staff still worth reading: a card that doesn't fit at it
     // runs past the plate's edge rather than shrinking further
-    expect(MIN_FIT_SCALE).toEqual(0.35)
-    expect(page.staffLayout().scale).toEqual(0.35)
+    expect(MIN_FIT_SCALE).toEqual(0.25)
+    expect(page.staffLayout().scale).toEqual(0.25)
 
     // and a plate with room for the card keeps the staff at its full size
     flushSync(() => page.setState({staffWidth: 1240}))
     expect(page.staffLayout().scale).toEqual(page.state.scale)
   })
 
-  it("fits a card that overflowed at the old 0.4 floor", async function() {
+  it("fits a card that overflowed at the old 0.35 floor", async function() {
     let {piece} = await importMusicXMLPiece("seconds.musicxml", secondsXML("Seconds", true), store)
 
     window.localStorage.setItem(DRILL_STORAGE_KEY, JSON.stringify({staff: "grand", generator: "sheet music"}))
@@ -422,15 +422,15 @@ describe("sight reading page", function() {
     }))
 
     let el = renderPage()
-    // a plate narrow enough that the card needs a staff below the old 0.4
+    // a plate narrow enough that the card needs a staff below the old 0.35
     // floor, which would have clamped there and run past the edge
     let wrapper = el.querySelector(`.${staffStyles.staff_wrapper}`)
-    wrapper.style.width = "260px"
+    wrapper.style.width = "230px"
     flushSync(() => page.measureStaffWrapper())
 
     let scale = page.staffLayout().scale
     expect(scale).toBeGreaterThan(MIN_FIT_SCALE)
-    expect(scale).toBeLessThan(0.4)
+    expect(scale).toBeLessThan(0.35)
 
     await Promise.all([...el.querySelectorAll("img")].map(img => img.decode()))
 
