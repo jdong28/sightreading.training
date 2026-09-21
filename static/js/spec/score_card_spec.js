@@ -8,7 +8,7 @@ import ScoreCard from "st/components/score_card"
 import {MISSING_ENGINE_SOURCE} from "st/components/pages/sight_reading_page"
 import {joinCard, markCard, joinable, MARK_CLASSES} from "st/score_render/card_join"
 import {
-  scrollTrack, trackX, scrollAdvance, scrollOffset, SCROLL_WAIT, MIN_SCROLL_ADVANCE,
+  scrollTrack, trackX, scrollAdvance, scrollOffset, SCROLL_WAIT, MIN_SCROLL_ADVANCE, JUMP_LEAD_IN,
 } from "st/score_render/card_scroll"
 import {prepareCard} from "st/score_render/card_source"
 import {loadScoreEngines} from "st/score_render/load"
@@ -260,14 +260,13 @@ describe("card scroll", function() {
     let join = joinCard(columns, notes)
     expect(join.unmatched).toEqual([notes[4]])
 
-    let track = scrollTrack(columns, join, notes, xOf, 400)
+    let track = scrollTrack(columns, join, notes, xOf)
     expect(track.points).toEqual([[0, 99], [1, 130], [2, 150]])
     expect(trackX(track, 0)).toEqual(99)
     expect(trackX(track, 1)).toEqual(130)
     expect(trackX(track, 2)).toEqual(150)
     // the mean gap between drawn onsets is the slider's unit
     expect(track.unit).toEqual((150 - 99) / 2)
-    expect(track.endX).toEqual(400)
   })
 
   it("places a column with no drawn head between the drawn onsets either side of it", function() {
@@ -277,7 +276,7 @@ describe("card scroll", function() {
     expect(join.heads[1]).toEqual([])
     expect(join.heads[4]).toEqual([])
 
-    let track = scrollTrack(columns, join, notes, xOf, 300)
+    let track = scrollTrack(columns, join, notes, xOf)
     expect(trackX(track, 1)).toEqual(150)
     // past the last drawn onset along the drawing's mean pace
     expect(trackX(track, 4)).toBeCloseTo(260 + (260 - 100) / 3, 6)
@@ -293,7 +292,7 @@ describe("card scroll", function() {
   it("moves the system on by the drawn gap to the column that comes next", function() {
     let notes = [placed(100, 60, 0), placed(140, 62, 1), placed(220, 64, 2), placed(222, 65, 3)]
     let columns = notes.map(note => column([["C4", "D4", "E4", "F4"][note.onsetBeats]], note.onsetBeats))
-    let track = scrollTrack(columns, joinCard(columns, notes), notes, xOf, 500)
+    let track = scrollTrack(columns, joinCard(columns, notes), notes, xOf)
     let unit = track.unit
 
     expect(scrollAdvance(track, columns[0], columns[1])).toBeCloseTo(40 / unit, 6)
@@ -303,15 +302,58 @@ describe("card scroll", function() {
 
     // the next card not yet picked: the next drawn onset
     expect(scrollAdvance(track, columns[1], [])).toBeCloseTo(80 / unit, 6)
-    // looping back to the start: it comes on after the drawing's end
-    expect(scrollAdvance(track, columns[3], columns[0])).toBeCloseTo((500 - 222) / unit, 6)
-    expect(scrollAdvance(track, columns[3], [])).toBeCloseTo((500 - 222) / unit, 6)
+    // the drawing's last column with no next known: the system jumps
+    expect(scrollAdvance(track, columns[3], [])).toEqual(JUMP_LEAD_IN)
+  })
+
+  describe("a next card that doesn't follow on", function() {
+    // eight bars of quarters, a unit apart, drilled in cards of two bars
+    let notes = [...Array(32).keys()].map(beat => placed(100 + 30 * beat, 60, beat))
+    let columns = notes.map(note => column(["C4"], note.onsetBeats))
+    let track = scrollTrack(columns, joinCard(columns, notes), notes, xOf)
+
+    it("keeps scrolling on to the adjacent card", function() {
+      expect(scrollAdvance(track, columns[7], columns[8])).toBeCloseTo(1, 6)
+    })
+
+    it("keeps scrolling on past the head a column's tie runs on to", function() {
+      let tied = [placed(100, 60, 0), placed(130, 60, 1), placed(160, 62, 2)]
+      let columns = [
+        column(["C4"], 0, {notation: [{tieTo: 1}], extras: [{kind: "head", name: "C4", beat: 1, tieTo: null}]}),
+        column(["D4"], 2),
+      ]
+      let track = scrollTrack(columns, joinCard(columns, tied), tied, xOf)
+      expect(scrollAdvance(track, columns[0], columns[1])).toBeCloseTo(60 / track.unit, 6)
+    })
+
+    it("jumps forward to a later card with the lead-in, not through the bars between", function() {
+      let advance = scrollAdvance(track, columns[7], columns[24])
+      expect(advance).toBeGreaterThan(SCROLL_WAIT)
+      expect(advance).toBeLessThanOrEqual(JUMP_LEAD_IN)
+    })
+
+    it("jumps back to an earlier card with the lead-in", function() {
+      let advance = scrollAdvance(track, columns[23], columns[8])
+      expect(advance).toBeGreaterThan(SCROLL_WAIT)
+      expect(advance).toBeLessThanOrEqual(JUMP_LEAD_IN)
+    })
+
+    it("jumps back to the first card as the in-order walk wraps", function() {
+      let advance = scrollAdvance(track, columns[31], columns[0])
+      expect(advance).toBeGreaterThan(SCROLL_WAIT)
+      expect(advance).toBeLessThanOrEqual(JUMP_LEAD_IN)
+
+      // the first column comes on the lead-in right of where the last one was
+      let before = scrollOffset(track, 31, 0.8, 322) + trackX(track, 31)
+      let after = scrollOffset(track, 0, 0.8 + advance, 322) + trackX(track, 0)
+      expect(after - before).toBeCloseTo(JUMP_LEAD_IN * track.unit, 6)
+    })
   })
 
   it("puts the head column on the hit line while the slider waits, and after it as it runs down", function() {
     let notes = [placed(100, 60, 0), placed(140, 62, 1)]
     let columns = [column(["C4"], 0), column(["D4"], 1)]
-    let track = scrollTrack(columns, joinCard(columns, notes), notes, xOf, 200)
+    let track = scrollTrack(columns, joinCard(columns, notes), notes, xOf)
 
     // the system's translation plus the column's x is where it is drawn
     expect(scrollOffset(track, 1, SCROLL_WAIT, 322) + 140).toEqual(322)

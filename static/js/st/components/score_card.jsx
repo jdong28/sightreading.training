@@ -165,7 +165,7 @@ export class ScoreCard extends React.Component {
         let rect = el.getBoundingClientRect()
         return rect.left + rect.width / 2 - left
       }
-      this.track = scrollTrack(columns, cardJoin, this.result.notes, xOf, svg.getBoundingClientRect().width)
+      this.track = scrollTrack(columns, cardJoin, this.result.notes, xOf)
     }
 
     this.mark()

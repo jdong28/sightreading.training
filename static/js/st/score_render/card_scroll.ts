@@ -18,6 +18,10 @@ export const SCROLL_WAIT = 0.5
 // still passed one by one
 export const MIN_SCROLL_ADVANCE = 0.05
 
+// the units the system comes on by when it jumps to a column that doesn't
+// follow on from the last, the drawing's mean gap from one onset to the next
+export const JUMP_LEAD_IN = 1
+
 // the unit of a drawing with a single onset, a quarter note's gap at the
 // engines' zoom
 const DEFAULT_UNIT = 40
@@ -33,8 +37,6 @@ export interface ScrollTrack {
   points: [number, number][]
   // the slider's unit in pixels, the mean gap between drawn onsets
   unit: number
-  // the right end of the drawing
-  endX: number
 }
 
 function mean(values: number[]): number {
@@ -44,10 +46,11 @@ function mean(values: number[]): number {
 // Every drawn onset's x along the system: a column's own heads where the
 // join found them (a chord's heads, and never the heads its ties run on to),
 // and elsewhere the mean of the heads drawn at that onset that no column
-// claims, eg. the notes of the section outside the card on the staff.
+// claims, eg. the notes of the section outside the card on the staff (the
+// heads a column's ties run on to are its own, not onsets of their own).
 // xOf gives an element's centre along the system
 export function scrollTrack(columns: JoinColumn[], join: CardJoin, notes: CardNote[],
-  xOf: (el: SVGGElement) => number, endX: number): ScrollTrack
+  xOf: (el: SVGGElement) => number): ScrollTrack
 {
   const noteOf = new Map<SVGGElement, CardNote>()
   for (const note of notes) { noteOf.set(note.el, note) }
@@ -67,10 +70,11 @@ export function scrollTrack(columns: JoinColumn[], join: CardJoin, notes: CardNo
     beats.set(t, column.beat)
   })
 
+  const claimed = new Set(join.heads.flat())
   const others = new Map<number, number[]>()
   for (const note of notes) {
     const t = tick(note.onsetBeats)
-    if (xs.has(t)) { continue }
+    if (xs.has(t) || claimed.has(note.el)) { continue }
     if (!others.has(t)) { others.set(t, []) }
     others.get(t)!.push(xOf(note.el))
     beats.set(t, note.onsetBeats)
@@ -87,8 +91,7 @@ export function scrollTrack(columns: JoinColumn[], join: CardJoin, notes: CardNo
     if (gap > 0) { gaps.push(gap) }
   }
 
-  const lastX = points.length ? points[points.length - 1][1] : 0
-  return {points, unit: gaps.length ? mean(gaps) : DEFAULT_UNIT, endX: Math.max(endX, lastX)}
+  return {points, unit: gaps.length ? mean(gaps) : DEFAULT_UNIT}
 }
 
 // The x of a beat along the system: a drawn onset's own, else read off the
@@ -120,28 +123,34 @@ export function trackX(track: ScrollTrack, beat: number): number | null {
   return x0 + (x1 - x0) * (beat - b0) / (b1 - b0)
 }
 
-// the x of the first drawn onset after the beat, if any
-function nextOnsetX(track: ScrollTrack, beat: number): number | null {
+// the first drawn onset after the beat, if any
+function nextOnset(track: ScrollTrack, beat: number): [number, number] | null {
   const t = tick(beat)
-  const next = track.points.find(([b]) => tick(b) > t + 1)
-  return next ? next[1] : null
+  return track.points.find(([b]) => tick(b) > t + 1) || null
 }
 
 // How many units the system moves on when the column at the head of the
 // drill is done with and next takes its place: the gap between them as
 // drawn. A next column not yet known (the gap before a card's next is picked)
-// is taken to be the next drawn onset, and one drawn before the column (a
-// card looping back, or a card picked from earlier in the section) comes on
-// after the drawing's end, where the system jumps back to it
+// is taken to be the next drawn onset. A next column that doesn't follow on
+// from the column (a card looping back, one picked from elsewhere in the
+// section, or the column ending the drawing) isn't scrolled to through the
+// bars between: the system jumps to it, JUMP_LEAD_IN short of the hit line
 export function scrollAdvance(track: ScrollTrack, column: JoinColumn, next?: JoinColumn | null): number {
   const x0 = column.beat == null ? null : trackX(track, column.beat)
   if (x0 == null) { return 1 }
 
-  let x1 = next && next.beat != null ? trackX(track, next.beat) : nextOnsetX(track, column.beat!)
-  if (x1 == null || x1 < x0) {
-    x1 = Math.max(track.endX, x0 + track.unit)
+  const onset = nextOnset(track, column.beat!)
+  let x1: number | null = null
+  if (next && next.beat != null) {
+    const follows = tick(next.beat) > tick(column.beat!) + 1 &&
+      (!onset || tick(next.beat) <= tick(onset[0]) + 1)
+    if (follows) { x1 = trackX(track, next.beat) }
+  } else if (onset) {
+    x1 = onset[1]
   }
 
+  if (x1 == null) { return JUMP_LEAD_IN }
   return Math.max(MIN_SCROLL_ADVANCE, (x1 - x0) / track.unit)
 }
 
