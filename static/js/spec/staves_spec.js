@@ -2037,12 +2037,18 @@ describe("staves", function() {
       let at = n => parseFloat(lines.find(line => line.dataset.measure == `${n}`).style.left)
       expect(at(2)).toBeLessThan(at(3))
 
+      // its line is drawn past the card's last head, in room of its own,
+      // rather than through the note that head draws
+      let [head] = headBoxes(lower).sort((a, b) => b.right - a.right)
+      expect(at(3)).toBeGreaterThan(head.right)
+
       // and both its line and its whole measure rest fall inside the room the
       // page fits the plate to, rather than off the end of it
       let limit = keySignatureWidth(key) + columnSpan(columns, columns, {rests: true}) * 60
       let rest = lower.querySelector(`.${staffStyles.rest}`)
       expect(rest.dataset.restType).toEqual("whole")
 
+      expect(parseFloat(rest.style.left)).toBeGreaterThan(head.right)
       expect(at(3)).toBeLessThanOrEqual(limit)
       expect(parseFloat(rest.style.left) + rest.getBoundingClientRect().width)
         .toBeLessThanOrEqual(limit)
