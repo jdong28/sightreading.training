@@ -4,11 +4,12 @@ import {flushSync} from "react-dom"
 import {MemoryRouter} from "react-router-dom"
 
 import ScorePage, {SCORE_PROGRAMME} from "st/components/pages/score_page"
+import ScoreCard from "st/components/score_card"
 import {MISSING_ENGINE_SOURCE} from "st/components/pages/sight_reading_page"
 import {joinCard, markCard, joinable, MARK_CLASSES} from "st/score_render/card_join"
 import {prepareCard} from "st/score_render/card_source"
 import {loadScoreEngines} from "st/score_render/load"
-import {STAVES, pieceSectionMeasures, BOTH_HANDS, RIGHT_HAND, SHEET_MUSIC_STORAGE_KEY} from "st/data"
+import {STAVES, pieceSectionMeasures, BOTH_HANDS, RIGHT_HAND, LEFT_HAND, SHEET_MUSIC_STORAGE_KEY} from "st/data"
 import {sectionCard, MAX_MEASURES_PER_CARD} from "st/measure_cards"
 import {importMusicXMLPiece, addPiece} from "st/sheet_music_deck"
 import {parseMusicXML} from "st/musicxml"
@@ -17,7 +18,7 @@ import {setAppStore} from "st/storage"
 import {SCORE_DRILL_STORAGE_KEY} from "st/generators"
 import staffStyles from "st/components/staff.module.css"
 
-import {openTestStore, reverieOpening, pickupScore} from "spec/helpers"
+import {openTestStore, reverieOpening, pickupScore, noteXML} from "spec/helpers"
 
 const SVG_NS = "http://www.w3.org/2000/svg"
 
@@ -441,6 +442,86 @@ describe("score page engine card", function() {
     // capped again to what the staff fits
     let {card} = page.currentCard()
     expect(card.endMeasure - card.startMeasure + 1).toBeLessThanOrEqual(MAX_MEASURES_PER_CARD)
+  })
+
+  it("records each measure's stats as a whole section longer than the staff's card cap is played on one card", async function() {
+    let piece = await drillPiece(reverieOpening(), {startMeasure: 1, endMeasure: 4})
+    renderScorePage()
+    await cardDrawn()
+
+    flushSync(() => page.beginSession())
+    let {card} = page.currentCard()
+    expect(card.endMeasure - card.startMeasure + 1).toBeGreaterThan(MAX_MEASURES_PER_CARD)
+
+    play(["C2"])
+    for (let idx = 0; idx < card.columns.length; idx++) {
+      play(page.state.notes.currentColumn())
+    }
+    await page.state.notes.generator.finishing
+
+    let measureStats = store.sectionStats(piece.id)
+      .filter(stats => stats.startMeasure == stats.endMeasure)
+      .sort((a, b) => a.startMeasure - b.startMeasure)
+
+    let played = [...new Set(card.columnMeasures.map(idx => card.measures[idx]))]
+    expect(measureStats.map(stats => stats.startMeasure)).toEqual(played)
+    expect(measureStats.reduce((sum, stats) => sum + stats.hits, 0)).toEqual(card.columns.length)
+    expect(measureStats.reduce((sum, stats) => sum + stats.misses, 0)).toEqual(1)
+  })
+
+  it("falls back to the app's staff when the engine draws none of the hand's notes", async function() {
+    // a piano score exported as a part for each hand, each on its own staff 1
+    let part = (id, clef, notes) => `
+  <part id="${id}">
+    <measure number="1">
+      <attributes><divisions>1</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>${clef[0]}</sign><line>${clef[1]}</line></clef></attributes>
+      ${notes}
+    </measure>
+  </part>`
+    let xml = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <part-list>
+    <score-part id="P1"><part-name>Right</part-name></score-part>
+    <score-part id="P2"><part-name>Left</part-name></score-part>
+  </part-list>
+  ${part("P1", ["G", 2], ["E", "G", "C", "E"].map(step => noteXML(step, 5, 1, 1)).join(""))}
+  ${part("P2", ["F", 4], ["C", "G", "E", "G"].map(step => noteXML(step, 3, 1, 1)).join(""))}
+</score-partwise>`
+
+    await drillPiece(xml, {startMeasure: 1, endMeasure: 1, hand: LEFT_HAND})
+    spyOn(console, "warn")
+
+    let el = renderScorePage()
+    await waitFor(() => page.state.engineSource?.status == "failed", {message: "the engine card to fail"})
+    flushSync(() => {})
+
+    expect(el.querySelector("[data-score-card]")).toBe(null)
+    expect(el.querySelector(`.${staffStyles.staff_notes}`)).not.toBe(null)
+  })
+
+  it("draws later cards after a card whose drawing threw", async function() {
+    let svg = () => document.createElementNS(SVG_NS, "svg")
+    let loadEngines = () => Promise.resolve({ENGINES: {osmd: {
+      renderCard: async () => ({svg: svg(), notes: [drawn(parseNote("C4"), 0)]}),
+    }}})
+    let props = {
+      musicXML: "<score-partwise/>", fromMeasure: 1, toMeasure: 1, hand: "both", width: 600,
+      columns: [column(["C4"], 0)], head: 0, loadEngines,
+    }
+
+    spyOn(console, "warn")
+    let first = jasmine.createSpy("first onError")
+    let drawnCard = jasmine.createSpy("second onDrawn")
+
+    container = document.createElement("div")
+    document.body.appendChild(container)
+    root = createRoot(container)
+    flushSync(() => root.render(React.createElement("div", {},
+      React.createElement(ScoreCard, {...props, onError: first, onDrawn: () => { throw new Error("broken") }}),
+      React.createElement(ScoreCard, {...props, onDrawn: drawnCard}))))
+
+    await waitFor(() => drawnCard.calls.count(), {timeout: 2000, message: "the second card"})
+    expect(first).toHaveBeenCalled()
   })
 
   it("is the score page's own programme", function() {

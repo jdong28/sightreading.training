@@ -86,25 +86,24 @@ export class ScoreCard extends React.Component {
     this.setState({drawing: true})
 
     let stale = () => count != this.drawCount || this.unmounted
-    drawing = drawing.then(() => stale() ? null : this.drawNow(stale))
+    drawing = drawing
+      .then(() => stale() ? null : this.drawNow(stale))
+      .catch(error => stale() ? null : this.fail(error))
     return drawing
+  }
+
+  fail(error) {
+    console.warn("The engine couldn't draw the card", error)
+    if (this.props.onError) { this.props.onError(error) }
   }
 
   async drawNow(stale) {
     let {musicXML, fromMeasure, toMeasure, hand, width, measureStarts, engine} = this.props
 
-    let result
-    try {
-      let bundle = await this.props.loadEngines()
-      result = await bundle.ENGINES[engine].renderCard({
-        musicXML, fromMeasure, toMeasure, hand, width, measureStarts,
-      })
-    } catch (error) {
-      if (stale()) { return }
-      console.warn("The engine couldn't draw the card", error)
-      if (this.props.onError) { this.props.onError(error) }
-      return
-    }
+    let bundle = await this.props.loadEngines()
+    let result = await bundle.ENGINES[engine].renderCard({
+      musicXML, fromMeasure, toMeasure, hand, width, measureStarts,
+    })
 
     // a later draw or an unmount has overtaken this one
     if (stale()) { return }
@@ -118,7 +117,17 @@ export class ScoreCard extends React.Component {
 
   join() {
     if (!this.result) { return }
-    this.cardJoin = joinCard(this.props.columns, this.result.notes)
+    let {columns} = this.props
+    let cardJoin = joinCard(columns, this.result.notes)
+    // a card whose notes the engine drew none of (eg. the hand's notes are
+    // on a staff the engine's hand doesn't keep) can't be played from it
+    if (columns.some(column => column.length) && cardJoin.heads.every(heads => !heads.length)) {
+      this.result = null
+      this.fail(new Error("None of the card's notes were drawn"))
+      return
+    }
+
+    this.cardJoin = cardJoin
     this.mark()
     if (this.props.onDrawn) {
       this.props.onDrawn({join: this.cardJoin, result: this.result})
