@@ -6,6 +6,7 @@ import {MemoryRouter} from "react-router-dom"
 import SightReadingPage, {
   formatElapsed, accuracyPercent, romanNumeral, MIN_FIT_SCALE, PLATE_STAFF_SCALE
 } from "st/components/pages/sight_reading_page"
+import ScorePage from "st/components/pages/score_page"
 import {GStaff} from "st/components/staves"
 import NoteList from "st/note_list"
 import {
@@ -16,9 +17,9 @@ import drawerStyles from "st/components/sight_reading/programme_drawer.module.cs
 import {setAppStore} from "st/storage"
 import {importMusicXMLPiece, addPiece} from "st/sheet_music_deck"
 import {parseMusicXML} from "st/musicxml"
-import {SHEET_MUSIC_STORAGE_KEY, BOTH_HANDS} from "st/data"
+import {STAVES, GENERATORS, SHEET_MUSIC_STORAGE_KEY, BOTH_HANDS} from "st/data"
 import {MAX_MEASURES_PER_CARD, RANDOM_ORDER, MeasureCardGenerator, cardColumns} from "st/measure_cards"
-import {DRILL_STORAGE_KEY, SheetMusicGenerator} from "st/generators"
+import {DRILL_STORAGE_KEY, SCORE_DRILL_STORAGE_KEY, SheetMusicGenerator} from "st/generators"
 import {scopeEvent} from "st/events"
 import NoteStats from "st/note_stats"
 import {KeySignature} from "st/music"
@@ -154,7 +155,7 @@ describe("sight reading page", function() {
   let container, root, page, store, previousStore, savedStorage
   let clockInstalled = false
 
-  const STORAGE_KEYS = [DRILL_STORAGE_KEY, SHEET_MUSIC_STORAGE_KEY]
+  const STORAGE_KEYS = [DRILL_STORAGE_KEY, SCORE_DRILL_STORAGE_KEY, SHEET_MUSIC_STORAGE_KEY]
 
   beforeEach(async function() {
     savedStorage = STORAGE_KEYS.map(key => [key, window.localStorage.getItem(key)])
@@ -193,19 +194,22 @@ describe("sight reading page", function() {
     }
   })
 
-  let renderPage = () => {
+  let renderPage = (component=SightReadingPage) => {
     container = document.createElement("div")
     document.body.appendChild(container)
     root = createRoot(container)
     flushSync(() => {
       // the programme drawer links to the setup page
       root.render(React.createElement(MemoryRouter, {},
-        React.createElement(SightReadingPage, {ref: p => page = p})))
+        React.createElement(component, {ref: p => page = p})))
     })
     // the mount's own state updates
     flushSync(() => {})
     return container
   }
+
+  // the trainer drilling an imported piece, as the score page
+  let renderScorePage = () => renderPage(ScorePage)
 
   let click = button => flushSync(() => button.click())
 
@@ -289,13 +293,13 @@ describe("sight reading page", function() {
   it("slides a card by the room the staff draws its columns in", async function() {
     let {piece} = await importMusicXMLPiece("lead_rest.musicxml", leadRestXML, store)
 
-    // both hands on one treble staff, so no rest of either of them is drawn
-    window.localStorage.setItem(DRILL_STORAGE_KEY, JSON.stringify({staff: "treble", generator: "sheet music"}))
     window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
       piece: piece.id, startMeasure: 1, endMeasure: 1, hand: BOTH_HANDS, measuresPerCard: "all",
     }))
 
-    renderPage()
+    renderScorePage()
+    // both hands on one treble staff, so no rest of either of them is drawn
+    flushSync(() => page.setStaff(STAVES.find(staff => staff.name == "treble")))
 
     let {scale, noteWidth} = page.staffLayout()
     let drawn = Math.floor(noteWidth * scale)
@@ -317,12 +321,11 @@ describe("sight reading page", function() {
     let {piece: seconds} = await importMusicXMLPiece("seconds.musicxml", secondsXML("Seconds", true), store)
     let {piece: singles} = await importMusicXMLPiece("singles.musicxml", secondsXML("Singles", false), store)
 
-    window.localStorage.setItem(DRILL_STORAGE_KEY, JSON.stringify({staff: "grand", generator: "sheet music"}))
     window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
       piece: seconds.id, startMeasure: 1, endMeasure: 8, hand: BOTH_HANDS, measuresPerCard: "all",
     }))
 
-    renderPage()
+    renderScorePage()
     // a plate too narrow for the card's columns at any allowed width
     flushSync(() => page.setState({staffWidth: 120}))
 
@@ -357,12 +360,11 @@ describe("sight reading page", function() {
   it("keeps an accidental clear of the previous head at the fitted columns", async function() {
     let {piece} = await importMusicXMLPiece("seconds.musicxml", secondsXML("Seconds", true), store)
 
-    window.localStorage.setItem(DRILL_STORAGE_KEY, JSON.stringify({staff: "grand", generator: "sheet music"}))
     window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
       piece: piece.id, startMeasure: 1, endMeasure: 8, hand: BOTH_HANDS, measuresPerCard: "all",
     }))
 
-    let el = renderPage()
+    let el = renderScorePage()
     // a plate narrow enough that the card is fitted at its narrowest columns
     flushSync(() => page.setState({staffWidth: 160}))
     expect(page.staffLayout().scale).toEqual(MIN_FIT_SCALE)
@@ -395,12 +397,11 @@ describe("sight reading page", function() {
   it("shrinks the staff to the legibility floor and no further", async function() {
     let {piece} = await importMusicXMLPiece("seconds.musicxml", secondsXML("Seconds", true), store)
 
-    window.localStorage.setItem(DRILL_STORAGE_KEY, JSON.stringify({staff: "grand", generator: "sheet music"}))
     window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
       piece: piece.id, startMeasure: 1, endMeasure: 8, hand: BOTH_HANDS, measuresPerCard: "all",
     }))
 
-    renderPage()
+    renderScorePage()
     flushSync(() => page.setState({staffWidth: 160}))
 
     // the smallest staff still worth reading: a card that doesn't fit at it
@@ -416,12 +417,11 @@ describe("sight reading page", function() {
   it("fits a card that overflowed at the old 0.35 floor", async function() {
     let {piece} = await importMusicXMLPiece("seconds.musicxml", secondsXML("Seconds", true), store)
 
-    window.localStorage.setItem(DRILL_STORAGE_KEY, JSON.stringify({staff: "grand", generator: "sheet music"}))
     window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
       piece: piece.id, startMeasure: 1, endMeasure: 8, hand: BOTH_HANDS, measuresPerCard: "all",
     }))
 
-    let el = renderPage()
+    let el = renderScorePage()
     // a plate narrow enough that the card needs a staff below the old 0.35
     // floor, which would have clamped there and run past the edge
     let wrapper = el.querySelector(`.${staffStyles.staff_wrapper}`)
@@ -447,13 +447,12 @@ describe("sight reading page", function() {
   it("fits a capped card of the score's busiest bars inside the plate", async function() {
     let {piece} = await importMusicXMLPiece("reverie.musicxml", reverieOpening(), store)
 
-    window.localStorage.setItem(DRILL_STORAGE_KEY, JSON.stringify({staff: "grand", generator: "sheet music"}))
     window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
       piece: piece.id, startMeasure: 1, endMeasure: 4, hand: BOTH_HANDS,
       measuresPerCard: String(MAX_MEASURES_PER_CARD),
     }))
 
-    let el = renderPage()
+    let el = renderScorePage()
     expect(page.state.mode).toEqual("wait")
 
     // the busiest three bars of the score's opening, the most the cap shows,
@@ -494,12 +493,11 @@ describe("sight reading page", function() {
   it("shows the measure card on the staff and in the plate header", async function() {
     let {piece} = await importMusicXMLPiece("salon_octet.musicxml", octetXML, store)
 
-    window.localStorage.setItem(DRILL_STORAGE_KEY, JSON.stringify({staff: "grand", generator: "sheet music"}))
     window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
       piece: piece.id, startMeasure: 1, endMeasure: 8, hand: BOTH_HANDS, measuresPerCard: "2",
     }))
 
-    let el = renderPage()
+    let el = renderScorePage()
     let plateLabel = () => el.querySelector("[aria-live]").previousElementSibling.textContent
     // bar lines with their numbers, on the upper staff of the grand staff
     let numberedBarLines = () =>
@@ -578,14 +576,12 @@ describe("sight reading page", function() {
   it("scrolls the whole section as one card and walks it in capped cards while waiting", async function() {
     let {piece} = await importMusicXMLPiece("salon_octet.musicxml", octetXML, store)
 
-    window.localStorage.setItem(DRILL_STORAGE_KEY, JSON.stringify({
-      staff: "grand", generator: "sheet music", mode: "scroll",
-    }))
+    window.localStorage.setItem(SCORE_DRILL_STORAGE_KEY, JSON.stringify({mode: "scroll"}))
     window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
       piece: piece.id, startMeasure: 1, endMeasure: 8, hand: BOTH_HANDS, measuresPerCard: "all",
     }))
 
-    renderPage()
+    renderScorePage()
     let generator = () => page.state.notes.generator
     let wholeSection = [1, 2, 3, 4, 5, 6, 7, 8]
 
@@ -611,12 +607,11 @@ describe("sight reading page", function() {
   it("keeps a card size drill on its card through a mode toggle", async function() {
     let {piece} = await importMusicXMLPiece("salon_octet.musicxml", octetXML, store)
 
-    window.localStorage.setItem(DRILL_STORAGE_KEY, JSON.stringify({staff: "grand", generator: "sheet music"}))
     window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
       piece: piece.id, startMeasure: 1, endMeasure: 8, hand: BOTH_HANDS, measuresPerCard: "2",
     }))
 
-    let el = renderPage()
+    let el = renderScorePage()
     let plateLabel = () => el.querySelector("[aria-live]").previousElementSibling.textContent
 
     click(buttonNamed(el, "Begin"))
@@ -637,12 +632,11 @@ describe("sight reading page", function() {
   it("draws no bar line for a section of a single measure", async function() {
     let {piece} = await importMusicXMLPiece("salon_octet.musicxml", octetXML, store)
 
-    window.localStorage.setItem(DRILL_STORAGE_KEY, JSON.stringify({staff: "grand", generator: "sheet music"}))
     window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
       piece: piece.id, startMeasure: 3, endMeasure: 3, hand: BOTH_HANDS, measuresPerCard: "2",
     }))
 
-    let el = renderPage()
+    let el = renderScorePage()
     let barLines = () => el.querySelectorAll(`.${staffStyles.bar_line}`).length
 
     expect(page.currentCard().card.measures).toEqual([3])
@@ -661,13 +655,12 @@ describe("sight reading page", function() {
   it("offers the order control only once a card size is picked", async function() {
     let {piece} = await importMusicXMLPiece("salon_octet.musicxml", octetXML, store)
 
-    window.localStorage.setItem(DRILL_STORAGE_KEY, JSON.stringify({staff: "grand", generator: "sheet music"}))
     window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
       piece: piece.id, startMeasure: 1, endMeasure: 8, hand: BOTH_HANDS,
       measuresPerCard: "all", order: RANDOM_ORDER,
     }))
 
-    let el = renderPage()
+    let el = renderScorePage()
     click(buttonLabelled(el, "Programme"))
 
     let drawer = el.querySelector(`.${drawerStyles.drawer}`)
@@ -693,14 +686,12 @@ describe("sight reading page", function() {
       notes: [["A", 3], ["A", 3], ["A", 3], ["A", 3]],
     }), store)
 
-    window.localStorage.setItem(DRILL_STORAGE_KEY, JSON.stringify({
-      staff: "grand", generator: "sheet music", mode: "scroll",
-    }))
+    window.localStorage.setItem(SCORE_DRILL_STORAGE_KEY, JSON.stringify({mode: "scroll"}))
     window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
       piece: piece.id, startMeasure: 1, endMeasure: 4, hand: BOTH_HANDS, measuresPerCard: "all",
     }))
 
-    let el = renderPage()
+    let el = renderScorePage()
     expect(page.state.mode).toEqual("scroll")
 
     let lowerNotes = () => {
@@ -966,19 +957,15 @@ describe("sight reading page", function() {
     expect(el.textContent).toContain("Nothing played yet")
   })
 
-  it("draws a stored piece in the score's key signature, not the stored key", async function() {
+  it("draws a stored piece in the score's key signature, not the exercises' key", async function() {
     let {piece} = await importMusicXMLPiece("reverie.musicxml", reverieOpening(), store)
 
-    window.localStorage.setItem(DRILL_STORAGE_KEY, JSON.stringify({staff: "grand", generator: "sheet music", key: "C"}))
+    window.localStorage.setItem(DRILL_STORAGE_KEY, JSON.stringify({staff: "treble", generator: "random", key: "C"}))
     window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
       piece: piece.id, startMeasure: 1, endMeasure: 4, hand: BOTH_HANDS,
     }))
 
-    let el = renderPage()
-    click(buttonLabelled(el, "Programme"))
-
-    let drawer = el.querySelector(`.${drawerStyles.drawer}`)
-    let keyPill = name => buttonNamed(drawer, name)
+    let el = renderScorePage()
 
     // F major: Bb3 is drawn as the score spells it, without an accidental
     expect(page.state.keySignature.name()).toEqual("F")
@@ -987,64 +974,49 @@ describe("sight reading page", function() {
     expect(flat.classList).not.toContain(staffStyles.is_flat)
     expect(flat.classList).not.toContain(staffStyles.is_sharp)
 
-    expect(keyPill("F").getAttribute("aria-pressed")).toEqual("true")
-    expect(keyPill("F").disabled).toBe(true)
-    expect(keyPill("C").disabled).toBe(true)
-    expect(drawer.textContent).toContain("Set by the score")
-
-    // the score's key isn't stored as the programme's
-    expect(JSON.parse(window.localStorage.getItem(DRILL_STORAGE_KEY)).key).toEqual("C")
+    // the score's key and staff aren't stored as the exercises'
+    expect(JSON.parse(window.localStorage.getItem(DRILL_STORAGE_KEY))).toEqual({staff: "treble", generator: "random", key: "C"})
   })
 
-  it("leaves the key alone for a piece stored without per-measure keys", async function() {
+  it("draws a piece stored without per-measure keys in C major", async function() {
     let legacy = parseMusicXML(reverieOpening())
     delete legacy.metadata.measureKeySignatures
     let {piece} = await addPiece("Rêverie", legacy, store)
 
-    window.localStorage.setItem(DRILL_STORAGE_KEY, JSON.stringify({staff: "grand", generator: "sheet music", key: "D"}))
+    window.localStorage.setItem(DRILL_STORAGE_KEY, JSON.stringify({key: "D"}))
     window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
       piece: piece.id, startMeasure: 1, endMeasure: 4, hand: BOTH_HANDS,
     }))
 
-    let el = renderPage()
+    let el = renderScorePage()
     click(buttonLabelled(el, "Programme"))
 
     let drawer = el.querySelector(`.${drawerStyles.drawer}`)
-    expect(page.state.keySignature.name()).toEqual("D")
-    expect(buttonNamed(drawer, "D").getAttribute("aria-pressed")).toEqual("true")
-    expect(buttonNamed(drawer, "F").disabled).toBe(false)
+    expect(page.state.keySignature.name()).toEqual("C")
     expect(drawer.textContent).toContain("Re-import to follow the score key")
-    expect(drawer.textContent).not.toContain("Set by the score")
-
-    click(buttonNamed(drawer, "F"))
-    expect(page.state.keySignature.name()).toEqual("F")
   })
 
   it("follows the score's key as the piece and its start measure change", async function() {
     let {piece} = await importMusicXMLPiece("key_change.musicxml", keyChangeScore(), store)
 
-    window.localStorage.setItem(DRILL_STORAGE_KEY, JSON.stringify({staff: "treble", generator: "sheet music", key: "D"}))
-
-    let el = renderPage()
+    let el = renderScorePage()
     click(buttonLabelled(el, "Programme"))
 
     let drawer = el.querySelector(`.${drawerStyles.drawer}`)
-    let keyPill = name => buttonNamed(drawer, name)
     let pickPiece = id => {
-      let select = drawer.querySelector(`.${drawerStyles.exercise}.${drawerStyles.selected} select`)
+      let select = drawer.querySelector("select")
       Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(select, id)
       flushSync(() => select.dispatchEvent(new Event("change", {bubbles: true})))
       flushSync(() => {})
     }
 
-    // pasted notation keeps the programme's key
-    expect(page.state.keySignature.name()).toEqual("D")
-    expect(keyPill("D").disabled).toBe(false)
+    // pasted notation has no key of its own
+    expect(page.state.keySignature.name()).toEqual("C")
 
+    // the one staff of the score is its treble staff
     pickPiece(piece.id)
+    expect(page.state.currentStaff.name).toEqual("treble")
     expect(page.state.keySignature.name()).toEqual("F")
-    expect(keyPill("F").getAttribute("aria-pressed")).toEqual("true")
-    expect(keyPill("D").disabled).toBe(true)
 
     // the E major section
     let startMeasure = [...drawer.querySelectorAll("input[type=number]")][0]
@@ -1052,74 +1024,144 @@ describe("sight reading page", function() {
     flushSync(() => startMeasure.dispatchEvent(new Event("input", {bubbles: true})))
     flushSync(() => {})
     expect(page.state.keySignature.name()).toEqual("E")
-    expect(keyPill("E").getAttribute("aria-pressed")).toEqual("true")
 
-    expect(JSON.parse(window.localStorage.getItem(DRILL_STORAGE_KEY)).key).toEqual("D")
-
-    // back to pasted notation, the programme's own key comes back
     pickPiece("")
-    expect(page.state.keySignature.name()).toEqual("D")
-    expect(keyPill("D").getAttribute("aria-pressed")).toEqual("true")
-    expect(keyPill("D").disabled).toBe(false)
-    expect(drawer.textContent).not.toContain("Set by the score")
-    click(keyPill("A"))
-    expect(page.state.keySignature.name()).toEqual("A")
+    expect(page.state.currentStaff.name).toEqual("grand")
+    expect(page.state.keySignature.name()).toEqual("C")
   })
 
-  it("keeps the programme's key for a score in a key the trainer lacks", async function() {
+  it("draws a score in a key the trainer lacks in C major", async function() {
     let {piece} = await importMusicXMLPiece("f_sharp.musicxml", keyChangeScore({keys: [6]}), store)
 
-    window.localStorage.setItem(DRILL_STORAGE_KEY, JSON.stringify({staff: "treble", generator: "sheet music", key: "C"}))
     window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
       piece: piece.id, startMeasure: 1, endMeasure: 4, hand: BOTH_HANDS,
     }))
 
-    let el = renderPage()
-    click(buttonLabelled(el, "Programme"))
-
-    let drawer = el.querySelector(`.${drawerStyles.drawer}`)
+    renderScorePage()
     expect(page.state.keySignature.name()).toEqual("C")
-    expect(buttonNamed(drawer, "C").disabled).toBe(false)
-
-    // a picked key sticks even when it can't be stored
-    spyOn(Storage.prototype, "setItem").and.throwError(new DOMException("blocked", "SecurityError"))
-    click(buttonNamed(drawer, "D"))
-    expect(page.state.keySignature.name()).toEqual("D")
-
-    let endMeasure = [...drawer.querySelectorAll("input[type=number]")][1]
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(endMeasure, "3")
-    flushSync(() => endMeasure.dispatchEvent(new Event("input", {bubbles: true})))
-    expect(page.state.keySignature.name()).toEqual("D")
-    Storage.prototype.setItem.and.callThrough()
   })
 
-  it("keeps the sheet music deck, measure range and hand in the drawer", async function() {
+  it("keeps the sheet music deck, measure range and hand in the score page's drawer", async function() {
     let {piece} = await importMusicXMLPiece("salon_minuet.musicxml", minuetXML, store)
 
-    window.localStorage.setItem(DRILL_STORAGE_KEY, JSON.stringify({staff: "grand", generator: "sheet music"}))
     window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
       piece: piece.id, startMeasure: 1, endMeasure: 2, hand: BOTH_HANDS,
     }))
 
-    let el = renderPage()
+    let el = renderScorePage()
     click(buttonLabelled(el, "Programme"))
 
     let drawer = el.querySelector(`.${drawerStyles.drawer}`)
-    let selected = drawer.querySelector(`.${drawerStyles.exercise}.${drawerStyles.selected}`)
-    expect(selected.textContent).toContain("Sheet music")
-
-    let text = selected.textContent
-    for (let label of ["piece", "start measure", "end measure", "hand"]) {
+    let text = drawer.textContent
+    for (let label of ["piece", "start measure", "end measure", "hand", "Tempo", "Wait", "Scroll"]) {
       expect(text).toContain(label)
     }
     expect(text).toContain("Salon Minuet")
     expect(text).toContain("both hands")
-    expect(buttonNamed(selected, "Remove")).toBeDefined()
-    expect(buttonNamed(selected, "Export library")).toBeDefined()
-    expect(selected.querySelectorAll("input[type=file]").length).toEqual(2)
-    expect([...selected.querySelectorAll("input[type=number]")].map(input => input.value)).toEqual(["1", "2"])
+    expect(buttonNamed(drawer, "Remove")).toBeDefined()
+    expect(buttonNamed(drawer, "Export library")).toBeDefined()
+    expect(buttonNamed(drawer, "Take your seat")).toBeDefined()
+    expect(drawer.querySelectorAll("input[type=file]").length).toEqual(2)
+    expect([...drawer.querySelectorAll("input[type=number]")].map(input => input.value)).toEqual(["1", "2"])
+
+    // the score supplies the staves, clefs and key, so the drawer has none of
+    // the exercises' clef, exercise or key settings
+    expect(text).not.toContain("Clef")
+    expect(text).not.toContain("Exercise")
+    expect(text).not.toContain("Key")
+    expect(text).not.toContain("note range")
+    expect(buttonNamed(drawer, "Treble")).toBeUndefined()
+    expect(buttonNamed(drawer, "Grand")).toBeUndefined()
+    expect(buttonNamed(drawer, "B♭")).toBeUndefined()
+    expect(drawer.querySelector(`.${drawerStyles.exercise_list}`)).toBe(null)
+    expect(drawer.querySelector("a[href='/setup']")).toBe(null)
 
     expect(el.querySelector("h1").textContent).toEqual("Salon Minuet measures 1–2, both hands")
     expect(el.textContent).toContain("3 ♩ a bar · measures 1–2")
+    expect(page.state.currentStaff.name).toEqual("grand")
   })
+
+  it("keeps the exercises' clef, exercise and key settings on the exercises page, without sheet music", function() {
+    let el = renderPage()
+    click(buttonLabelled(el, "Programme"))
+
+    let drawer = el.querySelector(`.${drawerStyles.drawer}`)
+    let text = drawer.textContent
+    for (let label of ["Clef", "Exercise", "Tempo", "Key"]) {
+      expect(text).toContain(label)
+    }
+    expect(buttonNamed(drawer, "Treble")).toBeDefined()
+    expect(buttonNamed(drawer, "B♭")).toBeDefined()
+
+    let exercises = [...drawer.querySelectorAll(`.${drawerStyles.exercise_name}`)].map(name => name.textContent)
+    expect(exercises.length).toBeGreaterThan(1)
+    expect(exercises).not.toContain("Sheet music")
+    expect(GENERATORS.map(g => g.name)).not.toContain("sheet music")
+    expect(drawer.querySelector("input[type=file]")).toBe(null)
+  })
+
+  it("falls back to a default exercise when the stored one is sheet music", async function() {
+    let {piece} = await importMusicXMLPiece("salon_minuet.musicxml", minuetXML, store)
+
+    window.localStorage.setItem(DRILL_STORAGE_KEY, JSON.stringify({staff: "grand", generator: "sheet music", key: "D"}))
+    let sheetMusicSettings = JSON.stringify({piece: piece.id, startMeasure: 1, endMeasure: 2, hand: BOTH_HANDS})
+    window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, sheetMusicSettings)
+
+    let el = renderPage()
+    let notesExercises = GENERATORS.filter(g => g.mode == "notes")
+
+    expect(page.state.currentStaff.name).toEqual("grand")
+    expect(page.state.currentGenerator).toBe(notesExercises[0])
+    expect(page.state.keySignature.name()).toEqual("D")
+    expect(page.state.notes.length).toBeGreaterThan(0)
+    expect(el.textContent).not.toContain("Salon Minuet")
+
+    // the piece and its settings are left for the score page
+    expect(window.localStorage.getItem(SHEET_MUSIC_STORAGE_KEY)).toEqual(sheetMusicSettings)
+    flushSync(() => root.unmount())
+    container.remove()
+    root = null
+
+    el = renderScorePage()
+    expect(page.currentPieceSection()).toEqual({
+      pieceId: piece.id, pieceTitle: "Salon Minuet", startMeasure: 1, endMeasure: 2,
+    })
+    expect(el.querySelector("h1").textContent).toEqual("Salon Minuet measures 1–2, both hands")
+  })
+
+  it("drills an imported piece picked on the score page and records its stats", async function() {
+    let {piece} = await importMusicXMLPiece("salon_octet.musicxml", octetXML, store)
+
+    let el = renderScorePage()
+    click(buttonLabelled(el, "Programme"))
+
+    let drawer = el.querySelector(`.${drawerStyles.drawer}`)
+    let select = drawer.querySelector("select")
+    Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(select, piece.id)
+    flushSync(() => select.dispatchEvent(new Event("change", {bubbles: true})))
+    flushSync(() => {})
+    click(buttonNamed(drawer, "Take your seat"))
+
+    // the opening four measures, both hands, on the grand staff
+    expect(page.state.currentStaff.name).toEqual("grand")
+    expect(el.querySelector("h1").textContent).toEqual("Salon Octet measures 1–4, both hands")
+    expect([...page.state.notes.currentColumn()]).toEqual(["C3", "C5"])
+
+    click(buttonNamed(el, "Begin"))
+    play(page.state.notes.currentColumn())
+    play([WRONG_NOTE])
+    expect(statValue(el, "Notes read")).toEqual("1")
+
+    click(buttonNamed(el, "Rest"))
+    await waitFor(() => store.recentSessions().length == 1, "the session to be saved")
+
+    let [session] = store.recentSessions()
+    expect(session.generator).toEqual("sheet music")
+    expect(session.settings.pieceTitle).toEqual("Salon Octet")
+    expect(session.notesRead).toEqual(1)
+
+    let stats = store.sectionStats(piece.id).find(s => s.startMeasure == 1 && s.endMeasure == 4)
+    expect(stats && [stats.hits, stats.misses]).toEqual([1, 1])
+  })
+
 })

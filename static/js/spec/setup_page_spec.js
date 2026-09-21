@@ -5,21 +5,16 @@ import {MemoryRouter, Routes, Route} from "react-router-dom"
 
 import SetupPage, {exercisesFor, exerciseTitle, exerciseQualifier} from "st/components/pages/setup_page"
 import styles from "st/components/pages/setup_page.module.css"
-import inputStyles from "st/components/pages/setup_generator_inputs.module.css"
 import {STAVES, GENERATORS, SHEET_MUSIC_STORAGE_KEY} from "st/data"
 import {
   DRILL_STORAGE_KEY, currentStaffFor, currentGeneratorFor, currentKeySignature,
-  currentDrillMode, currentScrollSpeed, generatorDefaultSettings,
+  currentDrillMode, currentScrollSpeed,
 } from "st/generators"
 import {setAppStore} from "st/storage"
-import {addPiece, importMusicXMLPiece, pieceSource} from "st/sheet_music_deck"
-import {parseSongText} from "st/song_sections"
 import {HomeGate} from "st/components/app"
 import {ONBOARDED_KEY} from "st/onboarding"
 
-import {
-  openTestStore, reverieOpening, keyChangeScore, LITTLE_WALTZ_XML, littleWaltzMXL
-} from "spec/helpers"
+import {openTestStore} from "spec/helpers"
 
 describe("setup page", function() {
   // the keys are shared with the app on this origin, so put back whatever
@@ -32,7 +27,7 @@ describe("setup page", function() {
     saved = STORAGE_KEYS.map(key => window.localStorage.getItem(key))
     STORAGE_KEYS.forEach(key => window.localStorage.removeItem(key))
 
-    // the sheet music inputs read the deck from the app's store
+    // never the real database
     store = await openTestStore()
     appStore = setAppStore(store)
   })
@@ -125,7 +120,8 @@ describe("setup page", function() {
       idx == 0 ? "❖" : exerciseQualifier(g),
     ]))
     expect(exerciseRows(el)[0]).toEqual(["Random notes", "❖"])
-    expect(exerciseRows(el).find(([title]) => title == "Sheet music")).toEqual(["Sheet music", "Imported piece"])
+    // an imported piece is drilled on the score page, not as an exercise
+    expect(exerciseRows(el).find(([title]) => title == "Sheet music")).toBeUndefined()
 
     click(findButton(el, "Chord"))
     expect(exerciseRows(el).map(([title]) => title)).toEqual(["Random chords", "Chords in many keys"])
@@ -204,128 +200,5 @@ describe("setup page", function() {
     expect(el.querySelector("#trainer")).not.toBe(null)
     expect(el.querySelector("#welcome")).toBe(null)
     expect(window.localStorage.getItem(ONBOARDED_KEY)).toBeTruthy()
-  })
-
-  it("renders the sheet music inputs under the sheet music row in the salon's style", function() {
-    let el = renderSetup()
-    expect(el.querySelector(`.${styles.exercise_inputs}`)).toBe(null)
-
-    click(findButton(el, "Sheet music"))
-
-    let inputs = el.querySelectorAll(`.${styles.exercise_inputs}`)
-    expect(inputs.length).toEqual(1)
-
-    let row = findButton(el, "Sheet music")
-    expect(row.getAttribute("aria-pressed")).toEqual("true")
-    expect(inputs[0].parentElement).toBe(row.parentElement)
-    expect(row.nextElementSibling).toBe(inputs[0])
-
-    let form = inputs[0].querySelector(`.${inputStyles.generator_inputs}`)
-    expect(form).not.toBe(null)
-    expect(getComputedStyle(form).display).toEqual("flex")
-
-    let labels = [...form.querySelectorAll(`.${inputStyles.input_label}`)]
-    expect(labels.length).toBeGreaterThan(0)
-    labels.forEach(label => {
-      expect(getComputedStyle(label).textTransform).toEqual("uppercase")
-    })
-
-    let pieceSelect = form.querySelector(`.${inputStyles.deck_row} > .${inputStyles.select_component}`)
-    expect(pieceSelect).not.toBe(null)
-    expect(getComputedStyle(pieceSelect).flexBasis).toEqual("180px")
-
-    let fileLabel = form.querySelector(`.${inputStyles.file_input} > span`)
-    expect(fileLabel.textContent).toEqual("Import MusicXML")
-    expect(getComputedStyle(fileLabel).textTransform).toEqual("uppercase")
-
-    click(findButton(el, "Random notes"))
-    expect(el.querySelector(`.${styles.exercise_inputs}`)).toBe(null)
-  })
-
-  it("imports a compressed .mxl file picked in the deck, and picks it", async function() {
-    let el = renderSetup()
-    click(findButton(el, "Sheet music"))
-
-    let fileInput = el.querySelector(`.${inputStyles.file_input} > input[type=file]`)
-    expect(fileInput.accept.split(",")).toContain(".mxl")
-
-    Object.defineProperty(fileInput, "files", {
-      value: [new File([littleWaltzMXL()], "little_waltz.mxl")],
-      configurable: true,
-    })
-    flushSync(() => fileInput.dispatchEvent(new Event("change", {bubbles: true})))
-
-    for (let tries = 0; tries < 100 && !el.textContent.includes("is in the deck"); tries++) {
-      await new Promise(resolve => setTimeout(resolve, 10))
-    }
-
-    expect(el.textContent).toContain("\"little waltz\" is in the deck")
-    let [piece] = store.pieces()
-    expect(piece.title).toEqual("little waltz")
-    expect(el.querySelector(`.${styles.exercise_inputs} select`).value).toEqual(piece.id)
-    expect(await pieceSource(piece.id, store)).toEqual(LITTLE_WALTZ_XML)
-  })
-
-  it("sets the key by the score while a piece is picked", async function() {
-    let {piece} = await importMusicXMLPiece("reverie.musicxml", reverieOpening())
-
-    let el = renderSetup()
-    click(findButton(el, "D"))
-    click(findButton(el, "Sheet music"))
-    expect(findButton(el, "D").disabled).toBe(false)
-
-    changeValue(el.querySelector(`.${styles.exercise_inputs} select`), piece.id, "change")
-
-    expect(summary(el).subtitle).toEqual("Rêverie, grand staff in F major")
-    expect(findButton(el, "F").getAttribute("aria-pressed")).toEqual("true")
-    expect(findButton(el, "D").disabled).toBe(true)
-    expect(el.querySelector(`.${styles.key_note}`).textContent).toEqual("Set by the score")
-
-    // Begin stores the programme's own key; the trainer follows the score
-    click(findButton(el, "Begin reading"))
-    expect(currentKeySignature().name()).toEqual("D")
-  })
-
-  it("keeps the programme's key for a score in a key the trainer lacks", async function() {
-    let {piece} = await importMusicXMLPiece("f_sharp.musicxml", keyChangeScore({title: "F Sharp", keys: [6]}))
-
-    let el = renderSetup()
-    click(findButton(el, "D"))
-    click(findButton(el, "Sheet music"))
-    changeValue(el.querySelector(`.${styles.exercise_inputs} select`), piece.id, "change")
-
-    expect(summary(el).subtitle).toEqual("F Sharp, treble staff in D major")
-    expect(findButton(el, "D").disabled).toBe(false)
-    expect(el.querySelector(`.${styles.key_note}`)).toBe(null)
-  })
-
-  it("sets up a drill of an imported piece with the sheet music inputs", async function() {
-    let {song} = parseSongText("c4 d4 e4 f4 g4 a4 b4 c5")
-    let {piece} = await addPiece("Little Study", song)
-
-    let el = renderSetup()
-    click(findButton(el, "Sheet music"))
-
-    let inputs = el.querySelector(`.${styles.exercise_inputs}`)
-    expect(inputs).not.toBe(null)
-    expect(summary(el).rows[0]).toEqual(["Range", "No piece chosen"])
-
-    let pieceSelect = inputs.querySelector("select")
-    expect([...pieceSelect.options].map(o => o.textContent)).toEqual(["Pasted song notation", "Little Study"])
-    changeValue(pieceSelect, piece.id, "change")
-
-    expect(summary(el)).toEqual({
-      title: "Sheet music",
-      italic: "music",
-      subtitle: "Little Study, treble staff in C major",
-      rows: [["Range", "Measures 1–2"], ["Tempo", "Wait · speed 100"], ["Length", "Until you stop"]],
-    })
-
-    click(findButton(el, "Begin reading"))
-
-    let sheetMusic = GENERATORS.find(g => g.name == "sheet music")
-    expect(currentGeneratorFor(GENERATORS, "notes")).toBe(sheetMusic)
-    let settings = generatorDefaultSettings(sheetMusic, currentStaffFor(STAVES))
-    expect([settings.piece, settings.startMeasure, settings.endMeasure]).toEqual([piece.id, 1, 2])
   })
 })

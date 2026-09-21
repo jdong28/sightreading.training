@@ -93,9 +93,13 @@ export function storeGeneratorSettings(storageKey, settings) {
 // back on the same drill (eg. the sheet music deck)
 export const DRILL_STORAGE_KEY = "st:drill"
 
-export function storeCurrentDrill(update) {
-  storeGeneratorSettings(DRILL_STORAGE_KEY, {
-    ...loadGeneratorSettings(DRILL_STORAGE_KEY),
+// the score page's own mode and scroll speed, kept apart from the exercises'
+// drill (see st/components/pages/score_page)
+export const SCORE_DRILL_STORAGE_KEY = "st:score_drill"
+
+export function storeCurrentDrill(update, storageKey=DRILL_STORAGE_KEY) {
+  storeGeneratorSettings(storageKey, {
+    ...loadGeneratorSettings(storageKey),
     ...update,
   })
 }
@@ -106,9 +110,10 @@ export function currentStaffFor(staves) {
   return staves.find(s => s.name == staff) || staves[0]
 }
 
-// the stored generator for the staff mode, or the first one of that mode
-export function currentGeneratorFor(generators, mode) {
-  let {generator} = loadGeneratorSettings(DRILL_STORAGE_KEY)
+// the stored generator for the staff mode, or the first one of that mode (eg.
+// when the stored one is no longer among them)
+export function currentGeneratorFor(generators, mode, storageKey=DRILL_STORAGE_KEY) {
+  let {generator} = loadGeneratorSettings(storageKey)
   return generators.find(g => g.mode == mode && g.name == generator) ||
     generators.find(g => g.mode == mode)
 }
@@ -138,8 +143,8 @@ export function scoreKeySignature(generator, staff, settings) {
 export const DRILL_MODES = ["wait", "scroll"]
 
 // the stored trainer mode: wait for each note, or scroll at the speed
-export function currentDrillMode() {
-  let {mode} = loadGeneratorSettings(DRILL_STORAGE_KEY)
+export function currentDrillMode(storageKey=DRILL_STORAGE_KEY) {
+  let {mode} = loadGeneratorSettings(storageKey)
   return DRILL_MODES.includes(mode) ? mode : DRILL_MODES[0]
 }
 
@@ -147,8 +152,8 @@ export const SCROLL_SPEED_RANGE = [50, 300]
 export const DEFAULT_SCROLL_SPEED = 100
 
 // the stored scroll speed, the trainer's speed slider value
-export function currentScrollSpeed() {
-  let {speed} = loadGeneratorSettings(DRILL_STORAGE_KEY)
+export function currentScrollSpeed(storageKey=DRILL_STORAGE_KEY) {
+  let {speed} = loadGeneratorSettings(storageKey)
   let [min, max] = SCROLL_SPEED_RANGE
 
   if (typeof speed != "number" || !isFinite(speed)) {

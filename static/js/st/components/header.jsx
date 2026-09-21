@@ -19,6 +19,7 @@ export const HEADER_ACTIONS_ID = "header_page_actions"
 
 export const NAV_LINKS = [
   {to: "/", label: "Sight reading", end: true},
+  {to: "/sheet-music", label: "Sheet music", end: true},
   {to: "/play-along", label: "Play along"},
   {to: "/ear-training/interval-melodies", section: "/ear-training", label: "Ear training"},
   {to: "/flash-cards/note-math", section: "/flash-cards", label: "Flash cards"},

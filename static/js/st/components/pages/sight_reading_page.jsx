@@ -25,7 +25,8 @@ import {dispatch, trigger} from "st/events"
 import {NOTE_EVENTS} from "st/midi"
 import {
   generatorDefaultSettings, storeCurrentDrill, currentStaffFor, currentGeneratorFor,
-  currentKeySignature, currentDrillMode, currentScrollSpeed, scoreKeySignature
+  currentKeySignature, currentDrillMode, currentScrollSpeed, scoreKeySignature,
+  DRILL_STORAGE_KEY
 } from "st/generators"
 
 import * as React from "react"
@@ -122,9 +123,44 @@ export function cardLabel(card, cardNumber, section) {
   return `Card ${cardNumber} · ${measuresLabel(card.startMeasure, card.endMeasure)} of ${range}`
 }
 
+// What a trainer page drills. The trainer (the page's detection, cards,
+// fitting, modes, stats and staff) is the same on every page; a programme
+// says which generators it offers, how their settings are picked and where
+// they're kept. This one, the default, is the exercises page's: a staff,
+// exercise and key picked in the programme drawer or on /setup. The score
+// page's, which drills an imported piece, is in st/components/pages/score_page
+export const EXERCISES_PROGRAMME = {
+  // the document title, the app's own when not set
+  title: null,
+  // where storeCurrentDrill keeps the page's staff, generator, key, mode and
+  // scroll speed
+  storageKey: DRILL_STORAGE_KEY,
+  generators: GENERATORS,
+  // the settings drawer, handed the trainer's settings and their setters
+  Drawer: ProgrammeDrawer,
+  // the staff the page opens on
+  initialStaff: () => currentStaffFor(STAVES),
+  // the key drawn when the generator doesn't draw in its own
+  userKey: () => currentKeySignature(),
+
+  // Optional:
+  // idleTitle, the page title's {title, italic} while no piece is drilled, in
+  // place of the exercise's name and key.
+  // staffFor(settings), the staff the generator's settings (defaults filled
+  // in) are drawn on, which then follows them in place of a clef setting.
+  // renderStaff(props), called on the page like a staff's render (see STAVES),
+  // drawing the notes and card the page hands it in place of the staff's own
+}
+
 export default class SightReadingPage extends React.Component {
+  static defaultProps = {
+    programme: EXERCISES_PROGRAMME,
+  }
+
   constructor(props) {
     super(props);
+
+    this.programme = props.programme
 
     this.pressNote = this.pressNote.bind(this)
     this.releaseNote = this.releaseNote.bind(this)
@@ -160,7 +196,7 @@ export default class SightReadingPage extends React.Component {
     }
 
     // the key the user picked, drawn unless the generator sets its own
-    this.userKey = currentKeySignature()
+    this.userKey = this.programme.userKey()
 
     this.state = {
       newRenderer: props.useStaffTwo || false,
@@ -174,7 +210,7 @@ export default class SightReadingPage extends React.Component {
       // Resets to empty when all notes are released
       touchedNotes: {},
 
-      scrollSpeed: currentScrollSpeed(),
+      scrollSpeed: currentScrollSpeed(this.programme.storageKey),
 
       noteWidth: DEFAULT_NOTE_WIDTH,
 
@@ -231,10 +267,10 @@ export default class SightReadingPage extends React.Component {
   }
 
   componentDidMount() {
-    setTitle()
+    setTitle(this.programme.title)
 
-    this.setStaff(currentStaffFor(STAVES), () => {
-      if (currentDrillMode() == "scroll") {
+    this.setStaff(this.programme.initialStaff(), () => {
+      if (currentDrillMode(this.programme.storageKey) == "scroll") {
         this.enterScrollMode()
       } else {
         this.enterWaitMode()
@@ -772,7 +808,7 @@ export default class SightReadingPage extends React.Component {
   setMode(mode) {
     if (mode == this.state.mode) { return }
 
-    storeCurrentDrill({mode})
+    storeCurrentDrill({mode}, this.programme.storageKey)
 
     if (mode == "scroll") {
       this.enterScrollMode()
@@ -843,7 +879,7 @@ export default class SightReadingPage extends React.Component {
 
   setKeySignature(k) {
     this.userKey = k
-    storeCurrentDrill({key: k.name()})
+    storeCurrentDrill({key: k.name()}, this.programme.storageKey)
     this.setState({
       keySignature: k,
       notes: null
@@ -851,12 +887,26 @@ export default class SightReadingPage extends React.Component {
   }
 
   setGenerator(generator, settings) {
-    storeCurrentDrill({generator: generator.name})
+    storeCurrentDrill({generator: generator.name}, this.programme.storageKey)
 
-    this.setState({
+    let update = {
       currentGenerator: generator,
       currentGeneratorSettings: settings,
+    }
+
+    // eg. the score page's staff follows the piece
+    let staff = this.programme.staffFor && this.programme.staffFor({
+      ...generatorDefaultSettings(generator, this.state.currentStaff),
+      ...settings,
     })
+
+    if (staff && staff != this.state.currentStaff) {
+      storeCurrentDrill({staff: staff.name}, this.programme.storageKey)
+      update.currentStaff = staff
+      update.notes = null
+    }
+
+    this.setState(update)
   }
 
   setStaff(staff, callback) {
@@ -864,7 +914,7 @@ export default class SightReadingPage extends React.Component {
       return
     }
 
-    storeCurrentDrill({staff: staff.name})
+    storeCurrentDrill({staff: staff.name}, this.programme.storageKey)
 
     let update = {
       currentStaff: staff,
@@ -873,7 +923,7 @@ export default class SightReadingPage extends React.Component {
 
     // if the current generator is not compatible with new staff change it
     if (!this.state.currentGenerator || (this.state.currentGenerator.mode != staff.mode)) {
-      update.currentGenerator = currentGeneratorFor(GENERATORS, staff.mode)
+      update.currentGenerator = currentGeneratorFor(this.programme.generators, staff.mode, this.programme.storageKey)
       update.currentGeneratorSettings = {}
     }
 
@@ -1050,12 +1100,12 @@ export default class SightReadingPage extends React.Component {
 
       {this.renderKeyboardFooter()}
 
-      <ProgrammeDrawer
+      <this.programme.Drawer
         open={this.state.settingsOpen}
         close={this.closeSettings}
         apply={this.applySettings}
         staves={STAVES}
-        generators={GENERATORS}
+        generators={this.programme.generators}
         saveGeneratorPreset={this.state.savingPreset}
 
         currentGenerator={this.state.currentGenerator}
@@ -1072,7 +1122,7 @@ export default class SightReadingPage extends React.Component {
         setMode={this._setMode ||= this.setMode.bind(this)}
         scrollSpeed={this.state.scrollSpeed}
         setScrollSpeed={this._setScrollSpeed ||= scrollSpeed => {
-          storeCurrentDrill({speed: scrollSpeed})
+          storeCurrentDrill({speed: scrollSpeed}, this.programme.storageKey)
           this.setState({scrollSpeed})
         }}
       />
@@ -1109,6 +1159,10 @@ export default class SightReadingPage extends React.Component {
         title: section.pieceTitle,
         italic: `${measuresLabel(section.startMeasure, section.endMeasure)}, ${hand}`,
       }
+    }
+
+    if (this.programme.idleTitle) {
+      return this.programme.idleTitle
     }
 
     let generator = this.state.currentGenerator
@@ -1187,7 +1241,8 @@ export default class SightReadingPage extends React.Component {
           />
       } else {
         let {scale, noteWidth, unitColumns} = this.staffLayout()
-        staff = this.state.currentStaff.render.call(this, {
+        let render = this.programme.renderStaff || this.state.currentStaff.render
+        staff = render.call(this, {
           heldNotes: this.state.heldNotes,
           notes: this.state.notes,
           keySignature: this.state.keySignature,

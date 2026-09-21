@@ -15,7 +15,7 @@ import {
 
 import {
   pieceSection, sheetMusicSection, sheetMusicPieceSettings, sheetMusicStaffFor,
-  sheetMusicKeyFor, measuresDescription, GENERATORS, BOTH_HANDS, RIGHT_HAND, LEFT_HAND
+  sheetMusicKeyFor, measuresDescription, SHEET_MUSIC_GENERATOR, BOTH_HANDS, RIGHT_HAND, LEFT_HAND
 } from "st/data"
 
 import {setAppStore} from "st/storage"
@@ -605,7 +605,7 @@ describe("sheet music deck", function() {
     })
 
     it("draws a picked piece in the score's key at its start measure", async function() {
-      let generator = GENERATORS.find(g => g.name == "sheet music")
+      let generator = SHEET_MUSIC_GENERATOR
       let pieceInput = generator.inputs.find(i => i.name == "piece")
 
       let {piece} = await importMusicXMLPiece("reverie.musicxml", reverieOpening())

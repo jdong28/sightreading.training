@@ -6,7 +6,7 @@ import * as React from "react"
 import * as types from "prop-types"
 import classNames from "classnames"
 
-import {STAVES, GENERATORS, sheetMusicPiece, BOTH_HANDS} from "st/data"
+import {STAVES, GENERATORS} from "st/data"
 import {noteName} from "st/music"
 import {setTitle} from "st/globals"
 import {markOnboarded} from "st/onboarding"
@@ -29,7 +29,6 @@ const EXERCISES = {
   "notes:progression": {title: ["Chord", "progressions"], qualifier: "Harmony"},
   "notes:position": {title: ["Five-finger", "positions"], qualifier: "Scalar"},
   "notes:intervals": {title: ["Melodic", "intervals"], qualifier: "Intervals"},
-  "notes:sheet music": {title: ["Sheet", "music"], qualifier: "Imported piece"},
   "chords:random": {title: ["Random", "chords"], qualifier: "Chord names"},
   "chords:multi-key": {title: ["Chords in", "many keys"], qualifier: "Changing keys"},
 }
@@ -67,8 +66,6 @@ export function keyGlyph(key) {
   return name.charAt(0) + name.slice(1).replace("b", "♭").replace("#", "♯")
 }
 
-const handName = hand => hand.replace(/ \(.*\)$/, "")
-
 // what the summary plate shows for a programme
 export function programmeSummary({staff, generator, settings, key, mode, speed}) {
   let [plain, italic] = exerciseTitle(generator)
@@ -77,26 +74,10 @@ export function programmeSummary({staff, generator, settings, key, mode, speed})
     `${capitalize(staff.name)} staff, chromatic` :
     `${capitalize(staff.name)} staff in ${keyGlyph(key)} major`
 
-  let subtitle = place
   let range
 
   if (generator.mode == "chords") {
     range = settings.notes ? `${settings.notes}-note chords` : "Chords"
-  } else if (generator.name == "sheet music") {
-    let piece = sheetMusicPiece(settings)
-
-    if (piece || settings.song) {
-      range = `Measures ${settings.startMeasure}–${settings.endMeasure}`
-      if (piece && settings.hand && settings.hand != BOTH_HANDS) {
-        range += `, ${handName(settings.hand)}`
-      }
-    } else {
-      range = "No piece chosen"
-    }
-
-    if (piece) {
-      subtitle = `${piece.title}, ${place.charAt(0).toLowerCase()}${place.slice(1)}`
-    }
   } else if (settings.noteRange) {
     range = settings.noteRange.map(noteName).join(" – ")
   } else {
@@ -105,7 +86,7 @@ export function programmeSummary({staff, generator, settings, key, mode, speed})
 
   return {
     title: [plain, italic],
-    subtitle,
+    subtitle: place,
     range,
     tempo: `${capitalize(mode)} · speed ${speed}`,
     length: "Until you stop",

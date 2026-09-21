@@ -7,7 +7,7 @@ import {
 
 import {SheetMusicGenerator, generatorDefaultSettings} from "st/generators"
 import {
-  GENERATORS, sheetMusicSection, BOTH_HANDS, WHOLE_SECTION, SHEET_MUSIC_STORAGE_KEY
+  SHEET_MUSIC_GENERATOR, sheetMusicSection, BOTH_HANDS, WHOLE_SECTION, SHEET_MUSIC_STORAGE_KEY
 } from "st/data"
 import {importMusicXMLPiece} from "st/sheet_music_deck"
 import {setAppStore} from "st/storage"
@@ -415,7 +415,7 @@ describe("measure cards", function() {
   })
 
   describe("sheet music generator", function() {
-    const sheetMusic = GENERATORS.find(g => g.name == "sheet music")
+    const sheetMusic = SHEET_MUSIC_GENERATOR
     const input = name => sheetMusic.inputs.find(i => i.name == name)
 
     let store, previousStore, piece, generator

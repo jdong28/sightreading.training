@@ -1,7 +1,8 @@
 import {ShapeGenerator, Generator, generatorDefaultSettings} from "st/generators"
 import {ChordGenerator, MultiKeyChordGenerator} from "st/chord_generators"
 import {
-  STAVES, GENERATORS, SHEET_MUSIC_STORAGE_KEY, LEGACY_SHEET_MUSIC_STORAGE_KEY, WHOLE_SECTION
+  STAVES, GENERATORS, SHEET_MUSIC_GENERATOR, SHEET_MUSIC_STORAGE_KEY, LEGACY_SHEET_MUSIC_STORAGE_KEY,
+  WHOLE_SECTION,
 } from "st/data"
 import {MAX_MEASURES_PER_CARD} from "st/measure_cards"
 import Keyboard from "st/components/keyboard"
@@ -123,7 +124,7 @@ describe("octave numbering", function() {
 
   let keys = [new KeySignature(0), new KeySignature(-3), new KeySignature(4), new ChromaticKeySignature()]
   let noteStaves = STAVES.filter(staff => staff.mode == "notes")
-  let noteGenerators = GENERATORS.filter(g => g.mode == "notes" && g.name != "sheet music")
+  let noteGenerators = GENERATORS.filter(g => g.mode == "notes")
 
   for (let generator of noteGenerators) {
     it(`keeps the pitches of the ${generator.name} generator on every staff`, function() {
@@ -192,7 +193,7 @@ describe("octave numbering", function() {
       }
     })
 
-    let sheetMusic = () => GENERATORS.find(g => g.name == "sheet music")
+    let sheetMusic = () => SHEET_MUSIC_GENERATOR
     let treble = () => STAVES.find(staff => staff.name == "treble")
 
     it("renumbers song notation stored when middle C was c5 once", function() {
