@@ -10,8 +10,9 @@ import styles from "./sight_reading_page.module.css"
 import staffStyles from "st/components/staff.module.css"
 
 import {noteName, parseNote} from "st/music"
-import {STAVES, GENERATORS, sheetMusicPiece, wholeSectionDrill, RIGHT_HAND, LEFT_HAND} from "st/data"
+import {STAVES, GENERATORS, sheetMusicPiece, wholeSectionDrill, handTracks, RIGHT_HAND, LEFT_HAND} from "st/data"
 import {pieceSong, pieceSource} from "st/sheet_music_deck"
+import {parseMusicXML} from "st/musicxml"
 import {getAppStore} from "st/storage"
 import {
   ProgrammeDrawer, generatorLabel, staffLabel, keyLabel
@@ -160,9 +161,15 @@ export const MISSING_ENGINE_SOURCE = "Drawn on the trainer's staff: this piece w
   "before the app kept each piece's score. Import its file again in the programme (its stats are " +
   "kept) to practise from the engraved score."
 
-const HAND_STAVES = {
-  [RIGHT_HAND]: "upper",
-  [LEFT_HAND]: "lower",
+// the score staff each track of the score's song model reads (see
+// st/musicxml), null when the score can't be read
+function trackStaves(musicXML) {
+  try {
+    return parseMusicXML(musicXML).tracks.map(track => track.scoreStaff)
+  } catch (err) {
+    console.warn("Couldn't read the piece's score", err)
+    return null
+  }
 }
 
 export default class SightReadingPage extends React.Component {
@@ -309,9 +316,10 @@ export default class SightReadingPage extends React.Component {
     }
 
     // a card whose columns can't be joined (a piece stored without the
-    // score's rhythm) is drawn by the app's staff
+    // score's rhythm), or whose hand's staves can't be told in the score, is
+    // drawn by the app's staff
     let current = this.engineCards() && this.currentCard()
-    if (current && !joinable(current.card.columns)) {
+    if (current && (!joinable(current.card.columns) || this.engineStaves() === undefined)) {
       this.setState({engineSource: {...this.state.engineSource, status: "failed"}})
       return
     }
@@ -361,6 +369,7 @@ export default class SightReadingPage extends React.Component {
           status: musicXML ? "ready" : "missing",
           musicXML,
           measureStarts,
+          trackStaves: musicXML ? trackStaves(musicXML) : null,
         }})
       })
   }
@@ -381,6 +390,27 @@ export default class SightReadingPage extends React.Component {
     return source.status == "loading" || (this.engineCards() && !this.state.staffWidth)
   }
 
+  // The score staves the drill's tracks read, the ones the engine draws:
+  // null for every staff, undefined when the stored song's tracks can't be
+  // told among the score's
+  engineStaves() {
+    let settings = this.currentSettings()
+    let song = pieceSong(sheetMusicPiece(settings))
+    let tracks = handTracks(song, settings.hand)
+    if (!tracks) { return null }
+
+    let all = this.state.engineSource?.trackStaves
+    if (!all || all.length != song.tracks.length) { return undefined }
+
+    let cache = this.engineStavesCache
+    if (!cache || cache.all != all || cache.tracks != tracks.join(",")) {
+      cache = this.engineStavesCache = {
+        all, tracks: tracks.join(","), staves: tracks.map(idx => all[idx]),
+      }
+    }
+    return cache.staves
+  }
+
   // the engine card's props for the card at the head of the drill, or null
   // when the app's staff draws it
   engineCard() {
@@ -388,7 +418,8 @@ export default class SightReadingPage extends React.Component {
 
     let current = this.currentCard()
     let width = this.state.staffWidth
-    if (!current || !width || !joinable(current.card.columns)) { return null }
+    let staves = this.engineStaves()
+    if (!current || !width || !joinable(current.card.columns) || staves === undefined) { return null }
 
     let {card} = current
     let source = this.state.engineSource
@@ -400,7 +431,8 @@ export default class SightReadingPage extends React.Component {
       measureStarts: source.measureStarts,
       fromMeasure: card.startMeasure,
       toMeasure: card.endMeasure,
-      hand: HAND_STAVES[this.currentSettings().hand] || "both",
+      hand: "both",
+      staves,
       width,
       columns: card.columns,
       head,

@@ -206,6 +206,30 @@ describe("score render", function() {
         expect(sortedKeys(result.notes)).toEqual(fixtureNotes(1, 2, "upper").sort(byOrder))
       })
 
+      it("draws the staves asked for alone, of one part or of a part for each hand", async function() {
+        let result = await draw({fromMeasure: 1, toMeasure: 2, staves: [{part: "P1", staff: 2}]})
+        expect(sortedKeys(result.notes)).toEqual(fixtureNotes(1, 2, "lower").sort(byOrder))
+
+        let part = (id, clef, notes) => `<part id="${id}"><measure number="1"><attributes><divisions>1</divisions><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>${clef[0]}</sign><line>${clef[1]}</line></clef></attributes>${notes}</measure></part>`
+        let twoParts = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <part-list><score-part id="R"><part-name>Right</part-name></score-part><score-part id="L"><part-name>Left</part-name></score-part></part-list>
+  ${part("R", ["G", 2], ["C", "D", "E", "F"].map(step => noteXML(step, 5, 1, 1)).join(""))}
+  ${part("L", ["F", 4], noteXML("C", 3, 4, 1))}
+</score-partwise>`
+
+        for (let [id, pitches] of [["R", [72, 74, 76, 77]], ["L", [48]]]) {
+          result = await engine.renderCard({
+            musicXML: twoParts, fromMeasure: 1, toMeasure: 1, hand: "both", width: 644,
+            staves: [{part: id, staff: 1}],
+          })
+          container.replaceChildren(result.svg)
+          expect(result.notes.map(note => [note.pitch, note.staff]).sort((a, b) => a[0] - b[0]))
+            .toEqual(pitches.map(pitch => [pitch, 1]))
+          expect(result.notes.every(note => !note.id.includes("unmatched"))).toBe(true)
+        }
+      })
+
       it("hands back every drawn note with its own live element", async function() {
         let result = await draw({fromMeasure: 1, toMeasure: 2})
         expect(result.svg instanceof SVGSVGElement).toBe(true)

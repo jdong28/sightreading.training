@@ -25,6 +25,8 @@ export class ScoreCard extends React.Component {
     fromMeasure: types.number.isRequired,
     toMeasure: types.number.isRequired,
     hand: types.oneOf(["both", "upper", "lower"]).isRequired,
+    // the score staves drawn, in place of hand's (see st/score_render/types)
+    staves: types.array,
     width: types.number.isRequired,
     // the song model's measure starts, the clock the columns are timed on
     measureStarts: types.array,
@@ -61,7 +63,7 @@ export class ScoreCard extends React.Component {
 
   componentDidUpdate(prevProps) {
     let p = this.props
-    let redraw = ["musicXML", "fromMeasure", "toMeasure", "hand", "width", "measureStarts", "engine"]
+    let redraw = ["musicXML", "fromMeasure", "toMeasure", "hand", "staves", "width", "measureStarts", "engine"]
       .some(name => prevProps[name] != p[name])
 
     if (redraw) {
@@ -98,11 +100,11 @@ export class ScoreCard extends React.Component {
   }
 
   async drawNow(stale) {
-    let {musicXML, fromMeasure, toMeasure, hand, width, measureStarts, engine} = this.props
+    let {musicXML, fromMeasure, toMeasure, hand, staves, width, measureStarts, engine} = this.props
 
     let bundle = await this.props.loadEngines()
     let result = await bundle.ENGINES[engine].renderCard({
-      musicXML, fromMeasure, toMeasure, hand, width, measureStarts,
+      musicXML, fromMeasure, toMeasure, hand, staves, width, measureStarts,
     })
 
     // a later draw or an unmount has overtaken this one

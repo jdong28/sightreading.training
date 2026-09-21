@@ -567,13 +567,16 @@ export function parseMusicXML(text) {
 
   let trackIdx = 0
 
-  for (let part of parts) {
+  for (let [partIdx, part] of parts.entries()) {
     let staves = [...part.staves].sort((a, b) => a - b)
     let trackByStaff = {}
 
     for (let staff of staves) {
       let track = song.getTrack(trackIdx)
       trackByStaff[staff] = trackIdx
+      // the score staff the track reads, which an engine draws it from (see
+      // st/score_render); not stored with the song
+      track.scoreStaff = {part: rawParts[partIdx].id, staff}
 
       if (part.name) {
         track.trackName = staves.length > 1 ?

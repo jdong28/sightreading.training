@@ -377,9 +377,11 @@ export class MeasureCardGenerator {
     this.done += 1
 
     if (this.loop) {
-      if (this.done % card.columns.length == 0) {
-        this.finishCard(card)
-        this.tally = card.measures.map(() => ({hits: 0, misses: 0, elapsedMs: 0}))
+      let idx = (this.done - 1) % card.columns.length
+      let measureIdx = card.columnMeasures[idx]
+      if (card.columnMeasures[idx + 1] != measureIdx) {
+        this.finishMeasures(card, [measureIdx])
+        this.tally[measureIdx] = {hits: 0, misses: 0, elapsedMs: 0}
       }
       return
     }
@@ -417,27 +419,33 @@ export class MeasureCardGenerator {
     }
   }
 
-  // Adds the card's measure tallies to the store once the hit for its last
-  // column has been counted, which happens in the same task
   finishCard(card) {
-    let tally = this.tally
+    this.finishMeasures(card, card.measures.map((measure, idx) => idx))
+  }
+
+  // Adds the tallies of the card's measures at the given indices to the
+  // store once the hit for the last column done has been counted, which
+  // happens in the same task
+  finishMeasures(card, indices) {
+    let tallies = indices.map(idx => this.tally[idx])
     let at = this.now()
 
-    this.finishing = Promise.resolve().then(() => {
+    let finished = Promise.resolve().then(() => {
       let store = this.deck.getStore()
-      return Promise.all(card.measures.map((measure, idx) => {
-        let {hits, misses, elapsedMs} = tally[idx]
+      return Promise.all(indices.map((idx, i) => {
+        let {hits, misses, elapsedMs} = tallies[i]
         if (!hits && !misses) { return }
 
         return store.recordSectionPractice({
           pieceId: this.deck.pieceId,
-          startMeasure: measure,
-          endMeasure: measure,
+          startMeasure: card.measures[idx],
+          endMeasure: card.measures[idx],
           hits: this.recordNotes ? hits : 0,
           misses: this.recordNotes ? misses : 0,
           elapsedMs, at,
         }).catch(err => console.warn("Couldn't save the measure stats", err))
       }))
     })
+    this.finishing = Promise.all([this.finishing, finished])
   }
 }

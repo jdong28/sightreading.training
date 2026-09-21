@@ -121,7 +121,7 @@ export function measuresDescription(song) {
 }
 
 // the track indices to drill for a hand setting
-function handTracks(song, hand) {
+export function handTracks(song, hand) {
   let staves = staffTracks(song)
 
   switch (hand) {

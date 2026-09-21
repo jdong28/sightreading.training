@@ -469,29 +469,91 @@ describe("score page engine card", function() {
     expect(measureStats.reduce((sum, stats) => sum + stats.misses, 0)).toEqual(1)
   })
 
-  it("falls back to the app's staff when the engine draws none of the hand's notes", async function() {
-    // a piano score exported as a part for each hand, each on its own staff 1
-    let part = (id, clef, notes) => `
-  <part id="${id}">
-    <measure number="1">
-      <attributes><divisions>1</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>${clef[0]}</sign><line>${clef[1]}</line></clef></attributes>
-      ${notes}
-    </measure>
-  </part>`
-    let xml = `<?xml version="1.0" encoding="UTF-8"?>
-<score-partwise version="4.0">
-  <part-list>
-    <score-part id="P1"><part-name>Right</part-name></score-part>
-    <score-part id="P2"><part-name>Left</part-name></score-part>
-  </part-list>
-  ${part("P1", ["G", 2], ["E", "G", "C", "E"].map(step => noteXML(step, 5, 1, 1)).join(""))}
-  ${part("P2", ["F", 4], ["C", "G", "E", "G"].map(step => noteXML(step, 3, 1, 1)).join(""))}
-</score-partwise>`
+  it("records each measure of a whole section on one card as it is played, before the pass is done", async function() {
+    let piece = await drillPiece(reverieOpening(), {startMeasure: 1, endMeasure: 4})
+    renderScorePage()
+    await cardDrawn()
 
-    await drillPiece(xml, {startMeasure: 1, endMeasure: 1, hand: LEFT_HAND})
+    flushSync(() => page.beginSession())
+    let {card} = page.currentCard()
+    let first = card.columnMeasures[0]
+    let firstColumns = card.columnMeasures.filter(idx => idx == first).length
+    expect(firstColumns).toBeLessThan(card.columns.length)
+
+    for (let idx = 0; idx < firstColumns; idx++) {
+      play(page.state.notes.currentColumn())
+    }
+    await page.state.notes.generator.finishing
+
+    let measureStats = store.sectionStats(piece.id).filter(stats => stats.startMeasure == stats.endMeasure)
+    expect(measureStats.map(stats => [stats.startMeasure, stats.hits, stats.misses]))
+      .toEqual([[card.measures[first], firstColumns, 0]])
+  })
+
+  // a piano score with the same notes as one part of two staves and as a
+  // part for each hand, each on its own staff 1
+  let rightNotes = ["E", "G", "C", "E"]
+  let leftNotes = ["C", "G", "E", "G"]
+  let attributes = (clefs, staves) => `<attributes><divisions>1</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time>${staves > 1 ? `<staves>${staves}</staves>` : ""}${clefs.map(([sign, line], idx) => `<clef${staves > 1 ? ` number="${idx + 1}"` : ""}><sign>${sign}</sign><line>${line}</line></clef>`).join("")}</attributes>`
+  let notesOn = (steps, octave, staff) => steps.map(step => noteXML(step, octave, 1, staff)).join("")
+  let scoreOf = (partList, parts) => `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <part-list>${partList}</part-list>
+  ${parts}
+</score-partwise>`
+  const SCORE_SHAPES = {
+    "one part of two staves": scoreOf(
+      `<score-part id="P1"><part-name>Piano</part-name></score-part>`,
+      `<part id="P1"><measure number="1">${attributes([["G", 2], ["F", 4]], 2)}${notesOn(rightNotes, 5, 1)}<backup><duration>4</duration></backup>${notesOn(leftNotes, 3, 2)}</measure></part>`),
+    "a part for each hand": scoreOf(
+      `<score-part id="P1"><part-name>Right</part-name></score-part><score-part id="P2"><part-name>Left</part-name></score-part>`,
+      `<part id="P1"><measure number="1">${attributes([["G", 2]], 1)}${notesOn(rightNotes, 5, 1)}</measure></part>
+  <part id="P2"><measure number="1">${attributes([["F", 4]], 1)}${notesOn(leftNotes, 3, 1)}</measure></part>`),
+  }
+
+  for (let [shape, xml] of Object.entries(SCORE_SHAPES)) {
+    for (let [hand, pitches] of [
+      [RIGHT_HAND, rightNotes.map(step => parseNote(`${step}5`))],
+      [LEFT_HAND, leftNotes.map(step => parseNote(`${step}3`))],
+    ]) {
+      it(`draws only the ${hand} notes it judges of ${shape}`, async function() {
+        await drillPiece(xml, {startMeasure: 1, endMeasure: 1, hand})
+        renderScorePage()
+        await cardDrawn()
+
+        // the page's card drawn again, to read what the engine drew
+        let join
+        let props = page.engineCard()
+        let own = document.createElement("div")
+        own.style.width = "1100px"
+        document.body.appendChild(own)
+        let ownRoot = createRoot(own)
+        try {
+          flushSync(() => ownRoot.render(React.createElement(ScoreCard, {
+            ...props, onDrawn: drawn => join = drawn,
+          })))
+          await waitFor(() => join, {message: "the card drawn again"})
+        } finally {
+          flushSync(() => ownRoot.unmount())
+          own.remove()
+        }
+
+        expect(join.join.unmatched).toEqual([])
+        expect(join.join.heads.every(heads => heads.length > 0)).toBe(true)
+        expect(join.result.notes.map(note => note.pitch).sort()).toEqual([...pitches].sort())
+      })
+    }
+  }
+
+  it("falls back to the app's staff when the engine draws none of the card's notes", async function() {
+    await drillPiece(reverieOpening(), {startMeasure: 2, endMeasure: 4})
     spyOn(console, "warn")
 
-    let el = renderScorePage()
+    let loadEngines = () => Promise.resolve({ENGINES: {osmd: {
+      renderCard: async () => ({svg: document.createElementNS(SVG_NS, "svg"), notes: []}),
+    }}})
+
+    let el = renderScorePage({loadEngines})
     await waitFor(() => page.state.engineSource?.status == "failed", {message: "the engine card to fail"})
     flushSync(() => {})
 

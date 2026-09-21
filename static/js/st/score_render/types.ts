@@ -5,6 +5,12 @@
 
 export type Hand = "both" | "upper" | "lower"
 
+// one staff of the score: its part's id and the staff's number in it, from 1
+export interface ScoreStaff {
+  part: string
+  staff: number
+}
+
 export interface CardOptions {
   musicXML: string
   // the score's printed bar numbers, inclusive (a leading pickup is 0)
@@ -12,6 +18,9 @@ export interface CardOptions {
   toMeasure: number
   // upper and lower are the part's first and second staff, drawn alone
   hand: Hand
+  // the staves drawn, in place of hand's: every other staff is taken out,
+  // and a part none of whose staves is drawn with it
+  staves?: ScoreStaff[] | null
   // the plate width in CSS pixels, eg. 644 or 926
   width: number
   // the start of each of the score's measures by position, in quarter notes,

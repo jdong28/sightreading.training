@@ -6,7 +6,7 @@
 
 import {OpenSheetMusicDisplay} from "opensheetmusicdisplay"
 
-import {prepareCard, handStaff, onsetKey} from "./card_source"
+import {prepareCard, onsetKey} from "./card_source"
 import type {SourceNote} from "./card_source"
 import type {CardOptions, CardResult, CardNote, ScoreEngine} from "./types"
 
@@ -95,7 +95,7 @@ async function renderCard(opts: CardOptions): Promise<CardResult> {
     throw new Error("OSMD drew nothing")
   }
 
-  const keep = handStaff(opts.hand)
+  const instruments = display.Sheet.Instruments
   const byOnset = notesByOnset(card.notes)
   const notes: CardNote[] = []
   let unmatched = 0
@@ -112,8 +112,9 @@ async function renderCard(opts: CardOptions): Promise<CardResult> {
             const el = headElement(graphicalNote)
             if (!el || !svg.contains(el)) { continue }
 
-            const staves = source.ParentStaff.ParentInstrument.Staves
-            const staff = keep ?? staves.indexOf(source.ParentStaff) + 1
+            const instrument = source.ParentStaff.ParentInstrument
+            const staffIdx = instrument.Staves.indexOf(source.ParentStaff)
+            const staff = card.partStaves[instruments.indexOf(instrument)]?.[staffIdx] ?? staffIdx + 1
             // OSMD's half tones count from C0
             const pitch = source.Pitch.getHalfTone() + 12
             // OSMD sums its own measure lengths, which a measure ending in a
