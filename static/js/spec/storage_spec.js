@@ -429,7 +429,8 @@ describe("local store", function() {
 
       let reopened = await open({keep: true})
       expect(reopened.pieces()).toEqual(data.pieces)
-      expect(reopened.sectionStats()).toEqual(data.sectionStats)
+      expect(reopened.items()).toEqual(data.items)
+      expect(reopened.sectionStats()).toEqual([section("a", 1, 4, {lastPracticed: 1500})])
       expect(reopened.recentSessions()).toEqual([data.sessions[1]])
 
       // importing again adds nothing
@@ -448,9 +449,10 @@ describe("local store", function() {
       await store.recordSectionPractice(section("a", 1, 4, {at: 5000}))
       await store.recordSectionPractice(section("local", 1, 4, {at: 1000}))
 
+      // a library of section stats, before items
       let library = {
         format: LIBRARY_FORMAT,
-        version: LIBRARY_VERSION,
+        version: 4,
         pieces: [
           pieceData("a", "First, elsewhere", 1000),
           // the same title and notes under another id

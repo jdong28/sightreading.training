@@ -340,7 +340,7 @@ export async function importMusicXMLPiece(fileName, data, store=getAppStore()) {
   return addPiece(title, song, store, {fileName, source: text})
 }
 
-// The library file for the store's pieces, section stats and sessions. Resolves to
+// The library file for the store's pieces, practice records and sessions. Resolves to
 // {fileName, text} or {error}
 export async function exportLibraryFile(store=getAppStore()) {
   try {
