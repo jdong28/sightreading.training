@@ -118,7 +118,7 @@ export function cardColumns(card) {
 /**
  * The weight of each card in random picks, weakest first: the mean
  * practiceWeight (st/srs/schedule) of its measures' items under the hand
- * setting, a measure never graded weighing as an even chance of recall.
+ * setting, a measure never graded weighing as UNSCHEDULED_RECALL.
  * @param {MeasureCard[]} cards
  * @param {ItemRecord[]} items the piece's items
  * @param {Object} [opts]
