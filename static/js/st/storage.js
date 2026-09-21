@@ -3,10 +3,12 @@
 //
 // One database holds the stores in STORES: the imported sheet music pieces
 // (the deck, see st/sheet_music_deck), the source score each piece was
-// imported from, practice stats per piece section, and practice sessions.
-// init() loads all but the sources into an in-memory cache so the UI reads
-// synchronously (eg. a generator's settings inputs on every render); a
-// piece's source is read on demand with pieceSource. Every
+// imported from, the practice records of spaced repetition (items, the log of
+// reviews and studies, see st/srs/records), and practice sessions.
+// init() loads the pieces, items, studies and recent sessions into an
+// in-memory cache so the UI reads synchronously (eg. a generator's settings
+// inputs on every render); a piece's source and the reviews are read on
+// demand. Every
 // mutation is async, writes to the database first and only then updates the
 // cache, so a failed write (usually the storage quota) leaves both untouched.
 // Mutations run one at a time in call order.
@@ -19,6 +21,10 @@
 import {openDB} from "idb"
 import {shiftNoteOctave} from "st/music"
 import {
+  validItem, validReview, validStudy, newItem, itemId, itemFromSectionStats,
+  legacyReview, itemWithPractice, itemForPiece, reviewForPiece, sectionStatsOf
+} from "st/srs/records"
+import {
   SOURCE_ENCODING, compressSource, decompressSource, isCompressedSource,
   bytesToBase64, base64ToBytes
 } from "st/score_source"
@@ -29,7 +35,10 @@ export const DB_NAME = "sightreading"
 // 2: note names of stored pieces moved to middle C "C4", see
 // renumberPieceOctaves
 // 3: adds the pieceSources store; pieces stored before it have no source
-export const DB_VERSION = 3
+// 4: adds the items, reviews and studies stores; each sectionStats row is
+// migrated into a tracked item and a legacy review, and the sectionStats store
+// is left as it was, frozen: nothing reads or writes it after the migration
+export const DB_VERSION = 4
 
 // the localStorage deck used before the local store, migrated into the pieces
 // store once, see migrateLegacyDeck. The key itself is left in place
@@ -46,7 +55,9 @@ export const LIBRARY_FORMAT = "sightreading-library"
 // notes until their score is imported again
 // 4: carries the source score of the pieces that have one (sources); older
 // libraries have none
-export const LIBRARY_VERSION = 4
+// 5: carries items, reviews and studies in place of sectionStats; the section
+// stats of older libraries are imported as tracked items with a legacy review
+export const LIBRARY_VERSION = 5
 
 // sessions started within this many days are loaded into the cache
 export const RECENT_SESSION_DAYS = 30
@@ -60,12 +71,20 @@ const OPEN_TIMEOUT = 5000
 const STORES = {
   pieces: {keyPath: "id"},
   pieceSources: {keyPath: "pieceId"},
+  // frozen since DB_VERSION 4: kept as it was migrated, read and written by
+  // nothing but deletePiece
   sectionStats: {
     keyPath: ["pieceId", "startMeasure", "endMeasure"],
     indexes: {pieceId: "pieceId"},
   },
   sessions: {keyPath: "id", indexes: {startedAt: "startedAt"}},
   meta: {keyPath: "key"},
+  items: {keyPath: "id", indexes: {pieceId: "pieceId", due: "due"}},
+  reviews: {
+    keyPath: ["itemId", "at"],
+    indexes: {at: "at", sessionId: "sessionId", pieceId: "pieceId"},
+  },
+  studies: {keyPath: "pieceId"},
 }
 
 /**
@@ -91,8 +110,9 @@ const STORES = {
  */
 
 /**
- * Practice on one measure range of a piece, keyed by pieceId, startMeasure
- * and endMeasure (the score's printed bar numbers).
+ * Practice on one measure range of a piece (the score's printed bar
+ * numbers): the rows of the sectionStats store before DB_VERSION 4, and now a
+ * view over the items of the range, see LocalStore#sectionStats.
  * @typedef {Object} SectionStatsRecord
  * @property {string} pieceId
  * @property {number} startMeasure
@@ -128,7 +148,10 @@ const STORES = {
  * @property {string} exportedAt
  * @property {PieceRecord[]} pieces
  * @property {PieceSourceRecord[]} [sources] with base64 data, since version 4
- * @property {SectionStatsRecord[]} sectionStats
+ * @property {ItemRecord[]} [items] since version 5
+ * @property {ReviewRecord[]} [reviews] since version 5
+ * @property {StudyRecord[]} [studies] since version 5
+ * @property {SectionStatsRecord[]} [sectionStats] before version 5
  * @property {SessionRecord[]} sessions
  */
 
@@ -142,8 +165,10 @@ const STORES = {
  * @property {number} invalidPieces
  * @property {number} fullPieces pieces left out because the library is full
  * @property {number} addedSources sources added to pieces that had none
- * @property {number} addedSections
- * @property {number} updatedSections section stats replaced by more recent ones
+ * @property {number} addedSections items added (from section stats in older libraries)
+ * @property {number} updatedSections items replaced by more recently practiced ones
+ * @property {number} addedReviews
+ * @property {number} addedStudies studies of pieces that had none
  * @property {number} addedSessions
  * @property {number} existingSessions
  */
@@ -180,13 +205,18 @@ export function renumberPieceOctaves(piece) {
   }
 }
 
+function createStore(db, name) {
+  let {keyPath, indexes} = STORES[name]
+  let store = db.createObjectStore(name, {keyPath})
+  for (let [indexName, indexPath] of Object.entries(indexes || {})) {
+    store.createIndex(indexName, indexPath)
+  }
+}
+
 async function upgradeSchema(db, oldVersion, newVersion, transaction) {
   if (oldVersion < 1) {
-    for (let [name, {keyPath, indexes}] of Object.entries(STORES)) {
-      let store = db.createObjectStore(name, {keyPath})
-      for (let [indexName, indexPath] of Object.entries(indexes || {})) {
-        store.createIndex(indexName, indexPath)
-      }
+    for (let name of Object.keys(STORES)) {
+      createStore(db, name)
     }
   }
 
@@ -203,6 +233,22 @@ async function upgradeSchema(db, oldVersion, newVersion, transaction) {
     // the stored pieces keep loading and drilling without a source, until
     // their score is imported again
     db.createObjectStore("pieceSources", {keyPath: STORES.pieceSources.keyPath})
+  }
+
+  if (oldVersion >= 1 && oldVersion < 4) {
+    createStore(db, "items")
+    createStore(db, "reviews")
+    createStore(db, "studies")
+
+    // every section stats row becomes an item and a legacy review, and
+    // sectionStats is left as it is
+    let items = transaction.objectStore("items")
+    let reviews = transaction.objectStore("reviews")
+    let now = Date.now()
+    for (let stats of await transaction.objectStore("sectionStats").getAll()) {
+      items.put(itemFromSectionStats(stats, now))
+      reviews.put(legacyReview(stats))
+    }
   }
 }
 
@@ -246,6 +292,11 @@ class IndexedDBBackend {
     return this.db.getAllFromIndex(store, index, IDBKeyRange.lowerBound(lower))
   }
 
+  // the records whose index is value
+  getAllWith(store, index, value) {
+    return this.db.getAllFromIndex(store, index, value)
+  }
+
   // ops: [{store, put: record} or {store, delete: key}], in one transaction
   async write(ops) {
     if (!ops.length) { return }
@@ -276,7 +327,8 @@ class IndexedDBBackend {
 }
 
 // the same access kept in memory, for when IndexedDB is unavailable. Records
-// are copied in and out like IndexedDB does
+// are copied in and out and read in key order like IndexedDB does, and a
+// record without a valid key at an index's path is left out of that index
 class MemoryBackend {
   persistent = false
 
@@ -287,27 +339,46 @@ class MemoryBackend {
     }
   }
 
-  keyOf(store, record) {
-    let {keyPath} = STORES[store]
-    return memoryKey(Array.isArray(keyPath) ? keyPath.map(path => record[path]) : record[keyPath])
-  }
-
   async get(store, key) {
     let record = this.stores[store].get(memoryKey(key))
     return record === undefined ? undefined : structuredClone(record)
   }
 
+  // [key, record] in key order
+  entries(store) {
+    return [...this.stores[store].entries()]
+      .map(([key, record]) => [JSON.parse(key), record])
+      .sort(([a], [b]) => compareKeys(a, b))
+  }
+
+  // [key, record] of the records in the index, in index order
+  indexEntries(store, index) {
+    let path = STORES[store].indexes[index]
+    return this.entries(store)
+      .filter(([key, record]) => validKey(record[path]))
+      .sort(([a, x], [b, y]) => compareKeys(x[path], y[path]) || compareKeys(a, b))
+  }
+
   async getAll(store) {
-    return [...this.stores[store].values()].map(record => structuredClone(record))
+    return this.entries(store).map(([key, record]) => structuredClone(record))
   }
 
   async getAllKeys(store) {
-    return [...this.stores[store].keys()].map(key => JSON.parse(key))
+    return this.entries(store).map(([key]) => key)
   }
 
   async getAllFrom(store, index, lower) {
     let path = STORES[store].indexes[index]
-    return (await this.getAll(store)).filter(record => record[path] >= lower)
+    return this.indexEntries(store, index)
+      .filter(([key, record]) => compareKeys(record[path], lower) >= 0)
+      .map(([key, record]) => structuredClone(record))
+  }
+
+  async getAllWith(store, index, value) {
+    let path = STORES[store].indexes[index]
+    return this.indexEntries(store, index)
+      .filter(([key, record]) => compareKeys(record[path], value) == 0)
+      .map(([key, record]) => structuredClone(record))
   }
 
   async write(ops) {
@@ -317,7 +388,7 @@ class MemoryBackend {
       if ("delete" in op) {
         this.stores[op.store].delete(memoryKey(op.delete))
       } else {
-        this.stores[op.store].set(this.keyOf(op.store, op.put), op.put)
+        this.stores[op.store].set(memoryKey(recordKey(op.store, op.put)), op.put)
       }
     }
   }
@@ -332,6 +403,35 @@ class MemoryBackend {
 }
 
 const memoryKey = key => JSON.stringify(key)
+
+// the key of a record of store
+function recordKey(store, record) {
+  let {keyPath} = STORES[store]
+  return Array.isArray(keyPath) ? keyPath.map(path => record[path]) : record[keyPath]
+}
+
+// the keys IndexedDB orders, of the kinds the stores use
+const validKey = key => (typeof key == "number" && !Number.isNaN(key)) ||
+  typeof key == "string" || (Array.isArray(key) && key.every(validKey))
+
+const keyRank = key => typeof key == "number" ? 0 : typeof key == "string" ? 1 : 2
+
+// IndexedDB's key order: numbers, then strings, then arrays element by element
+function compareKeys(a, b) {
+  if (keyRank(a) != keyRank(b)) {
+    return keyRank(a) - keyRank(b)
+  }
+
+  if (Array.isArray(a)) {
+    for (let i = 0; i < Math.min(a.length, b.length); i++) {
+      let order = compareKeys(a[i], b[i])
+      if (order) { return order }
+    }
+    return a.length - b.length
+  }
+
+  return a < b ? -1 : a > b ? 1 : 0
+}
 
 async function openIndexedDBBackend(name, timeout) {
   if (!defaultIndexedDB()) {
@@ -378,9 +478,6 @@ const byImportOrder = (a, b) =>
 
 const byStart = (a, b) => (a.startedAt || 0) - (b.startedAt || 0)
 
-const sameSection = (a, b) =>
-  a.pieceId == b.pieceId && a.startMeasure == b.startMeasure && a.endMeasure == b.endMeasure
-
 const pieceContent = piece => `${piece.title}\n${JSON.stringify(piece.song)}`
 
 const isCount = n => Number.isInteger(n) && n >= 0
@@ -400,6 +497,8 @@ function validSession(session) {
     typeof session.id == "string" && typeof session.startedAt == "number"
 }
 
+// a section stats row, as stored before DB_VERSION 4 and carried by
+// libraries before LIBRARY_VERSION 5
 function validSectionStats(stats) {
   return !!stats && typeof stats == "object" &&
     typeof stats.pieceId == "string" &&
@@ -484,8 +583,9 @@ export class LocalStore {
     this.backend = null
     this.ready = null
     this.queue = Promise.resolve()
+    this.sectionStatsView = {items: null, rows: []}
 
-    this.cache = {pieces: [], sectionStats: [], sessions: []}
+    this.cache = emptyCache()
   }
 
   /**
@@ -559,15 +659,17 @@ export class LocalStore {
   }
 
   async loadCache() {
-    let [pieces, sectionStats, sessions] = await Promise.all([
+    let [pieces, items, studies, sessions] = await Promise.all([
       this.backend.getAll("pieces"),
-      this.backend.getAll("sectionStats"),
+      this.backend.getAll("items"),
+      this.backend.getAll("studies"),
       this.backend.getAllFrom("sessions", "startedAt", Date.now() - RECENT_SESSION_DAYS * DAY),
     ])
 
     this.cache = {
       pieces: pieces.sort(byImportOrder),
-      sectionStats,
+      items,
+      studies,
       sessions: sessions.sort(byStart),
     }
   }
@@ -593,12 +695,57 @@ export class LocalStore {
   }
 
   /**
+   * The practice on each measure range, as the sectionStats store kept it
+   * before items: the totals of the range's items of every hand added up.
    * @param {string} [pieceId] only the sections of this piece
    * @returns {SectionStatsRecord[]}
    */
   sectionStats(pieceId) {
-    let all = this.cache.sectionStats
+    if (this.sectionStatsView.items != this.cache.items) {
+      this.sectionStatsView = {items: this.cache.items, rows: sectionStatsOf(this.cache.items)}
+    }
+
+    let all = this.sectionStatsView.rows
     return pieceId == null ? all : all.filter(stats => stats.pieceId == pieceId)
+  }
+
+  /**
+   * @param {string} [pieceId] only the items of this piece
+   * @returns {ItemRecord[]}
+   */
+  items(pieceId) {
+    let all = this.cache.items
+    return pieceId == null ? all : all.filter(item => item.pieceId == pieceId)
+  }
+
+  /**
+   * @param {string} id
+   * @returns {ItemRecord|null}
+   */
+  item(id) {
+    return this.cache.items.find(item => item.id == id) || null
+  }
+
+  /**
+   * @param {string} pieceId
+   * @returns {StudyRecord|null}
+   */
+  study(pieceId) {
+    return this.cache.studies.find(study => study.pieceId == pieceId) || null
+  }
+
+  /**
+   * The reviews of a piece or of a session, read from the database (they are
+   * never cached), oldest first.
+   * @param {{pieceId: string}|{sessionId: string}} query
+   * @returns {Promise<ReviewRecord[]>}
+   */
+  reviews(query) {
+    return this.mutate(async () => {
+      let index = "sessionId" in query ? "sessionId" : "pieceId"
+      let reviews = await this.backend.getAllWith("reviews", index, query[index])
+      return reviews.sort((a, b) => a.at - b.at || (a.itemId < b.itemId ? -1 : a.itemId > b.itemId ? 1 : 0))
+    })
   }
 
   /** @returns {SessionRecord[]} sessions of the last RECENT_SESSION_DAYS, oldest first */
@@ -685,7 +832,8 @@ export class LocalStore {
   }
 
   /**
-   * Removes a piece along with its source and section stats.
+   * Removes a piece along with its source, items, reviews, study and the
+   * frozen section stats rows it had before items.
    * @param {string} id
    * @returns {Promise<boolean>} whether there was such a piece
    */
@@ -695,17 +843,28 @@ export class LocalStore {
         return false
       }
 
-      let sections = this.sectionStats(id)
+      let [reviews, sections] = await Promise.all([
+        this.backend.getAllWith("reviews", "pieceId", id),
+        this.backend.getAllWith("sectionStats", "pieceId", id),
+      ])
+
+      let deletes = (store, records) =>
+        records.map(record => ({store, delete: recordKey(store, record)}))
+
       await this.backend.write([
         {store: "pieces", delete: id},
         {store: "pieceSources", delete: id},
-        ...sections.map(s => ({store: "sectionStats", delete: [s.pieceId, s.startMeasure, s.endMeasure]})),
+        {store: "studies", delete: id},
+        ...deletes("items", this.items(id)),
+        ...deletes("reviews", reviews),
+        ...deletes("sectionStats", sections),
       ])
 
       this.cache = {
         ...this.cache,
         pieces: this.cache.pieces.filter(piece => piece.id != id),
-        sectionStats: this.cache.sectionStats.filter(stats => stats.pieceId != id),
+        items: this.cache.items.filter(item => item.pieceId != id),
+        studies: this.cache.studies.filter(study => study.pieceId != id),
       }
 
       return true
@@ -713,57 +872,125 @@ export class LocalStore {
   }
 
   /**
-   * Adds one practice stint on a section to its stats.
+   * Stores one attempt at an item in a single write: the review, the item as
+   * the attempt left it, any other items the attempt changed (related) and
+   * the session it was played in. The item and the related items replace the
+   * stored ones of their id.
+   * @param {Object} attempt
+   * @param {ItemRecord} attempt.item
+   * @param {ReviewRecord} attempt.review of attempt.item
+   * @param {ItemRecord[]} [attempt.related]
+   * @param {SessionRecord} [attempt.session]
+   * @returns {Promise<ItemRecord>} the stored item
+   */
+  recordAttempt({item, review, related=[], session}) {
+    return this.mutate(async () => {
+      let items = [item, ...related]
+      if (!items.every(validItem) || new Set(items.map(i => i.id)).size != items.length) {
+        throw new Error("Not a valid item")
+      }
+
+      if (!validReview(review) || review.itemId != item.id || review.pieceId != item.pieceId) {
+        throw new Error("Not a valid review")
+      }
+
+      if (session !== undefined && !validSession(session)) {
+        throw new Error("Not a valid session")
+      }
+
+      await this.backend.write([
+        {store: "reviews", put: review},
+        ...items.map(record => ({store: "items", put: record})),
+        ...(session ? [{store: "sessions", put: session}] : []),
+      ])
+
+      this.cacheItems(items)
+      if (session) {
+        this.cacheSession(session)
+      }
+
+      return item
+    })
+  }
+
+  /**
+   * Adds or replaces the study of a stored piece.
+   * @param {StudyRecord} study
+   * @returns {Promise<StudyRecord>}
+   */
+  putStudy(study) {
+    return this.mutate(async () => {
+      if (!validStudy(study) || !this.piece(study.pieceId)) {
+        throw new Error("Not a valid study")
+      }
+
+      await this.backend.write([{store: "studies", put: study}])
+
+      this.cache = {
+        ...this.cache,
+        studies: [...this.cache.studies.filter(s => s.pieceId != study.pieceId), study],
+      }
+
+      return study
+    })
+  }
+
+  /**
+   * Adds one practice stint on a measure range to the totals of its item
+   * (created tracked when there is none), with no review: what the section
+   * stats recorded before items.
    * @param {Object} practice
    * @param {string} practice.pieceId
    * @param {number} practice.startMeasure
    * @param {number} practice.endMeasure
+   * @param {string} [practice.hand] one of HANDS in st/srs/records, "both" by default
    * @param {number} practice.hits
    * @param {number} practice.misses
    * @param {number} [practice.at] when it was practiced, defaults to now
    * @param {number} [practice.elapsedMs] time spent playing it, added to the
-   * section's elapsedMs
-   * @returns {Promise<SectionStatsRecord>}
+   * item's elapsedMs
+   * @returns {Promise<SectionStatsRecord>} the section stats of the range
    */
   recordSectionPractice(practice) {
     return this.mutate(async () => {
-      let record = this.sectionPracticeRecord(practice)
-      await this.backend.write([{store: "sectionStats", put: record}])
-      this.cacheSectionStats(record)
-      return record
+      let item = this.practicedItem(practice)
+      await this.backend.write([{store: "items", put: item}])
+      this.cacheItems([item])
+      return this.sectionStats(item.pieceId).find(stats =>
+        stats.startMeasure == item.startMeasure && stats.endMeasure == item.endMeasure)
     })
   }
 
-  // the stats of the practiced section with the practice added
-  sectionPracticeRecord({pieceId, startMeasure, endMeasure, hits, misses, at=Date.now(), elapsedMs}) {
-    let section = {pieceId, startMeasure, endMeasure}
-    let current = this.cache.sectionStats.find(stats => sameSection(stats, section)) ||
-      {...section, hits: 0, misses: 0, attempts: 0, lastPracticed: 0}
+  // the item of the practiced range with the practice added
+  practicedItem({pieceId, startMeasure, endMeasure, hand="both", hits, misses, at=Date.now(), elapsedMs}) {
+    let range = {pieceId, hand, startMeasure, endMeasure}
+    let current = this.item(itemId(range)) || newItem(range, at)
+    let item = itemWithPractice(current, {hits, misses, at, elapsedMs})
 
-    let record = {
-      ...current,
-      hits: current.hits + hits,
-      misses: current.misses + misses,
-      attempts: current.attempts + (hits || misses ? 1 : 0),
-      lastPracticed: Math.max(current.lastPracticed, at),
-    }
-
-    // only sections timed once carry the field
-    if (elapsedMs !== undefined || current.elapsedMs !== undefined) {
-      record.elapsedMs = (current.elapsedMs || 0) + Math.round(elapsedMs || 0)
-    }
-
-    if (!validSectionStats(record)) {
+    if (!validItem(item)) {
       throw new Error("Not a valid section practice")
     }
 
-    return record
+    return item
   }
 
-  cacheSectionStats(record) {
+  // replaces the cached items of the ids of items, adding the new ones last
+  cacheItems(items) {
+    let byId = new Map(items.map(item => [item.id, item]))
+    let known = new Set(this.cache.items.map(item => item.id))
     this.cache = {
       ...this.cache,
-      sectionStats: [...this.cache.sectionStats.filter(stats => !sameSection(stats, record)), record],
+      items: [
+        ...this.cache.items.map(item => byId.get(item.id) || item),
+        ...items.filter(item => !known.has(item.id)),
+      ],
+    }
+  }
+
+  cacheSession(session) {
+    this.cache = {
+      ...this.cache,
+      sessions: [...this.cache.sessions.filter(s => s.id != session.id), session].sort(byStart),
     }
   }
 
@@ -782,19 +1009,15 @@ export class LocalStore {
         throw new Error("Not a valid session")
       }
 
-      let stats = sectionPractice && this.sectionPracticeRecord(sectionPractice)
+      let item = sectionPractice && this.practicedItem(sectionPractice)
       await this.backend.write([
         {store: "sessions", put: session},
-        ...(stats ? [{store: "sectionStats", put: stats}] : []),
+        ...(item ? [{store: "items", put: item}] : []),
       ])
 
-      this.cache = {
-        ...this.cache,
-        sessions: [...this.cache.sessions.filter(s => s.id != session.id), session].sort(byStart),
-      }
-
-      if (stats) {
-        this.cacheSectionStats(stats)
+      this.cacheSession(session)
+      if (item) {
+        this.cacheItems([item])
       }
 
       return session
@@ -802,36 +1025,45 @@ export class LocalStore {
   }
 
   /**
-   * The pieces with their sources, section stats and every session, for a
-   * library file.
+   * The pieces with their sources, items, reviews, studies and every session,
+   * for a library file.
    * @returns {Promise<LibraryExport>}
    */
   exportLibrary() {
     return this.mutate(async () => {
       let pieceIds = new Set(this.cache.pieces.map(piece => piece.id))
-      let sources = (await this.backend.getAll("pieceSources"))
-        .filter(source => pieceIds.has(source.pieceId))
+      let [sources, reviews, sessions] = await Promise.all([
+        this.backend.getAll("pieceSources"),
+        this.backend.getAll("reviews"),
+        this.backend.getAll("sessions"),
+      ])
 
       return {
         format: LIBRARY_FORMAT,
         version: LIBRARY_VERSION,
         exportedAt: new Date().toISOString(),
         pieces: this.cache.pieces,
-        sources: sources.map(sourceToJSON),
-        sectionStats: this.cache.sectionStats,
-        sessions: (await this.backend.getAll("sessions")).sort(byStart),
+        sources: sources.filter(source => pieceIds.has(source.pieceId)).map(sourceToJSON),
+        items: this.cache.items,
+        reviews,
+        studies: this.cache.studies,
+        sessions: sessions.sort(byStart),
       }
     })
   }
 
   /**
-   * Merges an exported library into this one in a single write. Sources and
-   * section stats follow their piece (also when it matched a stored piece of
-   * another id). A source is added only to a piece without one that holds
-   * the same song, so importing a library fills in the sources of pieces
-   * stored before them but never gives a piece the source of another song.
-   * Section stats replace stored stats only when practiced more recently.
-   * Sessions are added unless one of the same id is stored.
+   * Merges an exported library into this one in a single write. Sources,
+   * items, reviews and studies follow their piece (also when it matched a
+   * stored piece of another id). A source is added only to a piece without
+   * one that holds the same song, so importing a library fills in the sources
+   * of pieces stored before them but never gives a piece the source of
+   * another song. An item replaces the stored item of its id only when
+   * practiced more recently; the section stats of a library before
+   * LIBRARY_VERSION 5 are read as tracked items with a legacy review, and
+   * replace only the totals of a stored item. Reviews are a union by key, and
+   * a study is added to a piece without one. Sessions are added unless one of
+   * the same id is stored.
    * @param {LibraryExport} data
    * @param {Object} [opts]
    * @param {number} [opts.maxPieces] the most pieces the library holds
@@ -849,7 +1081,8 @@ export class LocalStore {
 
       let report = {
         addedPieces: 0, existingPieces: 0, invalidPieces: 0, fullPieces: 0, addedSources: 0,
-        addedSections: 0, updatedSections: 0, addedSessions: 0, existingSessions: 0,
+        addedSections: 0, updatedSections: 0, addedReviews: 0, addedStudies: 0,
+        addedSessions: 0, existingSessions: 0,
       }
 
       let importedPieces = data.version < 2 ?
@@ -914,39 +1147,86 @@ export class LocalStore {
         report.addedSources += 1
       }
 
-      let sectionStats = [...this.cache.sectionStats]
+      let items = [...this.cache.items]
+      let itemIndex = new Map(items.map((item, idx) => [item.id, idx]))
+      let changedItems = new Set()
+      let reviewKeys = new Set((await this.backend.getAllKeys("reviews")).map(memoryKey))
+      let fileReviews = []
 
-      for (let stats of Array.isArray(data.sectionStats) ? data.sectionStats : []) {
-        if (!validSectionStats(stats) || !pieceIds.has(stats.pieceId)) {
-          continue
-        }
-
-        let record = {
-          pieceId: pieceIds.get(stats.pieceId),
-          startMeasure: stats.startMeasure,
-          endMeasure: stats.endMeasure,
-          hits: stats.hits,
-          misses: stats.misses,
-          attempts: stats.attempts,
-          lastPracticed: stats.lastPracticed,
-        }
-
-        if (stats.elapsedMs !== undefined) {
-          record.elapsedMs = stats.elapsedMs
-        }
-
-        let idx = sectionStats.findIndex(s => sameSection(s, record))
-        if (idx == -1) {
-          sectionStats.push(record)
+      // an imported item: added, or replacing the stored one when practiced
+      // more recently. totalsOnly keeps the rest of the stored item
+      let mergeItem = (record, {totalsOnly=false}={}) => {
+        let idx = itemIndex.get(record.id)
+        if (idx === undefined) {
+          itemIndex.set(record.id, items.length)
+          items.push(record)
           report.addedSections += 1
-        } else if (record.lastPracticed > sectionStats[idx].lastPracticed) {
-          sectionStats[idx] = record
+        } else if (record.lastPracticed > items[idx].lastPracticed) {
+          if (totalsOnly) {
+            let {hits, misses, attempts, lastPracticed, elapsedMs} = record
+            let current = {...items[idx], hits, misses, attempts, lastPracticed}
+            // an untimed row replaces the time too, as it replaced a timed row
+            delete current.elapsedMs
+            items[idx] = elapsedMs === undefined ? current : {...current, elapsedMs}
+          } else {
+            items[idx] = record
+          }
           report.updatedSections += 1
         } else {
-          continue
+          return
+        }
+        changedItems.add(record.id)
+      }
+
+      if (data.version < 5) {
+        for (let stats of Array.isArray(data.sectionStats) ? data.sectionStats : []) {
+          if (!validSectionStats(stats) || !pieceIds.has(stats.pieceId)) {
+            continue
+          }
+
+          let row = {...stats, pieceId: pieceIds.get(stats.pieceId)}
+          let item = itemFromSectionStats(row, now)
+          if (validItem(item)) {
+            mergeItem(item, {totalsOnly: true})
+            fileReviews.push(legacyReview(row))
+          }
+        }
+      } else {
+        for (let item of Array.isArray(data.items) ? data.items : []) {
+          if (validItem(item) && pieceIds.has(item.pieceId)) {
+            mergeItem(itemForPiece(item, pieceIds.get(item.pieceId)))
+          }
         }
 
-        ops.push({store: "sectionStats", put: record})
+        for (let review of Array.isArray(data.reviews) ? data.reviews : []) {
+          if (validReview(review) && pieceIds.has(review.pieceId)) {
+            fileReviews.push(reviewForPiece(review, pieceIds.get(review.pieceId)))
+          }
+        }
+      }
+
+      for (let review of fileReviews) {
+        let key = memoryKey(recordKey("reviews", review))
+        if (!reviewKeys.has(key)) {
+          reviewKeys.add(key)
+          ops.push({store: "reviews", put: review})
+          report.addedReviews += 1
+        }
+      }
+
+      for (let id of changedItems) {
+        ops.push({store: "items", put: items[itemIndex.get(id)]})
+      }
+
+      let studies = [...this.cache.studies]
+      for (let study of data.version >= 5 && Array.isArray(data.studies) ? data.studies : []) {
+        let pieceId = validStudy(study) && pieceIds.get(study.pieceId)
+        if (pieceId && !studies.some(s => s.pieceId == pieceId)) {
+          let record = {...study, pieceId}
+          studies.push(record)
+          ops.push({store: "studies", put: record})
+          report.addedStudies += 1
+        }
       }
 
       let sessionIds = new Set((await this.backend.getAll("sessions")).map(session => session.id))
@@ -976,7 +1256,8 @@ export class LocalStore {
 
       this.cache = {
         pieces: pieces.sort(byImportOrder),
-        sectionStats,
+        items,
+        studies,
         sessions: recentSessions.sort(byStart),
       }
 
@@ -991,7 +1272,7 @@ export class LocalStore {
   clear() {
     return this.mutate(async () => {
       await this.backend.clear()
-      this.cache = {pieces: [], sectionStats: [], sessions: []}
+      this.cache = emptyCache()
     })
   }
 
@@ -1004,6 +1285,8 @@ export class LocalStore {
     })
   }
 }
+
+const emptyCache = () => ({pieces: [], items: [], studies: [], sessions: []})
 
 let appStore = new LocalStore()
 
