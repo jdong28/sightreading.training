@@ -17,7 +17,8 @@ import {setAppStore} from "st/storage"
 import {importMusicXMLPiece, addPiece} from "st/sheet_music_deck"
 import {parseMusicXML} from "st/musicxml"
 import {SHEET_MUSIC_STORAGE_KEY, BOTH_HANDS} from "st/data"
-import {DRILL_STORAGE_KEY} from "st/generators"
+import {MAX_MEASURES_PER_CARD, RANDOM_ORDER, MeasureCardGenerator, cardColumns} from "st/measure_cards"
+import {DRILL_STORAGE_KEY, SheetMusicGenerator} from "st/generators"
 import {scopeEvent} from "st/events"
 import NoteStats from "st/note_stats"
 import {KeySignature} from "st/music"
@@ -322,8 +323,8 @@ describe("sight reading page", function() {
     }))
 
     renderPage()
-    // a plate too narrow for the section's columns at any allowed width
-    flushSync(() => page.setState({staffWidth: 200}))
+    // a plate too narrow for the card's columns at any allowed width
+    flushSync(() => page.setState({staffWidth: 120}))
 
     let columnsOf = () => page.state.notes.generator.cards[0].columns
     let layout = page.staffLayout()
@@ -363,7 +364,7 @@ describe("sight reading page", function() {
 
     let el = renderPage()
     // a plate narrow enough that the card is fitted at its narrowest columns
-    flushSync(() => page.setState({staffWidth: 200}))
+    flushSync(() => page.setState({staffWidth: 160}))
     expect(page.staffLayout().scale).toEqual(MIN_FIT_SCALE)
 
     await Promise.all([...el.querySelectorAll("img")].map(img => img.decode()))
@@ -400,40 +401,90 @@ describe("sight reading page", function() {
     }))
 
     renderPage()
-    flushSync(() => page.setState({staffWidth: 200}))
+    flushSync(() => page.setState({staffWidth: 160}))
 
     // the smallest staff still worth reading: a card that doesn't fit at it
     // runs past the plate's edge rather than shrinking further
-    expect(MIN_FIT_SCALE).toEqual(0.4)
-    expect(page.staffLayout().scale).toEqual(0.4)
+    expect(MIN_FIT_SCALE).toEqual(0.25)
+    expect(page.staffLayout().scale).toEqual(0.25)
 
     // and a plate with room for the card keeps the staff at its full size
     flushSync(() => page.setState({staffWidth: 1240}))
     expect(page.staffLayout().scale).toEqual(page.state.scale)
   })
 
-  it("fits a card of the score's busiest bars inside the plate", async function() {
+  it("fits a card that overflowed at the old 0.35 floor", async function() {
+    let {piece} = await importMusicXMLPiece("seconds.musicxml", secondsXML("Seconds", true), store)
+
+    window.localStorage.setItem(DRILL_STORAGE_KEY, JSON.stringify({staff: "grand", generator: "sheet music"}))
+    window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+      piece: piece.id, startMeasure: 1, endMeasure: 8, hand: BOTH_HANDS, measuresPerCard: "all",
+    }))
+
+    let el = renderPage()
+    // a plate narrow enough that the card needs a staff below the old 0.35
+    // floor, which would have clamped there and run past the edge
+    let wrapper = el.querySelector(`.${staffStyles.staff_wrapper}`)
+    wrapper.style.width = "230px"
+    flushSync(() => page.measureStaffWrapper())
+
+    let scale = page.staffLayout().scale
+    expect(scale).toBeGreaterThan(MIN_FIT_SCALE)
+    expect(scale).toBeLessThan(0.35)
+
+    await Promise.all([...el.querySelectorAll("img")].map(img => img.decode()))
+
+    // and every head of it is drawn inside that plate
+    let plate = wrapper.getBoundingClientRect()
+    let heads = [...el.querySelectorAll(`.${staffStyles.note}`)]
+
+    expect(heads.length).toBeGreaterThan(0)
+    for (let head of heads) {
+      expect(head.getBoundingClientRect().right).toBeLessThanOrEqual(plate.right)
+    }
+  })
+
+  it("fits a capped card of the score's busiest bars inside the plate", async function() {
     let {piece} = await importMusicXMLPiece("reverie.musicxml", reverieOpening(), store)
 
     window.localStorage.setItem(DRILL_STORAGE_KEY, JSON.stringify({staff: "grand", generator: "sheet music"}))
     window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
-      piece: piece.id, startMeasure: 1, endMeasure: 4, hand: BOTH_HANDS, measuresPerCard: "all",
+      piece: piece.id, startMeasure: 1, endMeasure: 4, hand: BOTH_HANDS,
+      measuresPerCard: String(MAX_MEASURES_PER_CARD),
     }))
 
     let el = renderPage()
     expect(page.state.mode).toEqual("wait")
 
-    // every head of the four bars, the ostinato's eighths and the heads their
-    // ties run on to, is drawn inside the plate it was fitted to, above the
-    // floor only the densest cards reach
-    let wrapper = el.querySelector(`.${staffStyles.staff_wrapper}`).getBoundingClientRect()
-    let heads = [...el.querySelectorAll(`.${staffStyles.note}`)]
+    // the busiest three bars of the score's opening, the most the cap shows,
+    // the trailing one bar card opening on its own numbered bar line
+    expect(page.state.notes.generator.cards.map(card => card.measures))
+      .toEqual([[1, 2, 3], [4]])
+    expect(cardColumns(page.state.notes.generator.cards[1])[0].measure).toEqual(4)
+    expect(page.currentCard().card.measures).toEqual([1, 2, 3])
 
-    expect(heads.length).toBeGreaterThan(20)
-    for (let head of heads) {
-      expect(head.getBoundingClientRect().right).toBeLessThanOrEqual(wrapper.right)
+    // every head of the card, the ostinato's eighths and the heads their ties
+    // run on to, is drawn inside the plate it was fitted to, above the floor
+    // only the densest cards reach
+    let expectHeadsInsidePlate = () => {
+      let wrapper = el.querySelector(`.${staffStyles.staff_wrapper}`).getBoundingClientRect()
+      let heads = [...el.querySelectorAll(`.${staffStyles.note}`)]
+
+      expect(heads.length).toBeGreaterThan(15)
+      for (let head of heads) {
+        expect(head.getBoundingClientRect().right).toBeLessThanOrEqual(wrapper.right)
+      }
     }
+
+    expectHeadsInsidePlate()
     expect(page.staffLayout().scale).toBeGreaterThan(MIN_FIT_SCALE)
+
+    // the whole section is capped to the same card, and fits the same way
+    flushSync(() => page.setGenerator(page.state.currentGenerator, {
+      ...page.state.currentGeneratorSettings, measuresPerCard: "all",
+    }))
+    expect(page.currentCard().card.measures).toEqual([1, 2, 3])
+    expectHeadsInsidePlate()
 
     // and on a laptop's plate the same card fits without shrinking the staff
     flushSync(() => page.setState({staffWidth: 1240}))
@@ -493,13 +544,145 @@ describe("sight reading page", function() {
     expect(plateLabel()).toEqual("3 ♩ a bar · Card 2 · measures 3–4 of 1–8")
     expect(numberedBarLines()).toEqual(["3", "4"])
 
-    // the whole section loops without a card number, its start coming round
-    // again after its last measure
+    // the whole section is walked in capped cards too, so it never shows
+    // more bars at once than a flashcard deck does
     flushSync(() => page.setGenerator(page.state.currentGenerator, {
       ...page.state.currentGeneratorSettings, measuresPerCard: "all",
     }))
-    expect(plateLabel()).toEqual("3 ♩ a bar · measures 1–8")
-    expect(numberedBarLines()).toEqual(["1", "2", "3", "4", "5", "6", "7", "8", "1", "2"])
+    expect(plateLabel()).toEqual("3 ♩ a bar · Card 1 · measures 1–3 of 1–8")
+    expect(numberedBarLines()).toEqual(["1", "2", "3"])
+
+    // the walk's trailing one bar card opens with its numbered bar line like
+    // the cards before it
+    flushSync(() => page.setGenerator(page.state.currentGenerator, {
+      ...page.state.currentGeneratorSettings, measuresPerCard: "all", endMeasure: 7,
+    }))
+    expect(plateLabel()).toEqual("3 ♩ a bar · Card 1 · measures 1–3 of 1–7")
+
+    for (let i = 0; i < 6; i++) {
+      play(page.state.notes.currentColumn())
+    }
+
+    expect(plateLabel()).toEqual("3 ♩ a bar · Card 3 · measure 7 of 1–7")
+    expect(numberedBarLines()).toEqual(["7"])
+
+    // a section the cap already fits loops without a card number, its start
+    // coming round again after its last measure
+    flushSync(() => page.setGenerator(page.state.currentGenerator, {
+      ...page.state.currentGeneratorSettings, measuresPerCard: "all", endMeasure: 3,
+    }))
+    expect(plateLabel()).toEqual("3 ♩ a bar · measures 1–3")
+    expect(numberedBarLines().slice(0, 4)).toEqual(["1", "2", "3", "1"])
+  })
+
+  it("scrolls the whole section as one card and walks it in capped cards while waiting", async function() {
+    let {piece} = await importMusicXMLPiece("salon_octet.musicxml", octetXML, store)
+
+    window.localStorage.setItem(DRILL_STORAGE_KEY, JSON.stringify({
+      staff: "grand", generator: "sheet music", mode: "scroll",
+    }))
+    window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+      piece: piece.id, startMeasure: 1, endMeasure: 8, hand: BOTH_HANDS, measuresPerCard: "all",
+    }))
+
+    renderPage()
+    let generator = () => page.state.notes.generator
+    let wholeSection = [1, 2, 3, 4, 5, 6, 7, 8]
+
+    // nothing is fitted to the plate while scrolling, so the section runs on
+    // as one looping card, without the blank stretch between cards
+    expect(page.state.mode).toEqual("scroll")
+    expect(generator() instanceof SheetMusicGenerator).toBe(true)
+    expect(page.currentCard().card.measures).toEqual(wholeSection)
+    expect(page.currentCard().number).toBe(null)
+    expect([...page.state.notes].some(column => !column.length)).toBe(false)
+
+    // waiting fits the card to the plate, where the cap holds
+    flushSync(() => page.setMode("wait"))
+    expect(generator() instanceof MeasureCardGenerator).toBe(true)
+    expect(generator().cards.map(card => card.measures)).toEqual([[1, 2, 3], [4, 5, 6], [7, 8]])
+    expect(page.currentCard().card.measures).toEqual([1, 2, 3])
+
+    flushSync(() => page.setMode("scroll"))
+    expect(generator() instanceof SheetMusicGenerator).toBe(true)
+    expect(page.currentCard().card.measures).toEqual(wholeSection)
+  })
+
+  it("keeps a card size drill on its card through a mode toggle", async function() {
+    let {piece} = await importMusicXMLPiece("salon_octet.musicxml", octetXML, store)
+
+    window.localStorage.setItem(DRILL_STORAGE_KEY, JSON.stringify({staff: "grand", generator: "sheet music"}))
+    window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+      piece: piece.id, startMeasure: 1, endMeasure: 8, hand: BOTH_HANDS, measuresPerCard: "2",
+    }))
+
+    let el = renderPage()
+    let plateLabel = () => el.querySelector("[aria-live]").previousElementSibling.textContent
+
+    click(buttonNamed(el, "Begin"))
+    let drilling = page.state.notes.generator
+    play(page.state.notes.currentColumn())
+    expect(plateLabel()).toEqual("3 ♩ a bar · Card 1 · measures 1–2 of 1–8")
+
+    // a card size plays the same either way, so the mode leaves the deck be
+    flushSync(() => page.setMode("scroll"))
+    flushSync(() => page.setMode("wait"))
+    expect(page.state.notes.generator).toBe(drilling)
+
+    // the card's last measure is still the one to play, so it is done with
+    play(page.state.notes.currentColumn())
+    expect(plateLabel()).toEqual("3 ♩ a bar · Card 2 · measures 3–4 of 1–8")
+  })
+
+  it("draws no bar line for a section of a single measure", async function() {
+    let {piece} = await importMusicXMLPiece("salon_octet.musicxml", octetXML, store)
+
+    window.localStorage.setItem(DRILL_STORAGE_KEY, JSON.stringify({staff: "grand", generator: "sheet music"}))
+    window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+      piece: piece.id, startMeasure: 3, endMeasure: 3, hand: BOTH_HANDS, measuresPerCard: "2",
+    }))
+
+    let el = renderPage()
+    let barLines = () => el.querySelectorAll(`.${staffStyles.bar_line}`).length
+
+    expect(page.currentCard().card.measures).toEqual([3])
+    expect(barLines()).toEqual(0)
+
+    // the lone bar is drawn the same way at every card size
+    for (let size of [String(MAX_MEASURES_PER_CARD), "1", "all"]) {
+      flushSync(() => page.setGenerator(page.state.currentGenerator, {
+        ...page.state.currentGeneratorSettings, measuresPerCard: size,
+      }))
+      expect(page.currentCard().card.measures).toEqual([3])
+      expect(barLines()).toEqual(0)
+    }
+  })
+
+  it("offers the order control only once a card size is picked", async function() {
+    let {piece} = await importMusicXMLPiece("salon_octet.musicxml", octetXML, store)
+
+    window.localStorage.setItem(DRILL_STORAGE_KEY, JSON.stringify({staff: "grand", generator: "sheet music"}))
+    window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+      piece: piece.id, startMeasure: 1, endMeasure: 8, hand: BOTH_HANDS,
+      measuresPerCard: "all", order: RANDOM_ORDER,
+    }))
+
+    let el = renderPage()
+    click(buttonLabelled(el, "Programme"))
+
+    let drawer = el.querySelector(`.${drawerStyles.drawer}`)
+    let pills = label => drawer.querySelector(`[role="group"][aria-label="${label}"]`)
+
+    // the whole section is always walked in order, so no order to pick
+    expect(pills("measures per card")).not.toBe(null)
+    expect(pills("order")).toBe(null)
+
+    // and the stored random order is still there to apply to a card size
+    click([...pills("measures per card").querySelectorAll("button")]
+      .find(pill => pill.textContent == "2"))
+
+    expect(pills("order")).not.toBe(null)
+    expect(page.state.notes.generator.deck.order).toEqual(RANDOM_ORDER)
   })
 
   it("keeps a score note below the staff inside the plate in both modes", async function() {

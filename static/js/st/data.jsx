@@ -7,7 +7,7 @@ import {shiftNotationOctaves} from "st/song_parser"
 import {
   RandomNotes, SweepRangeNotes, MiniSteps, TriadNotes, SevenOpenNotes,
   ProgressionGenerator, PositionGenerator, IntervalGenerator, SheetMusicGenerator,
-  allKeySignatures
+  allKeySignatures, currentDrillMode
 } from "st/generators"
 
 import {
@@ -202,21 +202,39 @@ export function pieceSectionMeasures(staff, settings, song) {
     })
 }
 
-// The measures of the piece section as flashcards (see st/measure_cards),
-// or null for pasted notation, the whole section drill or a section without
-// notes on the staff. The deck of the latest settings is kept so a rebuilt
-// generator carries on from the card being shown
+// The measures of the piece section as flashcards (see st/measure_cards), or
+// null for pasted notation, a section that is one whole section card or a
+// section without notes on the staff. A card is fitted to the plate in the
+// wait mode only, so that is where the cap holds: a whole section longer than
+// MAX_MEASURES_PER_CARD is walked in order as capped cards, wrapping back to
+// the section's start, while a scrolling one runs on as the single looping
+// card. The deck of the latest settings is kept so a rebuilt generator carries
+// on from the card being shown
 let cardDeck = null
+
+// whether the drill plays the whole section rather than cards of a few
+// measures, the one card size whose deck depends on the drill mode
+export function wholeSectionDrill(settings) {
+  return !(Number(settings.measuresPerCard) >= 1)
+}
 
 export function measureCardDeck(staff, settings) {
   let piece = sheetMusicPiece(settings)
-  if (!piece || !(Number(settings.measuresPerCard) >= 1)) {
+  if (!piece) {
     return null
   }
 
+  let wholeSection = wholeSectionDrill(settings)
+  if (wholeSection && currentDrillMode() != "wait") {
+    return null
+  }
+
+  let perCard = wholeSection ? MAX_MEASURES_PER_CARD : settings.measuresPerCard
+  let order = wholeSection ? IN_ORDER : settings.order
+
   let key = JSON.stringify([
     piece.id, staff.name, staff.range, settings.startMeasure, settings.endMeasure,
-    settings.hand, settings.measuresPerCard, settings.order,
+    settings.hand, settings.measuresPerCard, order,
   ])
 
   if (cardDeck && cardDeck.key == key && cardDeck.piece == piece) {
@@ -224,12 +242,13 @@ export function measureCardDeck(staff, settings) {
   }
 
   let measures = pieceSectionMeasures(staff, settings, pieceSong(piece))
-  let deck = new MeasureCardDeck(measureCards(measures, settings.measuresPerCard), {
-    pieceId: piece.id,
-    order: settings.order,
-  })
+  let cards = measureCards(measures, perCard)
 
-  if (!deck.playable) {
+  // a whole section the cap already fits stays the single looping card
+  let deck = wholeSection && cards.length < 2 ? null :
+    new MeasureCardDeck(cards, {pieceId: piece.id, order})
+
+  if (deck && !deck.playable) {
     deck = null
   }
 
@@ -648,7 +667,7 @@ export const GENERATORS = [
           {name: WHOLE_SECTION},
           ...Array.from({length: MAX_MEASURES_PER_CARD}, (_, idx) => ({name: `${idx + 1}`})),
         ],
-        hint: "All loops the whole section. A number shows that many measures of the section at a time, like a flashcard.",
+        hint: `All plays the whole section in order: up to ${MAX_MEASURES_PER_CARD} measures at a time in wait mode, continuously in scroll mode. A number shows that many measures of the section at a time, like a flashcard.`,
         visible: settings => !!sheetMusicPiece(settings),
       },
       {
@@ -660,7 +679,7 @@ export const GENERATORS = [
           {name: RANDOM_ORDER},
         ],
         hint: "Random picks the measures you miss most more often.",
-        visible: settings => !!sheetMusicPiece(settings),
+        visible: settings => !!sheetMusicPiece(settings) && Number(settings.measuresPerCard) >= 1,
       },
     ],
     // shown under the inputs in the settings panel
@@ -686,7 +705,7 @@ export const GENERATORS = [
         return new MeasureCardGenerator(deck, {recordNotes})
       }
 
-      // the whole section of a piece loops as one card, its measures marked
+      // a whole section the cap fits loops as one card, its measures marked
       let piece = sheetMusicPiece(settings)
       let measures = piece ? pieceSectionMeasures(staff, settings, pieceSong(piece)) : []
       if (measures.length) {

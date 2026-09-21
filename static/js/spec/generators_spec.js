@@ -1,6 +1,9 @@
 import {ShapeGenerator, Generator, generatorDefaultSettings} from "st/generators"
 import {ChordGenerator, MultiKeyChordGenerator} from "st/chord_generators"
-import {STAVES, GENERATORS, SHEET_MUSIC_STORAGE_KEY, LEGACY_SHEET_MUSIC_STORAGE_KEY} from "st/data"
+import {
+  STAVES, GENERATORS, SHEET_MUSIC_STORAGE_KEY, LEGACY_SHEET_MUSIC_STORAGE_KEY, WHOLE_SECTION
+} from "st/data"
+import {MAX_MEASURES_PER_CARD} from "st/measure_cards"
 import Keyboard from "st/components/keyboard"
 
 import {
@@ -206,6 +209,14 @@ describe("octave numbering", function() {
       // settings stored since aren't renumbered again
       window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({piece: "", song: "e4"}))
       expect(generatorDefaultSettings(sheetMusic(), treble()).song).toEqual("e4")
+    })
+
+    it("falls back to the default for a measures-per-card the cap no longer offers", function() {
+      window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+        piece: "", song: "", measuresPerCard: String(MAX_MEASURES_PER_CARD + 5),
+      }))
+      expect(generatorDefaultSettings(sheetMusic(), treble()).measuresPerCard)
+        .toEqual(WHOLE_SECTION)
     })
   })
 })
