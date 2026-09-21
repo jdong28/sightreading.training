@@ -25,7 +25,8 @@ The available generator types:
 *   **Sevens** — Chooses a random [seventh chord](https://en.wikipedia.org/wiki/Seventh_chord) with open voicing (this one sounds the most pleasant)
 *   **Progression** — Chooses a random chord from a popular progression within the key signature
 *   **Position** — Generates notes in a way that encourages you to use all of your fingers. See below for more information
-*   **Sheet music** — Drills a section of a MusicXML piece or song you provide, one column of notes at a time. See below for more information
+
+To read a real piece instead, use the **[Sheet music](/sheet-music)** page, described below.
 
 ## The smoothness parameter
 
@@ -47,19 +48,19 @@ The following parameters are available for the **Random** generator:
 
 The **Position Generator** is designed to have you utilize all of your fingers while sight reading. You'll be given notes in sets of 5, the first note will contain a fingering. All subsequent notes should be played without moving your hand, and with using each of your fingers.
 
-### The Sheet Music Generator
+### The Sheet Music Page
 
-The **Sheet Music** generator turns a section of a piece into flash cards for repeated sight reading and memorization.
+The **[Sheet music](/sheet-music)** page turns a section of a piece into flash cards for repeated sight reading and memorization. Its **Programme** drawer holds only what applies to a real score: the piece, its section, the hand, the cards and the tempo. The score supplies its own staves, clefs and key, so there is no clef, exercise or key setting there.
 
 Use **Import MusicXML** to load an uncompressed MusicXML file (`.musicxml` or `.xml`). Imported pieces are kept in your browser as a deck, so next time you pick the piece from the list instead of importing it again; **Remove** deletes the picked piece from the deck. For a piece, choose:
 
 *   **Start measure** and **end measure** — The section to drill, using the bar numbers printed on the score (a pickup measure is 0)
 *   **Hand** — Both hands, the right hand (treble staff) or the left hand (bass staff)
 
-Picking or importing a piece with both a treble and a bass staff while a single staff is selected switches to the grand staff, so neither hand is skipped.
+A piece with both a treble and a bass staff is drawn on the grand staff, so neither hand is skipped, and a piece with one staff on that staff.
 
-A piece is drawn in the score's key signature at the start measure, so the key buttons are disabled while it is picked, and your own key returns when you pick something other than a piece. A score key without its own key signature on the trainer (more than 5 sharps or 6 flats) leaves your key in place. A piece imported before the trainer followed score keys shows "Re-import to follow the score key"; importing the same score again (same title, tracks and measure numbers) updates that piece in place and keeps its stats, while a different score with the same title is added as a new piece.
+A piece is drawn in the score's key signature at the start measure. A score key without its own key signature on the trainer (more than 5 sharps or 6 flats) is drawn in C major. A piece imported before the trainer followed score keys shows "Re-import to follow the score key"; importing the same score again (same title, tracks and measure numbers) updates that piece in place and keeps its stats, while a different score with the same title is added as a new piece.
 
 Alternatively, pick **Pasted song notation** and paste song notation in the play along format. Measures of pasted notation count from 1, and **Track** limits the section to one track of the song, or uses all tracks.
 
-Notes that start on the same beat are shown together as one column, and the section loops once you reach its end. An imported piece is drawn with the score's rhythm — note values, dots, rests and ties, with longer notes given more room — but rhythm is never judged: play the right notes of a column to move on, whatever their length, and rests and ties are only drawn, never played. Beams, slurs and tuplet brackets are not drawn yet, so a beamed eighth shows its flag. Pasted song notation, and a piece imported before the trainer drew rhythm, are drawn as whole notes a column apart; import the score again to redraw a piece with its rhythm. Notes outside the range of the chosen staff are skipped, and the programme drawer reports how many. Generated accompaniment from chord symbols is not included. The piece or song, section, hand or track, staff and generator are saved in your browser, so reloading the page returns to the same drill.
+Notes that start on the same beat are shown together as one column, and the section loops once you reach its end. An imported piece is drawn with the score's rhythm — note values, dots, rests and ties, with longer notes given more room — but rhythm is never judged: play the right notes of a column to move on, whatever their length, and rests and ties are only drawn, never played. Beams, slurs and tuplet brackets are not drawn yet, so a beamed eighth shows its flag. Pasted song notation, and a piece imported before the trainer drew rhythm, are drawn as whole notes a column apart; import the score again to redraw a piece with its rhythm. Notes outside the range of the chosen staff are skipped, and the programme drawer reports how many. Generated accompaniment from chord symbols is not included. The piece or song, section, hand or track, wait or scroll mode and speed are saved in your browser, so reloading the page returns to the same drill.
