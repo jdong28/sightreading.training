@@ -853,6 +853,12 @@ export default class SightReadingPage extends React.Component {
           return false
         }
 
+        // nothing to play (eg. an empty section): no key is a slip, as no
+        // release is a miss
+        if (!notes.currentColumn().length) {
+          return false
+        }
+
         let touched = Object.keys(this.state.touchedNotes);
         let matched = notes.matchesHead(touched, anyOctave)
 

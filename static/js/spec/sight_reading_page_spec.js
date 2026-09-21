@@ -1349,6 +1349,18 @@ describe("sight reading page", function() {
       expect(counts()).toEqual([2, 2])
     })
 
+    it("counts nothing for keys pressed on an empty head column", function() {
+      let el = renderPage()
+      click(buttonNamed(el, "Begin"))
+
+      flushSync(() => page.setState({notes: new NoteList([[], ["C4"]])}))
+      play([WRONG_NOTE])
+      press("C4")
+      release("C4")
+      expect(counts()).toEqual([0, 0])
+      expect(page.state.noteShaking).toBe(false)
+    })
+
     it("counts a column missed once however many slips and releases it takes", function() {
       let el = renderPage()
       click(buttonNamed(el, "Begin"))
