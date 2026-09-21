@@ -44,39 +44,17 @@ function SettingsGroup({label, aside, className, children}) {
   </section>
 }
 
-// The programme drawer: the settings for the sight reading trainer, sliding
-// in from the left over a scrim. Settings apply as they are picked; "Take
-// your seat" closes the drawer and regenerates the passage
-export class ProgrammeDrawer extends React.PureComponent {
+// The drawer a trainer page's settings slide in from the left in, over a
+// scrim, focusing its close button as it opens
+export class SettingsDrawer extends React.PureComponent {
   static propTypes = {
     open: types.bool,
     close: types.func.isRequired,
-    apply: types.func.isRequired,
-    staves: types.array.isRequired,
-    generators: types.array.isRequired,
-    currentStaff: types.object,
-    currentGenerator: types.object,
-    currentGeneratorSettings: types.object,
-    currentKey: types.object.isRequired,
-    setStaff: types.func.isRequired,
-    setGenerator: types.func.isRequired,
-    setKeySignature: types.func.isRequired,
-    mode: types.oneOf(["wait", "scroll"]),
-    setMode: types.func.isRequired,
-    scrollSpeed: types.number.isRequired,
-    setScrollSpeed: types.func.isRequired,
   }
 
   constructor(props) {
     super(props)
-    this.state = {}
     this.closeButton = React.createRef()
-  }
-
-  componentDidMount() {
-    if (ENABLE_PRESETS) {
-      this.loadPresets()
-    }
   }
 
   componentDidUpdate(prevProps) {
@@ -118,37 +96,111 @@ export class ProgrammeDrawer extends React.PureComponent {
         <div className={styles.drawer_rule} />
 
         <div className={styles.drawer_body}>
-          {this.renderPresets()}
-
-          <SettingsGroup label="Clef">
-            {this.renderStaves()}
-          </SettingsGroup>
-
-          {this.props.currentStaff ?
-            <SettingsGroup label="Exercise" className={styles.exercise_group}>
-              {this.renderGenerators()}
-            </SettingsGroup> : null}
-
-          <SettingsGroup label="Tempo" aside={this.props.scrollSpeed}>
-            {this.renderTempo()}
-          </SettingsGroup>
-
-          <SettingsGroup label="Key">
-            {this.renderKeys()}
-          </SettingsGroup>
-
-          <Pill
-            variant="primary"
-            className={styles.apply_button}
-            onClick={this.props.apply}>Take your seat</Pill>
-
-          <Pill
-            variant="ghost"
-            className={styles.apply_button}
-            to="/setup">Set programme</Pill>
+          {this.props.children}
         </div>
       </aside>
     </>
+  }
+}
+
+// the page's wait or scroll mode and scroll speed. The speed applies when
+// scroll mode is entered, so it is fixed while scrolling
+function TempoSettings({mode, setMode, scrollSpeed, setScrollSpeed}) {
+  return <SettingsGroup label="Tempo" aside={scrollSpeed}>
+    <div className={styles.pills}>
+      {[["wait", "Wait"], ["scroll", "Scroll"]].map(([value, label]) =>
+        <Pill
+          variant="choice"
+          key={value}
+          selected={mode == value}
+          onClick={() => setMode(value)}>{label}</Pill>
+      )}
+    </div>
+
+    <div className={styles.tempo_track}>
+      <Slider
+        className={styles.gilt_slider}
+        min={50}
+        max={300}
+        disabled={mode == "scroll"}
+        onChange={value => setScrollSpeed(Math.round(value))}
+        value={+scrollSpeed} />
+    </div>
+
+    <div className={styles.tempo_legend} aria-hidden="true">
+      <span>Largo</span>
+      <span>Presto</span>
+    </div>
+  </SettingsGroup>
+}
+
+// The programme drawer of the exercises page: its staff, exercise, tempo and
+// key. Settings apply as they are picked; "Take your seat" closes the drawer
+// and regenerates the passage
+export class ProgrammeDrawer extends React.PureComponent {
+  static propTypes = {
+    open: types.bool,
+    close: types.func.isRequired,
+    apply: types.func.isRequired,
+    staves: types.array.isRequired,
+    generators: types.array.isRequired,
+    currentStaff: types.object,
+    currentGenerator: types.object,
+    currentGeneratorSettings: types.object,
+    currentKey: types.object.isRequired,
+    setStaff: types.func.isRequired,
+    setGenerator: types.func.isRequired,
+    setKeySignature: types.func.isRequired,
+    mode: types.oneOf(["wait", "scroll"]),
+    setMode: types.func.isRequired,
+    scrollSpeed: types.number.isRequired,
+    setScrollSpeed: types.func.isRequired,
+  }
+
+  constructor(props) {
+    super(props)
+    this.state = {}
+  }
+
+  componentDidMount() {
+    if (ENABLE_PRESETS) {
+      this.loadPresets()
+    }
+  }
+
+  render() {
+    return <SettingsDrawer open={this.props.open} close={this.props.close}>
+      {this.renderPresets()}
+
+      <SettingsGroup label="Clef">
+        {this.renderStaves()}
+      </SettingsGroup>
+
+      {this.props.currentStaff ?
+        <SettingsGroup label="Exercise" className={styles.exercise_group}>
+          {this.renderGenerators()}
+        </SettingsGroup> : null}
+
+      <TempoSettings
+        mode={this.props.mode}
+        setMode={this.props.setMode}
+        scrollSpeed={this.props.scrollSpeed}
+        setScrollSpeed={this.props.setScrollSpeed} />
+
+      <SettingsGroup label="Key">
+        {this.renderKeys()}
+      </SettingsGroup>
+
+      <Pill
+        variant="primary"
+        className={styles.apply_button}
+        onClick={this.props.apply}>Take your seat</Pill>
+
+      <Pill
+        variant="ghost"
+        className={styles.apply_button}
+        to="/setup">Set programme</Pill>
+    </SettingsDrawer>
   }
 
   savePreset(e) {
@@ -281,37 +333,6 @@ export class ProgrammeDrawer extends React.PureComponent {
       setGenerator={this.props.setGenerator} />
   }
 
-  // the page's wait or scroll mode and scroll speed. The speed applies when
-  // scroll mode is entered, so it is fixed while scrolling
-  renderTempo() {
-    return <>
-      <div className={styles.pills}>
-        {[["wait", "Wait"], ["scroll", "Scroll"]].map(([mode, label]) =>
-          <Pill
-            variant="choice"
-            key={mode}
-            selected={this.props.mode == mode}
-            onClick={() => this.props.setMode(mode)}>{label}</Pill>
-        )}
-      </div>
-
-      <div className={styles.tempo_track}>
-        <Slider
-          className={styles.gilt_slider}
-          min={50}
-          max={300}
-          disabled={this.props.mode == "scroll"}
-          onChange={value => this.props.setScrollSpeed(Math.round(value))}
-          value={+this.props.scrollSpeed} />
-      </div>
-
-      <div className={styles.tempo_legend} aria-hidden="true">
-        <span>Largo</span>
-        <span>Presto</span>
-      </div>
-    </>
-  }
-
   renderKeys() {
     let keys = allKeySignatures()
     let generator = this.props.currentGenerator
@@ -341,6 +362,68 @@ export class ProgrammeDrawer extends React.PureComponent {
       </div>
       {hint ? <div className={styles.input_hint}>{hint}</div> : null}
     </>
+  }
+}
+
+// The score page's drawer: the imported piece, the section of it to drill
+// and the tempo. The score supplies its own staves, clefs and key, so none of
+// the exercises' clef, exercise or key settings are here
+export class ScoreDrawer extends React.PureComponent {
+  static propTypes = {
+    open: types.bool,
+    close: types.func.isRequired,
+    apply: types.func.isRequired,
+    currentStaff: types.object,
+    currentGenerator: types.object,
+    currentGeneratorSettings: types.object,
+    currentKey: types.object.isRequired,
+    setGenerator: types.func.isRequired,
+    mode: types.oneOf(["wait", "scroll"]),
+    setMode: types.func.isRequired,
+    scrollSpeed: types.number.isRequired,
+    setScrollSpeed: types.func.isRequired,
+  }
+
+  render() {
+    let generator = this.props.currentGenerator
+    let staff = this.props.currentStaff
+
+    return <SettingsDrawer open={this.props.open} close={this.props.close}>
+      {generator && staff ?
+        <SettingsGroup label="Score">
+          <GeneratorSettings
+            generator={generator}
+            currentKey={this.props.currentKey}
+            currentStaff={staff}
+            currentSettings={this.props.currentGeneratorSettings}
+            setGenerator={this.props.setGenerator} />
+          {this.renderKeyHint()}
+        </SettingsGroup> : null}
+
+      <TempoSettings
+        mode={this.props.mode}
+        setMode={this.props.setMode}
+        scrollSpeed={this.props.scrollSpeed}
+        setScrollSpeed={this.props.setScrollSpeed} />
+
+      <Pill
+        variant="primary"
+        className={styles.apply_button}
+        onClick={this.props.apply}>Take your seat</Pill>
+    </SettingsDrawer>
+  }
+
+  // eg. why a piece is drawn without its score's key
+  renderKeyHint() {
+    let generator = this.props.currentGenerator
+    if (!generator.keyHint) { return }
+
+    let hint = generator.keyHint({
+      ...generatorDefaultSettings(generator, this.props.currentStaff),
+      ...this.props.currentGeneratorSettings,
+    })
+
+    return hint ? <div className={styles.input_hint}>{hint}</div> : null
   }
 }
 

@@ -7,7 +7,7 @@ import {shiftNotationOctaves} from "st/song_parser"
 import {
   RandomNotes, SweepRangeNotes, MiniSteps, TriadNotes, SevenOpenNotes,
   ProgressionGenerator, PositionGenerator, IntervalGenerator, SheetMusicGenerator,
-  allKeySignatures, currentDrillMode
+  allKeySignatures, currentDrillMode, SCORE_DRILL_STORAGE_KEY
 } from "st/generators"
 
 import {
@@ -225,7 +225,7 @@ export function measureCardDeck(staff, settings) {
   }
 
   let wholeSection = wholeSectionDrill(settings)
-  if (wholeSection && currentDrillMode() != "wait") {
+  if (wholeSection && currentDrillMode(SCORE_DRILL_STORAGE_KEY) != "wait") {
     return null
   }
 
@@ -373,7 +373,7 @@ export const STAVES = [
   }
 ]
 
-export const GENERATORS = [
+const ALL_GENERATORS = [
   {
     name: "random",
     // shown in the programme drawer and the trainer title
@@ -810,3 +810,11 @@ export const GENERATORS = [
   }
 
 ]
+
+// An imported piece is drilled on its own page (st/components/pages/score_page)
+// rather than as one of the trainer's exercises, whose clef, key and range
+// settings the score supplies itself
+export const SHEET_MUSIC_GENERATOR = ALL_GENERATORS.find(g => g.name == "sheet music")
+
+// the exercises the trainer page offers
+export const GENERATORS = ALL_GENERATORS.filter(g => g != SHEET_MUSIC_GENERATOR)

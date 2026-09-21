@@ -35,6 +35,7 @@ describe("header", function() {
     let el = renderHeader()
     expect(navLinks(el)).toEqual([
       ["Sight reading", "/"],
+      ["Sheet music", "/sheet-music"],
       ["Play along", "/play-along"],
       ["Ear training", "/ear-training/interval-melodies"],
       ["Flash cards", "/flash-cards/note-math"],
@@ -53,6 +54,7 @@ describe("header", function() {
     ["/ear-training/melody-playback", "Ear training"],
     ["/flash-cards/chord-identification", "Flash cards"],
     ["/play-along/recent", "Play along"],
+    ["/sheet-music", "Sheet music"],
   ]) {
     it(`marks ${label} active on ${path}`, function() {
       let el = renderHeader({}, {path})
@@ -102,7 +104,7 @@ describe("header", function() {
     flushSync(() => toggle.click())
 
     expect(navLinks(el).map(([label]) => label)).toEqual([
-      "Sight reading", "Play along", "Ear training", "Flash cards", "Statistics", "Guide",
+      "Sight reading", "Sheet music", "Play along", "Ear training", "Flash cards", "Statistics", "Guide",
     ])
   })
 })
