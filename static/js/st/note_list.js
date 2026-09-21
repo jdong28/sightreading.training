@@ -153,6 +153,28 @@ export default class NoteList extends Array {
       !column.some(head => this.sameNote(note, head, anyOctave)))
   }
 
+  // The head column's notes a try gone wrong is blamed on, from the keys
+  // touched: those not touched, or with every one touched, the ones nearest
+  // the stray keys
+  blamedNotes(notes, anyOctave=false) {
+    let column = this.currentColumn()
+    let untouched = column.filter(head =>
+      !notes.some(note => this.sameNote(note, head, anyOctave)))
+    if (untouched.length) {
+      return untouched
+    }
+
+    let stray = this.strayNotes(notes, anyOctave)
+    if (!stray.length) {
+      return column
+    }
+
+    let distance = head =>
+      Math.min(...stray.map(note => Math.abs(parseNote(note) - parseNote(head))))
+    let nearest = Math.min(...column.map(distance))
+    return column.filter(head => distance(head) == nearest)
+  }
+
   sameNote(a, b, anyOctave) {
     return anyOctave ? notesSame(a, b) : parseNote(a) == parseNote(b)
   }

@@ -19,9 +19,13 @@ export function settingsSummary(settings) {
 // told about every hit and miss counted by any stats, see addNoteListener
 const noteListeners = new Set()
 
-// Calls fn({type: "hit" or "miss", time}) after every hit and miss counted by
-// any NoteStats, eg. so the measure flashcards (st/measure_cards) can tell
-// which measure the player got wrong. Returns a function that removes it
+// Calls fn({type, time, notes, blamed, stats}) after every hit and miss
+// counted by any NoteStats (type "hit" or "miss", with the notes played or
+// missed, for a miss the notes it is put down to, and the stats counting
+// them), eg. so the measure flashcards (st/measure_cards)
+// can tell which measure the player got wrong, and for each further slip on
+// a column already counted missed (type "slip", counting nothing). Returns a
+// function that removes it
 export function addNoteListener(fn) {
   noteListeners.add(fn)
   return () => noteListeners.delete(fn)
@@ -58,6 +62,9 @@ export default class NoteStats {
     this.bestStreak = 0
     this.hits = 0
     this.misses = 0
+    // hits and misses by the clef sign the notes were read in, {g: {hits,
+    // misses}}, told by whoever knows the clefs (see countClefs)
+    this.clefs = {}
 
     // times of the first and last note played
     this.startedAt = undefined
@@ -151,10 +158,12 @@ export default class NoteStats {
     this.hits += 1;
     this.buffer.hits += 1;
     this.flushLater()
-    notifyNoteListeners({type: "hit", time: now})
+    notifyNoteListeners({type: "hit", time: now, notes, stats: this})
   }
 
-  missNotes(notes) {
+  // blamed are the notes the miss is put down to, eg. for the score staff it
+  // is counted against, the notes by default
+  missNotes(notes, blamed=notes) {
     let now = +new Date
     this.endSessionAfterPause(now)
 
@@ -169,7 +178,27 @@ export default class NoteStats {
     this.misses += 1;
     this.buffer.misses += 1;
     this.flushLater()
-    notifyNoteListeners({type: "miss", time: now})
+    notifyNoteListeners({type: "miss", time: now, notes, blamed, stats: this})
+  }
+
+  // A further slip on a column already counted missed: nothing more is
+  // counted, but the listeners are told, eg. for the grade of the measure
+  // cards, which counts every slip
+  slipNotes(notes, blamed=notes) {
+    notifyNoteListeners({type: "slip", time: +new Date, notes, blamed, stats: this})
+  }
+
+  // Adds a hit or a miss (type) for each of the clef signs, eg. ["g", "f"]
+  // for a chord read on both staves of a grand staff
+  countClefs(signs, type) {
+    for (let sign of signs) {
+      let stats = this.clefs[sign] = this.clefs[sign] || {hits: 0, misses: 0}
+      if (type == "hit") {
+        stats.hits += 1
+      } else {
+        stats.misses += 1
+      }
+    }
   }
 
   markActivity(time) {
@@ -194,7 +223,7 @@ export default class NoteStats {
       notes[note] = {hits: stats.hits || 0, misses: stats.misses || 0}
     }
 
-    return {
+    let record = {
       id: this.id,
       startedAt: this.startedAt,
       endedAt: this.endedAt,
@@ -207,6 +236,13 @@ export default class NoteStats {
       bestStreak: this.bestStreak,
       notes,
     }
+
+    if (Object.keys(this.clefs).length) {
+      record.clefs = Object.fromEntries(Object.entries(this.clefs).map(([sign, stats]) =>
+        [sign, {...stats}]))
+    }
+
+    return record
   }
 
   incrementNote(note, val) {

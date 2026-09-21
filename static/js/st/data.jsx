@@ -120,6 +120,19 @@ export function measuresDescription(song) {
   return `measures ${first}–${last}`
 }
 
+// the hand of the items (st/srs/records) a hand setting practices, the
+// words of score_render's Hand
+export function itemHand(hand) {
+  switch (hand) {
+    case RIGHT_HAND:
+      return "upper"
+    case LEFT_HAND:
+      return "lower"
+    default:
+      return "both"
+  }
+}
+
 // the track indices to drill for a hand setting
 export function handTracks(song, hand) {
   let staves = staffTracks(song)
@@ -238,7 +251,7 @@ export function measureCardDeck(staff, settings) {
     (measures.length ? [sectionCard(measures)] : []) :
     measureCards(measures, settings.measuresPerCard)
 
-  let deck = new MeasureCardDeck(cards, {pieceId: piece.id, order})
+  let deck = new MeasureCardDeck(cards, {pieceId: piece.id, hand: itemHand(settings.hand), order})
   if (!deck.playable) {
     deck = null
   }
@@ -793,8 +806,7 @@ const ALL_GENERATORS = [
     create: function(staff, keySignature, settings) {
       let deck = measureCardDeck(staff, settings)
       if (deck) {
-        let recordNotes = settings.startMeasure != settings.endMeasure
-        return new MeasureCardGenerator(deck, {recordNotes})
+        return new MeasureCardGenerator(deck)
       }
 
       // a section with no notes on the staff is still its card, eg. one of

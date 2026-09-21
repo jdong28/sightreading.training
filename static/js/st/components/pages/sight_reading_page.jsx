@@ -279,12 +279,11 @@ export default class SightReadingPage extends React.Component {
       }
     }
 
-    if (prevState.currentStaff != this.state.currentStaff ||
-        prevState.currentGenerator != this.state.currentGenerator ||
-        prevState.currentGeneratorSettings != this.state.currentGeneratorSettings ||
-        prevState.stats != this.state.stats)
-    {
-      this.flushSectionPractice()
+    // a rebuilt drill abandons the pass the old generator was collecting
+    let before = prevState.notes && prevState.notes.generator
+    if (before && before != (this.state.notes && this.state.notes.generator)) {
+      this.flushPractice(before)
+      this.stopGenerator(before)
     }
 
     this.updateEngineCard(prevState)
@@ -484,6 +483,7 @@ export default class SightReadingPage extends React.Component {
     this.observeStaffWrapper(null)
     this.stopClock()
     this.recordSession()
+    this.stopGenerator(this.state.notes && this.state.notes.generator)
 
     if (this.state.slider) {
       this.state.slider.cancel()
@@ -531,6 +531,11 @@ export default class SightReadingPage extends React.Component {
       this.state.keySignature,
       generatorSettings
     )
+
+    // the measure cards grade each pass by the drill it is played in
+    if (generatorInstance.setDrill) {
+      generatorInstance.setDrill(() => ({mode: this.state.mode, speed: this.state.scrollSpeed}))
+    }
 
     var notes
 
@@ -689,13 +694,16 @@ export default class SightReadingPage extends React.Component {
         let column = this.state.notes.currentColumn()
 
         if (column.length == 0) {
+          this.slipped = false
           this.setState({heldNotes: {}, touchedNotes: {}})
           break
         }
 
         // every key is up without the column matched: it counts as missed
         // (once) and is played afresh from the next key down
-        this.missColumn(column.filter((n) => !this.state.heldNotes[n]))
+        let touched = Object.keys(this.state.touchedNotes)
+        this.missColumn(column.filter((n) => !this.state.heldNotes[n]),
+          this.state.notes.blamedNotes(touched, this.state.anyOctave))
         this.setState({heldNotes: {}, touchedNotes: {}})
         break
       }
@@ -766,13 +774,14 @@ export default class SightReadingPage extends React.Component {
         // the hit, whichever press is checked first
         let stray = notes.strayNotes(touched, anyOctave)
         if (stray.includes(note) || (matched && stray.length && this.missedNotes != notes)) {
-          this.missColumn(notes.currentColumn())
+          this.missColumn(notes.currentColumn(), notes.blamedNotes(touched, anyOctave))
         }
 
         if (matched) {
           gaEvent("sight_reading", "note", "hit");
 
           this.advancedNotes = notes
+          this.slipped = false
           let advance = this.columnAdvance(notes)
           notes = notes.clone()
           notes.shift();
@@ -805,13 +814,19 @@ export default class SightReadingPage extends React.Component {
   // Counts the head column of notes as missed, at most once however many
   // slips and releases it takes to complete it, shaking the notes and
   // marking the column on an engine card each time. missed are the column's
-  // notes the stats count against
-  missColumn(missed) {
+  // notes the stats count against, blamed those the miss is put down to (see
+  // NoteList#blamedNotes)
+  missColumn(missed, blamed) {
     if (this.missedNotes != this.state.notes) {
       this.missedNotes = this.state.notes
       gaEvent("sight_reading", "note", "miss");
-      this.state.stats.missNotes(missed);
+      this.state.stats.missNotes(missed, blamed);
+    } else if (!this.slipped) {
+      // the grade of the measure cards counts every try gone wrong
+      this.state.stats.slipNotes(missed, blamed)
     }
+    // one slip a try, from a key down to every key up
+    this.slipped = true
 
     let {index} = this.cardHead(this.state.notes)
     let engineMissed = this.state.engineMissed
@@ -883,6 +898,12 @@ export default class SightReadingPage extends React.Component {
         }
         break
       }
+    }
+
+    // a key down with none held starts a new try, which may slip again
+    // (releases batched into one render close the try only once)
+    if (!Object.keys(this.state.heldNotes).length) {
+      this.slipped = false
     }
 
     this.setState((s) => ({
@@ -1117,38 +1138,31 @@ export default class SightReadingPage extends React.Component {
     }
   }
 
-  // Adds the notes played on the piece section drilled since the last flush
-  // to its stats in the local store, then starts counting for the current
-  // section. Called when the section, generator or stats change and when the
-  // session is recorded, so every note counts once
-  flushSectionPractice() {
-    let practice = this.takeSectionPractice()
-    if (!practice) { return }
-
-    getAppStore().recordSectionPractice(practice)
-      .catch(err => console.warn("Couldn't save the section stats", err))
+  // Adds the practice on the pass the generator abandons (see
+  // MeasureCardGenerator#takePractice) to the local store
+  flushPractice(generator) {
+    this.savePractice(this.takePractice(generator))
   }
 
-  // The practice on the drilled section since the last flush, if any
-  takeSectionPractice() {
-    let mark = this.sectionMark
-    let stats = this.state.stats
-
-    this.sectionMark = {
-      section: this.currentPieceSection(),
-      stats,
-      hits: stats.hits,
-      misses: stats.misses,
+  // a generator no longer drilled stops listening to the notes played
+  stopGenerator(generator) {
+    if (generator && generator.stop) {
+      generator.stop()
     }
+  }
 
-    if (!mark || !mark.section) { return null }
+  savePractice(practices) {
+    for (let practice of practices) {
+      getAppStore().recordSectionPractice(practice)
+        .catch(err => console.warn("Couldn't save the section stats", err))
+    }
+  }
 
-    let hits = mark.stats.hits - mark.hits
-    let misses = mark.stats.misses - mark.misses
-    if (!hits && !misses) { return null }
-
-    let {pieceId, startMeasure, endMeasure} = mark.section
-    return {pieceId, startMeasure, endMeasure, hits, misses, at: mark.stats.endedAt}
+  // The practice on the pass of the imported piece the generator abandons,
+  // the current one by default: the session is recorded at Begin, Rest and
+  // when the page is left, and only a pass played between them is graded
+  takePractice(generator=this.state.notes && this.state.notes.generator) {
+    return (generator && generator.takePractice && generator.takePractice()) || []
   }
 
   // Writes the current session to the local store, replacing what an earlier
@@ -1157,7 +1171,7 @@ export default class SightReadingPage extends React.Component {
   // before a note is played. Returns a promise settling once written, or
   // nothing when there was nothing to write
   recordSession() {
-    let sectionPractice = this.takeSectionPractice()
+    let sectionPractice = this.takePractice()
 
     let settings = this.currentSettings()
     let section = this.currentPieceSection()
@@ -1172,10 +1186,7 @@ export default class SightReadingPage extends React.Component {
     })
 
     if (!session) {
-      if (sectionPractice) {
-        getAppStore().recordSectionPractice(sectionPractice)
-          .catch(err => console.warn("Couldn't save the section stats", err))
-      }
+      this.savePractice(sectionPractice)
       return
     }
 

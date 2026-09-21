@@ -7,13 +7,14 @@ import {
 
 import {SheetMusicGenerator, generatorDefaultSettings, fixGeneratorSettings} from "st/generators"
 import {
-  SHEET_MUSIC_GENERATOR, sheetMusicSection, BOTH_HANDS, WHOLE_SECTION, SHEET_MUSIC_STORAGE_KEY,
+  SHEET_MUSIC_GENERATOR, sheetMusicSection, BOTH_HANDS, RIGHT_HAND, WHOLE_SECTION, SHEET_MUSIC_STORAGE_KEY,
   sheetMusicMeasureBounds, sheetMusicSectionRange, sheetMusicSectionUpdate, sheetMusicSectionLength,
 } from "st/data"
 import {importMusicXMLPiece} from "st/sheet_music_deck"
 import {setAppStore} from "st/storage"
 import NoteList from "st/note_list"
 import NoteStats from "st/note_stats"
+import {AGAIN, HARD, GOOD, EASY} from "st/srs/grade"
 
 import {openTestStore, pickupScore, noteXML} from "spec/helpers"
 
@@ -307,6 +308,11 @@ describe("measure cards", function() {
         return {generator, notes}
       }
 
+      // the single measure rows of the piece, by measure
+      let measureStats = () => store.sectionStats("p")
+        .filter(s => s.startMeasure == s.endMeasure)
+        .sort((a, b) => a.startMeasure - b.startMeasure)
+
       it("adds the hits, misses and time on each measure of a finished card", async function() {
         let {generator, notes} = generatorFor()
         let stats = new NoteStats()
@@ -330,25 +336,51 @@ describe("measure cards", function() {
         notes = hit(notes, stats)
         await generator.finishing
 
-        let byMeasure = s => s.startMeasure
-        expect(store.sectionStats("p").sort((a, b) => byMeasure(a) - byMeasure(b))).toEqual([
+        expect(measureStats()).toEqual([
           {pieceId: "p", startMeasure: 0, endMeasure: 0, hits: 1, misses: 1, attempts: 1, lastPracticed: 4000, elapsedMs: 1500},
           {pieceId: "p", startMeasure: 1, endMeasure: 1, hits: 3, misses: 1, attempts: 1, lastPracticed: 4000, elapsedMs: 2500},
         ])
+        // and the card's own range
+        expect(store.sectionStats("p").find(s => s.endMeasure == 1 && s.startMeasure == 0).hits).toEqual(4)
 
         // a long pause on a column isn't counted
         time = 4000 + 10 * 60 * 1000
         notes = hit(notes, stats)
         await generator.finishing
 
-        expect(store.sectionStats("p").find(s => s.startMeasure == 2)).toEqual(
+        expect(measureStats().find(s => s.startMeasure == 2)).toEqual(
           {pieceId: "p", startMeasure: 2, endMeasure: 2, hits: 1, misses: 0, attempts: 1, lastPracticed: time, elapsedMs: 0}
         )
 
         // the reloaded store has them too
         let reopened = await openTestStore({keep: true})
-        expect(reopened.sectionStats("p").length).toEqual(3)
+        expect(reopened.sectionStats("p").length).toEqual(4)
         await reopened.close()
+      })
+
+      it("grades each pass through a card as a review of the card and of each of its measures", async function() {
+        let {generator, notes} = generatorFor()
+        let stats = new NoteStats()
+
+        time = 1000
+        stats.missNotes(["D5"])
+        time = 1500
+        notes = hit(notes, stats)
+        for (let t of [2000, 2500, 3000]) {
+          time = t
+          notes = hit(notes, stats)
+        }
+        await generator.finishing
+
+        let reviews = await store.reviews({pieceId: "p"})
+        expect(reviews.map(r => [r.itemId, r.grade, r.columns, r.clean, r.sessionId])).toEqual([
+          ["p:both:0-0", AGAIN, 1, 0, stats.id],
+          ["p:both:0-1", HARD, 4, 3, stats.id],
+          ["p:both:1-1", EASY, 3, 3, stats.id],
+        ])
+        expect(reviews.every(r => r.at == 3000 && r.kind == "attempt" && r.mode == "wait" && r.was == "new")).toBe(true)
+        expect(reviews[1].bars).toEqual([[0, 1, 0, 1, 1500], [1, 3, 3, 0, 1500]])
+        expect(reviews[1].leadMs).toEqual(1500)
       })
 
       it("records nothing for a card only skipped through", async function() {
@@ -362,17 +394,55 @@ describe("measure cards", function() {
 
         expect(generator.deck.card.measures).toEqual([2])
         expect(store.sectionStats("p")).toEqual([])
+        expect(await store.reviews({pieceId: "p"})).toEqual([])
       })
 
-      it("times the first column from when it is shown, only the time for a single measure section", async function() {
+      it("grades a skipped column as again", async function() {
+        let {generator, notes} = generatorFor()
+        let stats = new NoteStats()
+
+        time = 1000
+        notes = hit(notes, stats)
+        notes = skip(notes)
+        notes = hit(notes, stats)
+        notes = hit(notes, stats)
+        await generator.finishing
+
+        let reviews = await store.reviews({pieceId: "p"})
+        expect(reviews.map(r => [r.itemId, r.grade, r.skipped])).toEqual([
+          ["p:both:0-0", EASY, 0],
+          ["p:both:0-1", AGAIN, 1],
+          ["p:both:1-1", AGAIN, 1],
+        ])
+      })
+
+      it("counts every slip for the grade and a column missed once for the totals", async function() {
+        let {generator, notes} = generatorFor()
+        let stats = new NoteStats()
+
+        time = 1000
+        notes = hit(notes, stats)
+        stats.missNotes(["G3", "G4"])
+        stats.slipNotes(["G3", "G4"])
+        stats.slipNotes(["G4"])
+        notes = hit(notes, stats)
+        notes = hit(notes, stats)
+        notes = hit(notes, stats)
+        await generator.finishing
+
+        let reviews = await store.reviews({pieceId: "p"})
+        let bar = reviews.find(r => r.itemId == "p:both:1-1")
+        expect([bar.grade, bar.misses, bar.stuck, bar.trouble]).toEqual([AGAIN, 3, 1, [0]])
+        expect(measureStats()[1].misses).toEqual(1)
+        expect(stats.misses).toEqual(1)
+      })
+
+      it("times the first column from when it is shown, and grades one lap of a single measure card once", async function() {
         let deck = new MeasureCardDeck(measureCards([pickupMeasures()[1]], 1), {
           pieceId: "p", order: IN_ORDER, store,
         })
 
-        // the page records the section's hits and misses
-        await store.recordSectionPractice({pieceId: "p", startMeasure: 1, endMeasure: 1, hits: 2, misses: 1, at: 500})
-
-        let generator = track(new MeasureCardGenerator(deck, {recordNotes: false, now: () => time}))
+        let generator = track(new MeasureCardGenerator(deck, {now: () => time}))
         let notes = new NoteList([], {generator})
         let stats = new NoteStats()
 
@@ -389,7 +459,101 @@ describe("measure cards", function() {
         await generator.finishing
 
         expect(store.sectionStats("p")).toEqual([
-          {pieceId: "p", startMeasure: 1, endMeasure: 1, hits: 2, misses: 1, attempts: 1, lastPracticed: 3000, elapsedMs: 2000},
+          {pieceId: "p", startMeasure: 1, endMeasure: 1, hits: 3, misses: 1, attempts: 1, lastPracticed: 3000, elapsedMs: 2000},
+        ])
+
+        let reviews = await store.reviews({pieceId: "p"})
+        expect(reviews.map(r => [r.itemId, r.leadMs, r.grade])).toEqual([["p:both:1-1", 600, AGAIN]])
+      })
+
+      it("writes one review a lap of a looping card", async function() {
+        let deck = new MeasureCardDeck(measureCards(pickupMeasures(), 3), {
+          pieceId: "p", order: IN_ORDER, store,
+        })
+        let generator = track(new MeasureCardGenerator(deck, {now: () => time}))
+        let notes = new NoteList([], {generator})
+        notes.fillBuffer(6)
+        let stats = new NoteStats()
+
+        for (let lap = 0; lap < 2; lap++) {
+          for (let i = 0; i < 5; i++) {
+            time += 500
+            notes = hit(notes, stats)
+          }
+        }
+        // a lap begun is not written
+        time += 500
+        notes = hit(notes, stats)
+        await generator.finishing
+
+        let reviews = await store.reviews({pieceId: "p"})
+        expect(reviews.filter(r => r.itemId == "p:both:0-2").map(r => [r.at, r.was, r.grade]))
+          .toEqual([[2500, "new", EASY], [5000, "tracked", EASY]])
+        expect(reviews.length).toEqual(8)
+
+        let items = store.items("p")
+        expect(items.find(item => item.id == "p:both:0-2").recent.map(entry => entry[0])).toEqual([2500, 5000])
+        expect(items.find(item => item.id == "p:both:0-0").hits).toEqual(2)
+      })
+
+      it("abandons a pass for the page, never grading the rest of its card", async function() {
+        let {generator, notes} = generatorFor()
+        generator.setDrill(() => ({mode: "wait"}))
+        let stats = new NoteStats()
+
+        // nothing played yet: the pass is kept, timed from now
+        time = 5000
+        expect(generator.takePractice()).toEqual([])
+
+        time = 6000
+        notes = hit(notes, stats)
+        time = 6500
+        stats.missNotes(["G3", "G4"])
+        expect(generator.takePractice()).toEqual([
+          {pieceId: "p", hand: "both", startMeasure: 0, endMeasure: 1, hits: 1, misses: 1, elapsedMs: 1000, at: 6500},
+          {pieceId: "p", hand: "both", startMeasure: 0, endMeasure: 0, hits: 1, misses: 0, elapsedMs: 1000, at: 6500},
+          {pieceId: "p", hand: "both", startMeasure: 1, endMeasure: 1, hits: 0, misses: 1, elapsedMs: 0, at: 6500},
+        ])
+
+        // the rest of the card adds to the totals alone
+        for (let t of [7000, 7500, 8000]) {
+          time = t
+          notes = hit(notes, stats)
+        }
+        await generator.finishing
+        expect(await store.reviews({pieceId: "p"})).toEqual([])
+        expect(measureStats().map(s => [s.startMeasure, s.hits])).toEqual([[1, 3]])
+
+        // the next card is graded
+        time = 9000
+        notes = hit(notes, stats)
+        await generator.finishing
+        expect((await store.reviews({pieceId: "p"})).map(r => r.itemId)).toEqual(["p:both:2-2"])
+      })
+
+      it("grades a pass by the drill it is played in, never one changing mode", async function() {
+        let {generator, notes} = generatorFor()
+        let drill = {mode: "wait"}
+        generator.setDrill(() => drill)
+        let stats = new NoteStats()
+
+        // the first card changes mode half way through
+        for (let i = 0; i < 4; i++) {
+          if (i == 2) { drill = {mode: "scroll", speed: 25} }
+          time += 500
+          notes = hit(notes, stats)
+        }
+        await generator.finishing
+        expect(await store.reviews({pieceId: "p"})).toEqual([])
+        expect(measureStats().map(s => [s.startMeasure, s.hits])).toEqual([[0, 1], [1, 3]])
+
+        time += 500
+        notes = hit(notes, stats)
+        await generator.finishing
+
+        let reviews = await store.reviews({pieceId: "p"})
+        expect(reviews.map(r => [r.itemId, r.mode, r.speed, r.grade])).toEqual([
+          ["p:both:2-2", "scroll", 25, GOOD],
         ])
       })
     })
@@ -516,6 +680,41 @@ describe("measure cards", function() {
       expect(generator instanceof MeasureCardGenerator).toBe(true)
       expect(generator.deck.order).toEqual(RANDOM_ORDER)
       expect(generator.deck.cards.map(card => card.measures)).toEqual([[0], [1], [2]])
+    })
+
+    it("records each hand setting's attempts under its hand, with the clefs of the notes read", async function() {
+      let play = async (hand, misses) => {
+        generator = sheetMusic.create(grand, null, settingsFor({startMeasure: 1, endMeasure: 1, measuresPerCard: 1, hand}))
+        let stats = new NoteStats()
+        let notes = new NoteList([], {generator})
+        notes.fillBuffer(4)
+        stats.missNotes(misses)
+        for (let i = 0; i < 3; i++) {
+          notes = hit(notes, stats)
+        }
+        await generator.finishing
+        generator.stop()
+        return stats
+      }
+
+      // measure 1: G3 and G4 together, then A4 and B4
+      let both = await play(BOTH_HANDS, ["G3"])
+      expect(both.clefs).toEqual({g: {hits: 3, misses: 0}, f: {hits: 1, misses: 1}})
+      expect(both.sessionRecord().clefs).toEqual(both.clefs)
+
+      let right = await play(RIGHT_HAND, ["G4"])
+      expect(right.clefs).toEqual({g: {hits: 3, misses: 1}})
+
+      let reviews = await store.reviews({pieceId: piece.id})
+      expect(reviews.map(r => [r.itemId, r.staffMisses])).toEqual([
+        [`${piece.id}:both:1-1`, {upper: 0, lower: 1}],
+        [`${piece.id}:upper:1-1`, {upper: 1, lower: 0}],
+      ])
+
+      // the random picks still weigh every hand of a measure together
+      expect(store.sectionStats(piece.id)).toEqual([jasmine.objectContaining({
+        startMeasure: 1, endMeasure: 1, hits: 6, misses: 2, attempts: 2,
+      })])
     })
 
     it("drills a piece section as measure cards", function() {

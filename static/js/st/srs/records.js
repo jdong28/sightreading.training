@@ -61,7 +61,9 @@ export const RECENT_ATTEMPTS = 5
  * @property {number} [elapsedMs] time spent playing it, kept once timed
  * @property {Array[]} recent the last RECENT_ATTEMPTS attempts, oldest first,
  * as [at, columns, clean, grade]
- * @property {number} [paceMs] mean ms per column over clean attempts
+ * @property {number} [paceMs] the item's usual pace, ms per notated beat (per
+ * column without the score's rhythm), a running mean over its clean wait mode
+ * attempts (see attemptPace in st/srs/grade)
  * @property {string} [contentKey] a hash of the item's columns, shared by
  * repeated material
  * @property {number} algo the scheduler version that wrote s, d and due, 0
@@ -80,10 +82,11 @@ export const RECENT_ATTEMPTS = 5
  * attempt) carry the grade and the raw measurements it was worked out from.
  *
  * staffMisses splits the attempt's misses by hand: for each score staff
- * ("upper", "lower", the staves of column.staves), the misses at which a note
- * of that staff wasn't held. A miss with notes of both staves not held counts
- * for both, and both keys are always present (0 when none), so a review of a
- * hands together item says which hand struggled in it.
+ * ("upper", "lower", the staves of column.staves), the misses blamed on a
+ * note of that staff (NoteList#blamedNotes: the column's notes not touched, or
+ * with all touched those nearest the stray keys). A miss blamed on notes of
+ * both staves counts for both, and both keys are always present (0 when
+ * none), so a review of a hands together item says which hand struggled in it.
  * @typedef {Object} ReviewRecord
  * @property {string} itemId
  * @property {number} at
@@ -94,7 +97,8 @@ export const RECENT_ATTEMPTS = 5
  * @property {string} [was] the item's state before, "new" at first sight
  * @property {number} [columns]
  * @property {number} [clean] columns hit without a miss
- * @property {number} misses
+ * @property {number} misses on an attempt every slip (st/srs/grade), on a
+ * legacy review the counted misses
  * @property {number} [stuck]
  * @property {number} [skipped]
  * @property {number} [hesitations]
@@ -103,7 +107,8 @@ export const RECENT_ATTEMPTS = 5
  * @property {string} [mode] "wait" or "scroll"
  * @property {number} [speed]
  * @property {Array[]} [bars] multi-bar items: [measure, columns, clean, misses, ms] a bar
- * @property {number[]} [trouble] card indices of the columns with a miss
+ * @property {number[]} [trouble] the indices among the item's columns of those
+ * with a miss
  * @property {{upper: number, lower: number}} [staffMisses]
  * @property {number} [r] the recall the scheduler predicted
  * @property {number} [algo] the grading version

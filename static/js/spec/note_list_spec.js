@@ -106,4 +106,20 @@ describe("NoteList", function() {
       expect(notes.strayNotes(["C5", "D3", "F4"], true)).toEqual(["F4"])
     })
   })
+
+  describe("blamedNotes", function() {
+    it("blames the head's notes not touched, else those nearest the stray keys", function () {
+      const notes = new NoteList([
+        ["C3", "E5"],
+      ])
+
+      expect(notes.blamedNotes(["C3", "D5"])).toEqual(["E5"])
+      expect(notes.blamedNotes(["D5"])).toEqual(["C3", "E5"])
+      expect(notes.blamedNotes(["C3", "E5", "D5"])).toEqual(["E5"])
+      expect(notes.blamedNotes(["C3", "E5", "B2"])).toEqual(["C3"])
+      expect(notes.blamedNotes(["C3", "E5"])).toEqual(["C3", "E5"])
+      expect(notes.blamedNotes(["C4", "E4"], true)).toEqual(["C3", "E5"])
+      expect(notes.blamedNotes(["C4", "E4", "D5"], true)).toEqual(["E5"])
+    })
+  })
 })
