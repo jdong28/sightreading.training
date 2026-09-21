@@ -716,6 +716,31 @@ describe("score page engine card", function() {
     expect(page.state.stats.misses).toEqual(1)
   })
 
+  it("waits on the column coming on however long a frame runs past the line", async function() {
+    await scrollPiece(reverieOpening(), {startMeasure: 2, endMeasure: 4})
+    renderScorePage()
+    await systemDrawn()
+    await settle()
+    flushSync(() => page.beginSession())
+
+    // frames run by hand, the second a whole second after the first
+    let frames = []
+    spyOn(window, "requestAnimationFrame").and.callFake(frame => frames.push(frame))
+    let step = time => flushSync(() => frames.shift()(time))
+
+    play(page.state.notes.currentColumn())
+    expect(page.state.notes.currentColumn().cardIndex).toEqual(1)
+    expect(page.state.slider.value).toBeGreaterThan(SCROLL_WAIT)
+    step(0)
+    step(1000)
+
+    expect(page.state.slider.value).toEqual(SCROLL_WAIT)
+    expect(page.state.slider.animating).toBe(false)
+    expect(frames).toEqual([])
+    expect(page.state.notes.currentColumn().cardIndex).toEqual(1)
+    expect(page.state.stats.misses).toEqual(0)
+  })
+
   it("scrolls on past a column the engine drew no head for", async function() {
     await scrollPiece(reverieOpening(), {startMeasure: 2, endMeasure: 4})
 

@@ -1066,16 +1066,9 @@ export default class SightReadingPage extends React.Component {
         speed: this.state.scrollSpeed / 100,
         loopPhase: 1,
         initialValue: 4,
-        onUpdate: value => {
-          // the head column waits where the slider stops, not where the
-          // frame that stopped it overshot to
-          if (value < SCROLL_WAIT) {
-            value = this.state.slider.value = SCROLL_WAIT
-            this.state.slider.cancel()
-          }
-
-          this.setOffset(value)
-        },
+        // the head column waits on the line, never looping past it
+        floor: SCROLL_WAIT,
+        onUpdate: value => this.setOffset(value),
         onLoop: function() {
           let column = this.state.notes.currentColumn()
           // notes scrolling past at rest aren't misses
