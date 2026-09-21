@@ -94,6 +94,11 @@ function columnBeats(columns, idx, rests=true) {
 
   let next = columns[idx + 1]
   if (next && next.beat > column.beat) {
+    // a bar holding no column between the two is drawn in room of its own, so
+    // the gap is only what this column's own measure holds (see columnTrail)
+    if (column.beats > 0 && columnTrail(columns, idx) > 0) {
+      return column.beats
+    }
     return next.beat - column.beat
   }
 
@@ -109,23 +114,58 @@ function columnBeats(columns, idx, rests=true) {
   return column.beats + columnLead(next, rests)
 }
 
-// The beats the bars a card ends on cover past the beats of the column they
-// are drawn after: bars that hold no column of their own (see sectionCard in
-// st/measure_cards), which are drawn in room of their own past that column's,
-// never over the note it holds
-function columnTrail(column) {
+// The bars drawn on the boundary after the column at idx, which hold no column
+// of their own (see sectionCard in st/measure_cards): a card hangs the bars it
+// ends on on its last column, and every other one on the column it is drawn
+// before (see cardColumn)
+function boundaryBars(columns, idx) {
+  let column = columns[idx]
+  let next = columns[idx + 1]
+  let out = []
+
+  for (let bar of (column && column.beat != null && column.bars) || []) {
+    if (bar.beats > 0 && bar.beat >= column.beat) { out.push(bar) }
+  }
+
+  for (let bar of (next && next.beat != null && next.bars) || []) {
+    if (bar.beats > 0 && bar.beat < next.beat) { out.push(bar) }
+  }
+
+  return out
+}
+
+// The beats the bars drawn on the boundary after the column at idx cover past
+// that column's own: they are drawn in room of their own there, never over the
+// note the column holds (see boundaryBars)
+function columnTrail(columns, idx) {
+  let column = columns[idx]
   let most = 0
 
   if (!column || column.beat == null) { return most }
 
   let end = column.beat + (column.beats > 0 ? column.beats : 0)
 
-  for (let bar of column.bars || []) {
-    if (!(bar.beats > 0) || bar.beat < column.beat) { continue }
+  for (let bar of boundaryBars(columns, idx)) {
     most = Math.max(most, bar.beat + bar.beats - end)
   }
 
   return most
+}
+
+// The beat the bars a column carries that hold no column open at, Infinity for
+// a column carrying none: everything the score writes from there on belongs to
+// those bars rather than to the room before the column's own head
+export function barsOpenAt(column) {
+  let opens = Infinity
+
+  if (!column || column.beat == null) { return opens }
+
+  for (let bar of column.bars || []) {
+    if (!(bar.beats > 0) || bar.beat >= column.beat) { continue }
+    opens = Math.min(opens, bar.beat)
+  }
+
+  return opens
 }
 
 // The most beats a column's own extras fall before it: the rest a bar opens
@@ -208,7 +248,7 @@ export const OPENING_EXTRA_ROOM = 0.5
 // (see columnTrail), so a bar line and its rests never land on the note the
 // column holds
 function closingRoom(columns, idx, unit, rests) {
-  let trail = roomFor(columnTrail(columns[idx]), unit)
+  let trail = roomFor(columnTrail(columns, idx), unit)
   let opens = trail > 0 || columnLead(columns[idx + 1], rests) > 0
 
   return (opens ? OPENING_EXTRA_ROOM : 0) + trail
@@ -313,7 +353,7 @@ export function columnSpan(columns, unitColumns, opts) {
 
   let {offsets, advances} = columnLayout(columns, unitColumns, opts)
   let last = offsets.length - 1
-  let trail = columnTrail(columns[last]) > 0 ? advances[last] : 0
+  let trail = columnTrail(columns, last) > 0 ? advances[last] : 0
 
   if (columns.length < 2 && !trail) { return 0 }
   return offsets[last] + trail
@@ -555,7 +595,9 @@ function tupletChains(groups, chains) {
 
     open.groups.push(group)
 
-    if (marks.includes("stop")) {
+    // a score writing <time-modification> but no <tuplet> spans marks nothing
+    // out, so a run splits at the notes actual-notes already states
+    if (marks.includes("stop") || (open.notes > 1 && open.groups.length >= open.notes)) {
       open = null
     }
   }
@@ -836,16 +878,25 @@ export function rowCenter(row, {upperRow}) {
  * Where something the score writes `beat` beats before the column at idx is
  * drawn, in column widths: its share of the room the layout keeps in front of
  * that column, never back into the room the column's bar line is drawn in.
- * This is where a rest a bar opens with, a head a tie runs on to from a column
- * the staff can't show, and the start of a bar that holds no column at all
- * (see cardColumn in st/measure_cards) all fall.
+ * This is where a rest a bar opens with and a head a tie runs on to from a
+ * column the staff can't show fall. A bar holding no column at all (see
+ * cardColumn in st/measure_cards), and everything the score writes inside it,
+ * is drawn in the room kept for it at the end of the column before, so it
+ * clears the note that column holds (see afterOffset).
  * @param {Array} columns the columns on the staff
  * @param {Object} layout see columnLayout
  * @param {number} idx the column it falls before
  * @param {number} beat
  * @returns {number}
  */
-export function beforeOffset(columns, {offsets, gaps, leadBeats}, idx, beat) {
+export function beforeOffset(columns, layout, idx, beat) {
+  let previous = idx > 0 ? columns[idx - 1] : null
+
+  if (previous && previous.beat != null && beat >= barsOpenAt(columns[idx])) {
+    return afterOffset(columns, layout, idx - 1, beat)
+  }
+
+  let {offsets, gaps, leadBeats} = layout
   let from = (idx > 0 ? offsets[idx - 1] : 0) + OPENING_EXTRA_ROOM
   let span = idx > 0 ? gaps[idx - 1] : leadBeats
   let room = offsets[idx] - from
@@ -872,7 +923,7 @@ export function afterOffset(columns, {offsets, advances, gaps, unit, rests=true}
   let beats = gaps && gaps[idx]
   let after = beat - column.beat
   let own = column.beats > 0 ? column.beats : 0
-  let trailBeats = columnTrail(column)
+  let trailBeats = columnTrail(columns, idx)
 
   if (trailBeats > 0 && after >= own) {
     let trail = roomFor(trailBeats, unit)
@@ -920,7 +971,7 @@ export function columnExtras(columns, layout) {
         out.push({
           ...extra,
           columnIdx: idx,
-          offset: beforeOffset(columns, {offsets, gaps, leadBeats}, idx, extra.beat),
+          offset: beforeOffset(columns, layout, idx, extra.beat),
         })
         continue
       }

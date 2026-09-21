@@ -12,8 +12,8 @@ import * as types from "prop-types"
 import {noteStaffOffset} from "st/music"
 import {
   columnExtras, tieArcs, slurArcs, restGlyph, rowCenter, headGlyph,
-  stemDirection, middleRow, STAFF_ROW, STAFF_SPACE, NOTE_HEAD_HEIGHT,
-  DOT_SIZE, DOT_GAP,
+  stemDirection, middleRow, barsOpenAt, STAFF_ROW, STAFF_SPACE,
+  NOTE_HEAD_HEIGHT, DOT_SIZE, DOT_GAP,
 } from "st/staff_rhythm"
 import styles from "st/components/staff.module.css"
 
@@ -75,7 +75,10 @@ export default class ScoreExtras extends React.PureComponent {
   // other extra is drawn at its own beat and leaves the staff with the column
   // it is attached to, but a whole measure rest is drawn centred in its bar
   // (see renderRests), so it is still on the staff once that column has been
-  // played: the unit the window slides over is what still holds it
+  // played: the unit the window slides over is what still holds it. Only the
+  // rests of the column's own bar are carried — a column also holds what the
+  // bars before it that have no column of their own draw (see cardColumn in
+  // st/measure_cards), and those leave the staff with it
   carriedRests(staff) {
     let unit = this.props.unitColumns
     let [head] = this.props.notes
@@ -86,9 +89,12 @@ export default class ScoreExtras extends React.PureComponent {
     let opens = unit.findIndex(column => column && column.beat === head.beat)
 
     for (let idx = opens - 1; idx >= 0; idx--) {
+      let carried = barsOpenAt(unit[idx])
+
       for (let extra of unit[idx].extras || []) {
         if (extra.kind != "rest" || !extra.wholeMeasure) { continue }
         if (staff && extra.staff && extra.staff != staff) { continue }
+        if (extra.beat >= carried) { continue }
 
         out.push({...extra, columnIdx: 0})
       }
