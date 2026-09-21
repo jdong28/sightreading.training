@@ -596,7 +596,7 @@ describe("score page engine card", function() {
 
   // the scroll mode's system on the page, with its hit line
   let systemDrawn = () => waitFor(() =>
-    container.querySelector(`[data-score-card] [data-hit-line]`) &&
+    container.querySelector("[data-score-card] [data-hit-line]") &&
     container.querySelector(`[data-score-card] .${MARK_CLASSES.current}`), {message: "the engine's system"})
 
   let centre = el => {
