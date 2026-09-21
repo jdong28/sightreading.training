@@ -13,7 +13,8 @@ import drawerStyles from "st/components/sight_reading/programme_drawer.module.cs
 import {setAppStore} from "st/storage"
 import {importMusicXMLPiece, addPiece} from "st/sheet_music_deck"
 import {parseMusicXML} from "st/musicxml"
-import {GENERATORS, SHEET_MUSIC_STORAGE_KEY, BOTH_HANDS, WHOLE_SECTION} from "st/data"
+import {GENERATORS, SHEET_MUSIC_STORAGE_KEY, BOTH_HANDS, RIGHT_HAND, WHOLE_SECTION} from "st/data"
+import {AGAIN, GOOD, EASY} from "st/srs/grade"
 import {RANDOM_ORDER, MeasureCardGenerator} from "st/measure_cards"
 import {DRILL_STORAGE_KEY, SCORE_DRILL_STORAGE_KEY} from "st/generators"
 import {scopeEvent} from "st/events"
@@ -922,6 +923,125 @@ describe("sight reading page", function() {
         })
       }
     }
+  })
+
+  // each pass through a card is an attempt, graded and written as reviews
+  describe("recording attempts", function() {
+    let piece
+
+    let renderSection = async (settings, drill) => {
+      piece = (await importMusicXMLPiece("salon_octet.musicxml", octetXML, store)).piece
+      if (drill) {
+        window.localStorage.setItem(SCORE_DRILL_STORAGE_KEY, JSON.stringify(drill))
+      }
+      window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+        piece: piece.id, startMeasure: 1, endMeasure: 8, hand: BOTH_HANDS, ...settings,
+      }))
+      let el = renderScorePage()
+      click(buttonNamed(el, "Begin"))
+      return el
+    }
+
+    let playHead = () => play(page.state.notes.currentColumn())
+    let finished = () => page.state.notes.generator.finishing
+    let reviews = () => store.reviews({pieceId: piece.id})
+    let stats = (start, end=start) =>
+      store.sectionStats(piece.id).find(s => s.startMeasure == start && s.endMeasure == end)
+
+    it("writes a clean card as a review of the card and of each measure, with its hand and counts", async function() {
+      let el = await renderSection({measuresPerCard: "2"})
+      playHead()
+      playHead()
+      await finished()
+
+      let written = await reviews()
+      expect(written.map(r => [r.itemId, r.kind, r.grade, r.columns, r.clean, r.misses, r.mode])).toEqual([
+        [`${piece.id}:both:1-1`, "attempt", EASY, 1, 1, 0, "wait"],
+        [`${piece.id}:both:1-2`, "attempt", EASY, 2, 2, 0, "wait"],
+        [`${piece.id}:both:2-2`, "attempt", EASY, 1, 1, 0, "wait"],
+      ])
+      expect(written[1].bars.map(bar => bar.slice(0, 4))).toEqual([[1, 1, 1, 0], [2, 1, 1, 0]])
+      expect(written.every(r => r.sessionId == page.state.stats.id)).toBe(true)
+      expect([stats(1).hits, stats(2).hits, stats(1, 2).hits]).toEqual([1, 1, 2])
+
+      // the session counts the notes read in each clef
+      click(buttonNamed(el, "Rest"))
+      await waitFor(() => store.recentSessions().length == 1, "the session to be saved")
+      expect(store.recentSessions()[0].clefs).toEqual({g: {hits: 2, misses: 0}, f: {hits: 2, misses: 0}})
+    })
+
+    it("writes one hand's card under its hand", async function() {
+      await renderSection({measuresPerCard: "1", hand: RIGHT_HAND})
+      play([WRONG_NOTE])
+      playHead()
+      await finished()
+
+      let [review] = await reviews()
+      expect([review.itemId, review.grade, review.staffMisses]).toEqual([
+        `${piece.id}:upper:1-1`, AGAIN, {upper: 1, lower: 0},
+      ])
+    })
+
+    it("writes one review a lap of a looping card", async function() {
+      await renderSection({endMeasure: 2, measuresPerCard: WHOLE_SECTION})
+      for (let i = 0; i < 5; i++) {
+        playHead()
+      }
+      await finished()
+
+      let laps = (await reviews()).filter(r => r.itemId == `${piece.id}:both:1-2`)
+      expect(laps.map(r => [r.was, r.grade])).toEqual([["new", EASY], ["tracked", jasmine.any(Number)]])
+      expect([stats(1).hits, stats(2).hits, stats(1, 2).attempts]).toEqual([2, 2, 2])
+    })
+
+    it("writes no graded review for a card left at Rest, still adding its totals", async function() {
+      let el = await renderSection({measuresPerCard: "2"})
+      playHead()
+      play([WRONG_NOTE])
+
+      click(buttonNamed(el, "Rest"))
+      await waitFor(() => store.recentSessions().length == 1, "the session to be saved")
+      expect(await reviews()).toEqual([])
+      expect([stats(1).hits, stats(1).misses, stats(2).misses, stats(1, 2).misses]).toEqual([1, 0, 1, 1])
+
+      // the rest of the card isn't graded either, the next card is
+      click(buttonNamed(el, "Begin"))
+      playHead()
+      await finished()
+      expect(await reviews()).toEqual([])
+      expect(stats(2).hits).toEqual(1)
+
+      playHead()
+      playHead()
+      await finished()
+      expect((await reviews()).map(r => r.itemId)).toEqual([
+        `${piece.id}:both:3-3`, `${piece.id}:both:3-4`, `${piece.id}:both:4-4`,
+      ])
+    })
+
+    it("counts a section of one measure once", async function() {
+      await renderSection({startMeasure: 3, endMeasure: 3})
+      play([WRONG_NOTE])
+      playHead()
+      await finished()
+
+      expect(store.sectionStats(piece.id)).toEqual([jasmine.objectContaining({
+        startMeasure: 3, endMeasure: 3, hits: 1, misses: 1, attempts: 1,
+      })])
+      expect((await reviews()).map(r => [r.itemId, r.grade])).toEqual([[`${piece.id}:both:3-3`, AGAIN]])
+    })
+
+    it("never grades a pass in scroll mode easy", async function() {
+      await renderSection({measuresPerCard: "2"}, {mode: "scroll"})
+      expect(page.state.mode).toEqual("scroll")
+      playHead()
+      playHead()
+      await finished()
+
+      let written = await reviews()
+      expect(written.map(r => [r.mode, r.speed, r.grade, r.hesitations])).toEqual(
+        Array(3).fill(["scroll", page.state.scrollSpeed, GOOD, 0]))
+    })
   })
 
   describe("matching the notes played", function() {

@@ -3,13 +3,15 @@
 // any number of measures, and the staff shows one card at a time, in order or
 // picked at random weighted toward the measures played worst.
 //
-// While a card is played the hits, misses and time on each of its measures
-// are counted, and when it is done they are added to the section stats of the
-// local store (st/storage) under that single measure, which is what weights
-// the random picks.
+// Each pass through a card is collected as an attempt (st/srs/attempt): when
+// it is done it is graded and written to the local store (st/storage) as a
+// review of every measure of the card (and of the card's range), adding its
+// hits, misses and time to their items, whose single measure totals are what
+// weight the random picks.
 
-import NoteStats, {addNoteListener} from "st/note_stats"
+import {addNoteListener} from "st/note_stats"
 import {getAppStore} from "st/storage"
+import {AttemptPass, passAttempts, passPractice, columnClefs} from "st/srs/attempt"
 
 export const IN_ORDER = "in order"
 export const RANDOM_ORDER = "random"
@@ -191,13 +193,16 @@ export class MeasureCardDeck {
    * @param {MeasureCard[]} cards
    * @param {Object} opts
    * @param {string} opts.pieceId
+   * @param {string} [opts.hand] the hand setting the cards are played in,
+   * one of HANDS (st/srs/records)
    * @param {string} opts.order
    * @param {function(): number} [opts.random]
    * @param {LocalStore} [opts.store] where the measure stats are read, the app's store by default
    */
-  constructor(cards, {pieceId, order, random=Math.random, store}) {
+  constructor(cards, {pieceId, hand="both", order, random=Math.random, store}) {
     this.cards = cards
     this.pieceId = pieceId
+    this.hand = hand
     this.order = order
     this.random = random
     this.store = store
@@ -240,27 +245,25 @@ export class MeasureCardDeck {
 let playing = null
 let listening = false
 
-// time on one column longer than this is a pause and isn't counted
-const MAX_COLUMN_MS = NoteStats.TIMER_SIZE
-
 // Shows the deck's cards on the staff one at a time. The card's columns are
 // followed by empty columns until its last column is done, then the columns
 // still to come are replaced by the next card's. A deck with a single card
 // loops it without the gap, like the plain sheet music drill.
+//
+// Each pass through the card (each lap of a looping one) is an attempt: the
+// page tells the generator the drill it is played in (setDrill) and takes
+// the practice of a pass it abandons (takePractice)
 export class MeasureCardGenerator {
   /**
    * @param {MeasureCardDeck} deck
    * @param {Object} [opts]
-   * @param {boolean} [opts.recordNotes] false records only the time on the
-   * measures, eg. when the section is a single measure whose hits and misses
-   * the page already records
    * @param {function(): number} [opts.now]
    */
-  constructor(deck, {recordNotes=true, now=Date.now}={}) {
+  constructor(deck, {now=Date.now}={}) {
     this.deck = deck
-    this.recordNotes = recordNotes
     this.now = now
     this.loop = deck.playableCount <= 1
+    this.drill = () => ({mode: "wait"})
 
     this.startCard()
 
@@ -278,11 +281,19 @@ export class MeasureCardGenerator {
     }
   }
 
-  startCard() {
+  /**
+   * @param {function(): {mode: string, speed?: number}} drill the drill
+   * being played, "wait" or "scroll" mode at a scroll speed, which each
+   * attempt is graded and stored by
+   */
+  setDrill(drill) {
+    this.drill = drill
+  }
+
+  startCard(time=null) {
     let card = this.deck.card
     this.emitted = 0 // columns handed out for the card
-    this.done = 0 // columns of the card the player is done with
-    this.tally = card ? card.measures.map(() => ({hits: 0, misses: 0, elapsedMs: 0})) : []
+    this.pass = card ? new AttemptPass(card, {startedAt: time}) : null
   }
 
   nextNote() {
@@ -291,8 +302,9 @@ export class MeasureCardGenerator {
       return []
     }
 
-    if (this.columnStartedAt == null) {
-      this.columnStartedAt = this.now()
+    // the first card is timed from when it is shown
+    if (this.pass.columnStartedAt == null) {
+      this.pass.restart(this.now())
     }
 
     let columns = card.columns
@@ -321,11 +333,12 @@ export class MeasureCardGenerator {
     return this.deck.cards
   }
 
-  // the measure tally of the column at the head of the staff
-  headTally() {
-    let card = this.deck.card
-    let idx = this.done % card.columns.length
-    return this.tally[card.columnMeasures[idx]]
+  // the pass being played, told the drill it is played in
+  playedPass() {
+    if (!this.pass.drill) {
+      this.pass.drill = this.drill()
+    }
+    return this.pass
   }
 
   // called by NoteList#shift with the list the column was removed from
@@ -334,35 +347,24 @@ export class MeasureCardGenerator {
     if (!card) { return }
 
     let time = this.now()
-    let tally = this.headTally()
-
-    let elapsed = Math.max(0, time - this.columnStartedAt)
-    if (elapsed < MAX_COLUMN_MS) {
-      tally.elapsedMs += elapsed
-    }
-    this.columnStartedAt = time
+    let pass = this.playedPass()
 
     // the hit is counted after the column is removed, see notePlayed
-    this.lastDone = tally
-    this.done += 1
+    this.lastDone = {pass, index: pass.done(time)}
+
+    if (!pass.complete) {
+      return
+    }
+
+    this.finishPass(pass)
 
     if (this.loop) {
-      let idx = (this.done - 1) % card.columns.length
-      let measureIdx = card.columnMeasures[idx]
-      if (card.columnMeasures[idx + 1] != measureIdx) {
-        this.finishMeasures(card, [measureIdx])
-        this.tally[measureIdx] = {hits: 0, misses: 0, elapsedMs: 0}
-      }
+      this.pass = new AttemptPass(card, {startedAt: time})
       return
     }
 
-    if (this.done < card.columns.length) {
-      return
-    }
-
-    this.finishCard(card)
     this.deck.advance()
-    this.startCard()
+    this.startCard(time)
 
     // the columns after the finished card are the gap, show the next card
     if (list) {
@@ -374,48 +376,83 @@ export class MeasureCardGenerator {
     }
   }
 
-  notePlayed({type}) {
+  notePlayed({type, notes=[], stats}) {
     if (!this.deck.card) { return }
+
+    if (stats) {
+      this.sessionId = stats.id
+    }
 
     if (type == "hit") {
       // a hit is counted right after its column is done
-      if (this.lastDone) {
-        this.lastDone.hits += 1
+      let done = this.lastDone
+      if (done) {
+        done.pass.hit(done.index)
+        let column = done.pass.card.columns[done.index]
+        if (stats) { stats.countClefs(columnClefs(column), "hit") }
         this.lastDone = null
       }
-    } else if (type == "miss") {
-      this.headTally().misses += 1
+    } else if (type == "miss" || type == "slip") {
+      let pass = this.playedPass()
+      pass.miss(notes, {counted: type == "miss", time: this.now()})
+      if (type == "miss" && stats) {
+        stats.countClefs(columnClefs(pass.card.columns[pass.head], notes), "miss")
+      }
       this.lastDone = null
     }
   }
 
-  finishCard(card) {
-    this.finishMeasures(card, card.measures.map((measure, idx) => idx))
+  /**
+   * Abandons the pass being played, eg. at Rest or when the page is left, so
+   * it is never graded: returns the practice on it so far, for the page to
+   * add to the items' totals (see recordSectionPractice in st/storage), and
+   * collects the rest of the card as practice alone. A pass not played yet
+   * is kept, timed afresh from now.
+   * @returns {Object[]} section practice, one per measure range
+   */
+  takePractice() {
+    let pass = this.pass
+    if (!pass) { return [] }
+
+    let time = this.now()
+    if (!pass.touched) {
+      pass.restart(time)
+      return []
+    }
+
+    this.pass = new AttemptPass(pass.card, {from: pass.head, continued: true, startedAt: time})
+    this.lastDone = null
+    return passPractice(pass, {pieceId: this.deck.pieceId, hand: this.deck.hand})
   }
 
-  // Adds the tallies of the card's measures at the given indices to the
-  // store once the hit for the last column done has been counted, which
-  // happens in the same task
-  finishMeasures(card, indices) {
-    let tallies = indices.map(idx => this.tally[idx])
-    let at = this.now()
+  // Writes the pass to the store once the hit for its last column has been
+  // counted, which happens in the same task: its attempts when it is graded,
+  // else its practice
+  finishPass(pass) {
+    // a pass played partly in the other mode isn't graded in either
+    if (this.drill().mode != pass.drill.mode) {
+      pass.continued = true
+    }
+
+    // reviews are keyed by item and time, so two passes are never written at
+    // the same millisecond
+    let at = Math.max(pass.lastAt ?? this.now(), (this.writtenAt ?? -Infinity) + 1)
+    this.writtenAt = at
 
     let finished = Promise.resolve().then(() => {
       let store = this.deck.getStore()
-      return Promise.all(indices.map((idx, i) => {
-        let {hits, misses, elapsedMs} = tallies[i]
-        if (!hits && !misses) { return }
+      let opts = {pieceId: this.deck.pieceId, hand: this.deck.hand, sessionId: this.sessionId, at}
+      let attempts = passAttempts(pass, opts)
 
-        return store.recordSectionPractice({
-          pieceId: this.deck.pieceId,
-          startMeasure: card.measures[idx],
-          endMeasure: card.measures[idx],
-          hits: this.recordNotes ? hits : 0,
-          misses: this.recordNotes ? misses : 0,
-          elapsedMs, at,
-        }).catch(err => console.warn("Couldn't save the measure stats", err))
-      }))
-    })
+      if (attempts.length) {
+        return Promise.all(attempts.map(({id, build}) =>
+          store.recordAttempt(stored => build(stored.item(id)))))
+      }
+
+      return Promise.all(passPractice(pass, opts).map(practice =>
+        store.recordSectionPractice(practice)))
+    }).catch(err => console.warn("Couldn't save the attempt", err))
+
     this.finishing = Promise.all([this.finishing, finished])
   }
 }

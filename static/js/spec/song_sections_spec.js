@@ -3,8 +3,10 @@ import {SongNoteList, MultiTrackSong, SongNote} from "st/song_note_list"
 
 import {
   extractSectionColumns, measureBeatRange, countMeasures, filterColumnsToRange,
-  parseSongText
+  parseSongText, staffTracks
 } from "st/song_sections"
+import {parseMusicXML} from "st/musicxml"
+import {noteXML} from "spec/helpers"
 
 import {
   SheetMusicGenerator, generatorDefaultSettings, storeGeneratorSettings,
@@ -151,6 +153,58 @@ describe("song sections", function() {
     let bad = parseSongText("c4 ??")
     expect(bad.song).toBeNull()
     expect(bad.error).toBeTruthy()
+  })
+
+  describe("score staves", function() {
+    // 4/4 on a grand staff, a chord across the staves then a bass note; the
+    // lower staff changes to treble clef in measure 2
+    const clefChange = parseMusicXML(`<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes><divisions>1</divisions><time><beats>4</beats><beat-type>4</beat-type></time><staves>2</staves>
+        <clef number="1"><sign>G</sign><line>2</line></clef><clef number="2"><sign>F</sign><line>4</line></clef></attributes>
+      ${noteXML("E", 5, 4, 1)}
+      <backup><duration>4</duration></backup>
+      ${noteXML("C", 3, 2, 2)}
+      ${noteXML("G", 3, 2, 2)}
+    </measure>
+    <measure number="2">
+      <attributes><clef number="2"><sign>G</sign><line>2</line></clef></attributes>
+      ${noteXML("E", 5, 4, 1)}
+      <backup><duration>4</duration></backup>
+      ${noteXML("C", 4, 4, 2)}
+    </measure>
+  </part>
+</score-partwise>`)
+
+    it("carries the staff of each note and the clefs at each onset of an imported piece", function() {
+      let columns = extractSectionColumns(clefChange, {notation: true})
+      expect(columns.map(column => [...column])).toEqual([["C3", "E5"], ["G3"], ["C4", "E5"]])
+      expect(columns.map(column => column.staves)).toEqual([["lower", "upper"], ["lower"], ["lower", "upper"]])
+      expect(columns.map(column => column.clefs)).toEqual([
+        {upper: "g", lower: "f"}, {upper: "g", lower: "f"}, {upper: "g", lower: "g"},
+      ])
+
+      // one hand's tracks carry their own staff alone
+      let upper = extractSectionColumns(clefChange, {notation: true, track: staffTracks(clefChange).treble})
+      expect(upper.map(column => [column.staves, column.clefs])).toEqual([
+        [["upper"], {upper: "g"}], [["upper"], {upper: "g"}],
+      ])
+
+      // not asked for, as for pasted notation
+      expect(extractSectionColumns(clefChange).some(column => column.staves || column.clefs)).toBe(false)
+    })
+
+    it("keeps the staves of the notes kept by the staff's range", function() {
+      let columns = extractSectionColumns(clefChange, {notation: true})
+      let [kept] = filterColumnsToRange(columns, "C4", "C6")
+      expect(kept.map(column => [[...column], column.staves, column.clefs])).toEqual([
+        [["E5"], ["upper"], {upper: "g", lower: "f"}],
+        [["C4", "E5"], ["lower", "upper"], {upper: "g", lower: "g"}],
+      ])
+    })
   })
 
   describe("generator", function() {

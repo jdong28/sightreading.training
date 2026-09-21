@@ -304,6 +304,35 @@ describe("spaced repetition records", function() {
         }
       })
 
+      it("builds an attempt from the items as stored once the writes before it are done", async function() {
+        let build = at => stored => {
+          let current = stored.item("a:both:1-1") || newItem({pieceId: "a", startMeasure: 1, endMeasure: 1}, at)
+          return {item: itemWithPractice(current, {hits: 2, misses: 0, at}), review: attempt("a", 1, 1, at)}
+        }
+
+        // queued before either is written, the second still adds to the first
+        await Promise.all([store.recordAttempt(build(1000)), store.recordAttempt(build(2000))])
+        expect([store.item("a:both:1-1").hits, store.item("a:both:1-1").attempts]).toEqual([4, 2])
+        expect((await store.reviews({pieceId: "a"})).map(review => review.at)).toEqual([1000, 2000])
+      })
+
+      it("adds section practice under its hand, several ranges with a session in one write", async function() {
+        await store.recordSectionPractice({pieceId: "a", hand: "lower", startMeasure: 3, endMeasure: 3, hits: 1, misses: 2, at: 500})
+
+        spyOn(store.backend, "write").and.callThrough()
+        await store.putSession({id: "s1", startedAt: Date.now()}, {sectionPractice: [
+          {pieceId: "a", hand: "upper", startMeasure: 3, endMeasure: 4, hits: 2, misses: 0, at: 900, elapsedMs: 700},
+          {pieceId: "a", hand: "upper", startMeasure: 3, endMeasure: 3, hits: 2, misses: 0, at: 900, elapsedMs: 700},
+        ]})
+        expect(store.backend.write).toHaveBeenCalledTimes(1)
+
+        expect(store.items("a").map(item => [item.id, item.hits, item.misses])).toEqual([
+          ["a:lower:3-3", 1, 2], ["a:upper:3-4", 2, 0], ["a:upper:3-3", 2, 0],
+        ])
+        expect(store.sectionStats("a").find(stats => stats.endMeasure == 3)).toEqual(
+          {pieceId: "a", startMeasure: 3, endMeasure: 3, hits: 3, misses: 2, attempts: 2, lastPracticed: 900, elapsedMs: 700})
+      })
+
       it("leaves the cache untouched when an attempt can't be written", async function() {
         let item = practicedItem("a", 1, 1, 1000)
         let review = attempt("a", 1, 1, 1000)

@@ -855,7 +855,7 @@ describe("score page engine card", function() {
     expect(measureStats.reduce((sum, stats) => sum + stats.misses, 0)).toEqual(1)
   })
 
-  it("records each measure of a whole section on one card as it is played, before the pass is done", async function() {
+  it("adds the measures of a whole section card left at Rest to their totals, grading only a whole lap", async function() {
     let piece = await drillPiece(reverieOpening(), {startMeasure: 1, endMeasure: 4})
     renderScorePage()
     await cardDrawn()
@@ -869,11 +869,13 @@ describe("score page engine card", function() {
     for (let idx = 0; idx < firstColumns; idx++) {
       play(page.state.notes.currentColumn())
     }
-    await page.state.notes.generator.finishing
+    flushSync(() => page.restSession())
+    await waitFor(() => store.recentSessions().length == 1, {message: "the session to be saved"})
 
     let measureStats = store.sectionStats(piece.id).filter(stats => stats.startMeasure == stats.endMeasure)
     expect(measureStats.map(stats => [stats.startMeasure, stats.hits, stats.misses]))
       .toEqual([[card.measures[first], firstColumns, 0]])
+    expect(await store.reviews({pieceId: piece.id})).toEqual([])
   })
 
   // a piano score with the same notes as one part of two staves and as a

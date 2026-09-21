@@ -876,15 +876,19 @@ export class LocalStore {
    * the attempt left it, any other items the attempt changed (related) and
    * the session it was played in. The item and the related items replace the
    * stored ones of their id.
-   * @param {Object} attempt
+   * @param {Object|function(LocalStore): Object} attempt, or a function
+   * building it from this store once the writes before it are done, eg. to
+   * add to an item as stored
    * @param {ItemRecord} attempt.item
    * @param {ReviewRecord} attempt.review of attempt.item
    * @param {ItemRecord[]} [attempt.related]
    * @param {SessionRecord} [attempt.session]
    * @returns {Promise<ItemRecord>} the stored item
    */
-  recordAttempt({item, review, related=[], session}) {
+  recordAttempt(attempt) {
     return this.mutate(async () => {
+      let {item, review, related=[], session} =
+        typeof attempt == "function" ? attempt(this) : attempt
       let items = [item, ...related]
       if (!items.every(validItem) || new Set(items.map(i => i.id)).size != items.length) {
         throw new Error("Not a valid item")
@@ -941,6 +945,8 @@ export class LocalStore {
    * stats recorded before items.
    * @param {Object} practice
    * @param {string} practice.pieceId
+   * @param {string} [practice.hand] the item's hand setting, one of HANDS,
+   * "both" by default
    * @param {number} practice.startMeasure
    * @param {number} practice.endMeasure
    * @param {number} practice.hits
@@ -961,8 +967,8 @@ export class LocalStore {
   }
 
   // the item of the practiced range with the practice added
-  practicedItem({pieceId, startMeasure, endMeasure, hits, misses, at=Date.now(), elapsedMs}) {
-    let range = {pieceId, hand: "both", startMeasure, endMeasure}
+  practicedItem({pieceId, hand="both", startMeasure, endMeasure, hits, misses, at=Date.now(), elapsedMs}) {
+    let range = {pieceId, hand, startMeasure, endMeasure}
     let current = this.item(itemId(range)) || newItem(range, at)
     let item = itemWithPractice(current, {hits, misses, at, elapsedMs})
 
@@ -999,7 +1005,8 @@ export class LocalStore {
    * in the same transaction, so both are stored when the page is left.
    * @param {SessionRecord} session
    * @param {Object} [opts]
-   * @param {Object} [opts.sectionPractice] as for recordSectionPractice
+   * @param {Object|Object[]} [opts.sectionPractice] as for
+   * recordSectionPractice, or a list of them on different ranges
    * @returns {Promise<SessionRecord>}
    */
   putSession(session, {sectionPractice}={}) {
@@ -1008,15 +1015,16 @@ export class LocalStore {
         throw new Error("Not a valid session")
       }
 
-      let item = sectionPractice && this.practicedItem(sectionPractice)
+      let practice = sectionPractice ? [sectionPractice].flat() : []
+      let items = practice.map(stint => this.practicedItem(stint))
       await this.backend.write([
         {store: "sessions", put: session},
-        ...(item ? [{store: "items", put: item}] : []),
+        ...items.map(item => ({store: "items", put: item})),
       ])
 
       this.cacheSession(session)
-      if (item) {
-        this.cacheItems([item])
+      if (items.length) {
+        this.cacheItems(items)
       }
 
       return session
