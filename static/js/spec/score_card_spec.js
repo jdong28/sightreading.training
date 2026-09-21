@@ -5,7 +5,7 @@ import {MemoryRouter} from "react-router-dom"
 
 import ScorePage, {SCORE_PROGRAMME} from "st/components/pages/score_page"
 import ScoreCard from "st/components/score_card"
-import {MISSING_ENGINE_SOURCE} from "st/components/pages/sight_reading_page"
+import {MISSING_ENGINE_SOURCE, FAILED_ENGINE_SOURCE} from "st/components/pages/sight_reading_page"
 import {joinCard, markCard, joinable, MARK_CLASSES} from "st/score_render/card_join"
 import {
   scrollTrack, trackX, scrollAdvance, scrollOffset, SCROLL_WAIT, MIN_SCROLL_ADVANCE, JUMP_LEAD_IN,
@@ -13,7 +13,7 @@ import {
 import {prepareCard} from "st/score_render/card_source"
 import {loadScoreEngines} from "st/score_render/load"
 import {STAVES, pieceSectionMeasures, BOTH_HANDS, RIGHT_HAND, LEFT_HAND, SHEET_MUSIC_STORAGE_KEY} from "st/data"
-import {sectionCard, MAX_MEASURES_PER_CARD} from "st/measure_cards"
+import {sectionCard} from "st/measure_cards"
 import {importMusicXMLPiece, addPiece} from "st/sheet_music_deck"
 import {parseMusicXML} from "st/musicxml"
 import {parseNote} from "st/music"
@@ -526,12 +526,11 @@ describe("score page engine card", function() {
     expect(marked(MARK_CLASSES.done).length).toEqual(0)
   })
 
-  it("draws a whole section longer than the staff's card cap as one card", async function() {
+  it("draws a whole section of four measures as one card", async function() {
     await drillPiece(reverieOpening(), {startMeasure: 1, endMeasure: 4})
     let el = renderScorePage()
     await cardDrawn()
 
-    expect(4).toBeGreaterThan(MAX_MEASURES_PER_CARD)
     let {card, number} = page.currentCard()
     expect([card.startMeasure, card.endMeasure, number]).toEqual([1, 4, null])
     expect(el.textContent).toContain("measures 1–4")
@@ -545,7 +544,7 @@ describe("score page engine card", function() {
 
   let perCardPicker = drawer => drawer.querySelector("[role=\"spinbutton\"][aria-label=\"measures per card\"]")
 
-  it("picks a card size past the staff's cap for the score's cards, in scroll mode too", async function() {
+  it("picks a card size up to the whole section for the score's cards, in scroll mode too", async function() {
     await drillPiece(reverieOpening(), {startMeasure: 1, endMeasure: 4, measuresPerCard: "2"})
     let el = renderScorePage()
     await cardDrawn()
@@ -561,13 +560,12 @@ describe("score page engine card", function() {
     flushSync(() => input.dispatchEvent(new KeyboardEvent("keydown", {key: "Enter", bubbles: true})))
     flushSync(() => {})
 
-    expect(4).toBeGreaterThan(MAX_MEASURES_PER_CARD)
     expect(page.state.currentGeneratorSettings.measuresPerCard).toEqual(4)
     let {card} = page.currentCard()
     expect(card.measures).toEqual([1, 2, 3, 4])
     await waitFor(() => el.querySelector("[data-score-card] svg"), {message: "the four measure card"})
 
-    // the engine draws scroll mode's cards too, so the cap stays off
+    // and keeps it in scroll mode
     flushSync(() => page.setMode("scroll"))
     flushSync(() => {})
     expect(perCardPicker(drawer).getAttribute("aria-valuemax")).toEqual("4")
@@ -639,7 +637,7 @@ describe("score page engine card", function() {
     expect(page.state.mode).toEqual("scroll")
     expect(el.querySelector(`.${staffStyles.staff_notes}`)).toBe(null)
     expect(el.textContent).not.toContain(MISSING_ENGINE_SOURCE)
-    // one card of the whole section, longer than the app staff's cap
+    // one card of the whole section
     let {card, number} = page.currentCard()
     expect([card.startMeasure, card.endMeasure, number]).toEqual([1, 4, null])
 
@@ -824,22 +822,22 @@ describe("score page engine card", function() {
     await waitFor(() => el.querySelector(`.${staffStyles.staff_notes}`), {message: "the app's staff"})
 
     expect(el.querySelector("[data-score-card]")).toBe(null)
-    // capped again to what the staff fits, which the card size says
+    // the same card, which the card size says, and why it is drawn this way
     let {card} = page.currentCard()
-    expect(card.endMeasure - card.startMeasure + 1).toBeLessThanOrEqual(MAX_MEASURES_PER_CARD)
+    expect(card.measures).toEqual([1, 2, 3, 4])
     let drawer = openDrawer(el)
-    expect(perCardPicker(drawer).getAttribute("aria-valuemax")).toEqual(`${MAX_MEASURES_PER_CARD}`)
-    expect(drawer.textContent).toContain("while the score can't be drawn")
+    expect(perCardPicker(drawer).getAttribute("aria-valuemax")).toEqual("4")
+    expect(el.textContent).toContain(FAILED_ENGINE_SOURCE)
   })
 
-  it("records each measure's stats as a whole section longer than the staff's card cap is played on one card", async function() {
+  it("records each measure's stats as a whole section of four measures is played on one card", async function() {
     let piece = await drillPiece(reverieOpening(), {startMeasure: 1, endMeasure: 4})
     renderScorePage()
     await cardDrawn()
 
     flushSync(() => page.beginSession())
     let {card} = page.currentCard()
-    expect(card.endMeasure - card.startMeasure + 1).toBeGreaterThan(MAX_MEASURES_PER_CARD)
+    expect(card.measures).toEqual([1, 2, 3, 4])
 
     play(["C2"])
     for (let idx = 0; idx < card.columns.length; idx++) {

@@ -43,7 +43,7 @@ channel 10. It should be a GM Drum Kit to sound correctly.
 There are many different tools included to practice your music and sight reading skills:
 
 * **[Staff](/)** -- Notes are randomly generated for you to sight read and play. This will ensure that you're always reading and never playing from memory. In the simplest mode you'll play one note at a time, but you can increase complexity by clicking **Programme**, and changing how notes are generated. In order to play more than 1 note at a time you need a MIDI controller connected!
-* **[Sheet music](/sheet-music)** -- Import a piece as MusicXML and drill a section of it, a few measures at a time, drawn on the score's own staves and key. See [the generators guide](/guide/generators) for more.
+* **[Sheet music](/sheet-music)** -- Import a piece as MusicXML and drill a section of it, as many measures at a time as you like, engraved from the score itself. See [the generators guide](/guide/generators) for more.
 * **[Play Along](/play-along)** -- Write a song in the song editor, or import your own sheet music there as an uncompressed MusicXML file (`.musicxml` or `.xml`). You can control the playback speed, and configure a metronome by using the MIDI output option.
 * **[Ear Training](/ear-training)** -- Various tools to practice your ear, including interval recognition and playing back a melody.
 * **[Flash Cards](/flash-cards)** -- Generates random flash cards to help you memorize or quickly identify things related to music theory

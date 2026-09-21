@@ -10,7 +10,7 @@ import styles from "./sight_reading_page.module.css"
 import staffStyles from "st/components/staff.module.css"
 
 import {noteName, parseNote} from "st/music"
-import {STAVES, GENERATORS, sheetMusicPiece, wholeSectionDrill, handTracks, RIGHT_HAND, LEFT_HAND} from "st/data"
+import {STAVES, GENERATORS, sheetMusicPiece, handTracks, RIGHT_HAND, LEFT_HAND} from "st/data"
 import {pieceSong, pieceSource} from "st/sheet_music_deck"
 import {parseMusicXML} from "st/musicxml"
 import {getAppStore} from "st/storage"
@@ -40,9 +40,6 @@ import {isMobile} from "st/browser"
 import {getSession} from "st/app"
 
 import {StaffTwo} from "st/components/staff_two"
-import {fitNoteWidth, fitStaffScale, minNoteWidth, drawsRests} from "st/components/staff_notes"
-import {columnAdvances, columnSpan} from "st/staff_rhythm"
-import {drillColumns} from "st/measure_cards"
 import {ScoreCard} from "st/components/score_card"
 import {loadScoreEngines} from "st/score_render/load"
 import {joinable} from "st/score_render/card_join"
@@ -56,14 +53,6 @@ const STAFF_TWO_HEIGHT = 150
 
 // both renderers draw the staff this much smaller inside the staff plate
 export const PLATE_STAFF_SCALE = 0.8
-
-// A piece's card (or whole section) is fitted to the plate: its columns are
-// squeezed down to the card's minNoteWidth, then the staff shrinks down to
-// MIN_FIT_SCALE, the smallest staff still worth reading. Together with
-// MAX_MEASURES_PER_CARD (st/measure_cards), this fits even the score's
-// busiest three bar cards on the normal (non-fullscreen) plate with a little
-// room to spare
-export const MIN_FIT_SCALE = 0.25
 
 // the legacy renderer's scale for the window's width
 function staffScale() {
@@ -129,7 +118,7 @@ export function cardLabel(card, cardNumber, section) {
 }
 
 // What a trainer page drills. The trainer (the page's detection, cards,
-// fitting, modes, stats and staff) is the same on every page; a programme
+// modes, stats and staff) is the same on every page; a programme
 // says which generators it offers, how their settings are picked and where
 // they're kept. This one, the default, is the exercises page's: a staff,
 // exercise and key picked in the programme drawer or on /setup. The score
@@ -162,6 +151,9 @@ export const EXERCISES_PROGRAMME = {
 export const MISSING_ENGINE_SOURCE = "Drawn on the trainer's staff: this piece was imported " +
   "before the app kept each piece's score. Import its file again in the programme (its stats are " +
   "kept) to practise from the engraved score."
+
+export const FAILED_ENGINE_SOURCE = "Drawn on the trainer's staff: this piece's score couldn't be " +
+  "engraved. Importing its file again in the programme (its stats are kept) may bring the score back."
 
 // the score staff each track of the score's song model reads (see
 // st/musicxml), null when the score can't be read
@@ -287,14 +279,6 @@ export default class SightReadingPage extends React.Component {
       }
     }
 
-    // a piece's whole section drill is capped to cards in the wait mode only
-    // (see measureCardDeck), so that is the one drill rebuilt on a mode change
-    if (prevState.mode != this.state.mode && this.currentPieceSection() &&
-        wholeSectionDrill(this.currentSettings()))
-    {
-      this.refreshNoteList()
-    }
-
     if (prevState.currentStaff != this.state.currentStaff ||
         prevState.currentGenerator != this.state.currentGenerator ||
         prevState.currentGeneratorSettings != this.state.currentGeneratorSettings ||
@@ -307,20 +291,12 @@ export default class SightReadingPage extends React.Component {
   }
 
   // Keeps the engine card's inputs in step with the drill: the source of the
-  // drilled piece read, the notes rebuilt when cards go between the engine
-  // (uncapped) and the app's staff (capped to the plate), and the misses
-  // marked on the card cleared when a new pass of it starts
+  // drilled piece read, and the misses marked on the card cleared when a new
+  // pass of it starts
   updateEngineCard(prevState) {
     if (!this.programme.engine) { return }
 
     this.loadEngineSource()
-
-    if (this.state.notes && this.state.currentGenerator &&
-        this.engineCards() != !!this.notesForEngine)
-    {
-      this.refreshNoteList()
-      return
-    }
 
     // a card whose columns can't be joined (a piece stored without the
     // score's rhythm), or whose hand's staves can't be told in the score, is
@@ -389,23 +365,6 @@ export default class SightReadingPage extends React.Component {
       source && source.status == "ready" && this.currentPieceSection())
   }
 
-  // Why the drill's cards are drawn by the app's staff, which caps how many
-  // measures each has to what it fits on the plate (MAX_MEASURES_PER_CARD),
-  // or null when the programme's engine draws them, uncapped. A piece whose
-  // source is still being read counts as the engine's
-  cardCap() {
-    if (!this.programme.engine) { return "" }
-
-    switch (this.state.engineSource?.status) {
-      case "missing":
-        return "until the piece is re-imported with its score"
-      case "failed":
-        return "while the score can't be drawn"
-      default:
-        return null
-    }
-  }
-
   // whether the plate waits before it knows which staff draws the card: on
   // the piece's source, or on the plate's width for the engine
   engineCardPending() {
@@ -439,7 +398,7 @@ export default class SightReadingPage extends React.Component {
   // when the app's staff draws it. In scroll mode the engine draws the whole
   // section on one line, which the slider moves along from card to card
   engineCard() {
-    if (!this.engineCards() || !this.notesForEngine) { return null }
+    if (!this.engineCards()) { return null }
 
     let current = this.currentCard()
     let width = this.state.staffWidth
@@ -566,16 +525,11 @@ export default class SightReadingPage extends React.Component {
       ...this.state.currentGeneratorSettings
     }
 
-    // cards an engine draws aren't capped to the plate
-    let engineCards = this.engineCards()
-    this.notesForEngine = engineCards
-
     let generatorInstance = generator.create.call(
       generator,
       this.state.currentStaff,
       this.state.keySignature,
-      generatorSettings,
-      {engineCards}
+      generatorSettings
     )
 
     var notes
@@ -600,7 +554,7 @@ export default class SightReadingPage extends React.Component {
   }
 
   // keeps state.staffWidth up to date with the staff wrapper's width, which
-  // the columns of a piece's card are fitted to
+  // an engine draws a piece's card to
   observeStaffWrapper(el) {
     if (this.staffResizeObserver) {
       this.staffResizeObserver.disconnect()
@@ -641,87 +595,15 @@ export default class SightReadingPage extends React.Component {
     return {card, number: generator.currentCardNumber()}
   }
 
-  // The columns of the card on the staff, kept while it is the current one
-  // so the staff is handed the same unit as its notes slide through it, with
-  // the wrap back to its start when the card loops (see drillColumns)
-  unitColumns({card, number}) {
-    let loop = number == null
-    if (this.unitColumnsCard != card || this.unitColumnsLoop != loop) {
-      this.unitColumnsCard = card
-      this.unitColumnsLoop = loop
-      this.unitColumnsCache = drillColumns(card, {loop})
-    }
-
-    return this.unitColumnsCache
-  }
-
-  // Whether the staff draws the score's rests, which fixes the unit its
-  // columns are spaced in: each side of a grand staff draws its own, and a
-  // lone staff only when the drill is on one score staff (see drawsRests).
-  // The page fits and slides a card by the same choice the staff draws it with
-  restsDrawn(columns) {
-    let staff = this.state.currentStaff
-    return (staff && staff.name == "grand") || drawsRests(columns)
-  }
-
-  // The legacy staff's scale, column width and unit: the columns of the
-  // piece's card (or whole section) on the staff, which fix its margins in
-  // every mode. In wait mode the card is also fitted to the plate so every
-  // note of it shows: the scale fits every card of the drill, so the staff
-  // keeps its size from card to card, and the columns fit the card on it
-  staffLayout() {
-    let {scale, noteWidth, staffWidth, keySignature} = this.state
-    let current = this.currentCard()
-    let unitColumns = current ? this.unitColumns(current) : null
-
-    if (!current || this.state.mode != "wait") {
-      return {scale, noteWidth, unitColumns}
-    }
-
-    // What a card needs of the plate, in the unit the staff draws it with (see
-    // drillColumns and st/staff_rhythm), so the plate is fitted to what is
-    // drawn: the room its columns span, and a column width wide enough that
-    // its narrowest gap — not the nominal column — still holds a note head and
-    // its accidental
-    let loop = current.number == null
-    let rests = this.restsDrawn(unitColumns)
-    let fitFor = card => {
-      let unit = card == current.card ? unitColumns : drillColumns(card, {loop})
-      let narrowest = Math.min(1, ...columnAdvances(card.columns, unit, {rests}))
-
-      return {
-        span: columnSpan(card.columns, unit, {rests}),
-        minWidth: Math.ceil(minNoteWidth(card.columns, keySignature) / narrowest),
-      }
-    }
-
-    scale = Math.min(...this.state.notes.generator.cards.map(card => {
-      let {span, minWidth} = fitFor(card)
-      return fitStaffScale(staffWidth, span, {scale, keySignature, minWidth, minScale: MIN_FIT_SCALE})
-    }))
-
-    let {span, minWidth} = fitFor(current.card)
-    noteWidth = fitNoteWidth(staffWidth, span, {scale, keySignature, maxWidth: noteWidth, minWidth})
-
-    return {scale, noteWidth, unitColumns}
-  }
-
   // How many column widths the staff slides when the head column of notes is
-  // done with, which is one for every column of a drill without the score's
-  // rhythm and a long note's own room in an imported piece
+  // done with: one on the app's staff, which draws its columns a width apart,
+  // and on an engine's system the gap it drew between the columns
   columnAdvance(notes) {
     if (!notes || !notes.length) { return 1 }
 
-    // the engine's system moves on by the gap it drew between the columns
     let drawn = this.staff && this.staff.scrollAdvance &&
       this.staff.scrollAdvance(notes.currentColumn(), notes[1])
-    if (drawn != null) { return drawn }
-
-    let current = this.currentCard()
-    let unitColumns = current ? this.unitColumns(current) : null
-    let [advance] = columnAdvances(notes, unitColumns,
-      {rests: this.restsDrawn(unitColumns || notes)})
-    return advance > 0 ? advance : 1
+    return drawn != null ? drawn : 1
   }
 
   // Begin: a fresh session in new stats, with the elapsed clock running
@@ -1366,7 +1248,6 @@ export default class SightReadingPage extends React.Component {
         setStaff={this._setStaff ||= this.setStaff.bind(this)}
 
         mode={this.state.mode}
-        cardCap={this.cardCap()}
         setMode={this._setMode ||= this.setMode.bind(this)}
         scrollSpeed={this.state.scrollSpeed}
         setScrollSpeed={this._setScrollSpeed ||= scrollSpeed => {
@@ -1507,15 +1388,13 @@ export default class SightReadingPage extends React.Component {
       } else if (this.engineCardPending()) {
         staff = null
       } else {
-        let {scale, noteWidth, unitColumns} = this.staffLayout()
         staff = this.state.currentStaff.render.call(this, {
           heldNotes: this.state.heldNotes,
           notes: this.state.notes,
           keySignature: this.state.keySignature,
-          noteWidth,
+          noteWidth: this.state.noteWidth,
           noteShaking: this.state.noteShaking,
-          scale,
-          unitColumns,
+          scale: this.state.scale,
         })
       }
     }
@@ -1541,13 +1420,8 @@ export default class SightReadingPage extends React.Component {
     let source = this.state.engineSource
     if (!this.programme.engine || !source) { return null }
 
-    if (source.status == "missing") {
-      return <p className={styles.plate_note} data-engine-note>
-        {MISSING_ENGINE_SOURCE}
-      </p>
-    }
-
-    return null
+    let note = {missing: MISSING_ENGINE_SOURCE, failed: FAILED_ENGINE_SOURCE}[source.status]
+    return note ? <p className={styles.plate_note} data-engine-note>{note}</p> : null
   }
 
   renderTransport() {

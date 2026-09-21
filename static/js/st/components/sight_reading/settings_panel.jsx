@@ -384,9 +384,6 @@ export class ScoreDrawer extends React.PureComponent {
     setMode: types.func.isRequired,
     scrollSpeed: types.number.isRequired,
     setScrollSpeed: types.func.isRequired,
-    // why the app's staff draws the cards, capping how many measures each
-    // has, or null when the engine draws them (see the trainer's cardCap)
-    cardCap: types.string,
   }
 
   render() {
@@ -401,8 +398,7 @@ export class ScoreDrawer extends React.PureComponent {
             currentKey={this.props.currentKey}
             currentStaff={staff}
             currentSettings={this.props.currentGeneratorSettings}
-            setGenerator={this.props.setGenerator}
-            context={{cardCap: this.props.cardCap === undefined ? "" : this.props.cardCap, mode: this.props.mode}} />
+            setGenerator={this.props.setGenerator} />
           {this.renderKeyHint()}
         </SettingsGroup> : null}
 
@@ -450,9 +446,6 @@ export class GeneratorSettings extends React.PureComponent {
     // class names by this panel's style names, used in place of its styles
     // when the inputs are rendered outside the panel, eg. on the setup page
     classes: types.object,
-    // what the page tells its inputs, eg. the score page's cardCap (see the
-    // sheet music generator's measures per card in st/data)
-    context: types.object,
   }
 
   constructor(props) {
@@ -614,14 +607,13 @@ export class GeneratorSettings extends React.PureComponent {
   // pills (eg. the whole section), which leave the number unset.
   // input.value reads the number from the settings and input.update turns a
   // picked one into the settings update, eg. to drag the end measure along
-  // with the start; both take the panel's context too
+  // with the start
   renderMeasure(input, idx) {
     let settings = this.cachedSettings
-    let context = this.props.context || {}
     let label = input.label || input.name
-    let {min, max, caption} = input.bounds(settings, context)
-    let value = input.value ? input.value(settings, context) : settings[input.name]
-    let hint = typeof input.hint == "function" ? input.hint(settings, context) : input.hint
+    let {min, max, caption} = input.bounds(settings)
+    let value = input.value ? input.value(settings) : settings[input.name]
+    let hint = typeof input.hint == "function" ? input.hint(settings) : input.hint
     let presets = input.presets || []
     let preset = presets.find(p => p.name == settings[input.name])
 
@@ -633,7 +625,7 @@ export class GeneratorSettings extends React.PureComponent {
       placeholder={preset ? preset.label || preset.name : undefined}
       caption={caption}
       onChange={value => this.updateSettings(
-        input.update ? input.update(settings, value, context) : {[input.name]: value}
+        input.update ? input.update(settings, value) : {[input.name]: value}
       )} />
 
     return <>

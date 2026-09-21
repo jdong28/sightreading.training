@@ -4,26 +4,21 @@ import {flushSync} from "react-dom"
 import {MemoryRouter} from "react-router-dom"
 
 import SightReadingPage, {
-  formatElapsed, accuracyPercent, romanNumeral, MIN_FIT_SCALE, PLATE_STAFF_SCALE
+  formatElapsed, accuracyPercent, romanNumeral, MISSING_ENGINE_SOURCE, FAILED_ENGINE_SOURCE
 } from "st/components/pages/sight_reading_page"
 import ScorePage, {SCORE_PROGRAMME} from "st/components/pages/score_page"
-import {GStaff} from "st/components/staves"
 import NoteList from "st/note_list"
-import {
-  fitNoteWidth, fitStaffScale, minNoteWidth, GROUP_OFFSET
-} from "st/components/staff_notes"
 import staffStyles from "st/components/staff.module.css"
 import drawerStyles from "st/components/sight_reading/programme_drawer.module.css"
 import {setAppStore} from "st/storage"
 import {importMusicXMLPiece, addPiece} from "st/sheet_music_deck"
 import {parseMusicXML} from "st/musicxml"
-import {STAVES, GENERATORS, SHEET_MUSIC_STORAGE_KEY, BOTH_HANDS, WHOLE_SECTION} from "st/data"
-import {MAX_MEASURES_PER_CARD, RANDOM_ORDER, MeasureCardGenerator, cardColumns} from "st/measure_cards"
-import {DRILL_STORAGE_KEY, SCORE_DRILL_STORAGE_KEY, SheetMusicGenerator} from "st/generators"
+import {GENERATORS, SHEET_MUSIC_STORAGE_KEY, BOTH_HANDS, WHOLE_SECTION} from "st/data"
+import {RANDOM_ORDER, MeasureCardGenerator} from "st/measure_cards"
+import {DRILL_STORAGE_KEY, SCORE_DRILL_STORAGE_KEY} from "st/generators"
 import {scopeEvent} from "st/events"
 import NoteStats from "st/note_stats"
-import {KeySignature} from "st/music"
-import {openTestStore, noteXML, reverieOpening, keyChangeScore, clefChangeScore} from "spec/helpers"
+import {openTestStore, noteXML, reverieOpening, keyChangeScore} from "spec/helpers"
 
 // a two staff 3/4 piece, measures 1 and 2
 let minuetXML = `<?xml version="1.0" encoding="UTF-8"?>
@@ -69,31 +64,6 @@ let octetXML = `<?xml version="1.0" encoding="UTF-8"?>
       ${noteXML("CDEFGAB"[idx % 7], 5, 3, 1)}
       <backup><duration>3</duration></backup>
       ${noteXML("CDEFGAB"[idx % 7], 3, 3, 2)}
-    </measure>`).join("")}
-  </part>
-</score-partwise>`
-
-// a two staff 3/4 piece of eight measures, each a treble E4 (with the F4 above
-// it as a stacked second when second) over a bass C3, then a treble G#4
-let secondsXML = (title, second) => `<?xml version="1.0" encoding="UTF-8"?>
-<score-partwise version="4.0">
-  <work><work-title>${title}</work-title></work>
-  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
-  <part id="P1">
-    ${Array.from({length: 8}, (_, idx) => `
-    <measure number="${idx + 1}">
-      ${idx == 0 ? `<attributes>
-        <divisions>1</divisions>
-        <time><beats>3</beats><beat-type>4</beat-type></time>
-        <staves>2</staves>
-        <clef number="1"><sign>G</sign><line>2</line></clef>
-        <clef number="2"><sign>F</sign><line>4</line></clef>
-      </attributes>` : ""}
-      ${noteXML("E", 4, 1, 1)}
-      ${second ? noteXML("F", 4, 1, 1, "<chord/>") : ""}
-      <note><pitch><step>G</step><alter>1</alter><octave>4</octave></pitch><duration>2</duration><staff>1</staff></note>
-      <backup><duration>3</duration></backup>
-      ${noteXML("C", 3, 3, 2)}
     </measure>`).join("")}
   </part>
 </score-partwise>`
@@ -246,65 +216,6 @@ describe("sight reading page", function() {
     expect(["I", "II", "III", "IV", "IX"]).toEqual([1, 2, 3, 4, 9].map(romanNumeral))
   })
 
-  it("fits a card's columns to the staff width", function() {
-    let opts = {scale: 0.8, maxWidth: 100, minWidth: 48}
-
-    // 805 unscaled pixels, less the clef, the last note and a stacked second
-    expect(fitNoteWidth(644, 10, opts)).toEqual(60)
-    // a key signature takes room before the first column
-    expect(fitNoteWidth(644, 10, {...opts, keySignature: new KeySignature(3)})).toEqual(52)
-    // never wider than the default columns, nor narrower than the minimum
-    expect(fitNoteWidth(644, 5, opts)).toEqual(100)
-    expect(fitNoteWidth(644, 20, opts)).toEqual(48)
-    // before the plate is measured, or for a single column
-    expect(fitNoteWidth(null, 10, opts)).toEqual(100)
-    expect(fitNoteWidth(644, 0, opts)).toEqual(100)
-
-    // the staff shrinks when the columns don't fit at the minimum width
-    let scaleOpts = {scale: 0.8, minWidth: 48, minScale: 0.5}
-    expect(fitStaffScale(644, 10, scaleOpts)).toEqual(0.8)
-    expect(fitStaffScale(644, 20, scaleOpts)).toBeCloseTo(0.555, 3)
-    expect(fitStaffScale(644, 100, scaleOpts)).toEqual(0.5)
-    expect(fitStaffScale(644, 20, {...scaleOpts, scale: 0.4})).toEqual(0.4)
-  })
-
-  it("keeps an accidental clear of the previous note head at the narrowest fitted columns", async function() {
-    container = document.createElement("div")
-    container.style.width = "800px"
-    document.body.appendChild(container)
-    root = createRoot(container)
-
-    let cases = [
-      [new KeySignature(-1), [["A4"], ["Eb4"]], staffStyles.flat],
-      [new KeySignature(1), [["A4"], ["C#4"]], staffStyles.sharp],
-      // the F4 of the second is pushed right of the E4
-      [new KeySignature(0), [["E4", "F4"], ["G#4"]], staffStyles.sharp],
-    ]
-
-    for (let scale of [MIN_FIT_SCALE, PLATE_STAFF_SCALE]) {
-      for (let [keySignature, columns, accidentalClass] of cases) {
-        flushSync(() => root.render(React.createElement(GStaff, {
-          notes: new NoteList(columns),
-          heldNotes: {},
-          keySignature,
-          noteWidth: minNoteWidth(columns, keySignature),
-          scale,
-        })))
-
-        await Promise.all([...container.querySelectorAll("img")].map(img => img.decode()))
-
-        let notes = [...container.querySelectorAll(`.${staffStyles.note}`)]
-        let next = notes.pop()
-        let headsRight = Math.max(...notes.map(note =>
-          note.querySelector(`.${staffStyles.primary}`).getBoundingClientRect().right))
-        let accidental = next.querySelector(`.${accidentalClass}`).getBoundingClientRect()
-
-        expect(accidental.width).toBeGreaterThan(0)
-        expect(accidental.left).toBeGreaterThanOrEqual(headsRight)
-      }
-    }
-  })
-
   it("titles the score page by what it drills", function() {
     window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({piece: "", song: ""}))
     let el = renderScorePage()
@@ -321,206 +232,6 @@ describe("sight reading page", function() {
     expect(el.textContent).not.toContain("pick a piece in the programme")
   })
 
-  it("slides a card by the room the staff draws its columns in", async function() {
-    let {piece} = await importMusicXMLPiece("lead_rest.musicxml", leadRestXML, store)
-
-    window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
-      piece: piece.id, startMeasure: 1, endMeasure: 1, hand: BOTH_HANDS, measuresPerCard: "all",
-    }))
-
-    renderScorePage()
-    // both hands on one treble staff, so no rest of either of them is drawn
-    flushSync(() => page.setStaff(STAVES.find(staff => staff.name == "treble")))
-
-    let {scale, noteWidth} = page.staffLayout()
-    let drawn = Math.floor(noteWidth * scale)
-    let heads = [...container.querySelectorAll(`.${staffStyles.note}`)]
-      .map(note => parseFloat(note.style.left)).sort((a, b) => a - b)
-
-    expect(container.querySelectorAll(`.${staffStyles.rest}`).length).toEqual(0)
-    // the bar's opening rest is never drawn, so its three even quarters are
-    // drawn a column width apart, as a drill without the score's rhythm is
-    expect(heads.length).toBeGreaterThan(1)
-    expect(heads[1] - heads[0]).toEqual(drawn)
-
-    // and the staff slides by that same room when a column is played, rather
-    // than by a width that still counts the rest
-    expect(page.columnAdvance(page.state.notes)).toEqual(1)
-  })
-
-  it("fits a unit with a stacked second at the wider minimum column width", async function() {
-    let {piece: seconds} = await importMusicXMLPiece("seconds.musicxml", secondsXML("Seconds", true), store)
-    let {piece: singles} = await importMusicXMLPiece("singles.musicxml", secondsXML("Singles", false), store)
-
-    window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
-      piece: seconds.id, startMeasure: 1, endMeasure: 8, hand: BOTH_HANDS, measuresPerCard: "all",
-    }))
-
-    renderScorePage()
-    // a plate too narrow for the card's columns at any allowed width
-    flushSync(() => page.setState({staffWidth: 120}))
-
-    let columnsOf = () => page.state.notes.generator.cards[0].columns
-    let layout = page.staffLayout()
-    let stackedWidth = minNoteWidth(columnsOf(), page.state.keySignature)
-    let stackedFitted = layout.noteWidth
-
-    expect([...page.state.notes.currentColumn()]).toEqual(["C3", "E4", "F4"])
-    expect(layout.scale).toEqual(MIN_FIT_SCALE)
-    // the columns are spaced by their beats, so a column is fitted wider than
-    // the narrowest room a head and its accidental need
-    expect(stackedFitted).toBeGreaterThanOrEqual(stackedWidth)
-
-    flushSync(() => page.setGenerator(page.state.currentGenerator, {
-      ...page.state.currentGeneratorSettings, piece: singles.id,
-    }))
-
-    layout = page.staffLayout()
-    let singleWidth = minNoteWidth(columnsOf(), page.state.keySignature)
-
-    expect([...page.state.notes.currentColumn()]).toEqual(["C3", "E4"])
-    expect(layout.scale).toEqual(MIN_FIT_SCALE)
-    expect(layout.noteWidth).toBeGreaterThanOrEqual(singleWidth)
-
-    // the stacked second's column keeps the group offset's room as well, in
-    // the fitted width as in the minimum
-    expect(stackedWidth).toEqual(singleWidth + GROUP_OFFSET)
-    expect(stackedFitted - layout.noteWidth).toBeGreaterThanOrEqual(GROUP_OFFSET)
-  })
-
-  it("keeps an accidental clear of the previous head at the fitted columns", async function() {
-    let {piece} = await importMusicXMLPiece("seconds.musicxml", secondsXML("Seconds", true), store)
-
-    window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
-      piece: piece.id, startMeasure: 1, endMeasure: 8, hand: BOTH_HANDS, measuresPerCard: "all",
-    }))
-
-    let el = renderScorePage()
-    // a plate narrow enough that the card is fitted at its narrowest columns
-    flushSync(() => page.setState({staffWidth: 160}))
-    expect(page.staffLayout().scale).toEqual(MIN_FIT_SCALE)
-
-    await Promise.all([...el.querySelectorAll("img")].map(img => img.decode()))
-
-    // the bar's G#4 is a beat after its E4, the narrowest gap of the card, so
-    // its sharp is what has to clear the heads before it
-    let notes = [...el.querySelector("[data-staff=\"upper\"]").querySelectorAll(`.${staffStyles.note}`)]
-      .map(note => ({
-        at: parseFloat(note.style.left),
-        head: note.querySelector(`.${staffStyles.primary}`).getBoundingClientRect(),
-        accidental: note.querySelector(`.${staffStyles.accidental}`),
-      }))
-
-    let sharps = notes.filter(note => note.accidental)
-    expect(sharps.length).toBeGreaterThan(0)
-
-    for (let note of sharps) {
-      let before = notes.filter(other => other.at < note.at)
-      if (!before.length) { continue }
-
-      let accidental = note.accidental.getBoundingClientRect()
-      expect(accidental.width).toBeGreaterThan(0)
-      expect(accidental.left)
-        .toBeGreaterThanOrEqual(Math.max(...before.map(other => other.head.right)))
-    }
-  })
-
-  it("shrinks the staff to the legibility floor and no further", async function() {
-    let {piece} = await importMusicXMLPiece("seconds.musicxml", secondsXML("Seconds", true), store)
-
-    window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
-      piece: piece.id, startMeasure: 1, endMeasure: 8, hand: BOTH_HANDS, measuresPerCard: "all",
-    }))
-
-    renderScorePage()
-    flushSync(() => page.setState({staffWidth: 160}))
-
-    // the smallest staff still worth reading: a card that doesn't fit at it
-    // runs past the plate's edge rather than shrinking further
-    expect(MIN_FIT_SCALE).toEqual(0.25)
-    expect(page.staffLayout().scale).toEqual(0.25)
-
-    // and a plate with room for the card keeps the staff at its full size
-    flushSync(() => page.setState({staffWidth: 1240}))
-    expect(page.staffLayout().scale).toEqual(page.state.scale)
-  })
-
-  it("fits a card that overflowed at the old 0.35 floor", async function() {
-    let {piece} = await importMusicXMLPiece("seconds.musicxml", secondsXML("Seconds", true), store)
-
-    window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
-      piece: piece.id, startMeasure: 1, endMeasure: 8, hand: BOTH_HANDS, measuresPerCard: "all",
-    }))
-
-    let el = renderScorePage()
-    // a plate narrow enough that the card needs a staff below the old 0.35
-    // floor, which would have clamped there and run past the edge
-    let wrapper = el.querySelector(`.${staffStyles.staff_wrapper}`)
-    wrapper.style.width = "230px"
-    flushSync(() => page.measureStaffWrapper())
-
-    let scale = page.staffLayout().scale
-    expect(scale).toBeGreaterThan(MIN_FIT_SCALE)
-    expect(scale).toBeLessThan(0.35)
-
-    await Promise.all([...el.querySelectorAll("img")].map(img => img.decode()))
-
-    // and every head of it is drawn inside that plate
-    let plate = wrapper.getBoundingClientRect()
-    let heads = [...el.querySelectorAll(`.${staffStyles.note}`)]
-
-    expect(heads.length).toBeGreaterThan(0)
-    for (let head of heads) {
-      expect(head.getBoundingClientRect().right).toBeLessThanOrEqual(plate.right)
-    }
-  })
-
-  it("fits a capped card of the score's busiest bars inside the plate", async function() {
-    let {piece} = await importMusicXMLPiece("reverie.musicxml", reverieOpening(), store)
-
-    window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
-      piece: piece.id, startMeasure: 1, endMeasure: 4, hand: BOTH_HANDS,
-      measuresPerCard: String(MAX_MEASURES_PER_CARD),
-    }))
-
-    let el = renderScorePage()
-    expect(page.state.mode).toEqual("wait")
-
-    // the busiest three bars of the score's opening, the most the cap shows,
-    // the trailing one bar card opening on its own numbered bar line
-    expect(page.state.notes.generator.cards.map(card => card.measures))
-      .toEqual([[1, 2, 3], [4]])
-    expect(cardColumns(page.state.notes.generator.cards[1])[0].measure).toEqual(4)
-    expect(page.currentCard().card.measures).toEqual([1, 2, 3])
-
-    // every head of the card, the ostinato's eighths and the heads their ties
-    // run on to, is drawn inside the plate it was fitted to, above the floor
-    // only the densest cards reach
-    let expectHeadsInsidePlate = () => {
-      let wrapper = el.querySelector(`.${staffStyles.staff_wrapper}`).getBoundingClientRect()
-      let heads = [...el.querySelectorAll(`.${staffStyles.note}`)]
-
-      expect(heads.length).toBeGreaterThan(15)
-      for (let head of heads) {
-        expect(head.getBoundingClientRect().right).toBeLessThanOrEqual(wrapper.right)
-      }
-    }
-
-    expectHeadsInsidePlate()
-    expect(page.staffLayout().scale).toBeGreaterThan(MIN_FIT_SCALE)
-
-    // the whole section is capped to the same card, and fits the same way
-    flushSync(() => page.setGenerator(page.state.currentGenerator, {
-      ...page.state.currentGeneratorSettings, measuresPerCard: "all",
-    }))
-    expect(page.currentCard().card.measures).toEqual([1, 2, 3])
-    expectHeadsInsidePlate()
-
-    // and on a laptop's plate the same card fits without shrinking the staff
-    flushSync(() => page.setState({staffWidth: 1240}))
-    expect(page.staffLayout().scale).toEqual(page.state.scale)
-  })
-
   it("shows the measure card on the staff and in the plate header", async function() {
     let {piece} = await importMusicXMLPiece("salon_octet.musicxml", octetXML, store)
 
@@ -530,81 +241,53 @@ describe("sight reading page", function() {
 
     let el = renderScorePage()
     let plateLabel = () => el.querySelector("[aria-live]").previousElementSibling.textContent
-    // bar lines with their numbers, on the upper staff of the grand staff
-    let numberedBarLines = () =>
-      [...el.querySelectorAll(`.${staffStyles.bar_line}[data-label]`)].map(line => line.dataset.label)
-
-    expect(plateLabel()).toEqual("3 ♩ a bar · Card 1 · measures 1–2 of 1–8")
-    expect(numberedBarLines()).toEqual(["1", "2"])
-    expect(el.querySelectorAll(`.${staffStyles.bar_line}`).length).toEqual(4)
 
     let upperNotes = () => el.querySelector(`.${staffStyles.staff_notes}`)
     let noteLefts = () => [...upperNotes().querySelectorAll(`.${staffStyles.note}`)]
       .map(note => parseFloat(note.style.left)).sort((a, b) => a - b)
-    let barLineLeft = measure =>
-      parseFloat(upperNotes().querySelector(`.${staffStyles.bar_line}[data-measure="${measure}"]`).style.left)
     // the slide of the notes, see Staff#setOffset
     let offset = () => {
       let match = upperNotes().style.transform.match(/translate3d\(([-\d.]+)px/)
       return match ? parseFloat(match[1]) : 0
     }
 
-    // evenly spaced columns, with the bar lines on their boundaries a column apart
+    expect(plateLabel()).toEqual("3 ♩ a bar · Card 1 · measures 1–2 of 1–8")
+    // plain whole notes a column apart, as the app's staff draws any drill
+    expect([...el.querySelectorAll(`.${staffStyles.note}`)]
+      .every(note => note.classList.contains(staffStyles.whole_note))).toBe(true)
+
     let [head, next] = noteLefts()
     let columnWidth = next - head
     expect(columnWidth).toBeGreaterThan(0)
-    expect(barLineLeft(2) - barLineLeft(1)).toBeCloseTo(columnWidth, 3)
     let nextOnStaff = next + offset()
-    let barLineOnStaff = barLineLeft(2) + offset()
 
     click(buttonNamed(el, "Begin"))
     play(page.state.notes.currentColumn())
     expect(plateLabel()).toEqual("3 ♩ a bar · Card 1 · measures 1–2 of 1–8")
 
     // the second measure's column becomes the head exactly one column along,
-    // so its note and bar line slide from where they were without a jump
+    // so its note slides from where it was without a jump
     expect(noteLefts()[0]).toEqual(head)
     expect(Math.abs(offset() - columnWidth)).toBeLessThan(1)
     expect(Math.abs(noteLefts()[0] + offset() - nextOnStaff)).toBeLessThan(1)
-    expect(Math.abs(barLineLeft(2) + offset() - barLineOnStaff)).toBeLessThan(1.5)
 
     play(page.state.notes.currentColumn())
-
     expect(plateLabel()).toEqual("3 ♩ a bar · Card 2 · measures 3–4 of 1–8")
-    expect(numberedBarLines()).toEqual(["3", "4"])
 
-    // the whole section is walked in capped cards too, so it never shows
-    // more bars at once than a flashcard deck does
+    // the whole section is one looping card however long it is, its start
+    // coming round again after its last measure
     flushSync(() => page.setGenerator(page.state.currentGenerator, {
       ...page.state.currentGeneratorSettings, measuresPerCard: "all",
     }))
-    expect(plateLabel()).toEqual("3 ♩ a bar · Card 1 · measures 1–3 of 1–8")
-    expect(numberedBarLines()).toEqual(["1", "2", "3"])
-
-    // the walk's trailing one bar card opens with its numbered bar line like
-    // the cards before it
-    flushSync(() => page.setGenerator(page.state.currentGenerator, {
-      ...page.state.currentGeneratorSettings, measuresPerCard: "all", endMeasure: 7,
-    }))
-    expect(plateLabel()).toEqual("3 ♩ a bar · Card 1 · measures 1–3 of 1–7")
-
-    for (let i = 0; i < 6; i++) {
+    expect(plateLabel()).toEqual("3 ♩ a bar · measures 1–8")
+    for (let i = 0; i < 8; i++) {
       play(page.state.notes.currentColumn())
     }
-
-    expect(plateLabel()).toEqual("3 ♩ a bar · Card 3 · measure 7 of 1–7")
-    expect(numberedBarLines()).toEqual(["7"])
-
-    // a section the cap already fits loops without a card number, its start
-    // coming round again after its last measure
-    flushSync(() => page.setGenerator(page.state.currentGenerator, {
-      ...page.state.currentGeneratorSettings, measuresPerCard: "all", endMeasure: 3,
-    }))
-    expect(plateLabel()).toEqual("3 ♩ a bar · measures 1–3")
-    expect(numberedBarLines().slice(0, 4)).toEqual(["1", "2", "3", "1"])
+    expect(plateLabel()).toEqual("3 ♩ a bar · measures 1–8")
+    expect([...page.state.notes.currentColumn()]).toEqual(["C3", "C5"])
   })
 
-  it("scrolls the whole section as one card and walks it in capped cards while waiting", async function() {
+  it("plays the whole section as the one looping card in both modes", async function() {
     let {piece} = await importMusicXMLPiece("salon_octet.musicxml", octetXML, store)
 
     window.localStorage.setItem(SCORE_DRILL_STORAGE_KEY, JSON.stringify({mode: "scroll"}))
@@ -613,25 +296,18 @@ describe("sight reading page", function() {
     }))
 
     renderScorePage()
-    let generator = () => page.state.notes.generator
     let wholeSection = [1, 2, 3, 4, 5, 6, 7, 8]
 
-    // nothing is fitted to the plate while scrolling, so the section runs on
-    // as one looping card, without the blank stretch between cards
     expect(page.state.mode).toEqual("scroll")
-    expect(generator() instanceof SheetMusicGenerator).toBe(true)
-    expect(page.currentCard().card.measures).toEqual(wholeSection)
+    let drilling = page.state.notes.generator
+    expect(drilling instanceof MeasureCardGenerator).toBe(true)
+    expect(drilling.cards.map(card => card.measures)).toEqual([wholeSection])
     expect(page.currentCard().number).toBe(null)
     expect([...page.state.notes].some(column => !column.length)).toBe(false)
 
-    // waiting fits the card to the plate, where the cap holds
+    // the mode leaves the drill be
     flushSync(() => page.setMode("wait"))
-    expect(generator() instanceof MeasureCardGenerator).toBe(true)
-    expect(generator().cards.map(card => card.measures)).toEqual([[1, 2, 3], [4, 5, 6], [7, 8]])
-    expect(page.currentCard().card.measures).toEqual([1, 2, 3])
-
-    flushSync(() => page.setMode("scroll"))
-    expect(generator() instanceof SheetMusicGenerator).toBe(true)
+    expect(page.state.notes.generator).toBe(drilling)
     expect(page.currentCard().card.measures).toEqual(wholeSection)
   })
 
@@ -658,29 +334,6 @@ describe("sight reading page", function() {
     // the card's last measure is still the one to play, so it is done with
     play(page.state.notes.currentColumn())
     expect(plateLabel()).toEqual("3 ♩ a bar · Card 2 · measures 3–4 of 1–8")
-  })
-
-  it("draws no bar line for a section of a single measure", async function() {
-    let {piece} = await importMusicXMLPiece("salon_octet.musicxml", octetXML, store)
-
-    window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
-      piece: piece.id, startMeasure: 3, endMeasure: 3, hand: BOTH_HANDS, measuresPerCard: "2",
-    }))
-
-    let el = renderScorePage()
-    let barLines = () => el.querySelectorAll(`.${staffStyles.bar_line}`).length
-
-    expect(page.currentCard().card.measures).toEqual([3])
-    expect(barLines()).toEqual(0)
-
-    // the lone bar is drawn the same way at every card size
-    for (let size of [String(MAX_MEASURES_PER_CARD), "1", "all"]) {
-      flushSync(() => page.setGenerator(page.state.currentGenerator, {
-        ...page.state.currentGeneratorSettings, measuresPerCard: size,
-      }))
-      expect(page.currentCard().card.measures).toEqual([3])
-      expect(barLines()).toEqual(0)
-    }
   })
 
   it("offers the order control only once a card size is picked", async function() {
@@ -751,13 +404,13 @@ describe("sight reading page", function() {
     expect(section()).toEqual([3, 7])
     expect(el.querySelector("h1").textContent).toContain("measures 3–7")
 
-    // on the app's staff a card stops at the cap, and says so
-    typeNumber(drawer, "measures per card", "5")
-    expect(page.state.currentGeneratorSettings.measuresPerCard).toEqual(MAX_MEASURES_PER_CARD)
-    expect(picker(drawer, "measures per card").getAttribute("aria-valuemax")).toEqual(`${MAX_MEASURES_PER_CARD}`)
-    expect(drawer.textContent).toContain(`max ${MAX_MEASURES_PER_CARD}`)
-    expect(drawer.textContent).toContain(`Cards stop at ${MAX_MEASURES_PER_CARD} measures`)
-    expect(page.currentCard().card.measures).toEqual([3, 4, 5])
+    // a card takes up to the whole section, on the app's staff too
+    typeNumber(drawer, "measures per card", "9")
+    expect(page.state.currentGeneratorSettings.measuresPerCard).toEqual(5)
+    expect(picker(drawer, "measures per card").getAttribute("aria-valuemax")).toEqual("5")
+    expect(drawer.textContent).toContain("of 5")
+    expect(drawer.textContent).not.toContain("Cards stop")
+    expect(page.currentCard().card.measures).toEqual([3, 4, 5, 6, 7])
 
     // and the whole section is a pill beside it
     click(buttonNamed(drawer, "all"))
@@ -774,52 +427,13 @@ describe("sight reading page", function() {
 
     let el = renderScorePage()
     expect(el.querySelector("h1").textContent).toContain("measure 8")
-    // capped to what the app's staff fits
+    // the one measure of the section left
     expect(page.currentCard().card.measures).toEqual([8])
 
     click(buttonLabelled(el, "Programme"))
     let drawer = el.querySelector(`.${drawerStyles.drawer}`)
     expect(["start measure", "end measure", "measures per card"].map(label => picker(drawer, label).value))
       .toEqual(["8", "8", "1"])
-  })
-
-  it("keeps a score note below the staff inside the plate in both modes", async function() {
-    // the score writes the left hand in treble clef, so its A3 hangs two
-    // ledger lines below the lower staff
-    let {piece} = await importMusicXMLPiece("treble_left.musicxml", clefChangeScore({
-      clefs: [["G", 2], ["G", 2]],
-      notes: [["A", 3], ["A", 3], ["A", 3], ["A", 3]],
-    }), store)
-
-    window.localStorage.setItem(SCORE_DRILL_STORAGE_KEY, JSON.stringify({mode: "scroll"}))
-    window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
-      piece: piece.id, startMeasure: 1, endMeasure: 4, hand: BOTH_HANDS, measuresPerCard: "all",
-    }))
-
-    let el = renderScorePage()
-    expect(page.state.mode).toEqual("scroll")
-
-    let lowerNotes = () => {
-      let lower = el.querySelector("[data-staff=\"lower\"]")
-      return [lower, [...lower.querySelectorAll(`.${staffStyles.note}`)]]
-    }
-
-    for (let mode of ["scroll", "wait"]) {
-      flushSync(() => page.setMode(mode))
-      expect(page.state.mode).toEqual(mode)
-
-      let wrapper = el.querySelector(`.${staffStyles.staff_wrapper}`).getBoundingClientRect()
-      let [lower, heads] = lowerNotes()
-      let staff = lower.getBoundingClientRect()
-
-      expect(heads.length).toBeGreaterThan(0)
-      for (let head of heads) {
-        let box = head.getBoundingClientRect()
-        expect(+head.dataset.midiNote).toEqual(57)
-        expect(box.bottom).toBeGreaterThan(staff.bottom)
-        expect(box.bottom).toBeLessThanOrEqual(wrapper.bottom)
-      }
-    }
   })
 
   it("opens, closes and applies the programme drawer", function() {
@@ -1266,6 +880,50 @@ describe("sight reading page", function() {
     expect(stats && [stats.hits, stats.misses]).toEqual([1, 1])
   })
 
+  // A piece the engine can't draw, stored without its score or failing to be
+  // engraved, is practised on the app's staff as plain note columns
+  describe("a piece the engine can't draw", function() {
+    let cases = {
+      "stored without its score": [MISSING_ENGINE_SOURCE, {readSource: () => Promise.resolve(null)}],
+      "whose score can't be engraved": [FAILED_ENGINE_SOURCE, {
+        loadEngines: () => Promise.reject(new Error("offline")),
+      }],
+    }
+
+    for (let [what, [note, props]] of Object.entries(cases)) {
+      for (let mode of ["wait", "scroll"]) {
+        it(`is played on the app's staff in ${mode} mode when ${what}`, async function() {
+          spyOn(console, "warn")
+          let {piece} = await importMusicXMLPiece("salon_octet.musicxml", octetXML, store)
+          window.localStorage.setItem(SCORE_DRILL_STORAGE_KEY, JSON.stringify({mode}))
+          window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+            piece: piece.id, startMeasure: 1, endMeasure: 8, hand: BOTH_HANDS, measuresPerCard: "all",
+          }))
+
+          let el = renderPage(ScorePage, props)
+          await waitFor(() => el.querySelector(`.${staffStyles.staff_notes}`) &&
+            el.textContent.includes(note), "the app's staff")
+
+          expect(page.state.mode).toEqual(mode)
+          expect(el.querySelector("[data-score-card]")).toBe(null)
+          let notes = [...el.querySelectorAll(`.${staffStyles.note}`)]
+          expect(notes.length).toBeGreaterThan(0)
+          expect(notes.every(head => head.classList.contains(staffStyles.whole_note))).toBe(true)
+
+          // the whole section is still the one card, however many measures
+          expect(page.currentCard().card.measures).toEqual([1, 2, 3, 4, 5, 6, 7, 8])
+
+          // and it is judged, counted and recorded as on the engine's card
+          flushSync(() => page.beginSession())
+          play([WRONG_NOTE])
+          play(page.state.notes.currentColumn())
+          expect([page.state.stats.hits, page.state.stats.misses]).toEqual([1, 1])
+          expect([...page.state.notes.currentColumn()]).toEqual(["D3", "D5"])
+        })
+      }
+    }
+  })
+
   describe("matching the notes played", function() {
     let press = note => flushSync(() => page.pressNote(note))
     let release = note => flushSync(() => page.releaseNote(note))
@@ -1428,7 +1086,7 @@ describe("sight reading page", function() {
 
     it("completes a chord arriving one hand at a time around a held wrong key in the whole section", async function() {
       await renderPiece(octetXML, {measuresPerCard: "all"}, {mode: "scroll"})
-      expect(page.state.notes.generator instanceof SheetMusicGenerator).toBe(true)
+      expect(page.state.notes.generator instanceof MeasureCardGenerator).toBe(true)
       expect(head()).toEqual(["C3", "C5"])
 
       press("C3")

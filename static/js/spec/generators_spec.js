@@ -4,7 +4,6 @@ import {
   STAVES, GENERATORS, SHEET_MUSIC_GENERATOR, SHEET_MUSIC_STORAGE_KEY, LEGACY_SHEET_MUSIC_STORAGE_KEY,
   WHOLE_SECTION,
 } from "st/data"
-import {MAX_MEASURES_PER_CARD} from "st/measure_cards"
 import Keyboard from "st/components/keyboard"
 
 import {
@@ -212,12 +211,12 @@ describe("octave numbering", function() {
       expect(generatorDefaultSettings(sheetMusic(), treble()).song).toEqual("e4")
     })
 
-    it("keeps a stored measures-per-card past the cap, which only the app's staff holds to", function() {
+    it("keeps a stored measures-per-card as the number it names", function() {
       window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
-        piece: "", song: "", measuresPerCard: String(MAX_MEASURES_PER_CARD + 5),
+        piece: "", song: "", measuresPerCard: "8",
       }))
       expect(generatorDefaultSettings(sheetMusic(), treble()).measuresPerCard)
-        .toEqual(MAX_MEASURES_PER_CARD + 5)
+        .toEqual(8)
 
       window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
         piece: "", song: "", measuresPerCard: "many",
