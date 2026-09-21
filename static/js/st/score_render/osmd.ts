@@ -1,37 +1,48 @@
 // The card contract drawn by OpenSheetMusicDisplay (BSD-3-Clause), bundled
 // into the engines bundle. OSMD lays a score out in a container it measures,
-// so each loaded score keeps an offscreen host of the plate's width; its
-// notes carry no MusicXML ids, so each drawn head is matched back to the
-// note table of card_source by staff, pitch and onset
+// so each loaded score keeps an offscreen host of the plate's width (a
+// system is drawn on one line, whatever its host's width); its notes carry
+// no MusicXML ids, so each drawn head is matched back to the note table of
+// card_source by staff, pitch and onset
 
 import {OpenSheetMusicDisplay} from "opensheetmusicdisplay"
 
 import {prepareCard, onsetKey} from "./card_source"
 import type {SourceNote} from "./card_source"
-import type {CardOptions, CardResult, CardNote, ScoreEngine} from "./types"
+import type {CardOptions, SystemOptions, CardResult, CardNote, ScoreEngine} from "./types"
 
 export const OSMD_VERSION = "2.1.3"
 
 // OSMD's staff space is 10px at zoom 1
 const ZOOM = 0.8
 
-let osmd: OpenSheetMusicDisplay | null = null
-let host: HTMLDivElement | null = null
-let loadedXML: string | null = null
+// OSMD can only draw a score on one horizontal line when told so before
+// loading it, so cards and systems each keep their own display
+interface Display {
+  osmd: OpenSheetMusicDisplay | null
+  host: HTMLDivElement | null
+  loadedXML: string | null
+}
 
-function engine(width: number): OpenSheetMusicDisplay {
-  if (!host) {
-    host = document.createElement("div")
-    host.setAttribute("aria-hidden", "true")
-    Object.assign(host.style, {
+const CARD: Display = {osmd: null, host: null, loadedXML: null}
+const SYSTEM: Display = {osmd: null, host: null, loadedXML: null}
+
+// a system is laid out on one line whatever its host's width
+const SYSTEM_HOST_WIDTH = 1000
+
+function engine(display: Display, width: number): OpenSheetMusicDisplay {
+  if (!display.host) {
+    display.host = document.createElement("div")
+    display.host.setAttribute("aria-hidden", "true")
+    Object.assign(display.host.style, {
       position: "absolute", left: "-100000px", top: "0", visibility: "hidden",
     })
-    document.body.appendChild(host)
+    document.body.appendChild(display.host)
   }
-  host.style.width = `${width}px`
+  display.host.style.width = `${width}px`
 
-  if (!osmd) {
-    osmd = new OpenSheetMusicDisplay(host, {
+  if (!display.osmd) {
+    display.osmd = new OpenSheetMusicDisplay(display.host, {
       autoResize: false,
       backend: "svg",
       drawTitle: false,
@@ -43,9 +54,10 @@ function engine(width: number): OpenSheetMusicDisplay {
       drawPartAbbreviations: false,
       drawMeasureNumbers: true,
       followCursor: false,
+      renderSingleHorizontalStaffline: display == SYSTEM,
     })
   }
-  return osmd
+  return display.osmd
 }
 
 // the notes of the table by where OSMD will say they are
@@ -70,14 +82,14 @@ function headElement(graphicalNote: any): SVGGElement | null {
   return graphicalNote.getSVGGElement ? graphicalNote.getSVGGElement() : null
 }
 
-async function renderCard(opts: CardOptions): Promise<CardResult> {
+async function draw(into: Display, opts: SystemOptions, width: number): Promise<CardResult> {
   const card = prepareCard(opts.musicXML, opts)
-  const display = engine(opts.width)
+  const display = engine(into, width)
 
-  if (card.xml != loadedXML) {
-    loadedXML = null
+  if (card.xml != into.loadedXML) {
+    into.loadedXML = null
     await display.load(card.xml)
-    loadedXML = card.xml
+    into.loadedXML = card.xml
   }
 
   display.zoom = ZOOM
@@ -90,7 +102,7 @@ async function renderCard(opts: CardOptions): Promise<CardResult> {
   rules.MaxMeasureToDrawIndex = card.lastIndex
   display.render()
 
-  const svg = host!.querySelector("svg")
+  const svg = into.host!.querySelector("svg")
   if (!svg) {
     throw new Error("OSMD drew nothing")
   }
@@ -147,9 +159,18 @@ async function renderCard(opts: CardOptions): Promise<CardResult> {
   return {svg, notes}
 }
 
+function renderCard(opts: CardOptions): Promise<CardResult> {
+  return draw(CARD, opts, opts.width)
+}
+
+function renderSystem(opts: SystemOptions): Promise<CardResult> {
+  return draw(SYSTEM, opts, SYSTEM_HOST_WIDTH)
+}
+
 export const osmdEngine: ScoreEngine = {
   name: "OpenSheetMusicDisplay",
   version: OSMD_VERSION,
   licence: "BSD-3-Clause",
   renderCard,
+  renderSystem,
 }

@@ -7,7 +7,7 @@ import {osmdEngine} from "./osmd"
 import {verovio, verovioReady} from "./verovio"
 import type {ScoreEngine} from "./types"
 
-export type {CardOptions, CardNote, CardResult, Hand, ScoreStaff, ScoreEngine} from "./types"
+export type {CardOptions, SystemOptions, CardNote, CardResult, Hand, ScoreStaff, ScoreEngine} from "./types"
 export {prepareCard, keepStaff, measurePositions, tagNotes} from "./card_source"
 
 export const ENGINES: {[key: string]: ScoreEngine} = {

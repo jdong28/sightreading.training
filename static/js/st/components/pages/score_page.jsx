@@ -2,9 +2,9 @@
 // trainer (st/components/pages/sight_reading_page) with the score's programme
 // in place of the exercises': the page owns which piece, which measures and
 // which hand are drilled, in its own drawer, and the trainer hands each card
-// of them to the staff to draw: in wait mode the piece's own score, drawn by
-// an engraving engine from its source MusicXML (st/components/score_card),
-// else the app's staff
+// of them to the staff to draw: the piece's own score, drawn by an engraving
+// engine from its source MusicXML (st/components/score_card), card by card in
+// wait mode and the section on one line in scroll mode, else the app's staff
 
 import * as React from "react"
 
@@ -45,7 +45,7 @@ export const SCORE_PROGRAMME = {
   // a piece without a key the trainer can draw in is drawn in C major
   userKey: () => allKeySignatures()[0],
   staffFor: settings => scoreStaff(settings),
-  // a piece with its source stored is drawn from its score in wait mode
+  // a piece with its source stored is drawn from its score
   engine: "osmd",
 }
 

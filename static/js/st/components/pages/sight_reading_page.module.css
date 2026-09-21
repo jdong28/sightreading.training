@@ -42,6 +42,12 @@
         width: 120px;
         background: rgba(168,130,74,.18);
     }
+
+    /* the engine's system draws its own hit zone, in the middle of its
+       plate (st/components/score_card) */
+    &.scroll_mode .staff_wrapper.engine_system::before {
+        display: none;
+    }
 }
 
 .trainer_scroller {

@@ -5,7 +5,7 @@
 // the drawn heads are found by the ids card_source tagged them with
 
 import {prepareCard} from "./card_source"
-import type {CardOptions, CardResult, CardNote, ScoreEngine} from "./types"
+import type {CardOptions, SystemOptions, CardResult, CardNote, ScoreEngine} from "./types"
 
 export const VEROVIO_VERSION = "6.3.0"
 
@@ -47,19 +47,26 @@ function loadToolkit(): Promise<Toolkit> {
 
 let loadedXML: string | null = null
 
-async function renderCard(opts: CardOptions): Promise<CardResult> {
+// the widest page Verovio lays out, which a system drawn on one line shrinks
+// to the width of its music
+const SYSTEM_PAGE_WIDTH = 100000
+
+// Draws the range to the page width given, or with none on one system as
+// wide as its music
+async function draw(opts: SystemOptions, width: number | null): Promise<CardResult> {
   const card = prepareCard(opts.musicXML, opts)
   const tk = await loadToolkit()
 
   tk.setOptions({
     scale: SCALE,
-    pageWidth: Math.floor(opts.width * 100 / SCALE),
+    pageWidth: width == null ? SYSTEM_PAGE_WIDTH : Math.floor(width * 100 / SCALE),
+    adjustPageWidth: width == null,
     pageHeight: PAGE_HEIGHT,
     adjustPageHeight: true,
     pageMarginLeft: MARGIN_LEFT, pageMarginRight: MARGIN,
     pageMarginTop: MARGIN, pageMarginBottom: MARGIN,
     header: "none", footer: "none",
-    breaks: "auto",
+    breaks: width == null ? "none" : "auto",
     svgViewBox: false,
     svgHtml5: true,
   })
@@ -93,11 +100,20 @@ async function renderCard(opts: CardOptions): Promise<CardResult> {
   return {svg, notes}
 }
 
+function renderCard(opts: CardOptions): Promise<CardResult> {
+  return draw(opts, opts.width)
+}
+
+function renderSystem(opts: SystemOptions): Promise<CardResult> {
+  return draw(opts, null)
+}
+
 export const verovio: ScoreEngine = {
   name: "Verovio",
   version: VEROVIO_VERSION,
   licence: "LGPL-3.0-or-later",
   renderCard,
+  renderSystem,
 }
 
 export function verovioReady(): Promise<unknown> {

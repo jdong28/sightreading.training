@@ -209,7 +209,8 @@ describe("sight reading page", function() {
   }
 
   // the trainer drilling an imported piece, as the score page, on the app's
-  // own staff (as in scroll mode, or for a piece stored without its score);
+  // own staff (as when the engine can't draw it, or for a piece stored
+  // without its score);
   // the engine card has its own specs (see score_card_spec)
   let renderScorePage = () => renderPage(ScorePage, {programme: {...SCORE_PROGRAMME, engine: null}})
 

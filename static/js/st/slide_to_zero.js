@@ -9,6 +9,8 @@ export default class SlideToZero {
     this.onStop = opts.onStop || function() {}
     this.onStart = opts.onStart || function() {}
     this.onLoop = opts.onLoop || function() {}
+    // where the value waits, however long a frame runs past it
+    this.floor = opts.floor || 0
 
     if (opts.loopPhase) {
       this.looping = true;
@@ -27,7 +29,7 @@ export default class SlideToZero {
   }
 
   checkAndStart() {
-    if (this.animating || this.value == 0) {
+    if (this.animating || this.value == this.floor) {
       return
     }
 
@@ -59,6 +61,10 @@ export default class SlideToZero {
 
       this.value = this.value - this.speed * dt;
 
+      if (this.floor && this.value < this.floor) {
+        this.value = this.floor;
+      }
+
       if (this.looping) {
         if (this.value <= 0) {
           this.value += this.loopPhase;
@@ -70,7 +76,7 @@ export default class SlideToZero {
 
       this.onUpdate(this.value);
 
-      if (this.value > 0) {
+      if (this.value > this.floor) {
         window.requestAnimationFrame(frameUpdate);
       } else {
         this.animating = false;

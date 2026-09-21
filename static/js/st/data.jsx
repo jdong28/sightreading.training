@@ -774,7 +774,7 @@ const ALL_GENERATORS = [
         presets: [{name: WHOLE_SECTION, label: "all"}],
         // context.cardCap: null when an engine draws the cards, else why the
         // app's staff draws them, capped to what it fits on the plate (eg.
-        // "in scroll mode"), capped too when unset. context.mode: the page's
+        // "while the score can't be drawn"), capped too when unset. context.mode: the page's
         // wait or scroll mode
         bounds: (settings, context={}) => {
           let {max, capped} = measuresPerCardLimit(settings, {capped: context.cardCap !== null})
