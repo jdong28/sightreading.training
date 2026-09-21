@@ -750,6 +750,56 @@ describe("staves", function() {
       }
     })
 
+    // four 4/4 grand staff bars: the lower staff changes to treble clef in
+    // measure 3, the card's last played bar, and measure 4 is one every hand
+    // rests through, so that bar hangs on the card's last column
+    let clefChangeThenRestBarScore = () => `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    ${[["C", 3], ["E", 3], ["C", 4], null].map((lower, idx) => `
+    <measure number="${idx + 1}">
+      ${idx == 0 ? `<attributes><divisions>1</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><staves>2</staves><clef number="1"><sign>G</sign><line>2</line></clef><clef number="2"><sign>F</sign><line>4</line></clef></attributes>` : ""}
+      ${idx == 2 ? `<attributes><clef number="2"><sign>G</sign><line>2</line></clef></attributes>` : ""}
+      ${lower ? `<note><pitch><step>E</step><octave>5</octave></pitch><duration>4</duration><voice>1</voice><type>whole</type><staff>1</staff></note>` :
+        `<note><rest measure="yes"/><duration>4</duration><voice>1</voice><staff>1</staff></note>`}
+      <backup><duration>4</duration></backup>
+      ${lower ? `<note><pitch><step>${lower[0]}</step><octave>${lower[1]}</octave></pitch><duration>4</duration><voice>2</voice><type>whole</type><staff>2</staff></note>` :
+        `<note><rest measure="yes"/><duration>4</duration><voice>2</voice><staff>2</staff></note>`}
+    </measure>`).join("")}
+  </part>
+</score-partwise>`
+
+    it("keeps a clef change clear of its own bar line when the card ends on a rested bar", function() {
+      let song = parseMusicXML(clefChangeThenRestBarScore())
+      let columns = sectionColumns(song, 1, 4)
+
+      // the rested bar is drawn after the card's last column, which is also
+      // the one that changes clef
+      expect(columns.length).toEqual(3)
+      expect(columns[2].bars).toEqual([{number: 4, beat: 12, beats: 4}])
+
+      // wide enough that the clef is drawn in the gap rather than above the staff
+      renderStaff(GrandStaff, columns, {noteWidth: 130, keySignature: new KeySignature(0)})
+      let lower = staffEl("lower")
+
+      let [change] = clefChanges(lower)
+      expect(clefChanges(lower).length).toEqual(1)
+      expect(change.getAttribute("src")).toContain("clefs.G")
+      expect(clefBox(change).top).toBeGreaterThanOrEqual(0)
+
+      let barLine = n => parseFloat(lower
+        .querySelector(`.${staffStyles.bar_line}[data-measure="${n}"]`).style.left)
+
+      // the clef sits in the gap before the bar it opens, never over that
+      // bar's own line, whatever the bar drawn after the column does
+      expect(clefBox(change).right).toBeLessThan(barLine(3))
+      expect(barLine(3)).toBeLessThan(barLine(4))
+      for (let head of headBoxes(lower)) {
+        expect(overlaps(clefBox(change), head)).toBe(false)
+      }
+    })
+
     it("draws a clef change inside a measure before the column it starts at", function() {
       let song = parseMusicXML(midMeasureClefScore([["C", 3], ["E", 3], ["clef", "G", 2], ["C", 4], ["E", 4]]))
       renderStaff(GrandStaff, sectionColumns(song, 1, 1))

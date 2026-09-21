@@ -160,7 +160,7 @@ function tieTypes(noteEl) {
 // The beams the score writes on a note, by beam number (1 the primary beam):
 // {1: "begin", 2: "forward hook"}, or null when the note carries none. The
 // staff joins the heads of a begin..end run into one beam group (see
-// beamGroups in st/staff_rhythm), so a beamed eighth draws no flag of its own
+// beamChains in st/staff_rhythm), so a beamed eighth draws no flag of its own
 function beamsOf(noteEl) {
   let out = null
 
@@ -220,7 +220,7 @@ function notatedValue(el, beats, ratio) {
 // The <time-modification> of a note as [ratio, actualNotes]: the ratio
 // actual-notes / normal-notes, eg. 3/2 for a triplet, and the number of notes
 // the tuplet is written with, which is the number drawn over its bracket (see
-// tupletGroups in st/staff_rhythm). [1, 0] for a note played as it is written
+// tupletChains in st/staff_rhythm). [1, 0] for a note played as it is written
 function timeModification(el) {
   let mod = childEl(el, "time-modification")
   if (!mod) { return [1, 0] }

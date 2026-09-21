@@ -340,7 +340,9 @@ export function clefChangeBoxes(props) {
     let gap = (offsets[idx] - offsets[idx - 1]) * noteWidth
     let start = offsetLeft + offsets[idx - 1] * noteWidth + NOTE_HEAD_WIDTH * scale + offset + margin
     let space = gap - (NOTE_HEAD_WIDTH + ACCIDENTAL_WIDTH) * scale - 2 * margin - offset
-    let lines = barLines[idx]
+    // the bars drawn before the column, the last of which the clef change has
+    // to stay clear of; the ones a card ends on are drawn after it
+    let lines = barLines[idx].filter(line => line.beat <= (column.beat ?? Infinity))
     if (lines.length) {
       space = Math.min(space, lines[lines.length - 1].left - margin - start)
     }
