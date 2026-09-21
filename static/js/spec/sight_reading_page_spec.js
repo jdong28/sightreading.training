@@ -1401,8 +1401,11 @@ describe("sight reading page", function() {
       release("F5")
       release("E5")
 
+      let generator = page.state.notes.generator
       click(buttonNamed(container, "Rest"))
       await waitFor(() => store.recentSessions().length == 1, "the session to be saved")
+      // the finished cards' measure stats are written after the session
+      await generator.finishing
 
       let measureStats = measure =>
         store.sectionStats(piece.id).find(s => s.startMeasure == measure && s.endMeasure == measure)
