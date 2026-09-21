@@ -134,7 +134,8 @@ describe("card join", function() {
   it("only joins columns that carry the score's beats", function() {
     expect(joinable([column(["C4"], 0), column(["D4"], 1)])).toBe(true)
     expect(joinable([["C4"], ["D4"]])).toBe(false)
-    expect(joinable([])).toBe(false)
+    // nothing to join on a card of rests
+    expect(joinable([])).toBe(true)
   })
 
   it("marks the head column current, those before it done and the missed ones missed", function() {
@@ -348,6 +349,43 @@ describe("score page engine card", function() {
     expect(marked(MARK_CLASSES.done).length).toEqual(0)
     expect(marked(MARK_CLASSES.missed).length).toEqual(0)
     expect(headElements()).toEqual(first)
+  })
+
+  it("keeps drawing from the score after a section of rests alone", async function() {
+    let piece = await drillPiece(reverieOpening(), {startMeasure: 1, endMeasure: 1})
+    let el = renderScorePage()
+    await waitFor(() => el.querySelector("[data-score-card] svg"), {message: "the card of rests"})
+    expect(page.currentCard().card.columns.length).toEqual(0)
+
+    flushSync(() => page.setGenerator(page.state.currentGenerator, {
+      ...page.state.currentGeneratorSettings, piece: piece.id, endMeasure: 4,
+    }))
+    await cardDrawn()
+    expect(page.state.engineSource.status).toEqual("ready")
+    expect(el.querySelector(`.${staffStyles.staff_notes}`)).toBe(null)
+  })
+
+  it("draws each numbered card of the section in turn", async function() {
+    await drillPiece(reverieOpening(), {startMeasure: 2, endMeasure: 4, measuresPerCard: "2"})
+    let el = renderScorePage()
+    await cardDrawn()
+
+    let {card, number} = page.currentCard()
+    expect([card.startMeasure, card.endMeasure, number]).toEqual([2, 3, 1])
+    let firstSvg = el.querySelector("[data-score-card] svg")
+
+    flushSync(() => page.beginSession())
+    play(["C2"])
+    for (let idx = 0; idx < card.columns.length; idx++) {
+      play(page.state.notes.currentColumn())
+    }
+
+    ;({card, number} = page.currentCard())
+    expect([card.startMeasure, card.endMeasure, number]).toEqual([4, 4, 2])
+    await waitFor(() => el.querySelector("[data-score-card] svg") != firstSvg && !page.state.engineMissed.length &&
+      el.querySelector(`[data-score-card] .${MARK_CLASSES.current}`), {message: "the next card"})
+    expect(marked(MARK_CLASSES.missed).length).toEqual(0)
+    expect(marked(MARK_CLASSES.done).length).toEqual(0)
   })
 
   it("draws a whole section longer than the staff's card cap as one card", async function() {

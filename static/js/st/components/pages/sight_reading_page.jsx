@@ -373,12 +373,12 @@ export default class SightReadingPage extends React.Component {
       source && source.status == "ready" && this.currentPieceSection())
   }
 
-  // whether the plate waits on the piece's source before it knows which
-  // staff draws the card
+  // whether the plate waits before it knows which staff draws the card: on
+  // the piece's source, or on the plate's width for the engine
   engineCardPending() {
     let source = this.state.engineSource
-    return !!(this.programme.engine && this.state.mode == "wait" &&
-      source && source.status == "loading")
+    if (!this.programme.engine || this.state.mode != "wait" || !source) { return false }
+    return source.status == "loading" || (this.engineCards() && !this.state.staffWidth)
   }
 
   // the engine card's props for the card at the head of the drill, or null

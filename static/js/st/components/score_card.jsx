@@ -127,7 +127,15 @@ export class ScoreCard extends React.Component {
 
   mark() {
     if (!this.cardJoin) { return }
-    markCard(this.cardJoin, {head: this.props.head ?? null, missed: this.props.missed})
+    let head = this.props.head ?? null
+    markCard(this.cardJoin, {head, missed: this.props.missed})
+
+    // a card of many systems runs past the plate's scroller: the column to
+    // play is scrolled to when it moves onto a system out of view
+    let el = head == null ? null : this.cardJoin.heads[head]?.[0]
+    if (el && el.scrollIntoView) {
+      el.scrollIntoView({block: "nearest", inline: "nearest", behavior: "smooth"})
+    }
   }
 
   render() {

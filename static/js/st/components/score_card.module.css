@@ -60,6 +60,8 @@
     }
 
     :global(.score_note_current) {
+        /* room kept round it when scrolled to, so the system shows */
+        scroll-margin: 90px 0;
         filter: drop-shadow(0 0 2px var(--salon-gilt-light)) drop-shadow(0 0 5px var(--salon-gilt-light));
     }
 

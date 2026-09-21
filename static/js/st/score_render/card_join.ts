@@ -48,9 +48,10 @@ function key(pitch: number, beats: number): string {
 
 // whether every column carries its beat, the one thing the join needs of the
 // score's notation: a piece stored before the song model kept the score's
-// rhythm (see SONG_FORMAT in st/sheet_music_deck) can't be joined
+// rhythm (see SONG_FORMAT in st/sheet_music_deck) can't be joined. A card
+// without columns (eg. bars of rests) has nothing to join
 export function joinable(columns: JoinColumn[]): boolean {
-  return columns.length > 0 && columns.every(column => column.beat != null && Number.isFinite(column.beat))
+  return columns.every(column => column.beat != null && Number.isFinite(column.beat))
 }
 
 export function joinCard(columns: JoinColumn[], notes: CardNote[]): CardJoin {
