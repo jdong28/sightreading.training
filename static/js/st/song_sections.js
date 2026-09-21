@@ -3,10 +3,11 @@
 // beat become one chord column, columns are ordered by onset, and a tied note
 // is one column, never two.
 //
-// The columns of an imported piece also carry what the staff draws its rhythm
-// with (see st/staff_rhythm): the beat each column falls on, the notated value
-// of each of its notes, and the rests and tied continuation heads between it
-// and the next column. None of it is ever matched against what is played.
+// The columns of an imported piece also carry the score's rhythm: the beat
+// each column falls on, the notated value of each of its notes, and the rests
+// and tied continuation heads between it and the next column, which an
+// engine's card joins its drawn heads by (st/score_render/card_join). None of
+// it is ever matched against what is played.
 
 import {parseNote} from "st/music"
 import SongParser from "st/song_parser"

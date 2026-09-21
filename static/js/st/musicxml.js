@@ -14,18 +14,17 @@
 //   - repeats, endings, and transposition are ignored
 //   - grace notes are skipped, ties are merged into one note for detection,
 //     with the notes they are tied to kept as the merged note's notation.ties
-//     so the staff can draw the continuation heads and their tie arcs
-//   - every note keeps the notation the staff draws it with (see
-//     st/staff_rhythm): the notated value, dots, tuplet ratio, voice and tie
-//     flags. Rests are kept the same way, on the track of their staff, so the
-//     staff can draw them at their beat
+//     so an engine's drawn tied heads join the note (st/score_render)
+//   - every note keeps its notation (see st/note_values): the notated value,
+//     dots, tuplet ratio, voice and tie flags. Rests are kept the same way, on
+//     the track of their staff
 //
 // Compressed .mxl files (zip containers, what MuseScore exports by default)
 // are unpacked to their score's MusicXML text by readMusicXMLFile first.
 
 import {unzipSync} from "fflate"
 import {noteName, parseNote} from "st/music"
-import {NOTE_TYPES, typeForBeats} from "st/staff_rhythm"
+import {NOTE_TYPES, typeForBeats} from "st/note_values"
 import {MultiTrackSong, SongNote} from "st/song_note_list"
 import {measureNumbersFor} from "st/measure_numbers"
 
@@ -257,10 +256,9 @@ function isHidden(el) {
   return el.getAttribute("print-object") == "no"
 }
 
-// The notated value of a note or rest event, the drawing data of
-// st/staff_rhythm: its value and dots, and the tuplet ratio it is played at
-// (1 for a plain note). The stem the score writes is the direction of a beam,
-// so the staff works out its own (see stemDirection in st/staff_rhythm)
+// The notated value of a note or rest event (see st/note_values): its value
+// and dots, and the tuplet ratio it is played at (1 for a plain note). The
+// stem the score writes is the direction of a beam, so it isn't kept
 function notationOf(el, duration) {
   let ratio = timeModification(el)
   let value = notatedValue(el, duration, ratio) || {type: "quarter", dots: 0}
@@ -407,9 +405,9 @@ function walkPart(measures, partName) {
           part.staves.add(staff)
 
           let ties = tieTypes(el)
-          // the voice a note is written in, which the staff turns its stem by
-          // (see columnStems in st/staff_rhythm). A rest is drawn at a fixed
-          // staff position whatever voice writes it, so it keeps none
+          // the voice a note is written in, which tells two voices' heads on
+          // one pitch apart (see joinCard in st/score_render/card_join). A
+          // rest keeps none
           let voice = +(childText(el, "voice") || 0)
 
           part.events.push({
@@ -611,7 +609,7 @@ export function parseMusicXML(text) {
     // a tie start waiting for its stop, keyed by track and note name
     let pendingTies = {}
 
-    // the notation of an event, as the staff draws it (see st/staff_rhythm)
+    // the notation of an event (see notationOf)
     let notationFor = event => ({
       type: event.type,
       dots: event.dots,

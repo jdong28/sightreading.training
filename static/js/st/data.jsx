@@ -7,7 +7,7 @@ import {shiftNotationOctaves} from "st/song_parser"
 import {
   RandomNotes, SweepRangeNotes, MiniSteps, TriadNotes, SevenOpenNotes,
   ProgressionGenerator, PositionGenerator, IntervalGenerator, SheetMusicGenerator,
-  allKeySignatures, currentDrillMode, SCORE_DRILL_STORAGE_KEY
+  allKeySignatures
 } from "st/generators"
 
 import {
@@ -17,7 +17,7 @@ import {
 
 import {
   MeasureCardDeck, MeasureCardGenerator, measureCards, sectionCard, cardColumns,
-  IN_ORDER, RANDOM_ORDER, MAX_MEASURES_PER_CARD
+  IN_ORDER, RANDOM_ORDER
 } from "st/measure_cards"
 
 import {
@@ -182,9 +182,8 @@ export function pieceSection(staff, settings, song) {
 }
 
 // The measures of an imported piece's section with the columns of each on the
-// staff, the pool of st/measure_cards. Columns carry the grand staff of their
-// notes and the clefs at their onset, so the staff draws the piece on the
-// score's own staves and clefs
+// staff, the pool of st/measure_cards. Columns carry the score's rhythm, which
+// an engine's card joins its drawn heads by (see extractSectionColumns)
 export function pieceSectionMeasures(staff, settings, song) {
   let tracks = handTracks(song, settings.hand)
   let [firstMeasure] = measureNumberRange(song)
@@ -203,42 +202,31 @@ export function pieceSectionMeasures(staff, settings, song) {
 }
 
 // The measures of the piece section as flashcards (see st/measure_cards), or
-// null for pasted notation, a section that is one whole section card or a
-// section without notes on the staff. A card is fitted to the plate in the
-// wait mode only, so that is where the cap holds: a whole section longer than
-// MAX_MEASURES_PER_CARD is walked in order as capped cards, wrapping back to
-// the section's start, while a scrolling one runs on as the single looping
-// card. The deck of the latest settings is kept so a rebuilt generator carries
-// on from the card being shown
+// null for pasted notation or a section without notes on the staff. A card
+// takes any number of measures, and the whole section is one looping card
+// however long it is, still a deck so its measures' stats are recorded. The
+// deck of the latest settings is kept so a rebuilt generator carries on from
+// the card being shown
 let cardDeck = null
 
 // whether the drill plays the whole section rather than cards of a few
-// measures, the one card size whose deck depends on the drill mode
+// measures
 export function wholeSectionDrill(settings) {
   return !(Number(settings.measuresPerCard) >= 1)
 }
 
-// opts.capped false is the engine card (st/score_render), drawn by an engine
-// that lays out as many measures as it is given, so a card takes any number
-// of measures and a whole section is one looping card however long it is,
-// still a deck so its measures' stats are recorded
-export function measureCardDeck(staff, settings, {capped=true}={}) {
+export function measureCardDeck(staff, settings) {
   let piece = sheetMusicPiece(settings)
   if (!piece) {
     return null
   }
 
   let wholeSection = wholeSectionDrill(settings)
-  if (wholeSection && capped && currentDrillMode(SCORE_DRILL_STORAGE_KEY) != "wait") {
-    return null
-  }
-
-  let perCard = wholeSection ? MAX_MEASURES_PER_CARD : settings.measuresPerCard
   let order = wholeSection ? IN_ORDER : settings.order
 
   let key = JSON.stringify([
     piece.id, staff.name, staff.range, settings.startMeasure, settings.endMeasure,
-    settings.hand, settings.measuresPerCard, order, capped,
+    settings.hand, settings.measuresPerCard, order,
   ])
 
   if (cardDeck && cardDeck.key == key && cardDeck.piece == piece) {
@@ -246,15 +234,12 @@ export function measureCardDeck(staff, settings, {capped=true}={}) {
   }
 
   let measures = pieceSectionMeasures(staff, settings, pieceSong(piece))
-  let cards = wholeSection && !capped ?
+  let cards = wholeSection ?
     (measures.length ? [sectionCard(measures)] : []) :
-    measureCards(measures, perCard, {capped})
+    measureCards(measures, settings.measuresPerCard)
 
-  // a whole section the cap already fits stays the single looping card
-  let deck = wholeSection && capped && cards.length < 2 ? null :
-    new MeasureCardDeck(cards, {pieceId: piece.id, order})
-
-  if (deck && !deck.playable) {
+  let deck = new MeasureCardDeck(cards, {pieceId: piece.id, order})
+  if (!deck.playable) {
     deck = null
   }
 
@@ -384,19 +369,6 @@ export function sheetMusicSectionLength(settings) {
     .length
 
   return Math.max(1, count)
-}
-
-// The most measures a card of the section can have: the whole section when
-// an engine draws the cards (opts.capped false), else at most
-// MAX_MEASURES_PER_CARD, what the app's staff fits on the plate. capped says
-// whether that cap is what holds it below the section's length
-export function measuresPerCardLimit(settings, {capped=true}={}) {
-  let length = sheetMusicSectionLength(settings)
-  if (capped && length > MAX_MEASURES_PER_CARD) {
-    return {max: MAX_MEASURES_PER_CARD, capped: true}
-  }
-
-  return {max: length, capped: false}
 }
 
 // the trainer's key signature for the score's key at the start measure, so
@@ -772,31 +744,15 @@ const ALL_GENERATORS = [
         type: "measure",
         default: WHOLE_SECTION,
         presets: [{name: WHOLE_SECTION, label: "all"}],
-        // context.cardCap: null when an engine draws the cards, else why the
-        // app's staff draws them, capped to what it fits on the plate (eg.
-        // "while the score can't be drawn"), capped too when unset. context.mode: the page's
-        // wait or scroll mode
-        bounds: (settings, context={}) => {
-          let {max, capped} = measuresPerCardLimit(settings, {capped: context.cardCap !== null})
-          return {
-            min: 1,
-            max,
-            caption: capped ? `max ${max}` : `of ${sheetMusicSectionLength(settings)}`,
-          }
-        },
+        bounds: settings => ({
+          min: 1,
+          max: sheetMusicSectionLength(settings),
+          caption: `of ${sheetMusicSectionLength(settings)}`,
+        }),
         value: settings => Number(settings.measuresPerCard) >= 1 ?
           Math.floor(Number(settings.measuresPerCard)) : null,
-        hint: (settings, context={}) => {
-          let engine = context.cardCap === null
-          let all = engine ? "All plays the whole section as one card." :
-            context.mode == "scroll" ? "All plays the whole section continuously." :
-            `All plays the whole section in order, up to ${MAX_MEASURES_PER_CARD} measures at a time.`
-          let {capped} = measuresPerCardLimit(settings, {capped: !engine})
-          let reason = context.cardCap ? ` ${context.cardCap}` : ""
-          let cap = capped ?
-            ` Cards stop at ${MAX_MEASURES_PER_CARD} measures${reason}, where the trainer's own staff draws them.` : ""
-          return `${all} A number shows that many measures of the section at a time, like a flashcard.${cap}`
-        },
+        hint: "All plays the whole section as one card. A number shows that many measures " +
+          "of the section at a time, like a flashcard.",
         visible: settings => !!sheetMusicPiece(settings),
       },
       {
@@ -834,22 +790,20 @@ const ALL_GENERATORS = [
       return metadata && !Array.isArray(metadata.measureKeySignatures) ?
         "Re-import to follow the score key" : null
     },
-    // opts.engineCards: the page draws each card with an engraving engine,
-    // so a card isn't capped to what the plate fits (see measureCardDeck)
-    create: function(staff, keySignature, settings, opts={}) {
-      let deck = measureCardDeck(staff, settings, {capped: !opts.engineCards})
+    create: function(staff, keySignature, settings) {
+      let deck = measureCardDeck(staff, settings)
       if (deck) {
         let recordNotes = settings.startMeasure != settings.endMeasure
         return new MeasureCardGenerator(deck, {recordNotes})
       }
 
-      // a whole section the cap fits loops as one card, its measures marked
+      // a section with no notes on the staff is still its card, eg. one of
+      // rests alone, which an engine draws all the same
       let piece = sheetMusicPiece(settings)
       let measures = piece ? pieceSectionMeasures(staff, settings, pieceSong(piece)) : []
       if (measures.length) {
         let card = sectionCard(measures)
-        let columns = cardColumns(card)
-        return new SheetMusicGenerator(columns, {card})
+        return new SheetMusicGenerator(cardColumns(card), {card})
       }
 
       let {columns} = sheetMusicSection(staff, settings)

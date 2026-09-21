@@ -14,15 +14,12 @@ import {getAppStore} from "st/storage"
 export const IN_ORDER = "in order"
 export const RANDOM_ORDER = "random"
 
-export const MAX_MEASURES_PER_CARD = 3
-
 /**
  * The notes of one measure of the pool.
  * @typedef {Object} PoolMeasure
  * @property {number} number the score's bar number
- * @property {string[][]} columns each may carry `staves`, the grand staff
- * of each of its notes, and `clefs`, the clef sign of each staff at its onset
- * (see extractSectionColumns in st/song_sections)
+ * @property {string[][]} columns each may carry the score's onsets and
+ * notation (see extractSectionColumns in st/song_sections)
  */
 
 /**
@@ -30,36 +27,23 @@ export const MAX_MEASURES_PER_CARD = 3
  * @property {number} startMeasure
  * @property {number} endMeasure
  * @property {number[]} measures bar numbers, in order
- * @property {boolean} numbered whether the staff draws the card's bar lines
- * and their numbers (see cardColumn)
  * @property {string[][]} columns the columns of every measure, in order
  * @property {number[]} columnMeasures index into measures for each column
  */
 
 /**
  * Groups the pool into cards of perCard contiguous measures, the last card
- * shorter when the pool doesn't divide evenly. A deck of cards of more than
- * one measure is numbered, its short last card along with the rest; a deck of
- * single bars, a pool of one among them, draws no bar lines. Cards the app's
- * staff draws are capped to MAX_MEASURES_PER_CARD, what it fits on the plate;
- * an engine's (opts.capped false) take any size.
+ * shorter when the pool doesn't divide evenly.
  * @param {PoolMeasure[]} measures
  * @param {number} perCard
- * @param {Object} [opts]
- * @param {boolean} [opts.capped]
  * @returns {MeasureCard[]}
  */
-export function measureCards(measures, perCard, {capped=true}={}) {
+export function measureCards(measures, perCard) {
   let size = Math.max(1, Math.floor(perCard) || 1)
-  if (capped) {
-    size = Math.min(MAX_MEASURES_PER_CARD, size)
-  }
   let cards = []
 
   for (let i = 0; i < measures.length; i += size) {
-    cards.push(sectionCard(measures.slice(i, i + size), {
-      numbered: size > 1 && measures.length > 1,
-    }))
+    cards.push(sectionCard(measures.slice(i, i + size)))
   }
 
   return cards
@@ -68,11 +52,9 @@ export function measureCards(measures, perCard, {capped=true}={}) {
 /**
  * One card of all the given measures, eg. the whole section drill.
  * @param {PoolMeasure[]} measures at least one
- * @param {Object} [opts]
- * @param {boolean} [opts.numbered] a card of several measures by default
  * @returns {MeasureCard}
  */
-export function sectionCard(measures, {numbered=measures.length > 1}={}) {
+export function sectionCard(measures) {
   let columns = []
   let columnMeasures = []
 
@@ -87,22 +69,21 @@ export function sectionCard(measures, {numbered=measures.length > 1}={}) {
     startMeasure: measures[0].number,
     endMeasure: measures[measures.length - 1].number,
     measures: measures.map(measure => measure.number),
-    numbered,
     columns,
     columnMeasures,
   }
 }
 
-// what a copy of a column keeps for the staff to draw it with: the score's
-// staves and clefs (st/song_sections) and its rhythm (st/staff_rhythm)
-export const COLUMN_DRAW_KEYS = ["staves", "clefs", "beat", "beats", "notation", "extras"]
+// what a copy of a column keeps for an engine's card to join it to the heads
+// it drew (see joinCard in st/score_render/card_join): the column's onset and
+// the score's notation of its notes and of the heads its ties run on to
+export const COLUMN_JOIN_KEYS = ["beat", "notation", "extras"]
 
 /**
- * A copy of the card's column for the staff. On a numbered card, the first
- * column of each measure carries its bar number as `measure`, where the staff
- * draws a bar line. Everything the staff draws the column with is kept (see
- * COLUMN_DRAW_KEYS), and `cardIndex` is idx, which of the card's columns it
- * is, so the page can mark it on a card an engine drew (st/score_render)
+ * A copy of the card's column for the drill, keeping what an engine's card
+ * joins it by (see COLUMN_JOIN_KEYS), and `cardIndex`, idx, which of the
+ * card's columns it is, so the page can mark it on a card an engine drew
+ * (st/score_render)
  * @param {MeasureCard} card
  * @param {number} idx
  * @returns {string[]}
@@ -110,16 +91,11 @@ export const COLUMN_DRAW_KEYS = ["staves", "clefs", "beat", "beats", "notation",
 export function cardColumn(card, idx) {
   let source = card.columns[idx]
   let column = [...source]
-  let measureIdx = card.columnMeasures[idx]
 
-  for (let key of COLUMN_DRAW_KEYS) {
+  for (let key of COLUMN_JOIN_KEYS) {
     if (source[key] != null) {
       column[key] = source[key]
     }
-  }
-
-  if (card.numbered && (idx == 0 || card.columnMeasures[idx - 1] != measureIdx)) {
-    column.measure = card.measures[measureIdx]
   }
 
   column.cardIndex = idx
@@ -127,25 +103,12 @@ export function cardColumn(card, idx) {
 }
 
 /**
- * Every column of the card, as the staff draws them.
+ * Every column of the card, as the drill plays them.
  * @param {MeasureCard} card
  * @returns {string[][]}
  */
 export function cardColumns(card) {
   return card.columns.map((column, idx) => cardColumn(card, idx))
-}
-
-/**
- * Every column a drill of the card draws: a looping card's columns are
- * followed by its first column again, where the loop wraps back to it.
- * @param {MeasureCard} card
- * @param {Object} [opts]
- * @param {boolean} [opts.loop]
- * @returns {string[][]}
- */
-export function drillColumns(card, {loop=false}={}) {
-  let columns = cardColumns(card)
-  return loop && columns.length ? [...columns, columns[0]] : columns
 }
 
 /**

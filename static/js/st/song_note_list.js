@@ -434,7 +434,7 @@ export class MultiTrackSong extends SongNoteList {
 // note: C4, D#5, etc...
 // start: when note begings in beats
 // duration: how long note is in beats
-// notation: how an imported score draws the note (see st/staff_rhythm), set
+// notation: how an imported score writes the note (see st/note_values), set
 // by the MusicXML import; nothing about it is ever played or matched
 export class SongNote {
   constructor(note, start, duration) {

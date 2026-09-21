@@ -1,15 +1,14 @@
 import MersenneTwister from "mersennetwister"
 
 import {
-  measureCards, sectionCard, cardColumn, cardColumns, measureWeight, cardWeights, nextCardIndex,
-  MeasureCardDeck, MeasureCardGenerator, IN_ORDER, RANDOM_ORDER, MAX_MEASURES_PER_CARD
+  measureCards, sectionCard, cardColumn, measureWeight, cardWeights, nextCardIndex,
+  MeasureCardDeck, MeasureCardGenerator, IN_ORDER, RANDOM_ORDER
 } from "st/measure_cards"
 
 import {SheetMusicGenerator, generatorDefaultSettings, fixGeneratorSettings} from "st/generators"
 import {
   SHEET_MUSIC_GENERATOR, sheetMusicSection, BOTH_HANDS, WHOLE_SECTION, SHEET_MUSIC_STORAGE_KEY,
   sheetMusicMeasureBounds, sheetMusicSectionRange, sheetMusicSectionUpdate, sheetMusicSectionLength,
-  measuresPerCardLimit
 } from "st/data"
 import {importMusicXMLPiece} from "st/sheet_music_deck"
 import {setAppStore} from "st/storage"
@@ -27,10 +26,8 @@ const pickupMeasures = () => [
   {number: 2, columns: [["C3", "E3", "G3", "C5"]]},
 ]
 
-// the notes of columns, without the measure marks of cardColumn
+// the notes of columns, without what cardColumn copies onto them
 const notesOf = columns => [...columns].map(column => [...column])
-// the bar number each column starts, or null
-const measureMarks = columns => [...columns].map(column => column.measure ?? null)
 
 const emptyStore = {sectionStats: () => [], recordSectionPractice: async () => {}}
 
@@ -59,78 +56,50 @@ describe("measure cards", function() {
 
       expect(cards).toEqual([
         {
-          startMeasure: 0, endMeasure: 1, measures: [0, 1], numbered: true,
+          startMeasure: 0, endMeasure: 1, measures: [0, 1],
           columns: [["D5"], ["G3", "G4"], ["A4"], ["B4"]],
           columnMeasures: [0, 1, 1, 1],
         },
         {
-          startMeasure: 2, endMeasure: 2, measures: [2], numbered: true,
+          startMeasure: 2, endMeasure: 2, measures: [2],
           columns: [["C3", "E3", "G3", "C5"]],
           columnMeasures: [0],
         },
       ])
-
-      // the deck's short last card is numbered like its siblings
-      expect(measureMarks(cardColumns(cards[1]))).toEqual([2])
     })
 
-    it("makes a card per measure by default and caps the card size", function() {
+    it("makes a card per measure by default and takes any card size", function() {
       expect(measureCards(pickupMeasures(), 1).map(c => c.measures)).toEqual([[0], [1], [2]])
       expect(measureCards(pickupMeasures(), 0).map(c => c.measures)).toEqual([[0], [1], [2]])
       expect(measureCards(pickupMeasures(), 50).map(c => c.measures)).toEqual([[0, 1, 2]])
       expect(measureCards([], 2)).toEqual([])
     })
 
-    it("splits a section longer than the cap into cards of at most the cap", function() {
-      expect(MAX_MEASURES_PER_CARD).toEqual(3)
-
+    it("groups a longer section into cards of the size asked for", function() {
       let measures = Array.from({length: 7}, (_, idx) => ({number: idx, columns: [["C4"]]}))
-      expect(measureCards(measures, 50).map(c => c.measures)).toEqual([
-        [0, 1, 2], [3, 4, 5], [6],
-      ])
-      // a requested size above the cap is capped the same way
-      expect(measureCards(measures, MAX_MEASURES_PER_CARD + 4).map(c => c.measures))
-        .toEqual([[0, 1, 2], [3, 4, 5], [6]])
-    })
-
-    it("takes any card size for an engine's cards", function() {
-      let measures = Array.from({length: 7}, (_, idx) => ({number: idx, columns: [["C4"]]}))
-      expect(measureCards(measures, 5, {capped: false}).map(c => c.measures)).toEqual([
+      expect(measureCards(measures, 5).map(c => c.measures)).toEqual([
         [0, 1, 2, 3, 4], [5, 6],
       ])
-      expect(measureCards(measures, 50, {capped: false}).map(c => c.measures)).toEqual([
+      expect(measureCards(measures, 50).map(c => c.measures)).toEqual([
         [0, 1, 2, 3, 4, 5, 6],
       ])
-      expect(measureCards(measures, 5, {capped: false}).map(c => c.numbered)).toEqual([true, true])
-      // the app's staff still stops at the cap
-      expect(measureCards(measures, 5).map(c => c.measures)).toEqual([[0, 1, 2], [3, 4, 5], [6]])
     })
 
-    it("leaves a pool of one measure unnumbered, whatever the card size", function() {
-      let pool = pickupMeasures().slice(1, 2)
-
-      for (let size of [1, 2, MAX_MEASURES_PER_CARD]) {
-        let cards = measureCards(pool, size)
-        expect(cards.map(card => card.numbered)).toEqual([false])
-        expect(cards.map(card => measureMarks(cardColumns(card))))
-          .toEqual([[null, null, null]])
-      }
-    })
-
-    it("marks the first column of each measure of a numbered card", function() {
+    it("copies each column with what an engine's card joins it by and its place in the card", function() {
       let measures = [...pickupMeasures(), {number: 3, columns: []}, {number: 4, columns: [["F5"]]}]
+      let notation = [{type: "quarter", voice: 1}]
+      measures[4].columns[0].beat = 12
+      measures[4].columns[0].notation = notation
       let card = sectionCard(measures)
       expect(card.measures).toEqual([0, 1, 2, 3, 4])
 
       let columns = card.columns.map((column, idx) => cardColumn(card, idx))
-      expect(notesOf(columns)).toEqual(card.columns)
-      expect(measureMarks(columns)).toEqual([0, 1, null, null, 2, 4])
-      expect(card.columns[0].measure).toBeUndefined()
-
-      // a deck of one measure a card draws no bar lines at all
-      expect(measureCards(pickupMeasures(), 1).map(card => measureMarks(cardColumns(card))))
-        .toEqual([[null], [null, null, null], [null]])
+      expect(notesOf(columns)).toEqual(notesOf(card.columns))
+      expect(columns.map(column => column.cardIndex)).toEqual([0, 1, 2, 3, 4, 5])
+      expect([columns[5].beat, columns[5].notation]).toEqual([12, notation])
+      expect(columns[0].beat).toBeUndefined()
     })
+
   })
 
   describe("picking", function() {
@@ -280,7 +249,6 @@ describe("measure cards", function() {
       notes.fillBuffer(6)
 
       expect(notesOf(notes)).toEqual([["D5"], ["G3", "G4"], ["A4"], ["B4"], [], []])
-      expect(measureMarks(notes)).toEqual([0, 1, null, null, null, null])
 
       notes = hit(notes, stats)
       notes = hit(notes, stats)
@@ -290,8 +258,6 @@ describe("measure cards", function() {
       notes = hit(notes, stats)
       expect(deck.card.measures).toEqual([2])
       expect(notesOf(notes)).toEqual([["C3", "E3", "G3", "C5"], [], [], [], [], []])
-      // the deck's short last card opens with its bar number like the first
-      expect(measureMarks(notes)).toEqual([2, null, null, null, null, null])
 
       notes = hit(notes, stats)
       expect(deck.card.measures).toEqual([0, 1])
@@ -467,7 +433,7 @@ describe("measure cards", function() {
       expect(input("measuresPerCard").presets.map(v => v.name)).toEqual([WHOLE_SECTION])
     })
 
-    it("walks a saved drill without a card size through the section in capped cards", async function() {
+    it("plays a saved drill without a card size as the whole section on one looping card", async function() {
       let bars = Array.from({length: 16}, (_, idx) => `
         <measure number="${idx + 1}">
           ${idx == 0 ? `<attributes>
@@ -508,56 +474,30 @@ describe("measure cards", function() {
       expect(columns.length).toEqual(32)
       expect(sheetMusic.status(grand, settings)).toEqual(status)
 
-      // a section longer than the cap is never shown at once, whatever the
-      // order is set to: it is walked in order, never weighted by the
-      // measures played worst
+      // the whole section is played in order whatever the order is set to,
+      // never weighted by the measures played worst
       generator = sheetMusic.create(grand, null, {...settings, order: RANDOM_ORDER})
       expect(generator instanceof MeasureCardGenerator).toBe(true)
       expect(generator.deck.order).toEqual(IN_ORDER)
 
       generator = sheetMusic.create(grand, null, settings)
-      expect(generator.cards.map(card => card.measures)).toEqual([
-        [1, 2, 3], [4, 5, 6], [7, 8, 9], [10, 11, 12], [13, 14, 15], [16],
-      ])
-      expect(generator.currentCardNumber()).toEqual(1)
-      // every card of the walk opens with its own numbered bar line, the
-      // trailing one bar card along with the rest
-      expect(generator.cards.map(card => cardColumns(card)[0].measure))
-        .toEqual([1, 4, 7, 10, 13, 16])
+      let wholeSection = Array.from({length: 16}, (_, idx) => idx + 1)
+      expect(generator.cards.map(card => card.measures)).toEqual([wholeSection])
+      expect(generator.currentCardNumber()).toBe(null)
 
-      // the first card's own columns, the first of each measure marked for
-      // its bar line, and nothing past them until they are played
+      // its columns come round again without the gap of a flashcard deck
       let emitted = []
-      for (let i = 0; i < 7; i++) {
+      for (let i = 0; i < 34; i++) {
         emitted.push(generator.nextNote())
       }
-      expect(notesOf(emitted)).toEqual([...columns.slice(0, 6).map(column => [...column]), []])
-      expect(measureMarks(emitted)).toEqual([1, null, 2, null, 3, null, null])
-
-      // and playing a card through moves on to the next, the last wrapping
-      // back to the section's start
-      let stats = new NoteStats()
-      let notes = new NoteList([], {generator})
-      notes.fillBuffer(6)
-
-      let played = []
-      for (let i = 0; i < 7; i++) {
-        played.push(generator.currentCard().measures)
-        for (let column = 0; column < generator.currentCard().columns.length; column++) {
-          notes = hit(notes, stats)
-        }
-      }
-
-      expect(played).toEqual([
-        [1, 2, 3], [4, 5, 6], [7, 8, 9], [10, 11, 12], [13, 14, 15], [16], [1, 2, 3],
-      ])
+      expect(notesOf(emitted)).toEqual([...columns, ...columns.slice(0, 2)].map(column => [...column]))
     })
 
-    it("keeps a whole section the cap fits as one looping card", function() {
+    it("keeps a whole section as one looping card", function() {
       let settings = settingsFor({measuresPerCard: WHOLE_SECTION})
       generator = sheetMusic.create(grand, null, settings)
 
-      expect(generator instanceof SheetMusicGenerator).toBe(true)
+      expect(generator instanceof MeasureCardGenerator).toBe(true)
       expect(generator.currentCard().measures).toEqual([0, 1, 2])
       expect(generator.currentCardNumber()).toBe(null)
 
@@ -570,7 +510,7 @@ describe("measure cards", function() {
 
     it("picks random cards only for a numeric card size", function() {
       generator = sheetMusic.create(grand, null, settingsFor({measuresPerCard: WHOLE_SECTION, order: RANDOM_ORDER}))
-      expect(generator instanceof SheetMusicGenerator).toBe(true)
+      expect(generator.deck.order).toEqual(IN_ORDER)
 
       generator = sheetMusic.create(grand, null, settingsFor({measuresPerCard: "1", order: RANDOM_ORDER}))
       expect(generator instanceof MeasureCardGenerator).toBe(true)
@@ -609,9 +549,6 @@ describe("measure cards", function() {
       expect(generator.deck.card.measures).toEqual([1])
       let column = generator.nextNote()
       expect([...column]).toEqual(["G3"])
-      // drawn on the score's lower staff, in the clefs at its onset
-      expect(column.staves).toEqual(["lower"])
-      expect(column.clefs).toEqual({lower: "f"})
       expect(generator.nextNote()).toEqual([])
     })
 
@@ -700,47 +637,26 @@ describe("measure cards", function() {
           .toEqual({startMeasure: 3, endMeasure: 3})
       })
 
-      it("caps the card size on the app's staff and lets an engine's cards take the whole section", function() {
+      it("lets a card take up to the whole section", function() {
         let settings = longSettings({startMeasure: 3, endMeasure: 12})
         expect(sheetMusicSectionLength(settings)).toEqual(10)
-        expect(measuresPerCardLimit(settings)).toEqual({max: MAX_MEASURES_PER_CARD, capped: true})
-        expect(measuresPerCardLimit(settings, {capped: false})).toEqual({max: 10, capped: false})
-        // a section the cap fits isn't held by it
-        expect(measuresPerCardLimit(longSettings({startMeasure: 3, endMeasure: 4})))
-          .toEqual({max: 2, capped: false})
 
         let perCard = input("measuresPerCard")
-        let fallback = {cardCap: "while the score can't be drawn", mode: "scroll"}
-        let engine = {cardCap: null, mode: "wait"}
-
-        expect(perCard.bounds(settings, engine)).toEqual({min: 1, max: 10, caption: "of 10"})
-        expect(perCard.hint(settings, engine)).not.toContain("Cards stop")
-
-        expect(perCard.bounds(settings, fallback)).toEqual({min: 1, max: MAX_MEASURES_PER_CARD, caption: `max ${MAX_MEASURES_PER_CARD}`})
-        expect(perCard.hint(settings, fallback))
-          .toContain(`Cards stop at ${MAX_MEASURES_PER_CARD} measures while the score can't be drawn`)
-        // the app's staff whatever the reason when the page doesn't say
-        expect(perCard.bounds(settings).max).toEqual(MAX_MEASURES_PER_CARD)
-        expect(perCard.bounds(settings, {}).max).toEqual(MAX_MEASURES_PER_CARD)
+        expect(perCard.bounds(settings)).toEqual({min: 1, max: 10, caption: "of 10"})
+        expect(perCard.hint).not.toContain("Cards stop")
 
         expect(perCard.value({...settings, measuresPerCard: WHOLE_SECTION})).toBe(null)
         expect(perCard.value({...settings, measuresPerCard: "2"})).toEqual(2)
         expect(perCard.value({...settings, measuresPerCard: 7})).toEqual(7)
       })
 
-      it("draws cards of any size on an engine's path and capped ones on the app's staff", function() {
-        let settings = longSettings({measuresPerCard: 5})
-
-        generator = sheetMusic.create(grand, null, settings, {engineCards: true})
+      it("draws cards of any size", function() {
+        generator = sheetMusic.create(grand, null, longSettings({measuresPerCard: 5}))
         expect(generator.cards.map(card => [card.startMeasure, card.endMeasure]))
           .toEqual([[1, 5], [6, 10], [11, 15], [16, 16]])
 
-        generator = sheetMusic.create(grand, null, settings)
-        expect(generator.cards.every(card => card.measures.length <= MAX_MEASURES_PER_CARD)).toBe(true)
-        expect(generator.cards[0].measures).toEqual([1, 2, 3])
-
         // a size past the section is the section on one card
-        generator = sheetMusic.create(grand, null, longSettings({measuresPerCard: 40}), {engineCards: true})
+        generator = sheetMusic.create(grand, null, longSettings({measuresPerCard: 40}))
         expect(generator.cards.map(card => card.measures.length)).toEqual([16])
       })
 
@@ -759,8 +675,6 @@ describe("measure cards", function() {
           hand: BOTH_HANDS, measuresPerCard: 12,
         })
         expect([fixed.startMeasure, fixed.endMeasure, fixed.measuresPerCard]).toEqual([0, 2, 12])
-        generator = sheetMusic.create(grand, null, settingsFor(fixed), {engineCards: true})
-        expect(generator.currentCard().measures).toEqual([0, 1, 2])
         generator = sheetMusic.create(grand, null, settingsFor(fixed))
         expect(generator.currentCard().measures).toEqual([0, 1, 2])
 
