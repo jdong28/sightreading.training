@@ -73,3 +73,42 @@
         opacity: 1;
     }
 }
+
+/* scroll mode: the system on one line slides under the hit line, moved by
+   a transform alone (ScoreCard#place), never laid out again */
+.system {
+    position: relative;
+    overflow: hidden;
+
+    :global(svg) {
+        max-width: none;
+    }
+}
+
+.strip {
+    width: max-content;
+    will-change: transform;
+}
+
+/* the hit zone of the trainer's scroll mode, with the line the column to
+   play waits on down its middle */
+.hit_line {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 120px;
+    margin-left: -60px;
+    background: rgba(168,130,74,.18);
+    pointer-events: none;
+
+    &::after {
+        content: "";
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: 59px;
+        width: 2px;
+        background: var(--salon-gilt);
+        opacity: .5;
+    }
+}

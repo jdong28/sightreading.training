@@ -254,6 +254,27 @@ describe("score render", function() {
         expect(top(lastC5) - top(firstC5(wide.notes))).toBeGreaterThan(40)
         expect(wide.svg.getBoundingClientRect().height).toBeGreaterThan(shortHeight * 1.5)
       })
+
+      it("draws a range as one system on one line however wide, for scroll mode", async function() {
+        let result = await engine.renderSystem({musicXML: twoStaffScore(), fromMeasure: 1, toMeasure: 12, hand: "both"})
+        container.replaceChildren(result.svg)
+        expect(sortedKeys(result.notes)).toEqual(fixtureNotes(1, 12).sort(byOrder))
+
+        let rect = el => el.getBoundingClientRect()
+        let c5s = result.notes.filter(note => note.pitch == 72).sort((a, b) => a.onsetBeats - b.onsetBeats)
+        expect(c5s.length).toEqual(12)
+        // every measure's C5 on the one line, each further along than the last
+        for (let idx = 1; idx < c5s.length; idx++) {
+          expect(Math.abs(rect(c5s[idx].el).top - rect(c5s[0].el).top)).toBeLessThan(2)
+          expect(rect(c5s[idx].el).left).toBeGreaterThan(rect(c5s[idx - 1].el).left)
+        }
+        expect(rect(result.svg).width).toBeGreaterThan(926)
+        expect(rect(c5s[11].el).right).toBeLessThanOrEqual(rect(result.svg).right)
+
+        // a card drawn after it keeps to its plate
+        let card = await draw({fromMeasure: 1, toMeasure: 12})
+        expect(rect(card.svg).width).toBeLessThanOrEqual(644 + 1)
+      })
     })
   }
 

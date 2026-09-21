@@ -7,6 +7,9 @@ import ScorePage, {SCORE_PROGRAMME} from "st/components/pages/score_page"
 import ScoreCard from "st/components/score_card"
 import {MISSING_ENGINE_SOURCE} from "st/components/pages/sight_reading_page"
 import {joinCard, markCard, joinable, MARK_CLASSES} from "st/score_render/card_join"
+import {
+  scrollTrack, trackX, scrollAdvance, scrollOffset, SCROLL_WAIT, MIN_SCROLL_ADVANCE,
+} from "st/score_render/card_scroll"
 import {prepareCard} from "st/score_render/card_source"
 import {loadScoreEngines} from "st/score_render/load"
 import {STAVES, pieceSectionMeasures, BOTH_HANDS, RIGHT_HAND, LEFT_HAND, SHEET_MUSIC_STORAGE_KEY} from "st/data"
@@ -231,6 +234,97 @@ describe("card join", function() {
   })
 })
 
+describe("card scroll", function() {
+  // drawn notes whose heads sit at the given x, as a system lays them out
+  let at = new Map()
+  let placed = (x, ...args) => {
+    let note = drawn(...args)
+    at.set(note.el, x)
+    return note
+  }
+  let xOf = el => at.get(el)
+
+  it("places each column at its own drawn heads, never at the heads its ties run on to", function() {
+    // C4 at beat 0 tied to beat 2; the second voice's E3 struck at 1, a
+    // grace note drawn just before beat 1's head
+    let notes = [
+      placed(100, 60, 0), placed(152, 60, 2), placed(98, 48, 0, 2),
+      placed(130, 52, 1, 2), placed(120, 61, 1),
+      placed(150, 50, 2, 2),
+    ]
+    let columns = [
+      column(["C3", "C4"], 0, {notation: [{tieTo: null}, {tieTo: 2}], extras: [{kind: "head", name: "C4", beat: 2, tieTo: null}]}),
+      column(["E3"], 1),
+      column(["D3"], 2),
+    ]
+    let join = joinCard(columns, notes)
+    expect(join.unmatched).toEqual([notes[4]])
+
+    let track = scrollTrack(columns, join, notes, xOf, 400)
+    expect(track.points).toEqual([[0, 99], [1, 130], [2, 150]])
+    expect(trackX(track, 0)).toEqual(99)
+    expect(trackX(track, 1)).toEqual(130)
+    expect(trackX(track, 2)).toEqual(150)
+    // the mean gap between drawn onsets is the slider's unit
+    expect(track.unit).toEqual((150 - 99) / 2)
+    expect(track.endX).toEqual(400)
+  })
+
+  it("places a column with no drawn head between the drawn onsets either side of it", function() {
+    let notes = [placed(100, 60, 0), placed(200, 64, 2), placed(260, 65, 3)]
+    let columns = [column(["C4"], 0), column(["D4"], 1), column(["E4"], 2), column(["F4"], 3), column(["G4"], 4)]
+    let join = joinCard(columns, notes)
+    expect(join.heads[1]).toEqual([])
+    expect(join.heads[4]).toEqual([])
+
+    let track = scrollTrack(columns, join, notes, xOf, 300)
+    expect(trackX(track, 1)).toEqual(150)
+    // past the last drawn onset along the drawing's mean pace
+    expect(trackX(track, 4)).toBeCloseTo(260 + (260 - 100) / 3, 6)
+    expect(trackX(track, -1)).toBeCloseTo(100 - (260 - 100) / 3, 6)
+
+    // it is scrolled to and past like any other column
+    let unit = track.unit
+    expect(scrollAdvance(track, columns[0], columns[1])).toBeCloseTo(50 / unit, 6)
+    expect(scrollAdvance(track, columns[1], columns[2])).toBeCloseTo(50 / unit, 6)
+    expect(scrollAdvance(track, columns[3], columns[4])).toBeGreaterThan(0)
+  })
+
+  it("moves the system on by the drawn gap to the column that comes next", function() {
+    let notes = [placed(100, 60, 0), placed(140, 62, 1), placed(220, 64, 2), placed(222, 65, 3)]
+    let columns = notes.map(note => column([["C4", "D4", "E4", "F4"][note.onsetBeats]], note.onsetBeats))
+    let track = scrollTrack(columns, joinCard(columns, notes), notes, xOf, 500)
+    let unit = track.unit
+
+    expect(scrollAdvance(track, columns[0], columns[1])).toBeCloseTo(40 / unit, 6)
+    expect(scrollAdvance(track, columns[1], columns[2])).toBeCloseTo(80 / unit, 6)
+    // columns drawn all but on top of each other are still passed one by one
+    expect(scrollAdvance(track, columns[2], columns[3])).toBeCloseTo(Math.max(MIN_SCROLL_ADVANCE, 2 / unit), 6)
+
+    // the next card not yet picked: the next drawn onset
+    expect(scrollAdvance(track, columns[1], [])).toBeCloseTo(80 / unit, 6)
+    // looping back to the start: it comes on after the drawing's end
+    expect(scrollAdvance(track, columns[3], columns[0])).toBeCloseTo((500 - 222) / unit, 6)
+    expect(scrollAdvance(track, columns[3], [])).toBeCloseTo((500 - 222) / unit, 6)
+  })
+
+  it("puts the head column on the hit line while the slider waits, and after it as it runs down", function() {
+    let notes = [placed(100, 60, 0), placed(140, 62, 1)]
+    let columns = [column(["C4"], 0), column(["D4"], 1)]
+    let track = scrollTrack(columns, joinCard(columns, notes), notes, xOf, 200)
+
+    // the system's translation plus the column's x is where it is drawn
+    expect(scrollOffset(track, 1, SCROLL_WAIT, 322) + 140).toEqual(322)
+    expect(scrollOffset(track, 1, SCROLL_WAIT + 2, 322) + 140).toEqual(322 + 2 * track.unit)
+
+    // the column moves on without the system jumping: the slider gains the
+    // gap it moved on by
+    let before = scrollOffset(track, 0, 0.8, 322)
+    let after = scrollOffset(track, 1, 0.8 + scrollAdvance(track, columns[0], columns[1]), 322)
+    expect(after).toBeCloseTo(before, 6)
+  })
+})
+
 describe("score page engine card", function() {
   let container, root, page, store, previousStore, savedStorage
   const STORAGE_KEYS = [SCORE_DRILL_STORAGE_KEY, SHEET_MUSIC_STORAGE_KEY]
@@ -409,7 +503,7 @@ describe("score page engine card", function() {
 
   let perCardPicker = drawer => drawer.querySelector("[role=\"spinbutton\"][aria-label=\"measures per card\"]")
 
-  it("picks a card size past the staff's cap for the score's cards, capping it again in scroll mode", async function() {
+  it("picks a card size past the staff's cap for the score's cards, in scroll mode too", async function() {
     await drillPiece(reverieOpening(), {startMeasure: 1, endMeasure: 4, measuresPerCard: "2"})
     let el = renderScorePage()
     await cardDrawn()
@@ -431,14 +525,13 @@ describe("score page engine card", function() {
     expect(card.measures).toEqual([1, 2, 3, 4])
     await waitFor(() => el.querySelector("[data-score-card] svg"), {message: "the four measure card"})
 
-    // the app's staff draws scroll mode's cards, so the cap is back and says why
+    // the engine draws scroll mode's cards too, so the cap stays off
     flushSync(() => page.setMode("scroll"))
     flushSync(() => {})
-    expect(perCardPicker(drawer).getAttribute("aria-valuemax")).toEqual(`${MAX_MEASURES_PER_CARD}`)
-    expect(perCardPicker(drawer).value).toEqual(`${MAX_MEASURES_PER_CARD}`)
-    expect(drawer.textContent).toContain(`max ${MAX_MEASURES_PER_CARD}`)
-    expect(drawer.textContent).toContain(`Cards stop at ${MAX_MEASURES_PER_CARD} measures in scroll mode`)
-    expect(page.currentCard().card.measures.length).toEqual(MAX_MEASURES_PER_CARD)
+    expect(perCardPicker(drawer).getAttribute("aria-valuemax")).toEqual("4")
+    expect(perCardPicker(drawer).value).toEqual("4")
+    expect(drawer.textContent).not.toContain("Cards stop")
+    expect(page.currentCard().card.measures).toEqual([1, 2, 3, 4])
   })
 
   it("draws a piece stored without its score on the app's staff, saying how to draw it from the score", async function() {
@@ -459,17 +552,201 @@ describe("score page engine card", function() {
     expect(page.state.stats.hits).toEqual(1)
   })
 
-  it("draws the card on the app's staff in scroll mode", async function() {
-    await drillPiece(reverieOpening(), {startMeasure: 2, endMeasure: 4})
+  // the scroll mode's system on the page, with its hit line
+  let systemDrawn = () => waitFor(() =>
+    container.querySelector(`[data-score-card] [data-hit-line]`) &&
+    container.querySelector(`[data-score-card] .${MARK_CLASSES.current}`), {message: "the engine's system"})
+
+  let centre = el => {
+    let rect = el.getBoundingClientRect()
+    return rect.left + rect.width / 2
+  }
+
+  // how far right of the hit line the head column is: the middle of the
+  // heads struck at its beat (a chord's heads, two voices' heads side by
+  // side), never those its ties run on to
+  let headFromLine = () => {
+    let card = page.staff
+    let head = card.props.head
+    let beat = card.props.columns[head].beat
+    let struck = card.result.notes
+      .filter(note => Math.abs(note.onsetBeats - beat) < 1e-6 && card.cardJoin.heads[head].includes(note.el))
+      .map(note => centre(note.el))
+    let line = container.querySelector("[data-hit-line]")
+    return struck.reduce((sum, x) => sum + x, 0) / struck.length - centre(line)
+  }
+
+  // runs the scroll's slider down until it waits on the head column
+  let settle = async () => {
+    page.state.slider.speed = 20
+    await waitFor(() => page.state.slider.value == SCROLL_WAIT && !page.state.slider.animating,
+      {message: "the slider to wait"})
+  }
+
+  let scrollPiece = async (xml, settings) => {
+    let piece = await drillPiece(xml, settings)
+    window.localStorage.setItem(SCORE_DRILL_STORAGE_KEY, JSON.stringify({mode: "scroll"}))
+    return piece
+  }
+
+  it("draws the whole section on one line in scroll mode, the head column waiting on the hit line", async function() {
+    await scrollPiece(reverieOpening(), {startMeasure: 1, endMeasure: 4})
+    let el = renderScorePage()
+    await systemDrawn()
+
+    expect(page.state.mode).toEqual("scroll")
+    expect(el.querySelector(`.${staffStyles.staff_notes}`)).toBe(null)
+    expect(el.textContent).not.toContain(MISSING_ENGINE_SOURCE)
+    // one card of the whole section, longer than the app staff's cap
+    let {card, number} = page.currentCard()
+    expect([card.startMeasure, card.endMeasure, number]).toEqual([1, 4, null])
+
+    await settle()
+    expect(Math.abs(headFromLine())).toBeLessThan(1)
+  })
+
+  it("judges the column on the hit line: a hit moves the system on, a wrong note marks it missed", async function() {
+    await scrollPiece(reverieOpening(), {startMeasure: 2, endMeasure: 4})
+    let el = renderScorePage()
+    await systemDrawn()
+    await settle()
+    let svg = el.querySelector("[data-score-card] svg")
+
+    flushSync(() => page.beginSession())
+    let first = headElements()
+    let x = centre(first[0])
+
+    play(page.state.notes.currentColumn())
+    expect(page.state.notes.currentColumn().cardIndex).toEqual(1)
+    expect(page.state.stats.hits).toEqual(1)
+    expect(first.every(head => head.classList.contains(MARK_CLASSES.done))).toBe(true)
+    // the system hasn't moved yet: the next column comes on towards the line
+    expect(Math.abs(centre(first[0]) - x)).toBeLessThan(0.5)
+    expect(headFromLine()).toBeGreaterThan(5)
+
+    // nor on a hit while it is still moving
+    expect(page.state.slider.animating).toBe(true)
+    play(page.state.notes.currentColumn())
+    expect(page.state.notes.currentColumn().cardIndex).toEqual(2)
+    expect(Math.abs(centre(first[0]) - x)).toBeLessThan(0.5)
+
+    await settle()
+    expect(centre(first[0])).toBeLessThan(x - 5)
+    expect(Math.abs(headFromLine())).toBeLessThan(1)
+
+    let second = headElements()
+    play(["C2"])
+    expect(page.state.notes.currentColumn().cardIndex).toEqual(2)
+    expect(page.state.stats.misses).toEqual(1)
+    expect(second.every(head =>
+      head.classList.contains(MARK_CLASSES.missed) && head.classList.contains(MARK_CLASSES.current))).toBe(true)
+
+    // drawn once: the drill only moves the system and its marks
+    expect(el.querySelector("[data-score-card] svg")).toBe(svg)
+  })
+
+  it("counts a column that scrolls past the line unplayed as missed, but not at rest", async function() {
+    await scrollPiece(reverieOpening(), {startMeasure: 2, endMeasure: 4})
+    renderScorePage()
+    await systemDrawn()
+    await settle()
+
+    // at rest
+    let resting = headElements()
+    flushSync(() => page.state.slider.onLoop())
+    expect(page.state.notes.currentColumn().cardIndex).toEqual(1)
+    expect(page.state.stats.misses).toEqual(0)
+    expect(resting.some(head => head.classList.contains(MARK_CLASSES.missed))).toBe(false)
+
+    flushSync(() => page.beginSession())
+    let passing = headElements()
+    flushSync(() => page.state.slider.onLoop())
+    flushSync(() => {})
+    expect(page.state.notes.currentColumn().cardIndex).toEqual(2)
+    expect(page.state.stats.misses).toEqual(1)
+    expect(passing.every(head =>
+      head.classList.contains(MARK_CLASSES.missed) && head.classList.contains(MARK_CLASSES.done))).toBe(true)
+
+    // Rest ends the session
+    flushSync(() => page.toggleSession())
+    expect(page.state.session).toBe(false)
+    flushSync(() => page.state.slider.onLoop())
+    expect(page.state.stats.misses).toEqual(1)
+  })
+
+  it("scrolls on past a column the engine drew no head for", async function() {
+    await scrollPiece(reverieOpening(), {startMeasure: 2, endMeasure: 4})
+
+    // the engine's system with the heads of the section's second column left
+    // out, each drawn head a mark 30px along a beat
+    let skipped
+    let loadEngines = async () => {
+      let bundle = await loadScoreEngines()
+      let osmd = bundle.ENGINES.osmd
+      return {...bundle, ENGINES: {...bundle.ENGINES, osmd: {...osmd, renderSystem: async opts => {
+        let {notes} = await osmd.renderSystem(opts)
+        let beats = [...new Set(notes.map(note => note.onsetBeats))].sort((a, b) => a - b)
+        skipped = page.currentCard().card.columns[1].beat
+        let svg = document.createElementNS(SVG_NS, "svg")
+        svg.setAttribute("width", "2000")
+        svg.setAttribute("height", "100")
+        let kept = notes.filter(note => note.onsetBeats != skipped).map(note => {
+          let el = document.createElementNS(SVG_NS, "g")
+          let rect = document.createElementNS(SVG_NS, "rect")
+          Object.entries({x: 20 + 30 * (note.onsetBeats - beats[0]), y: 10, width: 8, height: 6})
+            .forEach(([name, value]) => rect.setAttribute(name, value))
+          el.appendChild(rect)
+          svg.appendChild(el)
+          return {...note, el}
+        })
+        return {svg, notes: kept}
+      }}}}
+    }
+
+    renderScorePage({loadEngines})
+    await systemDrawn()
+    await settle()
+    flushSync(() => page.beginSession())
+
+    play(page.state.notes.currentColumn())
+    let column = page.state.notes.currentColumn()
+    expect(column.beat).toEqual(skipped)
+    expect(headElements()).toEqual([])
+    // the system moves on to it all the same, by its place between the heads
+    // either side, and past it
+    expect(page.state.slider.value).toBeGreaterThan(SCROLL_WAIT)
+    await settle()
+    play(column)
+    expect(page.state.notes.currentColumn().cardIndex).toEqual(2)
+    expect(page.state.slider.value).toBeGreaterThan(SCROLL_WAIT)
+    await settle()
+    expect(Math.abs(headFromLine())).toBeLessThan(1)
+  })
+
+  it("draws a piece stored without its score on the app's staff in scroll mode", async function() {
+    let {piece} = await addPiece("Rêverie", parseMusicXML(reverieOpening()), store)
+    window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+      piece: piece.id, startMeasure: 2, endMeasure: 4, hand: BOTH_HANDS, measuresPerCard: "all",
+    }))
     window.localStorage.setItem(SCORE_DRILL_STORAGE_KEY, JSON.stringify({mode: "scroll"}))
 
     let el = renderScorePage()
-    await waitFor(() => page.state.engineSource?.status == "ready", {message: "the source"})
-    flushSync(() => {})
+    await waitFor(() => el.querySelector(`.${staffStyles.staff_notes}`), {message: "the app's staff"})
+    expect(page.state.mode).toEqual("scroll")
+    expect(el.querySelector("[data-score-card]")).toBe(null)
+    expect(el.textContent).toContain(MISSING_ENGINE_SOURCE)
+  })
+
+  it("falls back to the app's staff in scroll mode when the engine can't draw the system", async function() {
+    await scrollPiece(reverieOpening(), {startMeasure: 1, endMeasure: 4})
+    spyOn(console, "warn")
+
+    let el = renderScorePage({loadEngines: () => Promise.reject(new Error("offline"))})
+    await waitFor(() => el.querySelector(`.${staffStyles.staff_notes}`), {message: "the app's staff"})
 
     expect(el.querySelector("[data-score-card]")).toBe(null)
-    expect(el.querySelector(`.${staffStyles.staff_notes}`)).not.toBe(null)
-    expect(el.textContent).not.toContain(MISSING_ENGINE_SOURCE)
+    expect(page.state.engineSource.status).toEqual("failed")
+    expect(page.state.mode).toEqual("scroll")
   })
 
   it("falls back to the app's staff when the engine can't draw the card", async function() {

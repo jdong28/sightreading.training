@@ -46,6 +46,7 @@ import {drillColumns} from "st/measure_cards"
 import {ScoreCard} from "st/components/score_card"
 import {loadScoreEngines} from "st/score_render/load"
 import {joinable} from "st/score_render/card_join"
+import {SCROLL_WAIT} from "st/score_render/card_scroll"
 
 const DEFAULT_NOTE_WIDTH = 100
 const DEFAULT_SPEED = 4
@@ -153,8 +154,9 @@ export const EXERCISES_PROGRAMME = {
   // staffFor(settings), the staff the generator's settings (defaults filled
   // in) are drawn on, which then follows them in place of a clef setting.
   // engine, the key of the engraving engine (st/score_render) that draws an
-  // imported piece's cards from its source MusicXML in wait mode, in place of
-  // the app's own staff (see engineCard)
+  // imported piece's cards from its source MusicXML, in place of the app's
+  // own staff (see engineCard): in wait mode card by card, in scroll mode the
+  // whole section on one line
 }
 
 export const MISSING_ENGINE_SOURCE = "Drawn on the trainer's staff: this piece was imported " +
@@ -197,6 +199,11 @@ export default class SightReadingPage extends React.Component {
       }
     }
     this.setStaffWrapper = el => this.observeStaffWrapper(el)
+    // the engine's card is the staff the slider moves, from where it is now
+    this.setEngineStaff = card => {
+      this.staff = card
+      if (card && this.state.slider) { card.setOffset(this.state.slider.value) }
+    }
     this.openSettings = () => this.setState({settingsOpen: true})
     this.closeSettings = () => this.setState({settingsOpen: false})
     this.applySettings = () => {
@@ -375,10 +382,10 @@ export default class SightReadingPage extends React.Component {
   }
 
   // whether the drill's cards are drawn by the programme's engine: an
-  // imported piece whose source is stored, in wait mode
+  // imported piece whose source is stored
   engineCards() {
     let source = this.state.engineSource
-    return !!(this.programme.engine && this.state.mode == "wait" &&
+    return !!(this.programme.engine && this.state.mode &&
       source && source.status == "ready" && this.currentPieceSection())
   }
 
@@ -388,7 +395,6 @@ export default class SightReadingPage extends React.Component {
   // source is still being read counts as the engine's
   cardCap() {
     if (!this.programme.engine) { return "" }
-    if (this.state.mode != "wait") { return "in scroll mode" }
 
     switch (this.state.engineSource?.status) {
       case "missing":
@@ -404,7 +410,7 @@ export default class SightReadingPage extends React.Component {
   // the piece's source, or on the plate's width for the engine
   engineCardPending() {
     let source = this.state.engineSource
-    if (!this.programme.engine || this.state.mode != "wait" || !source) { return false }
+    if (!this.programme.engine || !this.state.mode || !source) { return false }
     return source.status == "loading" || (this.engineCards() && !this.state.staffWidth)
   }
 
@@ -429,8 +435,9 @@ export default class SightReadingPage extends React.Component {
     return cache.staves
   }
 
-  // the engine card's props for the card at the head of the drill, or null
-  // when the app's staff draws it
+  // The engine card's props for the card at the head of the drill, or null
+  // when the app's staff draws it. In scroll mode the engine draws the whole
+  // section on one line, which the slider moves along from card to card
   engineCard() {
     if (!this.engineCards() || !this.notesForEngine) { return null }
 
@@ -442,13 +449,17 @@ export default class SightReadingPage extends React.Component {
     let {card} = current
     let source = this.state.engineSource
     let head = this.cardHead(this.state.notes).index
+    let system = this.state.mode == "scroll"
+    let drawn = system ? this.currentPieceSection() : card
 
     return {
       engine: this.programme.engine,
       musicXML: source.musicXML,
       measureStarts: source.measureStarts,
-      fromMeasure: card.startMeasure,
-      toMeasure: card.endMeasure,
+      fromMeasure: drawn.startMeasure,
+      toMeasure: drawn.endMeasure,
+      system,
+      slider: system ? this.state.slider : null,
       hand: "both",
       staves,
       width,
@@ -700,6 +711,11 @@ export default class SightReadingPage extends React.Component {
   // rhythm and a long note's own room in an imported piece
   columnAdvance(notes) {
     if (!notes || !notes.length) { return 1 }
+
+    // the engine's system moves on by the gap it drew between the columns
+    let drawn = this.staff && this.staff.scrollAdvance &&
+      this.staff.scrollAdvance(notes.currentColumn(), notes[1])
+    if (drawn != null) { return drawn }
 
     let current = this.currentCard()
     let unitColumns = current ? this.unitColumns(current) : null
@@ -1051,8 +1067,10 @@ export default class SightReadingPage extends React.Component {
         loopPhase: 1,
         initialValue: 4,
         onUpdate: value => {
-          if (value < 0.5) {
-            this.state.slider.value = 0.5
+          // the head column waits where the slider stops, not where the
+          // frame that stopped it overshot to
+          if (value < SCROLL_WAIT) {
+            value = this.state.slider.value = SCROLL_WAIT
             this.state.slider.cancel()
           }
 
@@ -1063,6 +1081,11 @@ export default class SightReadingPage extends React.Component {
           // notes scrolling past at rest aren't misses
           if (column.length && this.state.session) {
             this.state.stats.missNotes(column);
+
+            let index = column.cardIndex
+            if (index != null && !this.state.engineMissed.includes(index)) {
+              this.setState({engineMissed: [...this.state.engineMissed, index]})
+            }
           }
           // the room the column leaving the staff held, which the notes slide
           // by, so a long note holds the staff for as many beats as the score
@@ -1455,6 +1478,7 @@ export default class SightReadingPage extends React.Component {
           />
       } else if (engineCard) {
         staff = <ScoreCard
+          ref={this.setEngineStaff}
           {...engineCard}
           loadEngines={this.props.loadEngines}
           onError={this._onEngineError ||= () => this.setState({
@@ -1483,7 +1507,9 @@ export default class SightReadingPage extends React.Component {
       </div>
       <div
         ref={this.setStaffWrapper}
-        className={classNames(staffStyles.staff_wrapper, styles.staff_wrapper)}>
+        className={classNames(staffStyles.staff_wrapper, styles.staff_wrapper, {
+          [styles.engine_system]: engineCard && engineCard.system,
+        })}>
         {staff}
       </div>
       {this.renderEngineSourceNote()}
@@ -1493,7 +1519,7 @@ export default class SightReadingPage extends React.Component {
   // why a piece is drawn on the app's staff rather than from its score
   renderEngineSourceNote() {
     let source = this.state.engineSource
-    if (!this.programme.engine || this.state.mode != "wait" || !source) { return null }
+    if (!this.programme.engine || !source) { return null }
 
     if (source.status == "missing") {
       return <p className={styles.plate_note} data-engine-note>

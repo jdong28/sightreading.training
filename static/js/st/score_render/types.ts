@@ -1,7 +1,8 @@
 // The contract every engraving engine behind st/score_render implements: a
 // card is a measure range of a piece's source MusicXML drawn to a plate
-// width, and every note head it draws comes back with what the trainer
-// needs to find it again
+// width, a system the same range drawn on one line however long, and every
+// note head either draws comes back with what the trainer needs to find it
+// again
 
 export type Hand = "both" | "upper" | "lower"
 
@@ -30,6 +31,9 @@ export interface CardOptions {
   measureStarts?: number[] | null
 }
 
+// a system is drawn on one line, so it has no plate width to fit
+export type SystemOptions = Omit<CardOptions, "width">
+
 export interface CardNote {
   // the same note has the same id whichever engine drew it
   id: string
@@ -56,4 +60,7 @@ export interface ScoreEngine {
   version: string
   licence: string
   renderCard(opts: CardOptions): Promise<CardResult>
+  // the range as one system with no line breaks, its svg as wide as the
+  // music needs, for a trainer that slides it past a fixed line
+  renderSystem(opts: SystemOptions): Promise<CardResult>
 }

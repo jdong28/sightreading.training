@@ -710,15 +710,15 @@ describe("measure cards", function() {
           .toEqual({max: 2, capped: false})
 
         let perCard = input("measuresPerCard")
-        let scroll = {cardCap: "in scroll mode", mode: "scroll"}
+        let fallback = {cardCap: "while the score can't be drawn", mode: "scroll"}
         let engine = {cardCap: null, mode: "wait"}
 
         expect(perCard.bounds(settings, engine)).toEqual({min: 1, max: 10, caption: "of 10"})
         expect(perCard.hint(settings, engine)).not.toContain("Cards stop")
 
-        expect(perCard.bounds(settings, scroll)).toEqual({min: 1, max: MAX_MEASURES_PER_CARD, caption: `max ${MAX_MEASURES_PER_CARD}`})
-        expect(perCard.hint(settings, scroll))
-          .toContain(`Cards stop at ${MAX_MEASURES_PER_CARD} measures in scroll mode`)
+        expect(perCard.bounds(settings, fallback)).toEqual({min: 1, max: MAX_MEASURES_PER_CARD, caption: `max ${MAX_MEASURES_PER_CARD}`})
+        expect(perCard.hint(settings, fallback))
+          .toContain(`Cards stop at ${MAX_MEASURES_PER_CARD} measures while the score can't be drawn`)
         // the app's staff whatever the reason when the page doesn't say
         expect(perCard.bounds(settings).max).toEqual(MAX_MEASURES_PER_CARD)
         expect(perCard.bounds(settings, {}).max).toEqual(MAX_MEASURES_PER_CARD)
