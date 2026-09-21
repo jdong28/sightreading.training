@@ -1,6 +1,10 @@
-import {parseMusicXML, MusicXMLError, COMPRESSED_MESSAGE} from "st/musicxml"
+import {zipSync, strToU8} from "fflate"
+import {
+  parseMusicXML, readMusicXMLFile, MusicXMLError, COMPRESSED_MESSAGE,
+  DAMAGED_ARCHIVE_MESSAGE, NO_SCORE_MESSAGE
+} from "st/musicxml"
 import {SongNote, measureStartsUntil, clickStartsMeasure} from "st/song_note_list"
-import {reverieOpening} from "spec/helpers"
+import {reverieOpening, LITTLE_WALTZ_XML, littleWaltzMXL} from "spec/helpers"
 
 // [note, start, duration] tuples of a note list, in document order
 let tuples = notes => [...notes].map(n => [n.note, n.start, n.duration])
@@ -648,7 +652,7 @@ describe("musicxml", function() {
     expect(tuples(song.tracks[0])).toEqual([["C4", 0, 4]])
   })
 
-  it("refuses compressed .mxl content", function() {
+  it("refuses the text of compressed .mxl content, which can't be unpacked", function() {
     let zip = "PK    not really a zip"
     expect(() => parseMusicXML(zip)).toThrowError(MusicXMLError, COMPRESSED_MESSAGE)
   })
@@ -657,5 +661,91 @@ describe("musicxml", function() {
     expect(() => parseMusicXML("<score-partwise><part>")).toThrowError(MusicXMLError)
     expect(() => parseMusicXML("<html><body>hi</body></html>")).toThrowError(MusicXMLError, /Not a MusicXML score/)
     expect(() => parseMusicXML("")).toThrowError(MusicXMLError)
+  })
+})
+
+describe("reading a MusicXML file", function() {
+  // a .mxl archive of the given {path: text} entries, in order
+  let archive = entries => zipSync(Object.fromEntries(
+    Object.entries(entries).map(([path, text]) => [path, strToU8(text)])))
+
+  let container = path => `<?xml version="1.0" encoding="UTF-8"?>
+<container><rootfiles><rootfile full-path="${path}" media-type="application/vnd.recordare.musicxml+xml"/><rootfile full-path="score.pdf" media-type="application/pdf"/></rootfiles></container>`
+
+  it("reads an uncompressed file from its bytes or its text", function() {
+    let xml = reverieOpening()
+    expect(readMusicXMLFile(new TextEncoder().encode(xml))).toEqual(xml)
+    expect(readMusicXMLFile(new TextEncoder().encode(xml).buffer)).toEqual(xml)
+    expect(readMusicXMLFile(xml)).toEqual(xml)
+  })
+
+  it("unpacks the score a compressed file's container names", function() {
+    // written by Info-ZIP, with an entry ahead of the score that isn't it
+    let text = readMusicXMLFile(littleWaltzMXL())
+    expect(text).toEqual(LITTLE_WALTZ_XML)
+    expect(readMusicXMLFile(littleWaltzMXL().buffer)).toEqual(LITTLE_WALTZ_XML)
+
+    let song = parseMusicXML(text)
+    expect(tuples(song)).toEqual([["E5", 0, 1], ["G4", 1, 1], ["C5", 2, 1]])
+  })
+
+  it("reads the non-ASCII text of a compressed score", function() {
+    let xml = reverieOpening()
+    let text = readMusicXMLFile(archive({
+      "META-INF/container.xml": container("Rêverie.musicxml"),
+      "Rêverie.musicxml": xml,
+    }))
+    expect(text).toEqual(xml)
+    expect(parseMusicXML(text).metadata.title).toEqual("Rêverie")
+  })
+
+  it("falls back to the first score entry outside META-INF", function() {
+    let xml = reverieOpening()
+
+    // no container
+    expect(readMusicXMLFile(archive({
+      "META-INF/other.xml": "<other/>",
+      "cover.png": "not xml",
+      "score.xml": xml,
+      "parts/extra.musicxml": "<extra/>",
+    }))).toEqual(xml)
+
+    // a container naming an entry the archive doesn't hold
+    expect(readMusicXMLFile(archive({
+      "META-INF/container.xml": container("missing.musicxml"),
+      "piece.MUSICXML": xml,
+    }))).toEqual(xml)
+
+    // a container that isn't XML
+    expect(readMusicXMLFile(archive({
+      "META-INF/container.xml": "<container><rootfiles",
+      "piece.xml": xml,
+    }))).toEqual(xml)
+  })
+
+  it("reads the score a container names whatever its extension", function() {
+    let xml = reverieOpening()
+    expect(readMusicXMLFile(archive({
+      "META-INF/container.xml": container("score.mus"),
+      "decoy.xml": "<decoy/>",
+      "score.mus": xml,
+    }))).toEqual(xml)
+  })
+
+  it("gives a readable error for an empty or damaged archive", function() {
+    let fails = (data, message) =>
+      expect(() => readMusicXMLFile(data)).toThrowError(MusicXMLError, message)
+
+    // empty, and holding no score
+    fails(zipSync({}), NO_SCORE_MESSAGE)
+    fails(archive({"META-INF/container.xml": container("score.xml"), "cover.png": "png"}), NO_SCORE_MESSAGE)
+
+    // cut short, and with its compressed data scrambled
+    let bytes = littleWaltzMXL()
+    fails(bytes.slice(0, 60), DAMAGED_ARCHIVE_MESSAGE)
+    let scrambled = bytes.slice()
+    scrambled.fill(0xff, 80, 200)
+    fails(scrambled, DAMAGED_ARCHIVE_MESSAGE)
+    fails(strToU8("PK\u0003\u0004 not really a zip"), DAMAGED_ARCHIVE_MESSAGE)
   })
 })

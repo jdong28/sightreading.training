@@ -1,4 +1,7 @@
-import {parseMusicXML, COMPRESSED_MESSAGE} from "st/musicxml"
+import {zipSync} from "fflate"
+import {
+  parseMusicXML, COMPRESSED_MESSAGE, DAMAGED_ARCHIVE_MESSAGE, NO_SCORE_MESSAGE
+} from "st/musicxml"
 import {MultiTrackSong, SongNote} from "st/song_note_list"
 
 import {
@@ -6,7 +9,7 @@ import {
 } from "st/song_sections"
 
 import {
-  songToJSON, songFromJSON, loadDeck, findPiece, pieceSong, addPiece,
+  songToJSON, songFromJSON, loadDeck, findPiece, pieceSong, pieceSource, addPiece,
   removePiece, importMusicXMLPiece, MAX_PIECES
 } from "st/sheet_music_deck"
 
@@ -16,7 +19,10 @@ import {
 } from "st/data"
 
 import {setAppStore} from "st/storage"
-import {openTestStore, pickupScore, noteXML, reverieOpening, keyChangeScore} from "spec/helpers"
+import {
+  openTestStore, pickupScore, noteXML, reverieOpening, keyChangeScore,
+  LITTLE_WALTZ_XML, littleWaltzMXL
+} from "spec/helpers"
 
 let tuples = notes => [...notes]
   .map(n => [n.note, n.start, n.duration])
@@ -338,9 +344,10 @@ describe("sheet music deck", function() {
       expect(piece.fileName).toEqual("minuet.musicxml")
       expect(typeof piece.importedAt).toEqual("number")
 
-      // stored as song JSON, not MusicXML
+      // stored as song JSON, with the MusicXML kept apart as its source
       expect(JSON.stringify(await store.backend.getAll("pieces"))).not.toContain("score-partwise")
       expect(loadDeck(store).pieces.map(p => p.title)).toEqual(["Pickup Minuet"])
+      expect(await pieceSource(piece.id, store)).toEqual(pickupScore())
 
       // importing the same score again picks the stored piece
       let again = await importMusicXMLPiece("minuet.musicxml", pickupScore(), store)
@@ -383,10 +390,102 @@ describe("sheet music deck", function() {
       expect(loadDeck(store).pieces.map(p => p.id)).toEqual([old.id])
       expect(pieceSong(findPiece(old.id, store)).metadata.measureKeySignatures).toEqual([-1, -1, -1, -1])
       expect(store.sectionStats(old.id).map(s => [s.startMeasure, s.hits, s.misses])).toEqual([[2, 3, 1]])
+      // the old piece had no source, the score imported again is kept as one
+      expect(await pieceSource(old.id, store)).toEqual(reverieOpening())
 
       let reopened = await openTestStore({keep: true})
       expect(pieceSong(findPiece(old.id, reopened)).metadata.measureKeySignatures).toEqual([-1, -1, -1, -1])
+      expect(await pieceSource(old.id, reopened)).toEqual(reverieOpening())
       await reopened.close()
+    })
+
+    it("fills in the source of a piece stored before sources were kept", async function() {
+      // stored without its source, as every piece imported before was
+      let old = (await addPiece("Pickup Minuet", parseMusicXML(pickupScore()), store, {fileName: "minuet.musicxml"})).piece
+      await store.recordSectionPractice({pieceId: old.id, startMeasure: 1, endMeasure: 2, hits: 5, misses: 2})
+      expect(await pieceSource(old.id, store)).toBe(null)
+
+      let {piece, error, updated, warning} = await importMusicXMLPiece("minuet.musicxml", pickupScore(), store)
+      expect([error, updated, warning]).toEqual([undefined, undefined, undefined])
+      expect(piece).toBe(findPiece(old.id, store))
+      expect(loadDeck(store).pieces.map(p => p.id)).toEqual([old.id])
+      expect(store.sectionStats(old.id).map(s => [s.startMeasure, s.endMeasure, s.hits, s.misses])).toEqual([[1, 2, 5, 2]])
+      expect(await pieceSource(old.id, store)).toEqual(pickupScore())
+
+      let reopened = await openTestStore({keep: true})
+      expect(loadDeck(reopened).pieces.map(p => p.id)).toEqual([old.id])
+      expect(await pieceSource(old.id, reopened)).toEqual(pickupScore())
+      await reopened.close()
+    })
+
+    it("keeps drilling a piece stored in the first song format, without a source", async function() {
+      // notes, clefs and metadata only, written before sources were kept
+      let song = songToJSON(parseMusicXML(pickupScore()))
+      let old = {
+        id: "old", title: "Pickup Minuet", importedAt: 1000,
+        song: {...song, format: 1, tracks: song.tracks.map(({notation, rests, ...track}) => track)},
+      }
+      await store.putPiece(old)
+
+      let restored = pieceSong(findPiece("old", store))
+      expect(restored.metadata.measureNumbers).toEqual([0, 1, 2])
+      expect([...restored].every(note => !note.notation)).toBe(true)
+      let settings = sheetMusicPieceSettings({piece: "old", startMeasure: 1, endMeasure: 2}, restored)
+      expect(pieceSection(grand, settings, restored).columns.length).toEqual(4)
+      expect(await pieceSource("old", store)).toBe(null)
+
+      // imported again it becomes the current format, with its source
+      let {piece, updated} = await importMusicXMLPiece("minuet.musicxml", pickupScore(), store)
+      expect([piece.id, updated]).toEqual(["old", true])
+      expect(await pieceSource("old", store)).toEqual(pickupScore())
+    })
+
+    it("imports a compressed .mxl file, keeping its score as the source", async function() {
+      let {piece, error} = await importMusicXMLPiece("little_waltz.mxl", littleWaltzMXL().buffer, store)
+      expect(error).toBeUndefined()
+      // a score without a work title is named by its file
+      expect(piece.title).toEqual("little waltz")
+      expect(piece.fileName).toEqual("little_waltz.mxl")
+      expect([...pieceSong(piece)].map(note => note.note)).toEqual(["E5", "G4", "C5"])
+      expect(await pieceSource(piece.id, store)).toEqual(LITTLE_WALTZ_XML)
+
+      // the same file again, as bytes, picks the stored piece
+      let again = await importMusicXMLPiece("little_waltz.mxl", littleWaltzMXL(), store)
+      expect(again.piece.id).toEqual(piece.id)
+      expect(loadDeck(store).pieces.length).toEqual(1)
+
+      // an uncompressed file read as bytes, as the file picker reads it
+      let bytes = new TextEncoder().encode(pickupScore())
+      let minuet = (await importMusicXMLPiece("minuet.musicxml", bytes.buffer, store)).piece
+      expect(minuet.title).toEqual("Pickup Minuet")
+      expect(await pieceSource(minuet.id, store)).toEqual(pickupScore())
+    })
+
+    it("drops a replaced piece's source when the new version comes without one", async function() {
+      let legacy = parseMusicXML(reverieOpening())
+      delete legacy.metadata.measureKeySignatures
+      let old = (await addPiece("Rêverie", legacy, store, {source: "<older version/>"})).piece
+      expect(await pieceSource(old.id, store)).toEqual("<older version/>")
+
+      let {piece, updated} = await addPiece("Rêverie", parseMusicXML(reverieOpening()), store)
+      expect([piece.id, updated]).toEqual([old.id, true])
+      expect(await pieceSource(old.id, store)).toBe(null)
+    })
+
+    it("still picks a stored piece when its source can't be saved", async function() {
+      let old = (await addPiece("Pickup Minuet", parseMusicXML(pickupScore()), store)).piece
+      spyOn(store, "putPieceSource").and.rejectWith(
+        new DOMException("The quota has been exceeded.", "QuotaExceededError"))
+
+      let {piece, error, warning} = await importMusicXMLPiece("minuet.musicxml", pickupScore(), store)
+      expect(error).toBeUndefined()
+      expect(piece.id).toEqual(old.id)
+      expect(warning).toEqual("Its score file wasn't saved with it. Browser storage is full. Remove a piece from the deck and try again.")
+    })
+
+    it("has no source for a piece that isn't stored", async function() {
+      expect(await pieceSource("", store)).toBe(null)
+      expect(await pieceSource("missing", store)).toBe(null)
     })
 
     it("adds a different score under a stored title as a new piece", async function() {
@@ -422,11 +521,16 @@ describe("sheet music deck", function() {
       expect(loadDeck(store)).toBe(loadDeck(store))
     })
 
-    it("refuses compressed and broken files", async function() {
-      expect((await importMusicXMLPiece("nocturne.mxl", "whatever", store)).error).toEqual(COMPRESSED_MESSAGE)
+    it("refuses damaged, empty and broken files", async function() {
+      let damaged = littleWaltzMXL().slice(0, 60)
+      expect((await importMusicXMLPiece("nocturne.mxl", damaged, store)).error).toEqual(DAMAGED_ARCHIVE_MESSAGE)
+      expect((await importMusicXMLPiece("nocturne.mxl", zipSync({}), store)).error).toEqual(NO_SCORE_MESSAGE)
+      // compressed data that was read as text can't be unpacked
       expect((await importMusicXMLPiece("nocturne.xml", "PK\u0003\u0004zipdata", store)).error).toEqual(COMPRESSED_MESSAGE)
+      expect((await importMusicXMLPiece("nocturne.mxl", "whatever", store)).error).toContain("well-formed")
       expect((await importMusicXMLPiece("broken.xml", "<score-partwise>", store)).error).toContain("well-formed")
       expect(loadDeck(store).pieces).toEqual([])
+      expect(await store.backend.getAll("pieceSources")).toEqual([])
     })
 
     it("keeps the deck bounded", async function() {

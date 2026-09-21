@@ -6,10 +6,14 @@ import {openDB, deleteDB} from "idb"
 
 import {
   LEGACY_DECK_KEY, DECK_MIGRATION_MARKER, LIBRARY_FORMAT, LIBRARY_VERSION,
-  RECENT_SESSION_DAYS
+  RECENT_SESSION_DAYS, DB_VERSION
 } from "st/storage"
 
-import {openTestStore, MemoryStorage, TEST_DB_NAME} from "spec/helpers"
+import {compressSource, bytesToBase64, SOURCE_ENCODING} from "st/score_source"
+
+import {
+  openTestStore, MemoryStorage, TEST_DB_NAME, reverieOpening, LITTLE_WALTZ_XML
+} from "spec/helpers"
 
 const DAY = 24 * 60 * 60 * 1000
 
@@ -22,6 +26,15 @@ let songData = (...notes) => {
 
 let pieceData = (id, title, importedAt, notes=["C4", "D4"]) =>
   ({id, title, importedAt, song: songData(...notes)})
+
+// the stores of the version 1 and 2 databases, before pieceSources
+let upgradeToVersion2 = db => {
+  db.createObjectStore("pieces", {keyPath: "id"})
+  db.createObjectStore("sectionStats", {keyPath: ["pieceId", "startMeasure", "endMeasure"]})
+    .createIndex("pieceId", "pieceId")
+  db.createObjectStore("sessions", {keyPath: "id"}).createIndex("startedAt", "startedAt")
+  db.createObjectStore("meta", {keyPath: "key"})
+}
 
 let section = (pieceId, startMeasure, endMeasure, extra={}) => ({
   pieceId, startMeasure, endMeasure, hits: 3, misses: 1, attempts: 1,
@@ -118,15 +131,7 @@ describe("local store", function() {
       await deleteDB(TEST_DB_NAME)
 
       // the version 1 database
-      let db = await openDB(TEST_DB_NAME, 1, {
-        upgrade(db) {
-          db.createObjectStore("pieces", {keyPath: "id"})
-          db.createObjectStore("sectionStats", {keyPath: ["pieceId", "startMeasure", "endMeasure"]})
-            .createIndex("pieceId", "pieceId")
-          db.createObjectStore("sessions", {keyPath: "id"}).createIndex("startedAt", "startedAt")
-          db.createObjectStore("meta", {keyPath: "key"})
-        },
-      })
+      let db = await openDB(TEST_DB_NAME, 1, {upgrade: upgradeToVersion2})
       await db.put("pieces", pieceData("p1", "Minuet", 1000, ["C5", "D#6", "Gb3"]))
       await db.put("pieces", {...pieceData("p2", "Waltz", 2000, ["A5"]), fileName: "waltz.musicxml"})
       await db.put("sectionStats", section("p1", 1, 4))
@@ -140,10 +145,133 @@ describe("local store", function() {
       expect(store.piece("p2")).toEqual({...pieceData("p2", "Waltz", 2000, ["A4"]), fileName: "waltz.musicxml"})
       expect(store.sectionStats("p1")).toEqual([section("p1", 1, 4)])
 
+      // and upgraded on through the later versions
+      expect(await store.pieceSource("p1")).toBe(null)
+
       // renumbered once: reopening leaves the pieces alone
       await store.close()
       let reopened = await open({keep: true})
       expect(reopened.piece("p1").song).toEqual(songData("C4", "D#5", "Gb2"))
+    })
+
+    it("adds the store of piece sources, keeping the stored pieces as they are", async function() {
+      await deleteDB(TEST_DB_NAME)
+
+      // the version 2 database, its pieces already named with middle C "C4"
+      let db = await openDB(TEST_DB_NAME, 2, {upgrade: upgradeToVersion2})
+      let minuet = {...pieceData("p1", "Minuet", 1000, ["C4", "E4"]), fileName: "minuet.musicxml"}
+      await db.put("pieces", minuet)
+      await db.put("sectionStats", section("p1", 1, 4))
+      await db.put("meta", {key: DECK_MIGRATION_MARKER, migratedAt: 1, pieces: 0})
+      db.close()
+
+      let store = await open({keep: true})
+      expect(store.persistent).toBe(true)
+      expect(store.backend.db.version).toEqual(DB_VERSION)
+      expect([...store.backend.db.objectStoreNames]).toContain("pieceSources")
+
+      // the piece still loads and drills, without a source
+      expect(store.pieces()).toEqual([minuet])
+      expect([...pieceSong(store.piece("p1")).tracks[0]].map(note => note.note)).toEqual(["C4", "E4"])
+      expect(store.sectionStats("p1")).toEqual([section("p1", 1, 4)])
+      expect(await store.pieceSource("p1")).toBe(null)
+
+      // and gains one when its score is imported again
+      expect(await store.putPieceSource("p1", LITTLE_WALTZ_XML)).toBe(true)
+      await store.close()
+
+      let reopened = await open({keep: true})
+      expect(reopened.pieces()).toEqual([minuet])
+      expect(await reopened.pieceSource("p1")).toEqual(LITTLE_WALTZ_XML)
+      expect(reopened.sectionStats("p1")).toEqual([section("p1", 1, 4)])
+    })
+  })
+
+  describe("piece sources", function() {
+    it("keeps a piece's source out of the cache and reads it on demand", async function() {
+      let xml = reverieOpening()
+      let store = await open()
+      let stored = await store.putPiece(pieceData("a", "Rêverie", 1000), {source: xml})
+
+      // the cached piece is the piece alone
+      expect(Object.keys(stored).sort()).toEqual(["id", "importedAt", "song", "title"])
+      expect(store.pieces()).toEqual([pieceData("a", "Rêverie", 1000)])
+      expect(await store.pieceSource("a")).toEqual(xml)
+
+      // stored gzipped
+      let record = await store.backend.get("pieceSources", "a")
+      expect(record.encoding).toEqual(SOURCE_ENCODING)
+      expect(record.data instanceof Uint8Array).toBe(true)
+      expect(record.data.length).toBeLessThan(xml.length / 5)
+
+      await store.close()
+      let reopened = await open({keep: true})
+      expect(reopened.pieces()).toEqual([pieceData("a", "Rêverie", 1000)])
+      expect(await reopened.pieceSource("a")).toEqual(xml)
+    })
+
+    it("keeps, replaces and removes a source with its piece", async function() {
+      let store = await open()
+      expect(await store.pieceSource("a")).toBe(null)
+
+      await store.putPiece(pieceData("a", "First", 1000), {source: "<first/>"})
+      await store.putPiece(pieceData("b", "Second", 2000))
+      expect(await store.pieceSource("b")).toBe(null)
+
+      // written again without one, the piece keeps its source
+      await store.putPiece(pieceData("a", "First", 1000, ["G4"]))
+      expect(await store.pieceSource("a")).toEqual("<first/>")
+
+      await store.putPiece(pieceData("a", "First", 1000), {source: "<second/>"})
+      expect(await store.pieceSource("a")).toEqual("<second/>")
+
+      await store.putPiece(pieceData("a", "First", 1000), {source: null})
+      expect(await store.pieceSource("a")).toBe(null)
+
+      expect(await store.putPieceSource("a", "<third/>")).toBe(true)
+      expect(await store.pieceSource("a")).toEqual("<third/>")
+
+      // removed with its piece, so a piece stored again under the id has none
+      await store.deletePiece("a")
+      expect(await store.pieceSource("a")).toBe(null)
+      await store.putPiece(pieceData("a", "First", 1000))
+      expect(await store.pieceSource("a")).toBe(null)
+
+      // nothing is stored for a piece that isn't in the library
+      expect(await store.putPieceSource("missing", "<score/>")).toBe(false)
+      expect(await store.backend.get("pieceSources", "missing")).toBeUndefined()
+    })
+
+    it("refuses a source that isn't MusicXML text, writing nothing", async function() {
+      let store = await open()
+      await expectAsync(store.putPiece(pieceData("a", "First", 1000), {source: "  "}))
+        .toBeRejectedWithError("Not a valid piece source")
+      expect(store.pieces()).toEqual([])
+
+      await store.putPiece(pieceData("a", "First", 1000))
+      await expectAsync(store.putPieceSource("a", 42)).toBeRejectedWithError("Not a valid piece source")
+      expect(await store.pieceSource("a")).toBe(null)
+    })
+
+    it("resolves null for a stored source that can't be read", async function() {
+      spyOn(console, "warn")
+      let store = await open()
+      await store.putPiece(pieceData("a", "First", 1000))
+      await store.backend.write([{store: "pieceSources", put: {
+        pieceId: "a", encoding: SOURCE_ENCODING, data: new Uint8Array([1, 2, 3]), storedAt: 1,
+      }}])
+
+      expect(await store.pieceSource("a")).toBe(null)
+      expect(console.warn).toHaveBeenCalled()
+    })
+
+    it("keeps sources for the visit when the store is in memory", async function() {
+      let store = await open({persist: false})
+      await store.putPiece(pieceData("a", "First", 1000), {source: LITTLE_WALTZ_XML})
+      expect(await store.pieceSource("a")).toEqual(LITTLE_WALTZ_XML)
+
+      await store.deletePiece("a")
+      expect(await store.pieceSource("a")).toBe(null)
     })
   })
 
@@ -357,6 +485,99 @@ describe("local store", function() {
       expect("elapsedMs" in store.sectionStats("local")[0]).toBe(false)
       expect(store.sectionStats("c").length).toEqual(1)
       expect(store.sectionStats("unknown")).toEqual([])
+    })
+
+    it("round trips the source of each piece that has one", async function() {
+      let xml = reverieOpening()
+      let store = await open()
+      await store.putPiece(pieceData("a", "Rêverie", 1000), {source: xml})
+      await store.putPiece(pieceData("b", "Sourceless", 2000, ["E4"]))
+      await store.recordSectionPractice(section("a", 1, 4, {at: 1500}))
+
+      let file = await exportLibraryFile(store)
+      let data = JSON.parse(file.text)
+      expect(data.version).toEqual(LIBRARY_VERSION)
+      expect(data.sources.map(source => [source.pieceId, source.encoding, typeof source.data]))
+        .toEqual([["a", SOURCE_ENCODING, "string"]])
+      // the pieces themselves carry no source
+      expect(data.pieces.map(piece => Object.keys(piece).sort()))
+        .toEqual([["id", "importedAt", "song", "title"], ["id", "importedAt", "song", "title"]])
+
+      await store.close()
+      let other = await open()
+      let result = await importLibraryFile(file.text, other)
+      expect(result.error).toBeUndefined()
+      expect(result.report.addedPieces).toEqual(2)
+      expect(result.report.addedSources).toEqual(1)
+      expect(await other.pieceSource("a")).toEqual(xml)
+      expect(await other.pieceSource("b")).toBe(null)
+      expect(other.sectionStats("a").length).toEqual(1)
+
+      // and on through a second export
+      let again = JSON.parse((await exportLibraryFile(other)).text)
+      expect(again.sources).toEqual(data.sources)
+    })
+
+    it("fills in the sources of stored pieces without one", async function() {
+      let store = await open()
+      await store.putPiece(pieceData("local", "Same notes", 1000, ["F4"]))
+      await store.putPiece(pieceData("kept", "Kept", 2000, ["G4"]), {source: "<kept/>"})
+      await store.putPiece(pieceData("bare", "Bare", 3000, ["A4"]))
+      await store.recordSectionPractice(section("local", 1, 4, {at: 1000}))
+
+      let source = (pieceId, text) =>
+        ({pieceId, encoding: SOURCE_ENCODING, data: bytesToBase64(compressSource(text)), storedAt: 5})
+
+      let library = {
+        format: LIBRARY_FORMAT,
+        version: LIBRARY_VERSION,
+        pieces: [
+          // the same title and notes under another id
+          pieceData("remote", "Same notes", 1000, ["F4"]),
+          pieceData("kept", "Kept", 2000, ["G4"]),
+          pieceData("bare", "Bare", 3000, ["A4"]),
+        ],
+        sources: [
+          source("remote", "<remote/>"),
+          // a stored source is kept
+          source("kept", "<replacement/>"),
+          // unreadable, and for a piece that isn't in the file
+          {...source("bare", "<bare/>"), encoding: "brotli"},
+          {...source("bare", "<bare/>"), data: "not base64!"},
+          {...source("bare", "<bare/>"), data: btoa("plain text, not gzip")},
+          source("unknown", "<unknown/>"),
+          null,
+        ],
+      }
+
+      let result = await importLibraryFile(JSON.stringify(library), store)
+      expect(result.report.existingPieces).toEqual(3)
+      expect(result.report.addedSources).toEqual(1)
+
+      expect(store.pieces().map(piece => piece.id)).toEqual(["local", "kept", "bare"])
+      expect(await store.pieceSource("local")).toEqual("<remote/>")
+      expect(await store.pieceSource("kept")).toEqual("<kept/>")
+      expect(await store.pieceSource("bare")).toBe(null)
+      expect(await store.pieceSource("unknown")).toBe(null)
+      expect(store.sectionStats("local").length).toEqual(1)
+    })
+
+    it("imports a library exported before pieces kept their source", async function() {
+      let store = await open()
+      let library = {
+        format: LIBRARY_FORMAT,
+        version: 3,
+        pieces: [pieceData("old", "Old", 1000, ["C4", "E4"])],
+        sectionStats: [section("old", 1, 2)],
+      }
+
+      let result = await importLibraryFile(JSON.stringify(library), store)
+      expect(result.error).toBeUndefined()
+      expect(result.report.addedPieces).toEqual(1)
+      expect(result.report.addedSources).toEqual(0)
+      expect(store.piece("old").song).toEqual(songData("C4", "E4"))
+      expect(await store.pieceSource("old")).toBe(null)
+      expect(store.sectionStats("old").length).toEqual(1)
     })
 
     it("stops adding pieces once the deck is full", async function() {

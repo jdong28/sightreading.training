@@ -7,7 +7,7 @@ import styles from "st/components/song_editor.module.css"
 
 import { KeySignature } from "st/music"
 import {readConfig, writeConfig} from "st/config"
-import {parseMusicXML, MusicXMLError} from "st/musicxml"
+import {parseMusicXML, readMusicXMLFile, MusicXMLError} from "st/musicxml"
 import {serializeSong, SerializeError} from "st/song_serializer"
 
 export const SONG_DRAFT_KEY = "wip:newSong"
@@ -85,10 +85,11 @@ export default class SongEditor extends React.Component {
 
     this.setState({importError: null})
 
-    return file.text().then(text => {
+    // the bytes, since a compressed .mxl file isn't text
+    return file.arrayBuffer().then(data => {
       let song
       try {
-        song = parseMusicXML(text)
+        song = parseMusicXML(readMusicXMLFile(data))
       } catch (err) {
         let message = err instanceof MusicXMLError ? err.message : `Failed to import: ${err.message}`
         this.setState({importError: message})

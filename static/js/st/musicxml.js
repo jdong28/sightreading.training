@@ -20,9 +20,10 @@
 //     flags. Rests are kept the same way, on the track of their staff, so the
 //     staff can draw them at their beat
 //
-// Not supported: compressed .mxl files (zip containers). They are refused
-// with a MusicXMLError so the UI can show a clear message.
+// Compressed .mxl files (zip containers, what MuseScore exports by default)
+// are unpacked to their score's MusicXML text by readMusicXMLFile first.
 
+import {unzipSync} from "fflate"
 import {noteName, parseNote} from "st/music"
 import {NOTE_TYPES, typeForBeats} from "st/staff_rhythm"
 import {MultiTrackSong, SongNote} from "st/song_note_list"
@@ -34,11 +35,77 @@ export class MusicXMLError extends Error {
   }
 }
 
-export const COMPRESSED_MESSAGE = "This is a compressed MusicXML (.mxl) file, which isn't supported. Export an uncompressed .musicxml or .xml file instead."
+// a compressed file that reached the parser as text, which can't be unpacked:
+// read files with readMusicXMLFile from their bytes instead
+export const COMPRESSED_MESSAGE = "This compressed MusicXML (.mxl) file couldn't be read. Try importing it again."
+
+export const DAMAGED_ARCHIVE_MESSAGE = "The compressed MusicXML (.mxl) file is damaged and couldn't be opened."
+
+export const NO_SCORE_MESSAGE = "The compressed MusicXML (.mxl) file holds no MusicXML score."
 
 // zip archives (which is what .mxl is) start with the "PK" signature
 export function isCompressedMusicXML(text) {
   return typeof text == "string" && text.startsWith("PK\u0003\u0004")
+}
+
+// a zip's first entry, or the end of an empty zip's directory
+function isZip(bytes) {
+  return bytes.length >= 4 && bytes[0] == 0x50 && bytes[1] == 0x4b &&
+    ((bytes[2] == 3 && bytes[3] == 4) || (bytes[2] == 5 && bytes[3] == 6))
+}
+
+const CONTAINER_PATH = "META-INF/container.xml"
+
+const isScoreEntry = name => !name.startsWith("META-INF/") && /\.(xml|musicxml)$/i.test(name)
+
+// the path of the score a .mxl's container names, its first rootfile
+function containerRootPath(container) {
+  if (!container) { return null }
+
+  let doc = new DOMParser().parseFromString(new TextDecoder().decode(container), "application/xml")
+  let rootfile = doc.getElementsByTagName("rootfile")[0]
+  return rootfile ? rootfile.getAttribute("full-path") : null
+}
+
+/**
+ * A picked MusicXML file -> the score's uncompressed MusicXML text. A
+ * compressed .mxl file is a zip whose META-INF/container.xml names the score;
+ * without one, the first .xml or .musicxml entry outside META-INF is the
+ * score. Anything else is read as UTF-8 text, as it always was.
+ * @param {ArrayBuffer|Uint8Array|string} data the file's bytes, or its text
+ * @returns {string}
+ * @throws {MusicXMLError} for a damaged archive or one without a score
+ */
+export function readMusicXMLFile(data) {
+  if (typeof data == "string") {
+    return data
+  }
+
+  let bytes = data instanceof Uint8Array ? data : new Uint8Array(data)
+  if (!isZip(bytes)) {
+    return new TextDecoder().decode(bytes)
+  }
+
+  // only the entries that can be the score are unpacked, not the images or
+  // PDF an archive may also hold
+  let unzip = filter => {
+    try {
+      return unzipSync(bytes, {filter: file => filter(file.name)})
+    } catch (e) {
+      throw new MusicXMLError(DAMAGED_ARCHIVE_MESSAGE)
+    }
+  }
+
+  let rootPath = containerRootPath(unzip(name => name == CONTAINER_PATH)[CONTAINER_PATH])
+  let entries = unzip(name => name == rootPath || isScoreEntry(name))
+
+  let path = rootPath && entries[rootPath] ? rootPath : Object.keys(entries).find(isScoreEntry)
+
+  if (!path) {
+    throw new MusicXMLError(NO_SCORE_MESSAGE)
+  }
+
+  return new TextDecoder().decode(entries[path])
 }
 
 const EPSILON = 1e-6

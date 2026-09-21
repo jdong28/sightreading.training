@@ -1,10 +1,10 @@
 import * as React from "react"
 import {flushSync} from "react-dom"
 
-import {getRoot} from "spec/helpers"
+import {getRoot, littleWaltzMXL} from "spec/helpers"
 import SongEditor, {SONG_DRAFT_KEY} from "st/components/song_editor"
 import styles from "st/components/song_editor.module.css"
-import {COMPRESSED_MESSAGE} from "st/musicxml"
+import {DAMAGED_ARCHIVE_MESSAGE} from "st/musicxml"
 
 // five quintuplet sixteenths, which the notation can't express
 let quintupletXML = `<?xml version="1.0" encoding="UTF-8"?>
@@ -121,12 +121,24 @@ describe("song editor", function() {
     })
   })
 
-  it("reports compressed files from their content", async function() {
-    let editor = renderEditor({code: ""})
+  it("imports a compressed .mxl file", async function() {
+    let imported = []
+    let editor = renderEditor({code: "", onImportSong: (...args) => imported.push(args)})
 
-    await importText(editor, "score.mxl", "PK not really a zip")
+    await importText(editor, "little_waltz.mxl", littleWaltzMXL())
     await nextRender()
 
-    expect(editor.state.importError).toEqual(COMPRESSED_MESSAGE)
+    expect(editor.state.importError).toBe(null)
+    expect(imported.length).toEqual(1)
+    expect([...imported[0][0]].map(note => note.note)).toEqual(["E5", "G4", "C5"])
+  })
+
+  it("reports a damaged compressed file from its content", async function() {
+    let editor = renderEditor({code: ""})
+
+    await importText(editor, "score.mxl", "PK\u0003\u0004 not really a zip")
+    await nextRender()
+
+    expect(editor.state.importError).toEqual(DAMAGED_ARCHIVE_MESSAGE)
   })
 })

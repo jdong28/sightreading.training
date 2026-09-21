@@ -574,7 +574,7 @@ export const GENERATORS = [
         default: "",
         emptyLabel: "Pasted song notation",
         pieces: () => loadDeck().pieces,
-        importFile: (fileName, text) => importMusicXMLPiece(fileName, text),
+        importFile: (fileName, data) => importMusicXMLPiece(fileName, data),
         removePiece: id => removePiece(id),
         exportLibrary: () => exportLibraryFile(),
         importLibrary: text => importLibraryFile(text),
@@ -591,7 +591,7 @@ export const GENERATORS = [
             staff: sheetMusicStaffFor(song),
           }
         },
-        hint: "Import an uncompressed MusicXML file (.musicxml or .xml). Imported pieces stay in this browser's library; export it to keep a copy or move it to another browser.",
+        hint: "Import a MusicXML file (.musicxml, .xml or compressed .mxl). Imported pieces stay in this browser's library; export it to keep a copy or move it to another browser.",
       },
       {
         name: "song",
