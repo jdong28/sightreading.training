@@ -795,25 +795,10 @@ export default class SightReadingPage extends React.Component {
           break
         }
 
-        let missed = column.filter((n) => !this.state.heldNotes[n]);
-
-        gaEvent("sight_reading", "note", "miss");
-        this.state.stats.missNotes(missed);
-
-        let {index} = this.cardHead(this.state.notes)
-        let engineMissed = this.state.engineMissed
-        if (index != null && !engineMissed.includes(index)) {
-          engineMissed = [...engineMissed, index]
-        }
-
-        this.setState({
-          noteShaking: true,
-          heldNotes: {},
-          touchedNotes: {},
-          engineMissed,
-        });
-
-        setTimeout(() => this.setState({noteShaking: false}), 500);
+        // every key is up without the column matched: it counts as missed
+        // (once) and is played afresh from the next key down
+        this.missColumn(column.filter((n) => !this.state.heldNotes[n]))
+        this.setState({heldNotes: {}, touchedNotes: {}})
         break
       }
 
@@ -855,33 +840,53 @@ export default class SightReadingPage extends React.Component {
     }
   }
 
-  // called on every noteOn
+  // called on every noteOn with the note pressed
   // return true to trigger redraw
-  checkPress() {
+  checkPress(note) {
     switch (this.state.currentGenerator.mode) {
       case "notes": {
+        let {notes, anyOctave} = this.state
+
         // presses batched into one render (eg. a chord's note-ons in one MIDI
         // packet) all see the same head, only the first one may advance it
-        if (this.advancedNotes == this.state.notes) {
+        if (this.advancedNotes == notes) {
+          return false
+        }
+
+        // nothing to play (eg. an empty section): no key is a slip, as no
+        // release is a miss
+        if (!notes.currentColumn().length) {
           return false
         }
 
         let touched = Object.keys(this.state.touchedNotes);
-        if (this.state.notes.matchesHead(touched, this.state.anyOctave)) {
+        let matched = notes.matchesHead(touched, anyOctave)
+
+        // pressing a key outside the column is a slip: the column counts as
+        // missed, but the keys touched still go on to complete it. A slip
+        // batched with the notes completing the column is counted before
+        // the hit, whichever press is checked first
+        let stray = notes.strayNotes(touched, anyOctave)
+        if (stray.includes(note) || (matched && stray.length && this.missedNotes != notes)) {
+          this.missColumn(notes.currentColumn())
+        }
+
+        if (matched) {
           gaEvent("sight_reading", "note", "hit");
 
-          this.advancedNotes = this.state.notes
-          let advance = this.columnAdvance(this.state.notes)
-          let notes = this.state.notes.clone()
+          this.advancedNotes = notes
+          let advance = this.columnAdvance(notes)
+          notes = notes.clone()
           notes.shift();
           notes.pushRandom();
-          this.state.stats.hitNotes(touched);
+          this.state.stats.hitNotes(touched.filter((n) => !stray.includes(n)));
 
           this.setState({
             notes,
-            noteShaking: false,
             heldNotes: {},
-            touchedNotes: {}
+            touchedNotes: {},
+            // a slip's shake plays out over the next column
+            ...(stray.length ? {} : {noteShaking: false}),
           })
 
           this.state.slider.add(advance)
@@ -897,6 +902,27 @@ export default class SightReadingPage extends React.Component {
         return false
       }
     }
+  }
+
+  // Counts the head column of notes as missed, at most once however many
+  // slips and releases it takes to complete it, shaking the notes and
+  // marking the column on an engine card each time. missed are the column's
+  // notes the stats count against
+  missColumn(missed) {
+    if (this.missedNotes != this.state.notes) {
+      this.missedNotes = this.state.notes
+      gaEvent("sight_reading", "note", "miss");
+      this.state.stats.missNotes(missed);
+    }
+
+    let {index} = this.cardHead(this.state.notes)
+    let engineMissed = this.state.engineMissed
+    if (index != null && !engineMissed.includes(index)) {
+      engineMissed = [...engineMissed, index]
+    }
+
+    this.setState({noteShaking: true, engineMissed})
+    setTimeout(() => this.setState({noteShaking: false}), 500);
   }
 
   skipCurrentNote() {
@@ -964,7 +990,7 @@ export default class SightReadingPage extends React.Component {
     this.setState((s) => ({
       heldNotes: {...s.heldNotes, [note]: true},
       touchedNotes: {...s.touchedNotes, [note]: true}
-    }), () => this.checkPress())
+    }), () => this.checkPress(note))
   }
 
   releaseNote(note) {
@@ -1268,6 +1294,7 @@ export default class SightReadingPage extends React.Component {
   // the stats for the next one
   closeSession() {
     this.recordSession()
+    this.missedNotes = null
     return this.newStats()
   }
 
