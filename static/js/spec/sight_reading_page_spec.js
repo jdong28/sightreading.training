@@ -1309,6 +1309,32 @@ describe("sight reading page", function() {
       expect(statValue(el, "Accuracy")).toEqual("67%")
     })
 
+    it("counts a slip afresh once the stats start over on the same column", function() {
+      let el = renderPage()
+      click(buttonNamed(el, "Begin"))
+
+      let column = head()
+      play([WRONG_NOTE])
+      expect(counts()).toEqual([0, 1])
+
+      // Clear stats during a session
+      flushSync(() => page.clearStats())
+      expect(head()).toEqual(column)
+      play([WRONG_NOTE])
+      expect(counts()).toEqual([0, 1])
+
+      // Rest, Clear stats at rest, then Begin
+      click(buttonNamed(el, "Rest"))
+      flushSync(() => page.clearStats())
+      click(buttonNamed(el, "Begin"))
+      expect(head()).toEqual(column)
+      flushSync(() => {
+        page.pressNote(WRONG_NOTE)
+        column.forEach(note => page.pressNote(note))
+      })
+      expect(counts()).toEqual([1, 1])
+    })
+
     it("counts a slip in the MIDI packet that completes the column, in either order", function() {
       let el = renderPage()
       click(buttonNamed(el, "Begin"))

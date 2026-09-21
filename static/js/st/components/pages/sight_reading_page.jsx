@@ -1288,6 +1288,7 @@ export default class SightReadingPage extends React.Component {
   // the stats for the next one
   closeSession() {
     this.recordSession()
+    this.missedNotes = null
     return this.newStats()
   }
 
