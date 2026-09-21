@@ -222,8 +222,12 @@ describe("spaced repetition records", function() {
 
       it("keeps section stats as a view adding up every hand of a range", async function() {
         await store.recordSectionPractice({pieceId: "a", startMeasure: 2, endMeasure: 2, hits: 4, misses: 1, at: 1000})
-        await store.recordSectionPractice({pieceId: "a", startMeasure: 2, endMeasure: 2, hand: "upper", hits: 2, misses: 3, at: 3000, elapsedMs: 800})
-        await store.recordSectionPractice({pieceId: "a", startMeasure: 2, endMeasure: 2, hand: "lower", hits: 1, misses: 0, at: 2000})
+        let handItem = (hand, at, practice) =>
+          itemWithPractice(newItem({pieceId: "a", hand, startMeasure: 2, endMeasure: 2}, at), {...practice, at})
+        let upper = handItem("upper", 3000, {hits: 2, misses: 3, elapsedMs: 800})
+        await store.recordAttempt({item: upper, review: attempt("a", 2, 2, 3000, {itemId: upper.id})})
+        let lower = handItem("lower", 2000, {hits: 1, misses: 0})
+        await store.recordAttempt({item: lower, review: attempt("a", 2, 2, 2000, {itemId: lower.id})})
 
         // a beat range inside the bar isn't a section of its own
         let beats = {...newItem({pieceId: "a", startMeasure: 2, endMeasure: 2}, 10), beats: [1, 2], hits: 9}

@@ -943,7 +943,6 @@ export class LocalStore {
    * @param {string} practice.pieceId
    * @param {number} practice.startMeasure
    * @param {number} practice.endMeasure
-   * @param {string} [practice.hand] one of HANDS in st/srs/records, "both" by default
    * @param {number} practice.hits
    * @param {number} practice.misses
    * @param {number} [practice.at] when it was practiced, defaults to now
@@ -962,8 +961,8 @@ export class LocalStore {
   }
 
   // the item of the practiced range with the practice added
-  practicedItem({pieceId, startMeasure, endMeasure, hand="both", hits, misses, at=Date.now(), elapsedMs}) {
-    let range = {pieceId, hand, startMeasure, endMeasure}
+  practicedItem({pieceId, startMeasure, endMeasure, hits, misses, at=Date.now(), elapsedMs}) {
+    let range = {pieceId, hand: "both", startMeasure, endMeasure}
     let current = this.item(itemId(range)) || newItem(range, at)
     let item = itemWithPractice(current, {hits, misses, at, elapsedMs})
 
