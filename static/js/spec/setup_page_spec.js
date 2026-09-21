@@ -5,7 +5,7 @@ import {MemoryRouter, Routes, Route} from "react-router-dom"
 
 import SetupPage, {exercisesFor, exerciseTitle, exerciseQualifier} from "st/components/pages/setup_page"
 import styles from "st/components/pages/setup_page.module.css"
-import {STAVES, GENERATORS, SHEET_MUSIC_STORAGE_KEY} from "st/data"
+import {STAVES, GENERATORS, SHEET_MUSIC_STORAGE_KEY, SHEET_MUSIC_GENERATOR} from "st/data"
 import {
   DRILL_STORAGE_KEY, currentStaffFor, currentGeneratorFor, currentKeySignature,
   currentDrillMode, currentScrollSpeed,
@@ -51,7 +51,7 @@ describe("setup page", function() {
     await store.close()
   })
 
-  let renderSetup = (home=React.createElement("div", {id: "trainer"}, "trainer")) => {
+  let renderSetup = (home=React.createElement("div", {id: "trainer"}, "trainer"), generators) => {
     container = document.createElement("div")
     container.style.cssText = "position: relative; width: 1240px"
     document.body.appendChild(container)
@@ -59,7 +59,10 @@ describe("setup page", function() {
     flushSync(() => {
       root.render(React.createElement(MemoryRouter, {initialEntries: ["/setup"]},
         React.createElement(Routes, {},
-          React.createElement(Route, {path: "/setup", element: React.createElement(SetupPage)}),
+          React.createElement(Route, {
+            path: "/setup",
+            element: React.createElement(SetupPage, generators ? {generators} : null),
+          }),
           React.createElement(Route, {path: "/", element: home}),
           React.createElement(Route, {path: "/welcome", element: React.createElement("div", {id: "welcome"}, "welcome")}),
         )))
@@ -200,5 +203,25 @@ describe("setup page", function() {
     expect(el.querySelector("#trainer")).not.toBe(null)
     expect(el.querySelector("#welcome")).toBe(null)
     expect(window.localStorage.getItem(ONBOARDED_KEY)).toBeTruthy()
+  })
+
+  // a deck input's file pills (see GeneratorSettings#renderDeck), rendered
+  // with this page's own classes in place of the drawer's
+  it("hides a deck input's native file picker behind its pill, so only one control shows", function() {
+    let el = renderSetup(undefined, GENERATORS.concat([SHEET_MUSIC_GENERATOR]))
+    click(findButton(el, "Sheet music"))
+
+    let pillLabel = text => [...el.querySelectorAll("label")].find(l => l.textContent.trim() == text)
+    let importMusicXML = pillLabel("Import MusicXML")
+    let importLibrary = pillLabel("Import library")
+
+    for (let label of [importMusicXML, importLibrary]) {
+      let input = label.querySelector("input[type=file]")
+      let pill = label.querySelector("span")
+
+      expect(getComputedStyle(input).opacity).toEqual("0")
+      expect(input.getBoundingClientRect().width).toBeLessThanOrEqual(1)
+      expect(pill.getBoundingClientRect().width).toBeGreaterThan(1)
+    }
   })
 })

@@ -183,7 +183,10 @@ export default class SightReadingPage extends React.Component {
     this.pressNote = this.pressNote.bind(this)
     this.releaseNote = this.releaseNote.bind(this)
     this.onFullscreenChange = this.onFullscreenChange.bind(this)
-    this.onPageHide = () => this.recordSession()
+    // a session already recorded at rest is left alone (see closeSession)
+    this.onPageHide = () => {
+      if (this.state.session) { this.recordSession() }
+    }
     this.onResize = () => {
       let scale = staffScale()
       if (scale != this.state.scale) {
@@ -482,7 +485,11 @@ export default class SightReadingPage extends React.Component {
     window.removeEventListener("resize", this.onResize)
     this.observeStaffWrapper(null)
     this.stopClock()
-    this.recordSession()
+    // a session already recorded at rest keeps its label; only a session
+    // still running here needs saving before the page goes away
+    if (this.state.session) {
+      this.recordSession()
+    }
     this.stopGenerator(this.state.notes && this.state.notes.generator)
 
     if (this.state.slider) {
@@ -1200,9 +1207,13 @@ export default class SightReadingPage extends React.Component {
   }
 
   // Records the session played on the current staff and generator, returning
-  // the stats for the next one
+  // the stats for the next one. A session already recorded at rest is left
+  // alone: recording it again here would relabel it with whatever staff or
+  // generator is current now, which may have changed since
   closeSession() {
-    this.recordSession()
+    if (this.state.session) {
+      this.recordSession()
+    }
     this.missedNotes = null
     return this.newStats()
   }
@@ -1494,7 +1505,10 @@ export default class SightReadingPage extends React.Component {
         onClick={() => this.openStatsLightbox()}
         onKeyDown={e => {
           if (e.key == "Enter" || e.key == " ") {
+            // Hotkeys listens on window, so without this the space bar would
+            // also reach skipCurrentNote via the keyMap
             e.preventDefault()
+            e.stopPropagation()
             this.openStatsLightbox()
           }
         }}>

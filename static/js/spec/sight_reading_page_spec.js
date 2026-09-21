@@ -562,6 +562,28 @@ describe("sight reading page", function() {
     expect(store.recentSessions()[0].notesRead).toEqual(2)
   })
 
+  it("opens the accuracy card's lightbox on Space without also skipping a note, unlike Space elsewhere", function() {
+    let el = renderPage()
+    click(buttonNamed(el, "Begin"))
+
+    let lightboxes = 0
+    container.addEventListener(scopeEvent("showLightbox"), () => lightboxes += 1)
+
+    let accuracyCard = el.querySelector("[role=button]")
+    flushSync(() => accuracyCard.focus())
+
+    let notes = page.state.notes
+    let space = () => new KeyboardEvent("keydown", {key: " ", keyCode: 32, bubbles: true})
+
+    flushSync(() => accuracyCard.dispatchEvent(space()))
+    expect(lightboxes).toEqual(1)
+    expect(page.state.notes).toBe(notes)
+
+    // Space anywhere else still skips the current note
+    flushSync(() => el.dispatchEvent(space()))
+    expect(page.state.notes).not.toBe(notes)
+  })
+
   it("keeps one session running from Begin to Rest across a staff change and a long pause", async function() {
     jasmine.clock().install()
     clockInstalled = true
@@ -645,6 +667,49 @@ describe("sight reading page", function() {
 
     await waitFor(() => el.querySelectorAll("ol li").length == 2, "the saved sessions")
     expect(store.recentSessions().map(s => s.notesRead)).toEqual([2, 1])
+  })
+
+  it("keeps a rested session's own label and figures through a later staff change, on Begin and on unmount", async function() {
+    let el = renderPage()
+    let drawer = el.querySelector(`.${drawerStyles.drawer}`)
+    let openDrawer = () => { click(buttonLabelled(el, "Programme")); drawer = el.querySelector(`.${drawerStyles.drawer}`) }
+
+    click(buttonNamed(el, "Begin"))
+    play(page.state.notes.currentColumn())
+    click(buttonNamed(el, "Rest"))
+
+    await waitFor(() => store.recentSessions().length == 1, "the first saved session")
+    expect(store.recentSessions()[0].staff).toEqual("treble")
+    expect(store.recentSessions()[0].notesRead).toEqual(1)
+
+    // changing the staff at rest must not relabel the session just recorded
+    openDrawer()
+    click(buttonNamed(drawer, "Bass"))
+    expect(page.state.currentStaff.name).toEqual("bass")
+    expect(store.recentSessions().length).toEqual(1)
+    expect(store.recentSessions()[0].staff).toEqual("treble")
+    expect(store.recentSessions()[0].notesRead).toEqual(1)
+
+    // Begin starts a genuinely new session, recorded under the new staff
+    click(buttonNamed(el, "Begin"))
+    play(page.state.notes.currentColumn())
+    click(buttonNamed(el, "Rest"))
+
+    await waitFor(() => store.recentSessions().length == 2, "the second saved session")
+    expect(store.recentSessions()[0].staff).toEqual("treble")
+    expect(store.recentSessions()[1].staff).toEqual("bass")
+    expect(store.recentSessions()[1].notesRead).toEqual(1)
+
+    // changing the staff again at rest, then unmounting (as a closed tab
+    // would), must not relabel the session either
+    openDrawer()
+    click(buttonNamed(drawer, "Treble"))
+    flushSync(() => root.unmount())
+    root = null
+
+    expect(store.recentSessions().length).toEqual(2)
+    expect(store.recentSessions()[1].staff).toEqual("bass")
+    expect(store.recentSessions()[1].notesRead).toEqual(1)
   })
 
   it("lists only the sessions started today in the evening list", async function() {
