@@ -90,8 +90,11 @@ export const ROLLOVER_HOUR = 4
 export const RECENT_HALF_LIFE_DAYS = 14
 
 // the recall taken for an item with no schedule when weighing it, so a
-// measure never played weighs 2, as much as one just failed at least
+// measure never played weighs 2
 export const UNSCHEDULED_RECALL = 0.75
+
+// the least weight of an item on the ladder, as much as a measure never played
+export const LADDER_WEIGHT = 1 + 4 * (1 - UNSCHEDULED_RECALL)
 
 function deepFreeze(object) {
   for (let value of Object.values(object)) {
@@ -316,7 +319,8 @@ export function recentMissRate(item, now) {
 /**
  * How strongly weakest first practice favours an item:
  * 1 + 4 (1 - R) + its recent miss rate, R its predicted recall now
- * (UNSCHEDULED_RECALL when it has no schedule, as for a measure never played).
+ * (UNSCHEDULED_RECALL when it has no schedule, as for a measure never played),
+ * and at least LADDER_WEIGHT while it is learning or relearning.
  * @param {ItemRecord|null} item
  * @param {number} now
  * @param {SchedulerSettings} [settings]
@@ -324,7 +328,9 @@ export function recentMissRate(item, now) {
  */
 export function practiceWeight(item, now, settings=DEFAULT_SCHEDULER_SETTINGS) {
   let recall = predictedRecall(item, now, settings) ?? UNSCHEDULED_RECALL
-  return 1 + 4 * (1 - recall) + recentMissRate(item, now)
+  let weight = 1 + 4 * (1 - recall) + recentMissRate(item, now)
+  let onLadder = item && (item.state == "learning" || item.state == "relearning")
+  return onLadder ? Math.max(LADDER_WEIGHT, weight) : weight
 }
 
 // the fields replay rebuilds

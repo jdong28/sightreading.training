@@ -317,9 +317,30 @@ describe("spaced repetition scheduler", function() {
       let justFailed = {...applyGrade(bar(), AGAIN, now), recent: [[now, 4, 3, AGAIN]]}
       expect(practiceWeight(justFailed, now)).toEqual(neverPlayed)
 
-      // a measure never played outranks one played clean
-      let clean = {...applyGrade(bar(), GOOD, now - 10 * MINUTE), recent: [[now - 10 * MINUTE, 4, 4, GOOD]]}
+      // a measure never played outranks one in review played clean
+      let clean = reviewItem(now - 10 * MINUTE, 10, {recent: [[now - 10 * MINUTE, 4, 4, GOOD]]})
       expect(practiceWeight(clean, now)).toBeLessThan(neverPlayed)
+    })
+
+    it("weighs a lapsed measure at least as a measure never played until it graduates", function() {
+      let neverPlayed = practiceWeight(bar(), now)
+      let clean = [1, 2, 3, 4].map(n => [now - n * DAY, 4, 4, GOOD])
+      let recent = [...clean, [now, 4, 3, AGAIN]]
+      let item = {...applyGrade(reviewItem(now - 4 * DAY, 10), AGAIN, now), recent}
+      expect(item.state).toEqual("relearning")
+      expect(recentMissRate(item, now)).toBeCloseTo(0.2, 9)
+      expect(practiceWeight(item, now)).toBeGreaterThanOrEqual(neverPlayed)
+
+      let time = now
+      for (let i = 0; i < 10 && item.state != "review"; i++) {
+        time += 10 * MINUTE
+        item = applyGrade(item, GOOD, time)
+        if (item.state == "relearning") {
+          expect(practiceWeight(item, time)).toBeGreaterThanOrEqual(neverPlayed)
+        }
+      }
+      expect(item.state).toEqual("review")
+      expect(practiceWeight(item, time)).toBeLessThan(neverPlayed)
     })
 
     it("fades misses by half every two weeks", function() {
