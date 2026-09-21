@@ -30,13 +30,16 @@ export const MAX_MEASURES_PER_CARD = 3
  * @property {number} startMeasure
  * @property {number} endMeasure
  * @property {number[]} measures bar numbers, in order
+ * @property {boolean} numbered whether the staff draws the card's bar lines
+ * and their numbers (see cardColumn)
  * @property {string[][]} columns the columns of every measure, in order
  * @property {number[]} columnMeasures index into measures for each column
  */
 
 /**
  * Groups the pool into cards of perCard contiguous measures, the last card
- * shorter when the pool doesn't divide evenly.
+ * shorter when the pool doesn't divide evenly. Cards of more than one measure
+ * are numbered, the short last card of the deck along with them.
  * @param {PoolMeasure[]} measures
  * @param {number} perCard
  * @returns {MeasureCard[]}
@@ -46,7 +49,7 @@ export function measureCards(measures, perCard) {
   let cards = []
 
   for (let i = 0; i < measures.length; i += size) {
-    cards.push(sectionCard(measures.slice(i, i + size)))
+    cards.push(sectionCard(measures.slice(i, i + size), {numbered: size > 1}))
   }
 
   return cards
@@ -55,9 +58,11 @@ export function measureCards(measures, perCard) {
 /**
  * One card of all the given measures, eg. the whole section drill.
  * @param {PoolMeasure[]} measures at least one
+ * @param {Object} [opts]
+ * @param {boolean} [opts.numbered] a card of several measures by default
  * @returns {MeasureCard}
  */
-export function sectionCard(measures) {
+export function sectionCard(measures, {numbered=measures.length > 1}={}) {
   let columns = []
   let columnMeasures = []
 
@@ -72,6 +77,7 @@ export function sectionCard(measures) {
     startMeasure: measures[0].number,
     endMeasure: measures[measures.length - 1].number,
     measures: measures.map(measure => measure.number),
+    numbered,
     columns,
     columnMeasures,
   }
@@ -82,10 +88,10 @@ export function sectionCard(measures) {
 export const COLUMN_DRAW_KEYS = ["staves", "clefs", "beat", "beats", "notation", "extras"]
 
 /**
- * A copy of the card's column for the staff. When the card has more than
- * one measure, the first column of each measure carries its bar number as
- * `measure`, where the staff draws a bar line. Everything the staff draws the
- * column with is kept (see COLUMN_DRAW_KEYS)
+ * A copy of the card's column for the staff. On a numbered card, the first
+ * column of each measure carries its bar number as `measure`, where the staff
+ * draws a bar line. Everything the staff draws the column with is kept (see
+ * COLUMN_DRAW_KEYS)
  * @param {MeasureCard} card
  * @param {number} idx
  * @returns {string[]}
@@ -101,7 +107,7 @@ export function cardColumn(card, idx) {
     }
   }
 
-  if (card.measures.length > 1 && (idx == 0 || card.columnMeasures[idx - 1] != measureIdx)) {
+  if (card.numbered && (idx == 0 || card.columnMeasures[idx - 1] != measureIdx)) {
     column.measure = card.measures[measureIdx]
   }
 

@@ -1,7 +1,7 @@
 import MersenneTwister from "mersennetwister"
 
 import {
-  measureCards, sectionCard, cardColumn, measureWeight, cardWeights, nextCardIndex,
+  measureCards, sectionCard, cardColumn, cardColumns, measureWeight, cardWeights, nextCardIndex,
   MeasureCardDeck, MeasureCardGenerator, IN_ORDER, RANDOM_ORDER, MAX_MEASURES_PER_CARD
 } from "st/measure_cards"
 
@@ -57,16 +57,19 @@ describe("measure cards", function() {
 
       expect(cards).toEqual([
         {
-          startMeasure: 0, endMeasure: 1, measures: [0, 1],
+          startMeasure: 0, endMeasure: 1, measures: [0, 1], numbered: true,
           columns: [["D5"], ["G3", "G4"], ["A4"], ["B4"]],
           columnMeasures: [0, 1, 1, 1],
         },
         {
-          startMeasure: 2, endMeasure: 2, measures: [2],
+          startMeasure: 2, endMeasure: 2, measures: [2], numbered: true,
           columns: [["C3", "E3", "G3", "C5"]],
           columnMeasures: [0],
         },
       ])
+
+      // the deck's short last card is numbered like its siblings
+      expect(measureMarks(cardColumns(cards[1]))).toEqual([2])
     })
 
     it("makes a card per measure by default and caps the card size", function() {
@@ -88,7 +91,7 @@ describe("measure cards", function() {
         .toEqual([[0, 1, 2], [3, 4, 5], [6]])
     })
 
-    it("marks the first column of each measure of a card with more than one measure", function() {
+    it("marks the first column of each measure of a numbered card", function() {
       let measures = [...pickupMeasures(), {number: 3, columns: []}, {number: 4, columns: [["F5"]]}]
       let card = sectionCard(measures)
       expect(card.measures).toEqual([0, 1, 2, 3, 4])
@@ -98,9 +101,9 @@ describe("measure cards", function() {
       expect(measureMarks(columns)).toEqual([0, 1, null, null, 2, 4])
       expect(card.columns[0].measure).toBeUndefined()
 
-      let [single] = measureCards(pickupMeasures().slice(1, 2), 1)
-      expect(measureMarks(single.columns.map((column, idx) => cardColumn(single, idx))))
-        .toEqual([null, null, null])
+      // a deck of one measure a card draws no bar lines at all
+      expect(measureCards(pickupMeasures(), 1).map(card => measureMarks(cardColumns(card))))
+        .toEqual([[null], [null, null, null], [null]])
     })
   })
 
@@ -260,8 +263,9 @@ describe("measure cards", function() {
 
       notes = hit(notes, stats)
       expect(deck.card.measures).toEqual([2])
-      expect([...notes]).toEqual([["C3", "E3", "G3", "C5"], [], [], [], [], []])
-      expect(measureMarks(notes)).toEqual([null, null, null, null, null, null])
+      expect(notesOf(notes)).toEqual([["C3", "E3", "G3", "C5"], [], [], [], [], []])
+      // the deck's short last card opens with its bar number like the first
+      expect(measureMarks(notes)).toEqual([2, null, null, null, null, null])
 
       notes = hit(notes, stats)
       expect(deck.card.measures).toEqual([0, 1])
@@ -430,6 +434,8 @@ describe("measure cards", function() {
       expect(input("order").visible(settingsFor())).toBe(true)
       expect(input("measuresPerCard").visible(settingsFor({piece: ""}))).toBe(false)
       expect(input("order").visible(settingsFor({piece: ""}))).toBe(false)
+      // the whole section is always played in order, so it offers no choice
+      expect(input("order").visible(settingsFor({measuresPerCard: WHOLE_SECTION}))).toBe(false)
       expect(input("order").values.map(v => v.name)).toEqual([IN_ORDER, RANDOM_ORDER])
       expect(input("measuresPerCard").default).toEqual(WHOLE_SECTION)
       expect(input("measuresPerCard").values.map(v => v.name))
@@ -489,6 +495,10 @@ describe("measure cards", function() {
         [1, 2, 3], [4, 5, 6], [7, 8, 9], [10, 11, 12], [13, 14, 15], [16],
       ])
       expect(generator.currentCardNumber()).toEqual(1)
+      // every card of the walk opens with its own numbered bar line, the
+      // trailing one bar card along with the rest
+      expect(generator.cards.map(card => cardColumns(card)[0].measure))
+        .toEqual([1, 4, 7, 10, 13, 16])
 
       // the first card's own columns, the first of each measure marked for
       // its bar line, and nothing past them until they are played

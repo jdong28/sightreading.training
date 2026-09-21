@@ -668,7 +668,7 @@ export const GENERATORS = [
           {name: RANDOM_ORDER},
         ],
         hint: "Random picks the measures you miss most more often.",
-        visible: settings => !!sheetMusicPiece(settings),
+        visible: settings => !!sheetMusicPiece(settings) && Number(settings.measuresPerCard) >= 1,
       },
     ],
     // shown under the inputs in the settings panel
