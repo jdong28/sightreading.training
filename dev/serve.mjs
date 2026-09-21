@@ -9,6 +9,7 @@ import {fileURLToPath} from "url"
 
 import * as esbuild from "esbuild"
 import {buildAssets} from "./build_assets.mjs"
+import {APP_BUILD, ENGINES_BUILD, copyVerovio} from "./esbuild_options.mjs"
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..")
 process.chdir(ROOT)
@@ -20,21 +21,13 @@ if (generated.length) {
 
 // bundle to dev/out rather than static/ so the tup-managed main.js on a
 // full checkout is never overwritten by the frontend-only workflow. The
-// jasmine specs are bundled too and run at /dev/specs.html
-const ctx = await esbuild.context({
-  entryPoints: [
-    {in: "static/js/st/main.jsx", out: "main"},
-    {in: "static/js/specs.js", out: "specs"},
-  ],
-  bundle: true,
-  sourcemap: true,
-  outdir: "dev/out",
-  nodePaths: ["static/js"],
-  external: ["/static/fonts/*"],
-  define: {ST_FRONTEND_ONLY: "true"},
-  logLevel: "info",
-})
+// jasmine specs are bundled too and run at /dev/specs.html. The engines
+// bundle is built beside them with the Verovio files it loads
+const ctx = await esbuild.context(APP_BUILD)
+const enginesCtx = await esbuild.context(ENGINES_BUILD)
+copyVerovio()
 
+await enginesCtx.watch()
 await ctx.watch()
 
 const {port} = await ctx.serve({

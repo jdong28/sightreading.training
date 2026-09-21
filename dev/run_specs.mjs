@@ -11,6 +11,7 @@ import {fileURLToPath} from "url"
 import * as esbuild from "esbuild"
 import puppeteer from "puppeteer"
 import {buildAssets} from "./build_assets.mjs"
+import {APP_BUILD, ENGINES_BUILD, copyVerovio} from "./esbuild_options.mjs"
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..")
 process.chdir(ROOT)
@@ -20,22 +21,13 @@ const TIMEOUT_MS = 120_000
 async function main() {
   buildAssets()
 
-  const ctx = await esbuild.context({
-    entryPoints: [
-      {in: "static/js/st/main.jsx", out: "main"},
-      {in: "static/js/specs.js", out: "specs"},
-    ],
-    bundle: true,
-    sourcemap: true,
-    outdir: "dev/out",
-    nodePaths: ["static/js"],
-    external: ["/static/fonts/*"],
-    define: {ST_FRONTEND_ONLY: "true"},
-    logLevel: "info",
-  })
+  const ctx = await esbuild.context(APP_BUILD)
+  const enginesCtx = await esbuild.context(ENGINES_BUILD)
 
   try {
     await ctx.rebuild()
+    await enginesCtx.rebuild()
+    copyVerovio()
 
     const {port} = await ctx.serve({
       servedir: ".",
@@ -117,6 +109,7 @@ async function main() {
     }
   } finally {
     await ctx.dispose()
+    await enginesCtx.dispose()
   }
 }
 

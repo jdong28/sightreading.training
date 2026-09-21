@@ -1,0 +1,191 @@
+/* The engraving engines page. The engines' drawings are restyled from here
+   against their own SVG classes: Salon ink on the cream plate, with each
+   engine's chrome (part names, labels) hidden */
+
+.score_engines_page {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 1060px;
+    margin: 0 auto;
+    padding: 26px 34px 44px;
+    color: var(--salon-ink);
+
+    @media (max-width: 600px) {
+        padding: 20px 16px 32px;
+    }
+}
+
+.lede {
+    max-width: 640px;
+    font-size: 15px;
+    line-height: 1.5;
+    color: var(--salon-ink-soft);
+}
+
+.controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 18px 28px;
+    align-items: flex-start;
+    margin: 18px 0 22px;
+}
+
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+
+    select {
+        max-width: 100%;
+        min-width: 220px;
+    }
+}
+
+.measures {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+
+    input {
+        width: 72px;
+    }
+}
+
+.pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+}
+
+.hint {
+    font-size: 13px;
+    color: var(--salon-ink-muted);
+}
+
+.notice {
+    font-size: 15px;
+    line-height: 1.5;
+    max-width: 640px;
+    padding: 14px 18px;
+    background: var(--salon-paper-warm);
+    border: 1px solid var(--salon-rule);
+}
+
+.error {
+    color: var(--salon-oxblood);
+    font-size: 14px;
+}
+
+.cards {
+    display: flex;
+    flex-direction: column;
+    gap: 26px;
+}
+
+.engine {
+    min-width: 0;
+    width: fit-content;
+    max-width: 100%;
+}
+
+.engine_header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 6px 12px;
+    margin-bottom: 8px;
+}
+
+.engine_name {
+    font-family: var(--font-display);
+    font-size: 20px;
+}
+
+.engine_meta {
+    font-size: 13px;
+    color: var(--salon-ink-muted);
+}
+
+.render_time {
+    margin-left: auto;
+    font-variant-numeric: tabular-nums;
+    font-size: 14px;
+    color: var(--salon-gilt);
+}
+
+.plate_scroll {
+    max-width: 100%;
+    overflow-x: auto;
+}
+
+.plate {
+    box-sizing: border-box;
+    min-height: 80px;
+    background: var(--salon-paper);
+    border: 1px solid var(--salon-rule-strong);
+    box-shadow: 0 2px 3px rgba(36,31,24,.06), 0 20px 38px -26px rgba(36,31,24,.32);
+    color: var(--salon-ink);
+
+    :global(svg) {
+        display: block;
+        max-width: none;
+    }
+
+    /* score colour metadata (eg. MuseScore's red hairpins) gives way to the ink */
+    :global(svg [fill]:not([fill="none"]):not([fill="transparent"])) {
+        fill: var(--salon-ink);
+    }
+
+    :global(svg [stroke]:not([stroke="none"]):not([stroke="transparent"])) {
+        stroke: var(--salon-ink);
+    }
+
+    :global(svg [color]) {
+        color: var(--salon-ink);
+    }
+
+    :global(.score_note_active),
+    :global(.score_note_active *) {
+        fill: var(--salon-oxblood) !important;
+        stroke: var(--salon-oxblood) !important;
+        color: var(--salon-oxblood) !important;
+    }
+
+    :global(g.note), :global(.vf-notehead), :global(.vf-stavenote) {
+        cursor: pointer;
+    }
+}
+
+/* Verovio draws with currentColor; its part labels are chrome */
+.engine_verovio {
+    :global(svg) {
+        color: var(--salon-ink);
+        fill: var(--salon-ink);
+    }
+
+    :global(g.label), :global(g.labelAbbr) {
+        display: none;
+    }
+}
+
+/* OSMD's page background rect would cover the plate */
+.engine_osmd {
+    :global(svg > rect:first-child) {
+        fill: transparent;
+    }
+}
+
+.readout {
+    min-height: 1.5em;
+    margin: 8px 0 0;
+    font-size: 14px;
+    color: var(--salon-ink-soft);
+}
+
+.note_name {
+    font-family: var(--font-display);
+    font-size: 17px;
+    color: var(--salon-oxblood);
+}

@@ -3,6 +3,7 @@ import classNames from "classnames"
 import Slider from "st/components/slider"
 import Select from "st/components/select"
 import {Pill} from "st/components/salon"
+import {scoreEnginesPath} from "st/components/pages/score_engines_page"
 import {trigger} from "st/events"
 import {
   generatorDefaultSettings, fixGeneratorSettings, storeGeneratorSettings, allKeySignatures,
@@ -410,6 +411,11 @@ export class ScoreDrawer extends React.PureComponent {
         variant="primary"
         className={styles.apply_button}
         onClick={this.props.apply}>Take your seat</Pill>
+
+      <Pill
+        variant="ghost"
+        className={styles.apply_button}
+        to={scoreEnginesPath(this.props.currentGeneratorSettings)}>Compare engraving engines</Pill>
     </SettingsDrawer>
   }
 
