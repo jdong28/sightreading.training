@@ -7,7 +7,7 @@ import {shiftNotationOctaves} from "st/song_parser"
 import {
   RandomNotes, SweepRangeNotes, MiniSteps, TriadNotes, SevenOpenNotes,
   ProgressionGenerator, PositionGenerator, IntervalGenerator, SheetMusicGenerator,
-  allKeySignatures, currentDrillMode
+  allKeySignatures, currentDrillMode, SCORE_DRILL_STORAGE_KEY
 } from "st/generators"
 
 import {
@@ -225,7 +225,7 @@ export function measureCardDeck(staff, settings) {
   }
 
   let wholeSection = wholeSectionDrill(settings)
-  if (wholeSection && currentDrillMode() != "wait") {
+  if (wholeSection && currentDrillMode(SCORE_DRILL_STORAGE_KEY) != "wait") {
     return null
   }
 
