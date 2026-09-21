@@ -17,6 +17,7 @@ import {setAppStore} from "st/storage"
 import {importMusicXMLPiece, addPiece} from "st/sheet_music_deck"
 import {parseMusicXML} from "st/musicxml"
 import {SHEET_MUSIC_STORAGE_KEY, BOTH_HANDS} from "st/data"
+import {MAX_MEASURES_PER_CARD} from "st/measure_cards"
 import {DRILL_STORAGE_KEY} from "st/generators"
 import {scopeEvent} from "st/events"
 import NoteStats from "st/note_stats"
@@ -322,8 +323,8 @@ describe("sight reading page", function() {
     }))
 
     renderPage()
-    // a plate too narrow for the section's columns at any allowed width
-    flushSync(() => page.setState({staffWidth: 200}))
+    // a plate too narrow for the card's columns at any allowed width
+    flushSync(() => page.setState({staffWidth: 150}))
 
     let columnsOf = () => page.state.notes.generator.cards[0].columns
     let layout = page.staffLayout()
@@ -423,35 +424,52 @@ describe("sight reading page", function() {
     renderPage()
     // a plate whose fit is below the old 0.4 floor (it would have clamped
     // there and run past the edge) but above the new one
-    flushSync(() => page.setState({staffWidth: 700}))
+    flushSync(() => page.setState({staffWidth: 270}))
 
     let scale = page.staffLayout().scale
     expect(scale).toBeGreaterThan(MIN_FIT_SCALE)
     expect(scale).toBeLessThan(0.4)
   })
 
-  it("fits a card of the score's busiest bars inside the plate", async function() {
+  it("fits a capped card of the score's busiest bars inside the plate", async function() {
     let {piece} = await importMusicXMLPiece("reverie.musicxml", reverieOpening(), store)
 
     window.localStorage.setItem(DRILL_STORAGE_KEY, JSON.stringify({staff: "grand", generator: "sheet music"}))
     window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
-      piece: piece.id, startMeasure: 1, endMeasure: 4, hand: BOTH_HANDS, measuresPerCard: "all",
+      piece: piece.id, startMeasure: 1, endMeasure: 4, hand: BOTH_HANDS,
+      measuresPerCard: String(MAX_MEASURES_PER_CARD),
     }))
 
     let el = renderPage()
     expect(page.state.mode).toEqual("wait")
 
-    // every head of the four bars, the ostinato's eighths and the heads their
-    // ties run on to, is drawn inside the plate it was fitted to, above the
-    // floor only the densest cards reach
-    let wrapper = el.querySelector(`.${staffStyles.staff_wrapper}`).getBoundingClientRect()
-    let heads = [...el.querySelectorAll(`.${staffStyles.note}`)]
+    // the busiest three bars of the score's opening, the most the cap shows
+    expect(page.state.notes.generator.cards.map(card => card.measures))
+      .toEqual([[1, 2, 3], [4]])
+    expect(page.currentCard().card.measures).toEqual([1, 2, 3])
 
-    expect(heads.length).toBeGreaterThan(20)
-    for (let head of heads) {
-      expect(head.getBoundingClientRect().right).toBeLessThanOrEqual(wrapper.right)
+    // every head of the card, the ostinato's eighths and the heads their ties
+    // run on to, is drawn inside the plate it was fitted to, above the floor
+    // only the densest cards reach
+    let expectHeadsInsidePlate = () => {
+      let wrapper = el.querySelector(`.${staffStyles.staff_wrapper}`).getBoundingClientRect()
+      let heads = [...el.querySelectorAll(`.${staffStyles.note}`)]
+
+      expect(heads.length).toBeGreaterThan(15)
+      for (let head of heads) {
+        expect(head.getBoundingClientRect().right).toBeLessThanOrEqual(wrapper.right)
+      }
     }
+
+    expectHeadsInsidePlate()
     expect(page.staffLayout().scale).toBeGreaterThan(MIN_FIT_SCALE)
+
+    // the whole section is capped to the same card, and fits the same way
+    flushSync(() => page.setGenerator(page.state.currentGenerator, {
+      ...page.state.currentGeneratorSettings, measuresPerCard: "all",
+    }))
+    expect(page.currentCard().card.measures).toEqual([1, 2, 3])
+    expectHeadsInsidePlate()
 
     // and on a laptop's plate the same card fits without shrinking the staff
     flushSync(() => page.setState({staffWidth: 1240}))
@@ -511,13 +529,21 @@ describe("sight reading page", function() {
     expect(plateLabel()).toEqual("3 ♩ a bar · Card 2 · measures 3–4 of 1–8")
     expect(numberedBarLines()).toEqual(["3", "4"])
 
-    // the whole section loops without a card number, its start coming round
-    // again after its last measure
+    // the whole section is walked in capped cards too, so it never shows
+    // more bars at once than a flashcard deck does
     flushSync(() => page.setGenerator(page.state.currentGenerator, {
       ...page.state.currentGeneratorSettings, measuresPerCard: "all",
     }))
-    expect(plateLabel()).toEqual("3 ♩ a bar · measures 1–8")
-    expect(numberedBarLines()).toEqual(["1", "2", "3", "4", "5", "6", "7", "8", "1", "2"])
+    expect(plateLabel()).toEqual("3 ♩ a bar · Card 1 · measures 1–3 of 1–8")
+    expect(numberedBarLines()).toEqual(["1", "2", "3"])
+
+    // a section the cap already fits loops without a card number, its start
+    // coming round again after its last measure
+    flushSync(() => page.setGenerator(page.state.currentGenerator, {
+      ...page.state.currentGeneratorSettings, measuresPerCard: "all", endMeasure: 3,
+    }))
+    expect(plateLabel()).toEqual("3 ♩ a bar · measures 1–3")
+    expect(numberedBarLines().slice(0, 4)).toEqual(["1", "2", "3", "1"])
   })
 
   it("keeps a score note below the staff inside the plate in both modes", async function() {

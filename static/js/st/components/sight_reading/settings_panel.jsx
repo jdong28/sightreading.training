@@ -6,7 +6,7 @@ import {Pill} from "st/components/salon"
 import {trigger} from "st/events"
 import {
   generatorDefaultSettings, fixGeneratorSettings, storeGeneratorSettings, allKeySignatures,
-  scoreKeySignature, closestNumericOption
+  scoreKeySignature
 } from "st/generators"
 import styles from "./programme_drawer.module.css"
 
@@ -484,7 +484,7 @@ export class GeneratorSettings extends React.PureComponent {
     })
 
     if (!options.some(o => o.value == currentValue)) {
-      currentValue = closestNumericOption(values, currentValue) || options[0].value
+      currentValue = options[0].value
     }
 
     // a few short choices are pills, longer lists keep the select

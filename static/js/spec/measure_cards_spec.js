@@ -436,7 +436,7 @@ describe("measure cards", function() {
         .toEqual([WHOLE_SECTION, ...Array.from({length: MAX_MEASURES_PER_CARD}, (_, idx) => `${idx + 1}`)])
     })
 
-    it("keeps a saved drill without a card size on the whole section loop, however long", async function() {
+    it("walks a saved drill without a card size through the section in capped cards", async function() {
       let bars = Array.from({length: 16}, (_, idx) => `
         <measure number="${idx + 1}">
           ${idx == 0 ? `<attributes>
@@ -477,21 +477,60 @@ describe("measure cards", function() {
       expect(columns.length).toEqual(32)
       expect(sheetMusic.status(grand, settings)).toEqual(status)
 
-      generator = sheetMusic.create(grand, null, settings)
-      expect(generator instanceof SheetMusicGenerator).toBe(true)
+      // a section longer than the cap is never shown at once, whatever the
+      // order is set to: it is walked in order, never weighted by the
+      // measures played worst
+      generator = sheetMusic.create(grand, null, {...settings, order: RANDOM_ORDER})
+      expect(generator instanceof MeasureCardGenerator).toBe(true)
+      expect(generator.deck.order).toEqual(IN_ORDER)
 
-      let plain = new SheetMusicGenerator(columns)
+      generator = sheetMusic.create(grand, null, settings)
+      expect(generator.cards.map(card => card.measures)).toEqual([
+        [1, 2, 3], [4, 5, 6], [7, 8, 9], [10, 11, 12], [13, 14, 15], [16],
+      ])
+      expect(generator.currentCardNumber()).toEqual(1)
+
+      // the first card's own columns, the first of each measure marked for
+      // its bar line, and nothing past them until they are played
       let emitted = []
-      for (let i = 0; i < 70; i++) {
+      for (let i = 0; i < 7; i++) {
         emitted.push(generator.nextNote())
       }
-      expect(notesOf(emitted)).toEqual(emitted.map(() => plain.nextNote()))
+      expect(notesOf(emitted)).toEqual([...columns.slice(0, 6).map(column => [...column]), []])
+      expect(measureMarks(emitted)).toEqual([1, null, 2, null, 3, null, null])
 
-      // the first of the two columns of each measure is marked for its bar line
-      expect(measureMarks(emitted.slice(0, 34))).toEqual(
-        [...Array.from({length: 16}, (_, idx) => [idx + 1, null]).flat(), 1, null])
-      expect(generator.currentCard().measures.length).toEqual(16)
+      // and playing a card through moves on to the next, the last wrapping
+      // back to the section's start
+      let stats = new NoteStats()
+      let notes = new NoteList([], {generator})
+      notes.fillBuffer(6)
+
+      let played = []
+      for (let i = 0; i < 7; i++) {
+        played.push(generator.currentCard().measures)
+        for (let column = 0; column < generator.currentCard().columns.length; column++) {
+          notes = hit(notes, stats)
+        }
+      }
+
+      expect(played).toEqual([
+        [1, 2, 3], [4, 5, 6], [7, 8, 9], [10, 11, 12], [13, 14, 15], [16], [1, 2, 3],
+      ])
+    })
+
+    it("keeps a whole section the cap fits as one looping card", function() {
+      let settings = settingsFor({measuresPerCard: WHOLE_SECTION})
+      generator = sheetMusic.create(grand, null, settings)
+
+      expect(generator instanceof SheetMusicGenerator).toBe(true)
+      expect(generator.currentCard().measures).toEqual([0, 1, 2])
       expect(generator.currentCardNumber()).toBe(null)
+
+      // its columns come round again without the gap of a flashcard deck
+      let plain = new SheetMusicGenerator(sheetMusicSection(grand, settings).columns)
+      for (let i = 0; i < 12; i++) {
+        expect(notesOf([generator.nextNote()])).toEqual([plain.nextNote()])
+      }
     })
 
     it("picks random cards only for a numeric card size", function() {

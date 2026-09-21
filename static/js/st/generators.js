@@ -162,7 +162,7 @@ export function currentScrollSpeed() {
 // if value isn't numeric or none qualify (eg. a stored measuresPerCard from
 // before MAX_MEASURES_PER_CARD shrank clamps to the new top option instead
 // of falling back to the select's default)
-export function closestNumericOption(values, value) {
+function closestNumericOption(values, value) {
   let target = Number(value)
   if (!isFinite(target)) { return null }
 
