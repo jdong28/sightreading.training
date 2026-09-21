@@ -82,10 +82,11 @@ export const RECENT_ATTEMPTS = 5
  * attempt) carry the grade and the raw measurements it was worked out from.
  *
  * staffMisses splits the attempt's misses by hand: for each score staff
- * ("upper", "lower", the staves of column.staves), the misses at which a note
- * of that staff wasn't held. A miss with notes of both staves not held counts
- * for both, and both keys are always present (0 when none), so a review of a
- * hands together item says which hand struggled in it.
+ * ("upper", "lower", the staves of column.staves), the misses blamed on a
+ * note of that staff (NoteList#blamedNotes: the column's notes not touched, or
+ * with all touched those nearest the stray keys). A miss blamed on notes of
+ * both staves counts for both, and both keys are always present (0 when
+ * none), so a review of a hands together item says which hand struggled in it.
  * @typedef {Object} ReviewRecord
  * @property {string} itemId
  * @property {number} at
