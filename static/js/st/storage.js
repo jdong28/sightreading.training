@@ -2,9 +2,11 @@
 // the "idb" package), with no server behind it.
 //
 // One database holds the stores in STORES: the imported sheet music pieces
-// (the deck, see st/sheet_music_deck), practice stats per piece section, and
-// practice sessions. init() loads them into an in-memory cache so the UI reads
-// synchronously (eg. a generator's settings inputs on every render); every
+// (the deck, see st/sheet_music_deck), the source score each piece was
+// imported from, practice stats per piece section, and practice sessions.
+// init() loads all but the sources into an in-memory cache so the UI reads
+// synchronously (eg. a generator's settings inputs on every render); a
+// piece's source is read on demand with pieceSource. Every
 // mutation is async, writes to the database first and only then updates the
 // cache, so a failed write (usually the storage quota) leaves both untouched.
 // Mutations run one at a time in call order.
@@ -16,13 +18,18 @@
 
 import {openDB} from "idb"
 import {shiftNoteOctave} from "st/music"
+import {
+  SOURCE_ENCODING, compressSource, decompressSource, isCompressedSource,
+  bytesToBase64, base64ToBytes
+} from "st/score_source"
 
 export const DB_NAME = "sightreading"
 
 // bump with a new step in upgradeSchema when the stores change
 // 2: note names of stored pieces moved to middle C "C4", see
 // renumberPieceOctaves
-export const DB_VERSION = 2
+// 3: adds the pieceSources store; pieces stored before it have no source
+export const DB_VERSION = 3
 
 // the localStorage deck used before the local store, migrated into the pieces
 // store once, see migrateLegacyDeck. The key itself is left in place
@@ -37,7 +44,9 @@ export const LIBRARY_FORMAT = "sightreading-library"
 // 3: pieces carry the score's rhythm (song format 2, see st/sheet_music_deck);
 // version 2 pieces are read as they are and drill unchanged, drawn as whole
 // notes until their score is imported again
-export const LIBRARY_VERSION = 3
+// 4: carries the source score of the pieces that have one (sources); older
+// libraries have none
+export const LIBRARY_VERSION = 4
 
 // sessions started within this many days are loaded into the cache
 export const RECENT_SESSION_DAYS = 30
@@ -50,6 +59,7 @@ const OPEN_TIMEOUT = 5000
 
 const STORES = {
   pieces: {keyPath: "id"},
+  pieceSources: {keyPath: "pieceId"},
   sectionStats: {
     keyPath: ["pieceId", "startMeasure", "endMeasure"],
     indexes: {pieceId: "pieceId"},
@@ -67,6 +77,17 @@ const STORES = {
  * @property {Object} song
  * @property {number} importedAt
  * @property {string} [fileName]
+ */
+
+/**
+ * The MusicXML text a piece was imported from, gzipped (see st/score_source).
+ * Kept out of the cache, read with LocalStore#pieceSource. In a library file
+ * data is base64.
+ * @typedef {Object} PieceSourceRecord
+ * @property {string} pieceId
+ * @property {string} encoding SOURCE_ENCODING
+ * @property {Uint8Array} data
+ * @property {number} storedAt
  */
 
 /**
@@ -106,6 +127,7 @@ const STORES = {
  * @property {number} version LIBRARY_VERSION
  * @property {string} exportedAt
  * @property {PieceRecord[]} pieces
+ * @property {PieceSourceRecord[]} [sources] with base64 data, since version 4
  * @property {SectionStatsRecord[]} sectionStats
  * @property {SessionRecord[]} sessions
  */
@@ -119,6 +141,7 @@ const STORES = {
  * @property {number} existingPieces
  * @property {number} invalidPieces
  * @property {number} fullPieces pieces left out because the library is full
+ * @property {number} addedSources sources added to pieces that had none
  * @property {number} addedSections
  * @property {number} updatedSections section stats replaced by more recent ones
  * @property {number} addedSessions
@@ -175,6 +198,12 @@ async function upgradeSchema(db, oldVersion, newVersion, transaction) {
       pieces.put(renumberPieceOctaves(piece))
     }
   }
+
+  if (oldVersion >= 1 && oldVersion < 3) {
+    // the stored pieces keep loading and drilling without a source, until
+    // their score is imported again
+    db.createObjectStore("pieceSources", {keyPath: STORES.pieceSources.keyPath})
+  }
 }
 
 function defaultIndexedDB() {
@@ -207,6 +236,10 @@ class IndexedDBBackend {
 
   getAll(store) {
     return this.db.getAll(store)
+  }
+
+  getAllKeys(store) {
+    return this.db.getAllKeys(store)
   }
 
   getAllFrom(store, index, lower) {
@@ -266,6 +299,10 @@ class MemoryBackend {
 
   async getAll(store) {
     return [...this.stores[store].values()].map(record => structuredClone(record))
+  }
+
+  async getAllKeys(store) {
+    return [...this.stores[store].keys()].map(key => JSON.parse(key))
   }
 
   async getAllFrom(store, index, lower) {
@@ -386,6 +423,45 @@ function pieceRecord(piece, importedAt) {
   }
 
   return record
+}
+
+const validSourceText = text => typeof text == "string" && text.trim() != ""
+
+// the pieceSources record of a piece's MusicXML text
+function sourceRecord(pieceId, text, storedAt=Date.now()) {
+  return {pieceId, encoding: SOURCE_ENCODING, data: compressSource(text), storedAt}
+}
+
+// a source as a library file carries it, with its bytes in base64
+function sourceToJSON(source) {
+  return {...source, data: bytesToBase64(source.data)}
+}
+
+// a source from a library file under the piece id of this library, or null
+// when it isn't one
+function sourceFromJSON(source, pieceId, importedAt) {
+  if (!source || typeof source != "object" || source.encoding != SOURCE_ENCODING ||
+      typeof source.data != "string") {
+    return null
+  }
+
+  let data
+  try {
+    data = base64ToBytes(source.data)
+  } catch (e) {
+    return null
+  }
+
+  if (!isCompressedSource(data)) {
+    return null
+  }
+
+  return {
+    pieceId,
+    encoding: SOURCE_ENCODING,
+    data,
+    storedAt: typeof source.storedAt == "number" ? source.storedAt : importedAt,
+  }
 }
 
 export class LocalStore {
@@ -531,18 +607,29 @@ export class LocalStore {
   }
 
   /**
-   * Adds or replaces a piece.
+   * Adds or replaces a piece, in the same write as its source when one is given.
    * @param {PieceRecord} piece
+   * @param {Object} [opts]
+   * @param {string|null} [opts.source] the MusicXML text the piece was
+   * imported from; null removes a stored source, leaving it out keeps it
    * @returns {Promise<PieceRecord>} the stored record
    */
-  putPiece(piece) {
+  putPiece(piece, {source}={}) {
     return this.mutate(async () => {
       if (!validPiece(piece)) {
         throw new Error("Not a valid piece")
       }
 
+      if (source != null && !validSourceText(source)) {
+        throw new Error("Not a valid piece source")
+      }
+
       let record = pieceRecord(piece, Date.now())
-      await this.backend.write([{store: "pieces", put: record}])
+      await this.backend.write([
+        {store: "pieces", put: record},
+        ...(source === null ? [{store: "pieceSources", delete: record.id}] : []),
+        ...(source != null ? [{store: "pieceSources", put: sourceRecord(record.id, source)}] : []),
+      ])
 
       this.cache = {
         ...this.cache,
@@ -554,7 +641,51 @@ export class LocalStore {
   }
 
   /**
-   * Removes a piece along with its section stats.
+   * Stores the MusicXML text a stored piece was imported from, replacing any
+   * source it had.
+   * @param {string} pieceId
+   * @param {string} source
+   * @returns {Promise<boolean>} whether there was such a piece
+   */
+  putPieceSource(pieceId, source) {
+    return this.mutate(async () => {
+      if (!validSourceText(source)) {
+        throw new Error("Not a valid piece source")
+      }
+
+      if (!this.piece(pieceId)) {
+        return false
+      }
+
+      await this.backend.write([{store: "pieceSources", put: sourceRecord(pieceId, source)}])
+      return true
+    })
+  }
+
+  /**
+   * The MusicXML text a piece was imported from, read from the database (it
+   * is never cached). Pieces imported before sources were kept have none.
+   * @param {string} pieceId
+   * @returns {Promise<string|null>} null when the piece has no readable source
+   */
+  pieceSource(pieceId) {
+    return this.mutate(async () => {
+      let source = await this.backend.get("pieceSources", pieceId)
+      if (!source || !this.piece(pieceId)) {
+        return null
+      }
+
+      try {
+        return decompressSource(source.data)
+      } catch (e) {
+        console.warn(`The source score of piece ${pieceId} can't be read:`, e)
+        return null
+      }
+    })
+  }
+
+  /**
+   * Removes a piece along with its source and section stats.
    * @param {string} id
    * @returns {Promise<boolean>} whether there was such a piece
    */
@@ -567,6 +698,7 @@ export class LocalStore {
       let sections = this.sectionStats(id)
       await this.backend.write([
         {store: "pieces", delete: id},
+        {store: "pieceSources", delete: id},
         ...sections.map(s => ({store: "sectionStats", delete: [s.pieceId, s.startMeasure, s.endMeasure]})),
       ])
 
@@ -670,25 +802,36 @@ export class LocalStore {
   }
 
   /**
-   * The pieces, section stats and every session, for a library file.
+   * The pieces with their sources, section stats and every session, for a
+   * library file.
    * @returns {Promise<LibraryExport>}
    */
   exportLibrary() {
-    return this.mutate(async () => ({
-      format: LIBRARY_FORMAT,
-      version: LIBRARY_VERSION,
-      exportedAt: new Date().toISOString(),
-      pieces: this.cache.pieces,
-      sectionStats: this.cache.sectionStats,
-      sessions: (await this.backend.getAll("sessions")).sort(byStart),
-    }))
+    return this.mutate(async () => {
+      let pieceIds = new Set(this.cache.pieces.map(piece => piece.id))
+      let sources = (await this.backend.getAll("pieceSources"))
+        .filter(source => pieceIds.has(source.pieceId))
+
+      return {
+        format: LIBRARY_FORMAT,
+        version: LIBRARY_VERSION,
+        exportedAt: new Date().toISOString(),
+        pieces: this.cache.pieces,
+        sources: sources.map(sourceToJSON),
+        sectionStats: this.cache.sectionStats,
+        sessions: (await this.backend.getAll("sessions")).sort(byStart),
+      }
+    })
   }
 
   /**
-   * Merges an exported library into this one in a single write. Section stats
-   * follow their piece (also when it matched a stored piece of another id)
-   * and replace stored stats only when practiced more recently. Sessions are
-   * added unless one of the same id is stored.
+   * Merges an exported library into this one in a single write. Sources and
+   * section stats follow their piece (also when it matched a stored piece of
+   * another id). A source is added only to a piece without one that holds
+   * the same song, so importing a library fills in the sources of pieces
+   * stored before them but never gives a piece the source of another song.
+   * Section stats replace stored stats only when practiced more recently.
+   * Sessions are added unless one of the same id is stored.
    * @param {LibraryExport} data
    * @param {Object} [opts]
    * @param {number} [opts.maxPieces] the most pieces the library holds
@@ -705,7 +848,7 @@ export class LocalStore {
       }
 
       let report = {
-        addedPieces: 0, existingPieces: 0, invalidPieces: 0, fullPieces: 0,
+        addedPieces: 0, existingPieces: 0, invalidPieces: 0, fullPieces: 0, addedSources: 0,
         addedSections: 0, updatedSections: 0, addedSessions: 0, existingSessions: 0,
       }
 
@@ -717,6 +860,7 @@ export class LocalStore {
       let byId = new Map(pieces.map(piece => [piece.id, piece]))
       let byContent = new Map(pieces.map(piece => [pieceContent(piece), piece]))
       let pieceIds = new Map() // imported id -> id in this library
+      let sameSongIds = new Set() // imported ids whose piece here holds the same song
       let ops = []
       let now = Date.now()
 
@@ -729,6 +873,9 @@ export class LocalStore {
         let existing = byId.get(piece.id) || byContent.get(pieceContent(piece))
         if (existing) {
           pieceIds.set(piece.id, existing.id)
+          if (JSON.stringify(existing.song) == JSON.stringify(piece.song)) {
+            sameSongIds.add(piece.id)
+          }
           report.existingPieces += 1
           continue
         }
@@ -744,8 +891,27 @@ export class LocalStore {
         byId.set(record.id, record)
         byContent.set(pieceContent(record), record)
         pieceIds.set(record.id, record.id)
+        sameSongIds.add(record.id)
         ops.push({store: "pieces", put: record})
         report.addedPieces += 1
+      }
+
+      let sourceIds = new Set(await this.backend.getAllKeys("pieceSources"))
+
+      for (let source of Array.isArray(data.sources) ? data.sources : []) {
+        let pieceId = source && sameSongIds.has(source.pieceId) && pieceIds.get(source.pieceId)
+        if (!pieceId || sourceIds.has(pieceId)) {
+          continue
+        }
+
+        let record = sourceFromJSON(source, pieceId, now)
+        if (!record) {
+          continue
+        }
+
+        sourceIds.add(pieceId)
+        ops.push({store: "pieceSources", put: record})
+        report.addedSources += 1
       }
 
       let sectionStats = [...this.cache.sectionStats]

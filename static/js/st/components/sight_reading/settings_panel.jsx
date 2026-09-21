@@ -639,8 +639,9 @@ export class GeneratorSettings extends React.PureComponent {
 
     this.setState({deckMessage: {text: `Importing ${file.name}…`}})
 
-    return file.text().then(text => {
-      return input.importFile(file.name, text).then(result => {
+    // the bytes, since a compressed .mxl file isn't text
+    return file.arrayBuffer().then(data => {
+      return input.importFile(file.name, data).then(result => {
         if (result.error) {
           this.setState({deckMessage: {error: true, text: result.error}})
           return

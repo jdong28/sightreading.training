@@ -2,15 +2,15 @@
 // generator, kept in the browser's library (the pieces store of st/storage)
 // so a piece is picked from the deck instead of imported again.
 //
-// Pieces are stored as a compact JSON form of the parsed song model (never
-// the MusicXML text). Reads are synchronous over the store's cache; adding and
+// Pieces are stored as a compact JSON form of the parsed song model, which is
+// what the deck reads and drills. The MusicXML text a piece was imported from
+// is kept beside it as its source, out of the cache and read on demand with
+// pieceSource. Reads are synchronous over the store's cache; adding and
 // removing pieces is async, and a failed write (usually the storage quota)
 // leaves the deck untouched and resolves to a message for the UI.
 
 import {MultiTrackSong, SongNote} from "st/song_note_list"
-import {
-  parseMusicXML, MusicXMLError, isCompressedMusicXML, COMPRESSED_MESSAGE
-} from "st/musicxml"
+import {parseMusicXML, readMusicXMLFile, MusicXMLError} from "st/musicxml"
 import {getAppStore, LEGACY_DECK_KEY, LibraryFormatError} from "st/storage"
 
 // where the deck was kept before the local store, see migrateLegacyDeck in
@@ -195,6 +195,18 @@ export function findPiece(id, store=getAppStore()) {
   return store.piece(id)
 }
 
+/**
+ * The MusicXML text a stored piece was imported from.
+ * @param {string} id
+ * @param {LocalStore} [store]
+ * @returns {Promise<string|null>} null for a piece imported before sources
+ * were kept (until its score is imported again), or no such piece
+ */
+export async function pieceSource(id, store=getAppStore()) {
+  if (!id) { return null }
+  return store.pieceSource(id)
+}
+
 let songCache = new WeakMap()
 
 // the song model of a stored piece, or null when it can't be read
@@ -230,14 +242,16 @@ function sameScore(a, b) {
     a.tracks.length == b.tracks.length && measures(a) == measures(b)
 }
 
-// Adds a song to the deck. Resolves to {piece} or {error}, with a warning
-// when the deck won't outlive the page. Adding the same title and notes
-// again resolves to the stored piece instead of a duplicate. A new version of
-// the same score under a stored title replaces that piece's song, keeping its
-// id so its stats and sessions carry over, and resolves with updated. A
-// different score under a stored title is added as a new piece and resolves
-// with sameTitle.
-export async function addPiece(title, song, store=getAppStore(), {fileName}={}) {
+// Adds a song to the deck, with source, the MusicXML text it was parsed from,
+// kept as its source. Resolves to {piece} or {error}, with a warning when the
+// deck won't outlive the page. Adding the same title and notes again resolves
+// to the stored piece instead of a duplicate, storing the source given so a
+// piece imported before sources were kept gains one. A new version of the
+// same score under a stored title replaces that piece's song and source,
+// keeping its id so its stats and sessions carry over, and resolves with
+// updated. A different score under a stored title is added as a new piece and
+// resolves with sameTitle.
+export async function addPiece(title, song, store=getAppStore(), {fileName, source}={}) {
   await store.init()
 
   let deck = loadDeck(store)
@@ -249,6 +263,15 @@ export async function addPiece(title, song, store=getAppStore(), {fileName}={}) 
     piece.title == title && JSON.stringify(piece.song) == songText)
 
   if (existing) {
+    if (source) {
+      try {
+        await store.putPieceSource(existing.id, source)
+      } catch (e) {
+        // the piece drills as it did, it only goes without its source
+        let notSaved = `Its score file wasn't saved with it. ${storageErrorMessage(e)}`
+        return {piece: existing, warning: [notSaved, warning.warning].filter(w => w).join(" ")}
+      }
+    }
     return {piece: existing, ...warning}
   }
 
@@ -271,7 +294,9 @@ export async function addPiece(title, song, store=getAppStore(), {fileName}={}) 
   let outcome = replaced ? {updated: true} : titled.length ? {sameTitle: true} : {}
 
   try {
-    return {piece: await store.putPiece(record), ...outcome, ...warning}
+    // a replaced song without a source drops the old one, which no longer
+    // matches it
+    return {piece: await store.putPiece(record, {source: source || null}), ...outcome, ...warning}
   } catch (e) {
     return {error: `"${title}" wasn't added to the deck. ${storageErrorMessage(e)}`}
   }
@@ -287,15 +312,14 @@ export async function removePiece(id, store=getAppStore()) {
   return {}
 }
 
-// Imports an uncompressed MusicXML file into the deck. Resolves to {piece}
-// or {error} with a message for the UI.
-export async function importMusicXMLPiece(fileName, text, store=getAppStore()) {
-  if (/\.mxl$/i.test(fileName || "") || isCompressedMusicXML(text)) {
-    return {error: COMPRESSED_MESSAGE}
-  }
-
-  let song
+// Imports a MusicXML file, uncompressed or a compressed .mxl, into the deck
+// with its uncompressed MusicXML text as the piece's source. data is the
+// file's bytes (see readMusicXMLFile), or the text of an uncompressed file.
+// Resolves to {piece} or {error} with a message for the UI.
+export async function importMusicXMLPiece(fileName, data, store=getAppStore()) {
+  let text, song
   try {
+    text = readMusicXMLFile(data)
     song = parseMusicXML(text)
   } catch (e) {
     if (e instanceof MusicXMLError) {
@@ -310,10 +334,10 @@ export async function importMusicXMLPiece(fileName, text, store=getAppStore()) {
 
   // exported file names often use underscores for spaces
   let title = (song.metadata && song.metadata.title) ||
-    (fileName || "").replace(/\.(musicxml|xml)$/i, "").replace(/_+/g, " ").trim() ||
+    (fileName || "").replace(/\.(musicxml|xml|mxl)$/i, "").replace(/_+/g, " ").trim() ||
     "Untitled piece"
 
-  return addPiece(title, song, store, {fileName})
+  return addPiece(title, song, store, {fileName, source: text})
 }
 
 // The library file for the store's pieces, section stats and sessions. Resolves to

@@ -280,3 +280,26 @@ export const clefChangeScore = ({
     </measure>`).join("\n    ")}
   </part>
 </score-partwise>`
+
+// A one measure 3/4 waltz with no title of its own, E5 G4 C5 in quarter notes,
+// as the uncompressed MusicXML text of LITTLE_WALTZ_MXL
+export const LITTLE_WALTZ_XML = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<score-partwise version=\"4.0\">\n  <part-list><score-part id=\"P1\"><part-name>Piano</part-name></score-part></part-list>\n  <part id=\"P1\">\n    <measure number=\"1\">\n      <attributes><divisions>1</divisions><key><fifths>0</fifths></key><time><beats>3</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>\n      <note><pitch><step>E</step><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type></note>\n      <note><pitch><step>G</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type></note>\n      <note><pitch><step>C</step><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type></note>\n    </measure>\n  </part>\n</score-partwise>"
+
+// LITTLE_WALTZ_XML compressed as a .mxl file by Info-ZIP (zip -X -9): its
+// META-INF/container.xml names Little_Waltz.musicxml as the score, stored
+// after decoy.xml, a first entry that isn't the score
+export const LITTLE_WALTZ_MXL_BASE64 =
+  "UEsDBBQAAgAIAPWZNF0NbMdriwAAALYAAAAWAAAATUVUQS1JTkYvY29udGFpbmVyLnhtbE3OsQ7CMAwE0J2viLyiNrAxJO3GxAhi" +
+  "RFbigqU0iRK3Ar6eslC2G+70zvTPMaiZSuUULezbHSiKLnmOdwuX87E5QN9tjEtRkCOVzpSUZOBAdY1qmEJoMsrDwolFAt2uGOTd" +
+  "jlNltwigRvKMjbwyWcCcAzuUhdRz9G0hl4rHQr/+9rvRndF/mF4/fABQSwMECgACAAAA9Zk0XYshJsMLAAAACwAAAAkAAABkZWNv" +
+  "eS54bWxub3QgYSBzY29yZVBLAwQUAAIACAD1mTRdicPvCDIBAAAbAwAAFQAAAExpdHRsZV9XYWx0ei5tdXNpY3htbL1SsVLDMAzd" +
+  "+xW57MEtlDsGVR046NoBPsBN1FbXxA62E+jfo9gpKdyxdpL0JD096QTrr6bOenKerVnli7t5npEpbcXmsMrf316Lp3yNM/CldVS0" +
+  "2oVP9jQ1LKUBZ1kGQ6qo2Qe8qs24WuXbRY4pbXRDuGVtLKgJADU14JiIRBfaHxYBBGpI+85RZrpmR040jwlJ6RAc77pAHqHingeN" +
+  "HhegpgBOdEbY8z4cPc5BjR6oiAceBO1IB48PoJIT4yKcW8JlwlIAKpWXNe1laz4Y3Mgyg4WaDeE9qGhBpRJ1pe8i2dggBS2H8igc" +
+  "gVp8EY7Bgi2D7gkfQY2eHCfVVZ3TQdaJq1186C2XNEDJgSjyo5MLkhOtSXKc9//wzZ/hy1sOf77R5qDGH4ovFj9OXlz9/nH8BlBL" +
+  "AQIeAxQAAgAIAPWZNF0NbMdriwAAALYAAAAWAAAAAAAAAAEAAACkgQAAAABNRVRBLUlORi9jb250YWluZXIueG1sUEsBAh4DCgAC" +
+  "AAAA9Zk0XYshJsMLAAAACwAAAAkAAAAAAAAAAQAAAKSBvwAAAGRlY295LnhtbFBLAQIeAxQAAgAIAPWZNF2Jw+8IMgEAABsDAAAV" +
+  "AAAAAAAAAAEAAACkgfEAAABMaXR0bGVfV2FsdHoubXVzaWN4bWxQSwUGAAAAAAMAAwC+AAAAVgIAAAAA"
+
+// the bytes of LITTLE_WALTZ_MXL_BASE64, as a picked file reads
+export const littleWaltzMXL = () => Uint8Array.from(atob(LITTLE_WALTZ_MXL_BASE64), c => c.charCodeAt(0))

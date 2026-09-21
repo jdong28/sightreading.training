@@ -12,12 +12,14 @@ import {
   currentDrillMode, currentScrollSpeed, generatorDefaultSettings,
 } from "st/generators"
 import {setAppStore} from "st/storage"
-import {addPiece, importMusicXMLPiece} from "st/sheet_music_deck"
+import {addPiece, importMusicXMLPiece, pieceSource} from "st/sheet_music_deck"
 import {parseSongText} from "st/song_sections"
 import {HomeGate} from "st/components/app"
 import {ONBOARDED_KEY} from "st/onboarding"
 
-import {openTestStore, reverieOpening, keyChangeScore} from "spec/helpers"
+import {
+  openTestStore, reverieOpening, keyChangeScore, LITTLE_WALTZ_XML, littleWaltzMXL
+} from "spec/helpers"
 
 describe("setup page", function() {
   // the keys are shared with the app on this origin, so put back whatever
@@ -238,6 +240,30 @@ describe("setup page", function() {
 
     click(findButton(el, "Random notes"))
     expect(el.querySelector(`.${styles.exercise_inputs}`)).toBe(null)
+  })
+
+  it("imports a compressed .mxl file picked in the deck, and picks it", async function() {
+    let el = renderSetup()
+    click(findButton(el, "Sheet music"))
+
+    let fileInput = el.querySelector(`.${inputStyles.file_input} > input[type=file]`)
+    expect(fileInput.accept.split(",")).toContain(".mxl")
+
+    Object.defineProperty(fileInput, "files", {
+      value: [new File([littleWaltzMXL()], "little_waltz.mxl")],
+      configurable: true,
+    })
+    flushSync(() => fileInput.dispatchEvent(new Event("change", {bubbles: true})))
+
+    for (let tries = 0; tries < 100 && !el.textContent.includes("is in the deck"); tries++) {
+      await new Promise(resolve => setTimeout(resolve, 10))
+    }
+
+    expect(el.textContent).toContain("\"little waltz\" is in the deck")
+    let [piece] = store.pieces()
+    expect(piece.title).toEqual("little waltz")
+    expect(el.querySelector(`.${styles.exercise_inputs} select`).value).toEqual(piece.id)
+    expect(await pieceSource(piece.id, store)).toEqual(LITTLE_WALTZ_XML)
   })
 
   it("sets the key by the score while a piece is picked", async function() {
