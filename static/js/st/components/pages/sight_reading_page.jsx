@@ -433,12 +433,16 @@ export default class SightReadingPage extends React.Component {
     let loop = current.number == null
     let rests = this.restsDrawn(unitColumns)
     let fitFor = card => {
+      // the columns as the staff draws them, which carry the bars the card
+      // holds no column for (see cardColumn in st/measure_cards), so the plate
+      // is fitted to those too
       let unit = card == current.card ? unitColumns : drillColumns(card, {loop})
-      let narrowest = Math.min(1, ...columnAdvances(card.columns, unit, {rests}))
+      let columns = loop ? unit.slice(0, -1) : unit
+      let narrowest = Math.min(1, ...columnAdvances(columns, unit, {rests}))
 
       return {
-        span: columnSpan(card.columns, unit, {rests}),
-        minWidth: Math.ceil(minNoteWidth(card.columns, keySignature) / narrowest),
+        span: columnSpan(columns, unit, {rests}),
+        minWidth: Math.ceil(minNoteWidth(columns, keySignature) / narrowest),
       }
     }
 

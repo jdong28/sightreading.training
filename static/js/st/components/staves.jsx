@@ -280,8 +280,10 @@ export function notesReach(props) {
     let center = rowCenter(row, clef) * scale
     let past = stem.beam ? BEAM_THICKNESS * scale : 0
 
+    // the number is drawn past the beam, and the glyph runs a further
+    // TUPLET_SIZE from its anchor (see renderTuplet in st/components/staff/score_beams)
     if (stem.tuplet) {
-      past = Math.max(past, (TUPLET_OFFSET + TUPLET_SIZE) * scale)
+      past += (TUPLET_OFFSET + TUPLET_SIZE) * scale
     }
 
     let reach = stem.height * scale + past

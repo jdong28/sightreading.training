@@ -325,19 +325,22 @@ function markSlurs(columns, entries) {
 // at or before it; anything before the first column goes to it, drawn in the
 // room before its head. Extras are in beat order and stay that way.
 //
-// A range with no columns at all — a measure every drilled hand rests through
-// — keeps its extras, and the beat it opens on, on the array itself, so a card
-// can draw that bar's rests, bar line and number without ever handing the
-// player a column to answer (see sectionCard in st/measure_cards)
-function attachExtras(columns, extras, startBeat) {
-  let drawn = columns.filter(column => column.extras)
-  if (!drawn.length) {
-    if (startBeat != null) {
-      columns.beat = startBeat
+// A range holding no column at all — a measure every drilled hand rests
+// through — keeps its extras, and the beats it covers, on the array itself, so
+// a card can draw that bar's rests, bar line and number without ever handing
+// the player a column to answer (see sectionCard in st/measure_cards)
+function attachExtras(columns, extras, bar) {
+  if (!columns.length) {
+    if (bar.beat != null) {
+      columns.beat = bar.beat
+      columns.beats = bar.beats
       columns.extras = [...extras].sort((a, b) => a.beat - b.beat)
     }
     return columns
   }
+
+  let drawn = columns.filter(column => column.extras)
+  if (!drawn.length) { return columns }
 
   for (let extra of [...extras].sort((a, b) => a.beat - b.beat)) {
     let idx = 0
@@ -428,7 +431,10 @@ export function extractSectionColumns(song, opts={}) {
     }
   }
 
-  return attachExtras(markSlurs(columns, entries), extras, startBeat)
+  return attachExtras(markSlurs(columns, entries), extras, {
+    beat: startBeat,
+    beats: isFinite(columnsEnd) ? Math.max(0, columnsEnd - startBeat) : 0,
+  })
 }
 
 // Drops notes that fall outside [min, max] pitch (note names), removing
@@ -491,6 +497,7 @@ export function filterColumnsToRange(columns, min, max) {
   // drawn and the beats it covers (see attachExtras)
   if (!out.length && columns.beat != null) {
     out.beat = columns.beat
+    out.beats = columns.beats
     out.extras = (columns.extras || []).filter(extra => {
       if (extra.kind != "head") { return true }
       let pitch = parseNote(extra.name)

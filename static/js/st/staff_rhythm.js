@@ -102,11 +102,29 @@ function columnBeats(columns, idx, rests=true) {
     return columnBeats(columns, repeated, rests)
   }
 
-  if (!(column.beats > 0)) { return null }
+  let trail = columnTrail(column)
+  if (!(column.beats > 0) && !(trail > 0)) { return null }
 
   // a looping card wraps from here back to an earlier column, which comes
   // round with the extras that lead it, so the gap holds their beats too
-  return column.beats + columnLead(next, rests)
+  return Math.max(column.beats || 0, trail) + columnLead(next, rests)
+}
+
+// The beats the bars a card ends on reach past its last column: bars that
+// hold no column of their own and so are drawn after it (see sectionCard in
+// st/measure_cards), which hold the room their own beats are worth so the
+// staff draws them inside the span the plate is fitted to
+function columnTrail(column) {
+  let most = 0
+
+  if (!column || column.beat == null) { return most }
+
+  for (let bar of column.bars || []) {
+    if (!(bar.beats > 0) || bar.beat < column.beat) { continue }
+    most = Math.max(most, bar.beat + bar.beats - column.beat)
+  }
+
+  return most
 }
 
 // The most beats a column's own extras fall before it: the rest a bar opens
@@ -279,11 +297,18 @@ export function columnOffsets(columns, unitColumns, opts) {
 // The room the columns need in column widths, what a card is fitted to the
 // staff plate by: up to the last column, from the staff's notes rather than
 // from the first column, so the room reserved before it is fitted too, and
-// measured in the unit the staff draws the card with (see columnAdvances)
+// measured in the unit the staff draws the card with (see columnAdvances). A
+// card ending on bars that hold no column also needs the room that last
+// column holds, since those bars are drawn inside it (see columnTrail)
 export function columnSpan(columns, unitColumns, opts) {
-  if (!columns || columns.length < 2) { return 0 }
-  let offsets = columnOffsets(columns, unitColumns, opts)
-  return offsets[offsets.length - 1]
+  if (!columns || !columns.length) { return 0 }
+
+  let {offsets, advances} = columnLayout(columns, unitColumns, opts)
+  let last = offsets.length - 1
+  let trail = columnTrail(columns[last]) > 0 ? advances[last] : 0
+
+  if (columns.length < 2 && !trail) { return 0 }
+  return offsets[last] + trail
 }
 
 // The stem direction of a group of notes sharing a staff, a column and a
@@ -835,6 +860,29 @@ export function beforeOffset(columns, {offsets, gaps, leadBeats}, idx, beat) {
 }
 
 /**
+ * Where something the score writes at or after the onset of the column at idx
+ * is drawn, in column widths: its share of the room that column holds, which
+ * is no part of the room the next bar's line is drawn in. This is where a rest
+ * or a tied head between two columns falls, and where the bars a card ends on
+ * are drawn (see columnTrail).
+ * @param {Array} columns the columns on the staff
+ * @param {Object} layout see columnLayout
+ * @param {number} idx the column it falls on or after
+ * @param {number} beat
+ * @returns {number}
+ */
+export function afterOffset(columns, {offsets, advances, gaps, unit, rests=true}, idx, beat) {
+  let beats = gaps && gaps[idx]
+  let after = beat - columns[idx].beat
+  // a column whose room isn't known goes by the card's own beat to a width
+  let into = beats > 0 ?
+    (advances[idx] - openingRoom(columns[idx + 1], rests)) * after / beats :
+    after / (unit > 0 ? unit : 1)
+
+  return offsets[idx] + into
+}
+
+/**
  * The rests and tied continuation heads the columns draw between them, placed
  * in the beat proportional layout.
  * @param {Array} columns the columns on the staff, each with its extras
@@ -846,14 +894,13 @@ export function beforeOffset(columns, {offsets, gaps, leadBeats}, idx, beat) {
  * @param {boolean} [opts.rests] whether the staff draws the score's rests
  * @returns {Object[]} each extra with `offset`, its own place in column widths
  */
-export function columnExtras(columns, {offsets, advances, gaps, unit, leadBeats, staff, rests=true}) {
+export function columnExtras(columns, layout) {
+  let {offsets, advances, gaps, leadBeats, staff, rests=true} = layout
   if (!offsets || !advances) { return [] }
 
   let out = []
 
   columns.forEach((column, idx) => {
-    let beats = gaps && gaps[idx]
-
     for (let extra of column.extras || []) {
       if (!rests && extra.kind == "rest") { continue }
       if (staff && extra.staff && extra.staff != staff) { continue }
@@ -873,15 +920,13 @@ export function columnExtras(columns, {offsets, advances, gaps, unit, leadBeats,
       }
 
       // a beat of the room the column's own beats hold, so a head or rest
-      // between two columns keeps its place however that column is spaced,
-      // and the room the next bar's line is drawn in is no part of it; a
-      // column whose room isn't known goes by the card's own beat to a width
-      let room = advances[idx] - openingRoom(columns[idx + 1], rests)
-      let into = beats > 0 ?
-        room * -before / beats :
-        -before / (unit > 0 ? unit : 1)
-
-      out.push({...extra, columnIdx: idx, offset: offsets[idx] + into})
+      // between two columns keeps its place however that column is spaced
+      // (see afterOffset)
+      out.push({
+        ...extra,
+        columnIdx: idx,
+        offset: afterOffset(columns, layout, idx, extra.beat),
+      })
     }
   })
 

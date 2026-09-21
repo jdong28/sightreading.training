@@ -23,8 +23,9 @@ export const MAX_MEASURES_PER_CARD = 8
  * @property {string[][]} columns each may carry `staves`, the grand staff
  * of each of its notes, and `clefs`, the clef sign of each staff at its onset
  * (see extractSectionColumns in st/song_sections)
- * @property {Object} [bar] {beat, extras}, what a measure with no columns of
- * its own still draws: a measure every drilled hand rests through
+ * @property {Object} [bar] {beat, beats, extras}, what a measure with no
+ * columns of its own still draws: a measure every drilled hand rests through,
+ * with the beats it covers, which is the room the staff keeps for it
  */
 
 /**
@@ -144,7 +145,7 @@ export function cardColumn(card, idx) {
 
   let bars = card.columnBars && card.columnBars[idx]
   if (bars && bars.length && card.measures.length > 1) {
-    column.bars = bars.map(({number, beat}) => ({number, beat}))
+    column.bars = bars.map(({number, beat, beats}) => ({number, beat, beats}))
 
     let extras = bars.flatMap(bar => bar.extras || [])
     if (extras.length) {

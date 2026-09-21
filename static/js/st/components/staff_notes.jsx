@@ -9,7 +9,7 @@ import ScoreNotes from "st/components/staff/score_notes"
 import ScoreBeams from "st/components/staff/score_beams"
 import ScoreExtras from "st/components/staff/score_extras"
 import {
-  columnLayout, columnExtras, beforeOffset, headKey, OPENING_EXTRA_ROOM,
+  columnLayout, columnExtras, beforeOffset, afterOffset, headKey, OPENING_EXTRA_ROOM,
   noteTypeProps, HEAD_GLYPHS, STAFF_HEIGHT, NOTE_HEAD_HEIGHT,
 } from "st/staff_rhythm"
 import styles from "st/components/staff.module.css"
@@ -230,16 +230,23 @@ export function barLineBoxes(props, offsetLeft, layout) {
   }
 
   return props.notes.map((column, idx) => {
-    let bars = (column.bars || [])
-      .map(bar => ({measure: bar.number, beat: bar.beat}))
+    let columnBeat = column.beat ?? Infinity
+    let carried = (column.bars || [])
+      .map(bar => ({measure: bar.number, beat: bar.beat, beats: bar.beats}))
       .sort((a, b) => a.beat - b.beat)
 
+    // the bars a card ends on are drawn after its last column, never before it
+    let bars = carried.filter(bar => bar.beat < columnBeat)
+    let trailing = carried.filter(bar => bar.beat >= columnBeat)
+
     if (column.measure != null) {
-      // the bar the column itself opens starts wherever the bar before it
-      // leaves off, so the first thing drawn after that is what its line
-      // opens: a rest its bar opens with, else the column's own head
+      // the bar the column itself opens starts where the column-less bar
+      // before it leaves off, so the first thing drawn from there on is what
+      // its line opens: a rest its bar opens with, else the column's own head
       bars.push({measure: column.measure, own: true})
     }
+
+    bars.push(...trailing)
 
     if (!bars.length) { return [] }
 
@@ -250,26 +257,30 @@ export function barLineBoxes(props, offsetLeft, layout) {
       points.push({beat: extra.beat, x: at(extra.offset)})
     }
 
-    points.push({beat: column.beat ?? Infinity, x: columnAt})
+    points.push({beat: columnBeat, x: columnAt})
 
     let low = -Infinity
 
     return bars.map(bar => {
-      let after = points.filter(point => point.beat > low + BAR_BEAT_EPSILON)
       let beat = bar.own ?
-        Math.min(column.beat ?? Infinity, ...after.map(point => point.beat)) :
+        Math.min(columnBeat, ...points
+          .filter(point => point.beat > low - BAR_BEAT_EPSILON)
+          .map(point => point.beat)) :
         bar.beat
 
-      low = beat
+      low = bar.own ? beat : bar.beat + (bar.beats || 0)
 
       if (!bar.own) {
         // A bar of its own that holds no column: it opens where its own first
         // beat falls, and its line is drawn in the room kept in front of that
+        let offset = beat >= columnBeat ?
+          afterOffset(props.notes, layout, idx, beat) :
+          beforeOffset(props.notes, layout, idx, beat)
+
         return {
           measure: bar.measure,
           beat,
-          left: Math.round(at(beforeOffset(props.notes, layout, idx, beat) -
-            OPENING_EXTRA_ROOM / 2)),
+          left: Math.round(at(offset - OPENING_EXTRA_ROOM / 2)),
         }
       }
 
