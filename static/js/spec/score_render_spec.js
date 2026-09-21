@@ -4,8 +4,9 @@ import {flushSync} from "react-dom"
 
 import {loadScoreEngines, enginesURL} from "st/score_render/load"
 import {
-  ScoreEnginesPage, MISSING_SOURCE_MESSAGE, scoreEnginesPath, ENGINE_ORDER,
+  ScoreEnginesPage, MISSING_SOURCE_MESSAGE, ENGINE_ORDER,
 } from "st/components/pages/score_engines_page"
+import {scoreEnginesPath} from "st/score_render/route"
 import {RIGHT_HAND, LEFT_HAND} from "st/data"
 import {noteXML} from "spec/helpers"
 
@@ -103,6 +104,31 @@ describe("score render", function() {
       expect(bundle.measurePositions(doc, 0, 1)).toEqual([0, 1])
       expect(bundle.measurePositions(doc, 3, 99)).toEqual([3, 4])
       expect(bundle.measurePositions(doc, 7, 9)).toBe(null)
+    })
+
+    describe("numbering bars as the importer does", function() {
+      let score = measureAttrs => parse(`<score-partwise version="4.0">
+        <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+        <part id="P1">${measureAttrs.map(attrs => `<measure ${attrs}>${noteXML("C", 5, 4, 1)}</measure>`).join("")}</part>
+      </score-partwise>`)
+
+      it("keeps both halves of a split implicit bar under the first half's number", function() {
+        let doc = score(['number="1"', 'number="2"', 'number="X1" implicit="yes"', 'number="3"'])
+        expect(bundle.measurePositions(doc, 2, 2)).toEqual([1, 2])
+        expect(bundle.measurePositions(doc, 3, 3)).toEqual([3, 3])
+      })
+
+      it("counts a pickup numbered 1 but marked implicit as measure 0", function() {
+        let doc = score(['number="1" implicit="yes"', 'number="2"', 'number="3"', 'number="4"'])
+        expect(bundle.measurePositions(doc, 0, 0)).toEqual([0, 0])
+        expect(bundle.measurePositions(doc, 1, 2)).toEqual([1, 2])
+      })
+
+      it("counts from 1 whatever number the first bar prints", function() {
+        let doc = score(['number="17"', 'number="18"', 'number="19"'])
+        expect(bundle.measurePositions(doc, 1, 2)).toEqual([0, 1])
+        expect(bundle.measurePositions(doc, 17, 19)).toBe(null)
+      })
     })
 
     it("tags every note and reads its pitch, onset, staff and voice", function() {

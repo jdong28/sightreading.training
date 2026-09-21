@@ -11,7 +11,6 @@ import classNames from "classnames"
 import {useSearchParams} from "react-router-dom"
 
 import {setTitle} from "st/globals"
-import {RIGHT_HAND, LEFT_HAND} from "st/data"
 import {noteName} from "st/music"
 import {loadDeck, pieceSong, pieceSource} from "st/sheet_music_deck"
 import {measureNumberRange} from "st/song_sections"
@@ -40,19 +39,6 @@ export const MISSING_SOURCE_MESSAGE = "This piece was imported before the app ke
   "(its stats are kept) and it will draw here."
 
 const DEFAULT_CARD_MEASURES = 8
-
-// the page opened on the piece, measures and hand of the sheet music
-// generator's settings
-export function scoreEnginesPath(settings={}) {
-  let params = new URLSearchParams()
-  if (settings.piece) { params.set("piece", settings.piece) }
-  if (settings.startMeasure != null) { params.set("from", settings.startMeasure) }
-  if (settings.endMeasure != null) { params.set("to", settings.endMeasure) }
-  if (settings.hand == RIGHT_HAND) { params.set("hand", "upper") }
-  if (settings.hand == LEFT_HAND) { params.set("hand", "lower") }
-  let query = params.toString()
-  return `/score-engines${query ? `?${query}` : ""}`
-}
 
 // the card first drawn for a song: its first bar (past a pickup) and the
 // seven after it

@@ -6,6 +6,7 @@
 // score with the other staff taken out
 
 import type {Hand} from "./types"
+import {measureNumbersFor} from "../measure_numbers"
 
 export interface SourceNote {
   id: string
@@ -83,19 +84,18 @@ function parts(doc: XMLDocument): Element[] {
 }
 
 // The 0-based positions of the first measure numbered from or later and the
-// last numbered to or earlier, by the first part's printed numbers (a
-// number like "12a" counts as 12); null when no measure falls in the range
+// last numbered to or earlier, by the first part's printed bar numbers as the
+// app counts them (st/measure_numbers); null when no measure falls in the range
 export function measurePositions(doc: XMLDocument, from: number, to: number): [number, number] | null {
   const part = parts(doc)[0]
   if (!part) { return null }
 
-  const numbers = directChildren(part, "measure")
-    .map(measure => parseInt(measure.getAttribute("number") || "", 10))
+  const numbers: number[] = measureNumbersFor(directChildren(part, "measure"))
 
   let first = -1
   let last = -1
   numbers.forEach((number, idx) => {
-    if (Number.isNaN(number) || number < from || number > to) { return }
+    if (number < from || number > to) { return }
     if (first < 0) { first = idx }
     last = idx
   })
