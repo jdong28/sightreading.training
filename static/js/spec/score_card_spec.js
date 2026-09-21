@@ -503,10 +503,10 @@ describe("score page engine card", function() {
 </score-partwise>`
   const SCORE_SHAPES = {
     "one part of two staves": scoreOf(
-      `<score-part id="P1"><part-name>Piano</part-name></score-part>`,
+      "<score-part id=\"P1\"><part-name>Piano</part-name></score-part>",
       `<part id="P1"><measure number="1">${attributes([["G", 2], ["F", 4]], 2)}${notesOn(rightNotes, 5, 1)}<backup><duration>4</duration></backup>${notesOn(leftNotes, 3, 2)}</measure></part>`),
     "a part for each hand": scoreOf(
-      `<score-part id="P1"><part-name>Right</part-name></score-part><score-part id="P2"><part-name>Left</part-name></score-part>`,
+      "<score-part id=\"P1\"><part-name>Right</part-name></score-part><score-part id=\"P2\"><part-name>Left</part-name></score-part>",
       `<part id="P1"><measure number="1">${attributes([["G", 2]], 1)}${notesOn(rightNotes, 5, 1)}</measure></part>
   <part id="P2"><measure number="1">${attributes([["F", 4]], 1)}${notesOn(leftNotes, 3, 1)}</measure></part>`),
   }
