@@ -218,14 +218,17 @@ export function wholeSectionDrill(settings) {
   return !(Number(settings.measuresPerCard) >= 1)
 }
 
-export function measureCardDeck(staff, settings) {
+// opts.capped false is the engine card (st/score_render), drawn by an engine
+// that lays out as many measures as it is given, so a whole section is one
+// card however long it is
+export function measureCardDeck(staff, settings, {capped=true}={}) {
   let piece = sheetMusicPiece(settings)
   if (!piece) {
     return null
   }
 
   let wholeSection = wholeSectionDrill(settings)
-  if (wholeSection && currentDrillMode(SCORE_DRILL_STORAGE_KEY) != "wait") {
+  if (wholeSection && (!capped || currentDrillMode(SCORE_DRILL_STORAGE_KEY) != "wait")) {
     return null
   }
 
@@ -698,8 +701,10 @@ const ALL_GENERATORS = [
       return metadata && !Array.isArray(metadata.measureKeySignatures) ?
         "Re-import to follow the score key" : null
     },
-    create: function(staff, keySignature, settings) {
-      let deck = measureCardDeck(staff, settings)
+    // opts.engineCards: the page draws each card with an engraving engine,
+    // so a card isn't capped to what the plate fits (see measureCardDeck)
+    create: function(staff, keySignature, settings, opts={}) {
+      let deck = measureCardDeck(staff, settings, {capped: !opts.engineCards})
       if (deck) {
         let recordNotes = settings.startMeasure != settings.endMeasure
         return new MeasureCardGenerator(deck, {recordNotes})

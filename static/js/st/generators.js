@@ -811,7 +811,8 @@ export class SheetMusicGenerator {
       return []
     }
 
-    let column = this.columns[this.position % this.columns.length]
+    let idx = this.position % this.columns.length
+    let column = this.columns[idx]
     this.position += 1
 
     let copy = [...column]
@@ -819,6 +820,10 @@ export class SheetMusicGenerator {
       if (column[key] != null) {
         copy[key] = column[key]
       }
+    }
+    // which of the card's columns it is (see cardColumn)
+    if (this.card) {
+      copy.cardIndex = idx
     }
     return copy
   }

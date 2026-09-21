@@ -14,6 +14,11 @@ export interface CardOptions {
   hand: Hand
   // the plate width in CSS pixels, eg. 644 or 926
   width: number
+  // the start of each of the score's measures by position, in quarter notes,
+  // eg. the song model's metadata.measureStarts: the notes' onsets are then
+  // counted on the same clock as the columns the trainer detects (see
+  // ./card_join). Left out, measures start where the first part ends them
+  measureStarts?: number[] | null
 }
 
 export interface CardNote {

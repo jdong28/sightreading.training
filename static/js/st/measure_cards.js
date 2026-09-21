@@ -94,7 +94,8 @@ export const COLUMN_DRAW_KEYS = ["staves", "clefs", "beat", "beats", "notation",
  * A copy of the card's column for the staff. On a numbered card, the first
  * column of each measure carries its bar number as `measure`, where the staff
  * draws a bar line. Everything the staff draws the column with is kept (see
- * COLUMN_DRAW_KEYS)
+ * COLUMN_DRAW_KEYS), and `cardIndex` is idx, which of the card's columns it
+ * is, so the page can mark it on a card an engine drew (st/score_render)
  * @param {MeasureCard} card
  * @param {number} idx
  * @returns {string[]}
@@ -114,6 +115,7 @@ export function cardColumn(card, idx) {
     column.measure = card.measures[measureIdx]
   }
 
+  column.cardIndex = idx
   return column
 }
 

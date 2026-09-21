@@ -168,6 +168,13 @@
     background: transparent;
 }
 
+.plate_note {
+    margin: 10px 0 0;
+    font-style: italic;
+    font-size: 13px;
+    color: var(--salon-ink-muted);
+}
+
 .transport {
     display: flex;
     align-items: center;

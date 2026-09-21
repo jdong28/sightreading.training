@@ -105,8 +105,10 @@ export function measurePositions(doc: XMLDocument, from: number, to: number): [n
 
 // Tags every note with an id and reads each pitched note's onset, in quarter
 // notes from the start of the score, walking the <backup>s and <forward>s of
-// each part's measures
-export function tagNotes(doc: XMLDocument): {notes: Map<string, SourceNote>, measureStarts: number[]} {
+// each part's measures. Measures start where the first part's content ends
+// them, unless starts gives each measure's start by position, eg. the song
+// model's (st/musicxml), whose clock then times every part's notes
+export function tagNotes(doc: XMLDocument, starts?: number[] | null): {notes: Map<string, SourceNote>, measureStarts: number[]} {
   const table = new Map<string, SourceNote>()
   const measureStarts: number[] = []
   let count = 0
@@ -115,7 +117,10 @@ export function tagNotes(doc: XMLDocument): {notes: Map<string, SourceNote>, mea
     let divisions = 1
     let measureStart = 0
 
-    for (const measure of directChildren(part, "measure")) {
+    directChildren(part, "measure").forEach((measure, measureIdx) => {
+      if (starts && starts[measureIdx] != null) {
+        measureStart = starts[measureIdx]
+      }
       if (partIdx == 0) { measureStarts.push(measureStart) }
       let position = 0
       let measureLength = 0
@@ -168,7 +173,7 @@ export function tagNotes(doc: XMLDocument): {notes: Map<string, SourceNote>, mea
       }
 
       measureStart += measureLength / divisions
-    }
+    })
   })
 
   return {notes: table, measureStarts}
@@ -286,8 +291,8 @@ export function keepStaff(doc: XMLDocument, keep: number) {
   }
 }
 
-export function prepareCard(musicXML: string, {fromMeasure, toMeasure, hand}: {
-  fromMeasure: number, toMeasure: number, hand: Hand
+export function prepareCard(musicXML: string, {fromMeasure, toMeasure, hand, measureStarts}: {
+  fromMeasure: number, toMeasure: number, hand: Hand, measureStarts?: number[] | null
 }): PreparedCard {
   const doc = parseMusicXML(musicXML)
   const positions = measurePositions(doc, Math.min(fromMeasure, toMeasure), Math.max(fromMeasure, toMeasure))
@@ -295,7 +300,7 @@ export function prepareCard(musicXML: string, {fromMeasure, toMeasure, hand}: {
     throw new Error(`The score has no measures ${fromMeasure}–${toMeasure}`)
   }
 
-  const {notes, measureStarts} = tagNotes(doc)
+  const tagged = tagNotes(doc, measureStarts)
   const keep = handStaff(hand)
   if (keep != null) {
     keepStaff(doc, keep)
@@ -305,8 +310,8 @@ export function prepareCard(musicXML: string, {fromMeasure, toMeasure, hand}: {
     xml: new XMLSerializer().serializeToString(doc),
     firstIndex: positions[0],
     lastIndex: positions[1],
-    notes,
-    measureStarts,
+    notes: tagged.notes,
+    measureStarts: tagged.measureStarts,
   }
 }
 
