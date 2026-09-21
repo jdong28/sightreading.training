@@ -52,7 +52,7 @@ The **Position Generator** is designed to have you utilize all of your fingers w
 
 The **[Sheet music](/sheet-music)** page turns a section of a piece into flash cards for repeated sight reading and memorization. Its **Programme** drawer holds only what applies to a real score: the piece, its section, the hand, the cards and the tempo. The score supplies its own staves, clefs and key, so there is no clef, exercise or key setting there.
 
-Use **Import MusicXML** to load an uncompressed MusicXML file (`.musicxml` or `.xml`). Imported pieces are kept in your browser as a deck, so next time you pick the piece from the list instead of importing it again; **Remove** deletes the picked piece from the deck. For a piece, choose:
+Use **Import MusicXML** to load a MusicXML file (`.musicxml` or `.xml`, or a compressed `.mxl`). Imported pieces are kept in your browser as a deck, so next time you pick the piece from the list instead of importing it again; **Remove** deletes the picked piece from the deck. For a piece, choose:
 
 *   **Start measure** and **end measure** — The section to drill, using the bar numbers printed on the score (a pickup measure is 0)
 *   **Hand** — Both hands, the right hand (treble staff) or the left hand (bass staff)
