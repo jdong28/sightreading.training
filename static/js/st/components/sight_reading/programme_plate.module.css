@@ -1,0 +1,88 @@
+.plate.plate {
+    margin-bottom: 18px;
+    padding: 20px 28px 18px;
+
+    @media (max-width: 600px) {
+        padding: 18px 16px 14px;
+    }
+}
+
+.figures {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px 20px;
+    margin: 0;
+
+    @media (max-width: 600px) {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+.figure {
+    min-width: 0;
+}
+
+.figure dt {
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--salon-ink-muted);
+}
+
+.figure dd {
+    margin: 4px 0 0;
+    font-family: var(--font-display);
+    font-size: 22px;
+    color: var(--salon-ink);
+}
+
+.detail {
+    font-family: inherit;
+    font-size: 12.5px;
+    font-style: italic;
+    color: var(--salon-ink-muted);
+}
+
+.learned {
+    margin-top: 16px;
+}
+
+.track {
+    height: 3px;
+    background: var(--salon-track);
+}
+
+.fill {
+    height: 100%;
+    background: var(--salon-gilt);
+}
+
+.learned_label {
+    margin-top: 6px;
+    font-size: 12px;
+    color: var(--salon-ink-muted);
+}
+
+.row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 12px;
+    margin-top: 14px;
+    font-size: 12.5px;
+    color: var(--salon-ink-soft);
+}
+
+.pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+/* pill overrides double their class to win over the pill variants of
+   st/components/salon.module.css */
+.small_pill.small_pill {
+    padding: 5px 12px;
+    font-size: 12px;
+}

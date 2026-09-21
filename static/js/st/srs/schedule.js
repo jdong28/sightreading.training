@@ -284,6 +284,26 @@ export function applyGrade(item, grade, now, settings=DEFAULT_SCHEDULER_SETTINGS
 }
 
 /**
+ * An attempt as LocalStore#recordAttempt stores it: the item scheduled by
+ * the review's grade (applyGrade) when it is a graded attempt at a
+ * schedulable item, and the review with the recall predicted before it (r).
+ * @param {{item: ItemRecord, review: ReviewRecord}} attempt
+ * @param {SchedulerSettings} [settings]
+ * @returns {{item: ItemRecord, review: ReviewRecord}}
+ */
+export function scheduledAttempt({item, review}, settings=DEFAULT_SCHEDULER_SETTINGS) {
+  if (!item || !review || review.kind != "attempt" || !schedulable(item)) {
+    return {item, review}
+  }
+
+  let r = predictedRecall(item, review.at, settings)
+  return {
+    item: applyGrade(item, review.grade, review.at, settings),
+    review: r == null ? review : {...review, r},
+  }
+}
+
+/**
  * The recall of the item the memory model predicts at a time.
  * @param {ItemRecord} item
  * @param {number} now

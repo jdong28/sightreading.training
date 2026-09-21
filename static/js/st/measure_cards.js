@@ -430,7 +430,7 @@ export class MeasureCardGenerator {
 
   // Writes the pass to the store once the hit for its last column has been
   // counted, which happens in the same task: its attempts when it is graded,
-  // else its practice
+  // else its practice. Returns what the pass is written by (see passAttempts)
   finishPass(pass) {
     // a pass played partly in the other mode isn't graded in either
     if (this.drill().mode != pass.drill.mode) {
@@ -442,9 +442,10 @@ export class MeasureCardGenerator {
     let at = Math.max(pass.lastAt ?? this.now(), (this.writtenAt ?? -Infinity) + 1)
     this.writtenAt = at
 
+    let written = {pieceId: this.deck.pieceId, hand: this.deck.hand, at}
     let finished = Promise.resolve().then(() => {
       let store = this.deck.getStore()
-      let opts = {pieceId: this.deck.pieceId, hand: this.deck.hand, sessionId: this.sessionId, at}
+      let opts = {...written, sessionId: this.sessionId}
       let attempts = passAttempts(pass, opts)
 
       if (attempts.length) {
@@ -457,5 +458,6 @@ export class MeasureCardGenerator {
     }).catch(err => console.warn("Couldn't save the attempt", err))
 
     this.finishing = Promise.all([this.finishing, finished])
+    return written
   }
 }

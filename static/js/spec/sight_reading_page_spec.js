@@ -13,7 +13,10 @@ import drawerStyles from "st/components/sight_reading/programme_drawer.module.cs
 import {setAppStore} from "st/storage"
 import {importMusicXMLPiece, addPiece} from "st/sheet_music_deck"
 import {parseMusicXML} from "st/musicxml"
-import {GENERATORS, SHEET_MUSIC_STORAGE_KEY, BOTH_HANDS, RIGHT_HAND, WHOLE_SECTION} from "st/data"
+import {
+  GENERATORS, SHEET_MUSIC_STORAGE_KEY, BOTH_HANDS, RIGHT_HAND, WHOLE_SECTION, FREE_PRACTICE
+} from "st/data"
+import {PlanGenerator} from "st/plan_cards"
 import {AGAIN, GOOD, EASY} from "st/srs/grade"
 import {RANDOM_ORDER, MeasureCardGenerator} from "st/measure_cards"
 import {DRILL_STORAGE_KEY, SCORE_DRILL_STORAGE_KEY} from "st/generators"
@@ -1078,6 +1081,123 @@ describe("sight reading page", function() {
       let written = await reviews()
       expect(written.map(r => [r.mode, r.speed, r.grade, r.hesitations])).toEqual(
         Array(3).fill(["scroll", page.state.scrollSpeed, GOOD, 0]))
+    })
+  })
+
+  describe("today's programme", function() {
+    let piece
+
+    let renderProgramme = async ({study=true, settings={}}={}) => {
+      piece = (await importMusicXMLPiece("salon_octet.musicxml", octetXML, store)).piece
+      if (study) {
+        await store.putStudy({pieceId: piece.id, status: "learning", startedAt: Date.now()})
+      }
+      window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+        piece: piece.id, startMeasure: 3, endMeasure: 4, hand: BOTH_HANDS, measuresPerCard: "2", ...settings,
+      }))
+      return renderScorePage()
+    }
+
+    let playHead = () => play(page.state.notes.currentColumn())
+    let finished = async () => {
+      await page.state.notes.generator.finishing
+      await page.state.notes.generator.studying
+      flushSync(() => page.forceUpdate())
+    }
+    let plate = el => [...el.querySelectorAll("span")].find(span =>
+      span.children.length == 0 && span.textContent == "Tonight's programme")
+    let caption = el => el.querySelector("[data-caption]")
+
+    it("is the default for a piece in study, prefaced by tonight's programme at rest", async function() {
+      let el = await renderProgramme()
+
+      expect(page.state.notes.generator instanceof PlanGenerator).toBe(true)
+      expect(el.querySelector("h1").textContent).toContain("today's programme, both hands")
+      expect(plate(el)).toBeDefined()
+      expect(el.textContent).toContain("New bars on offer8")
+      expect(el.textContent).toContain("0 of 8 bars learned")
+      expect(plateStatus(el)).toEqual("At rest")
+
+      // the session length is a soft target the plate sets
+      click(buttonNamed(el, "10 min"))
+      await waitFor(() => store.practiceSettings().sessionMinutes == 10, "the target to be saved")
+
+      click(buttonNamed(el, "Begin"))
+      expect(plate(el)).toBeUndefined()
+      expect(plateStatus(el)).toEqual("New · bar 1")
+      expect(el.textContent).toContain("measures 1–2")
+    })
+
+    it("names each card and says when its measure comes back", async function() {
+      let el = await renderProgramme()
+      click(buttonNamed(el, "Begin"))
+      expect(caption(el)).toBe(null)
+
+      // a clean first sight of measures 1 and 2
+      playHead()
+      playHead()
+      await finished()
+
+      let anchor = store.item(`${piece.id}:both:1-1`)
+      expect(anchor.state).not.toEqual("tracked")
+      expect(caption(el).textContent).toMatch(/^(again in a moment|returns (tomorrow|in \d+ days))$/)
+      expect(plateStatus(el)).toEqual("New · bar 3")
+
+      // measure 3 slips: it comes straight back
+      play([WRONG_NOTE])
+      playHead()
+      playHead()
+      await finished()
+
+      expect(caption(el).textContent).toEqual("again in a moment")
+      expect(plateStatus(el)).toEqual("Once more · bar 3")
+      expect(el.textContent).toContain("measures 3–4")
+    })
+
+    it("suggests the piece in study most overdue", async function() {
+      let other = (await importMusicXMLPiece("minuet.musicxml", minuetXML, store)).piece
+      await store.putStudy({pieceId: other.id, status: "maintaining", startedAt: 0})
+      let past = Date.now() - 3 * 24 * 3600 * 1000
+      await store.recordAttempt({
+        item: {
+          id: `${other.id}:both:1-1`, pieceId: other.id, hand: "both", startMeasure: 1, endMeasure: 1,
+          level: "bar", state: "review", step: 0, due: past, last: past - 86400000, s: 1, d: 5,
+          reps: 2, lapses: 0, streak: 2, lastGrade: GOOD, hits: 2, misses: 0, attempts: 2,
+          lastPracticed: past - 86400000, recent: [], algo: 1, createdAt: 0,
+        },
+        review: {
+          itemId: `${other.id}:both:1-1`, pieceId: other.id, at: past - 86400000, kind: "legacy",
+          hits: 2, misses: 0, attempts: 2,
+        },
+      })
+
+      let el = await renderProgramme()
+      expect(el.textContent).toContain("Salon Minuet has the most bars due.")
+      click(buttonNamed(el, "Practise it instead"))
+      flushSync(() => {})
+
+      expect(page.currentPieceSection().pieceId).toEqual(other.id)
+      expect(page.state.notes.generator instanceof PlanGenerator).toBe(true)
+      expect(el.textContent).not.toContain("has the most bars due")
+    })
+
+    it("leaves free practice as it was", async function() {
+      let el = await renderProgramme({study: false})
+
+      expect(page.state.notes.generator instanceof PlanGenerator).toBe(false)
+      expect(plate(el)).toBeUndefined()
+      expect(el.querySelector("h1").textContent).toContain("measures 3–4, both hands")
+      click(buttonNamed(el, "Begin"))
+      expect(plateStatus(el)).toMatch(/^Next · /)
+
+      // in study, free practice is picked in the drawer
+      await store.putStudy({pieceId: piece.id, status: "learning", startedAt: Date.now()})
+      flushSync(() => page.setGenerator(page.state.currentGenerator, {
+        ...page.state.currentGeneratorSettings, practice: FREE_PRACTICE,
+      }))
+      flushSync(() => {})
+      expect(page.state.notes.generator instanceof PlanGenerator).toBe(false)
+      expect(page.state.notes.generator.currentCard().measures).toEqual([3, 4])
     })
   })
 

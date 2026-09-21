@@ -26,7 +26,7 @@ import {
   legacyReview, itemWithPractice, itemForPiece, reviewForPiece, sectionStatsOf
 } from "st/srs/records"
 import {
-  applyGrade, predictedRecall, replay, schedulable, scheduled,
+  scheduledAttempt, replay, schedulable, scheduled,
   validSchedulerSettings, validPracticeSettings,
   SCHEDULER_SETTINGS_KEY, PRACTICE_SETTINGS_KEY,
   DEFAULT_SCHEDULER_SETTINGS, DEFAULT_PRACTICE_SETTINGS
@@ -789,6 +789,11 @@ export class LocalStore {
     return this.cache.studies.find(study => study.pieceId == pieceId) || null
   }
 
+  /** @returns {StudyRecord[]} every piece the player has begun */
+  studies() {
+    return this.cache.studies
+  }
+
   /**
    * The reviews of a piece or of a session, read from the database (they are
    * never cached), oldest first.
@@ -816,6 +821,23 @@ export class LocalStore {
   /** @returns {PracticeSettings} */
   practiceSettings() {
     return this.cache.settings.practice
+  }
+
+  /**
+   * Replaces the practice settings.
+   * @param {PracticeSettings} practice
+   * @returns {Promise<PracticeSettings>}
+   */
+  putPracticeSettings(practice) {
+    return this.mutate(async () => {
+      if (!validPracticeSettings(practice)) {
+        throw new Error("Not valid practice settings")
+      }
+
+      await this.backend.write([{store: "meta", put: practice}])
+      this.cache = {...this.cache, settings: {...this.cache.settings, practice}}
+      return practice
+    })
   }
 
   /**
@@ -957,17 +979,9 @@ export class LocalStore {
    */
   recordAttempt(attempt) {
     return this.mutate(async () => {
-      let {item, review, related=[], session} =
+      let {related=[], session, ...built} =
         typeof attempt == "function" ? attempt(this) : attempt
-
-      if (item && review && review.kind == "attempt" && schedulable(item)) {
-        let settings = this.schedulerSettings()
-        let r = predictedRecall(item, review.at, settings)
-        item = applyGrade(item, review.grade, review.at, settings)
-        if (r != null) {
-          review = {...review, r}
-        }
-      }
+      let {item, review} = scheduledAttempt(built, this.schedulerSettings())
 
       let items = [item, ...related]
       if (!items.every(validItem) || new Set(items.map(i => i.id)).size != items.length) {
