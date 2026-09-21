@@ -148,8 +148,6 @@ export const EXERCISES_PROGRAMME = {
   // place of the exercise's name and key.
   // staffFor(settings), the staff the generator's settings (defaults filled
   // in) are drawn on, which then follows them in place of a clef setting.
-  // renderStaff(props), called on the page like a staff's render (see STAVES),
-  // drawing the notes and card the page hands it in place of the staff's own
 }
 
 export default class SightReadingPage extends React.Component {
@@ -1162,6 +1160,14 @@ export default class SightReadingPage extends React.Component {
     }
 
     if (this.programme.idleTitle) {
+      let settings = this.currentSettings()
+      if (settings.song?.trim()) {
+        return {
+          title: "Pasted song notation",
+          italic: measuresLabel(settings.startMeasure, settings.endMeasure),
+        }
+      }
+
       return this.programme.idleTitle
     }
 
@@ -1241,8 +1247,7 @@ export default class SightReadingPage extends React.Component {
           />
       } else {
         let {scale, noteWidth, unitColumns} = this.staffLayout()
-        let render = this.programme.renderStaff || this.state.currentStaff.render
-        staff = render.call(this, {
+        staff = this.state.currentStaff.render.call(this, {
           heldNotes: this.state.heldNotes,
           notes: this.state.notes,
           keySignature: this.state.keySignature,

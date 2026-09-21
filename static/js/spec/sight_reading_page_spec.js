@@ -290,6 +290,22 @@ describe("sight reading page", function() {
     }
   })
 
+  it("titles the score page by what it drills", function() {
+    window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({piece: "", song: ""}))
+    let el = renderScorePage()
+    expect(el.textContent).toContain("pick a piece in the programme")
+    flushSync(() => root.unmount())
+    container.remove()
+
+    window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+      piece: "", song: "c4 d4 e4", startMeasure: 1, endMeasure: 2,
+    }))
+    el = renderScorePage()
+    expect(el.textContent).toContain("Pasted song notation")
+    expect(el.textContent).toContain("measures 1–2")
+    expect(el.textContent).not.toContain("pick a piece in the programme")
+  })
+
   it("slides a card by the room the staff draws its columns in", async function() {
     let {piece} = await importMusicXMLPiece("lead_rest.musicxml", leadRestXML, store)
 

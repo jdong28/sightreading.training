@@ -13,7 +13,7 @@ import {markOnboarded} from "st/onboarding"
 import {
   generatorDefaultSettings, storeCurrentDrill, storeGeneratorSettings,
   currentStaffFor, currentGeneratorFor, currentKeySignature, currentDrillMode,
-  currentScrollSpeed, allKeySignatures, scoreKeySignature, DRILL_MODES, SCROLL_SPEED_RANGE,
+  currentScrollSpeed, allKeySignatures, DRILL_MODES, SCROLL_SPEED_RANGE,
 } from "st/generators"
 import {GeneratorSettings} from "st/components/sight_reading/settings_panel"
 import {Plate, Pill, PullQuote, SectionLabel, TitleBlock, DoubleRule} from "st/components/salon"
@@ -129,7 +129,7 @@ export default function SetupPage({staves=STAVES, generators=GENERATORS}) {
   let [generator, setGenerator] = React.useState(() => currentGeneratorFor(generators, staff.mode))
   // only generators with a storageKey carry their settings to the trainer
   let [settings, setSettings] = React.useState({})
-  let [storedKey, setKey] = React.useState(() => currentKeySignature())
+  let [key, setKey] = React.useState(() => currentKeySignature())
   let [mode, setMode] = React.useState(() => currentDrillMode())
   let [speed, setSpeed] = React.useState(() => currentScrollSpeed())
 
@@ -138,9 +138,6 @@ export default function SetupPage({staves=STAVES, generators=GENERATORS}) {
   }, [])
 
   let fullSettings = {...generatorDefaultSettings(generator, staff), ...settings}
-  // an imported piece is drawn in the score's key, which the pills can't change
-  let scoreKey = scoreKeySignature(generator, staff, fullSettings)
-  let key = scoreKey || storedKey
 
   let chooseStaff = newStaff => {
     if (newStaff == staff) { return }
@@ -180,7 +177,7 @@ export default function SetupPage({staves=STAVES, generators=GENERATORS}) {
     storeCurrentDrill({
       staff: staff.name,
       generator: generator.name,
-      key: storedKey.name(),
+      key: key.name(),
       mode,
       speed,
     })
@@ -223,11 +220,9 @@ export default function SetupPage({staves=STAVES, generators=GENERATORS}) {
                 className={styles.key_pill}
                 selected={k.name() == key.name()}
                 aria-label={k.isChromatic() ? "Chromatic" : `${keyGlyph(k)} major`}
-                disabled={!!scoreKey}
                 onClick={() => chooseKey(k)}>{keyGlyph(k)}</Pill>
             )}
           </div>
-          {scoreKey ? <div className={styles.key_note}>Set by the score</div> : null}
         </div>
 
         <div className={styles.choice_group}>
