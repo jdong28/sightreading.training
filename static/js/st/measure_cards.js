@@ -1,6 +1,6 @@
 // Measure flashcards for the sheet music generator: the measures of a piece
-// section (the pool, the score's own bar numbers) are grouped into cards of a
-// few measures each, and the staff shows one card at a time, in order or
+// section (the pool, the score's own bar numbers) are grouped into cards of
+// any number of measures, and the staff shows one card at a time, in order or
 // picked at random weighted toward the measures played worst.
 //
 // While a card is played the hits, misses and time on each of its measures
