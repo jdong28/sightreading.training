@@ -382,6 +382,24 @@ export default class SightReadingPage extends React.Component {
       source && source.status == "ready" && this.currentPieceSection())
   }
 
+  // Why the drill's cards are drawn by the app's staff, which caps how many
+  // measures each has to what it fits on the plate (MAX_MEASURES_PER_CARD),
+  // or null when the programme's engine draws them, uncapped. A piece whose
+  // source is still being read counts as the engine's
+  cardCap() {
+    if (!this.programme.engine) { return "" }
+    if (this.state.mode != "wait") { return "in scroll mode" }
+
+    switch (this.state.engineSource?.status) {
+      case "missing":
+        return "until the piece is re-imported with its score"
+      case "failed":
+        return "while the score can't be drawn"
+      default:
+        return null
+    }
+  }
+
   // whether the plate waits before it knows which staff draws the card: on
   // the piece's source, or on the plate's width for the engine
   engineCardPending() {
@@ -1305,6 +1323,7 @@ export default class SightReadingPage extends React.Component {
         setStaff={this._setStaff ||= this.setStaff.bind(this)}
 
         mode={this.state.mode}
+        cardCap={this.cardCap()}
         setMode={this._setMode ||= this.setMode.bind(this)}
         scrollSpeed={this.state.scrollSpeed}
         setScrollSpeed={this._setScrollSpeed ||= scrollSpeed => {

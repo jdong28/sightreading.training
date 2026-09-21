@@ -197,6 +197,17 @@ export function fixGeneratorSettings(generator, settings) {
           }
           break
         }
+        case "measure": {
+          // a preset (eg. the whole section) or a whole number, which an
+          // older card size pill stored as text; the generator clamps it to
+          // its piece (fixSettings below, and where it is used)
+          let preset = (input.presets || []).some(p => p.name == currentValue)
+          if (!preset) {
+            currentValue = Number.isFinite(+currentValue) && currentValue !== "" ?
+              Math.max(0, Math.floor(+currentValue)) : null
+          }
+          break
+        }
         case "bool": {
           if (typeof currentValue != "boolean") {
             currentValue = null
@@ -219,6 +230,11 @@ export function fixGeneratorSettings(generator, settings) {
 
       out[input.name] = currentValue
     }
+  }
+
+  // settings that depend on each other, eg. a section clamped to its piece
+  if (generator.fixSettings) {
+    Object.assign(out, generator.fixSettings(out))
   }
 
   return out

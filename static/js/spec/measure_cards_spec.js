@@ -5,9 +5,11 @@ import {
   MeasureCardDeck, MeasureCardGenerator, IN_ORDER, RANDOM_ORDER, MAX_MEASURES_PER_CARD
 } from "st/measure_cards"
 
-import {SheetMusicGenerator, generatorDefaultSettings} from "st/generators"
+import {SheetMusicGenerator, generatorDefaultSettings, fixGeneratorSettings} from "st/generators"
 import {
-  SHEET_MUSIC_GENERATOR, sheetMusicSection, BOTH_HANDS, WHOLE_SECTION, SHEET_MUSIC_STORAGE_KEY
+  SHEET_MUSIC_GENERATOR, sheetMusicSection, BOTH_HANDS, WHOLE_SECTION, SHEET_MUSIC_STORAGE_KEY,
+  sheetMusicMeasureBounds, sheetMusicSectionRange, sheetMusicSectionUpdate, sheetMusicSectionLength,
+  measuresPerCardLimit
 } from "st/data"
 import {importMusicXMLPiece} from "st/sheet_music_deck"
 import {setAppStore} from "st/storage"
@@ -89,6 +91,19 @@ describe("measure cards", function() {
       // a requested size above the cap is capped the same way
       expect(measureCards(measures, MAX_MEASURES_PER_CARD + 4).map(c => c.measures))
         .toEqual([[0, 1, 2], [3, 4, 5], [6]])
+    })
+
+    it("takes any card size for an engine's cards", function() {
+      let measures = Array.from({length: 7}, (_, idx) => ({number: idx, columns: [["C4"]]}))
+      expect(measureCards(measures, 5, {capped: false}).map(c => c.measures)).toEqual([
+        [0, 1, 2, 3, 4], [5, 6],
+      ])
+      expect(measureCards(measures, 50, {capped: false}).map(c => c.measures)).toEqual([
+        [0, 1, 2, 3, 4, 5, 6],
+      ])
+      expect(measureCards(measures, 5, {capped: false}).map(c => c.numbered)).toEqual([true, true])
+      // the app's staff still stops at the cap
+      expect(measureCards(measures, 5).map(c => c.measures)).toEqual([[0, 1, 2], [3, 4, 5], [6]])
     })
 
     it("leaves a pool of one measure unnumbered, whatever the card size", function() {
@@ -449,8 +464,7 @@ describe("measure cards", function() {
       expect(input("order").visible(settingsFor({measuresPerCard: WHOLE_SECTION}))).toBe(false)
       expect(input("order").values.map(v => v.name)).toEqual([IN_ORDER, RANDOM_ORDER])
       expect(input("measuresPerCard").default).toEqual(WHOLE_SECTION)
-      expect(input("measuresPerCard").values.map(v => v.name))
-        .toEqual([WHOLE_SECTION, ...Array.from({length: MAX_MEASURES_PER_CARD}, (_, idx) => `${idx + 1}`)])
+      expect(input("measuresPerCard").presets.map(v => v.name)).toEqual([WHOLE_SECTION])
     })
 
     it("walks a saved drill without a card size through the section in capped cards", async function() {
@@ -609,6 +623,152 @@ describe("measure cards", function() {
       for (let i = 0; i < 12; i++) {
         expect(notesOf([generator.nextNote()])).toEqual([plain.nextNote()])
       }
+    })
+
+    describe("picking the section and card size", function() {
+      // a piece of 16 bars, 1 to 16, a two note column a bar
+      let sixteenBars
+      beforeEach(async function() {
+        let bars = Array.from({length: 16}, (_, idx) => `
+          <measure number="${idx + 1}">
+            ${idx == 0 ? `<attributes>
+              <divisions>1</divisions>
+              <time><beats>1</beats><beat-type>4</beat-type></time>
+              <clef><sign>G</sign><line>2</line></clef>
+            </attributes>` : ""}
+            ${noteXML("CDEFGAB"[idx % 7], 5, 1, 1)}
+          </measure>`).join("")
+
+        sixteenBars = (await importMusicXMLPiece("sixteen.musicxml", `<?xml version="1.0" encoding="UTF-8"?>
+          <score-partwise version="4.0">
+            <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+            <part id="P1">${bars}</part>
+          </score-partwise>`, store)).piece
+      })
+
+      let longSettings = extra => settingsFor({
+        piece: sixteenBars.id, startMeasure: 1, endMeasure: 16, ...extra,
+      })
+
+      it("picks measures from the piece's own range, a pickup included", function() {
+        expect(sheetMusicMeasureBounds(settingsFor())).toEqual([0, 2])
+        expect(sheetMusicMeasureBounds(longSettings())).toEqual([1, 16])
+        expect(sheetMusicMeasureBounds(settingsFor({piece: "", song: "c4 d4 e4 f4 g4"}))).toEqual([1, 2])
+        expect(sheetMusicMeasureBounds(settingsFor({piece: "", song: ""}))).toBe(null)
+
+        let bounds = settings => input("startMeasure").bounds(settings)
+        expect(bounds(longSettings())).toEqual({min: 1, max: 16, caption: "of 16"})
+        expect(bounds(settingsFor())).toEqual({min: 0, max: 2, caption: "of 2"})
+      })
+
+      it("clamps a section to the piece, start never after end", function() {
+        let range = extra => sheetMusicSectionRange(longSettings(extra))
+        expect(range({startMeasure: 4, endMeasure: 40})).toEqual({startMeasure: 4, endMeasure: 16})
+        expect(range({startMeasure: 30, endMeasure: 40})).toEqual({startMeasure: 16, endMeasure: 16})
+        expect(range({startMeasure: -3, endMeasure: 2})).toEqual({startMeasure: 1, endMeasure: 2})
+        expect(range({startMeasure: 9, endMeasure: 5})).toEqual({startMeasure: 9, endMeasure: 9})
+
+        expect(input("startMeasure").value(longSettings({startMeasure: 30, endMeasure: 40}))).toEqual(16)
+        expect(input("endMeasure").value(longSettings({endMeasure: 40}))).toEqual(16)
+      })
+
+      it("drags the other end of the section along rather than refusing a pick", function() {
+        let update = (extra, name, value) => sheetMusicSectionUpdate(longSettings(extra), name, value)
+
+        // within the section, only the picked end moves
+        expect(update({startMeasure: 2, endMeasure: 8}, "startMeasure", 5))
+          .toEqual({startMeasure: 5, endMeasure: 8})
+        expect(update({startMeasure: 2, endMeasure: 8}, "endMeasure", 12))
+          .toEqual({startMeasure: 2, endMeasure: 12})
+
+        // past the other end, it comes along
+        expect(update({startMeasure: 2, endMeasure: 8}, "startMeasure", 11))
+          .toEqual({startMeasure: 11, endMeasure: 11})
+        expect(update({startMeasure: 6, endMeasure: 8}, "endMeasure", 3))
+          .toEqual({startMeasure: 3, endMeasure: 3})
+
+        // and a pick past the piece is clamped to it
+        expect(update({startMeasure: 2, endMeasure: 8}, "endMeasure", 99))
+          .toEqual({startMeasure: 2, endMeasure: 16})
+        expect(update({startMeasure: 2, endMeasure: 8}, "startMeasure", 99))
+          .toEqual({startMeasure: 16, endMeasure: 16})
+
+        // the inputs pick through it
+        expect(input("startMeasure").update(longSettings({startMeasure: 2, endMeasure: 8}), 11))
+          .toEqual({startMeasure: 11, endMeasure: 11})
+        expect(input("endMeasure").update(longSettings({startMeasure: 6, endMeasure: 8}), 3))
+          .toEqual({startMeasure: 3, endMeasure: 3})
+      })
+
+      it("caps the card size on the app's staff and lets an engine's cards take the whole section", function() {
+        let settings = longSettings({startMeasure: 3, endMeasure: 12})
+        expect(sheetMusicSectionLength(settings)).toEqual(10)
+        expect(measuresPerCardLimit(settings)).toEqual({max: MAX_MEASURES_PER_CARD, capped: true})
+        expect(measuresPerCardLimit(settings, {capped: false})).toEqual({max: 10, capped: false})
+        // a section the cap fits isn't held by it
+        expect(measuresPerCardLimit(longSettings({startMeasure: 3, endMeasure: 4})))
+          .toEqual({max: 2, capped: false})
+
+        let perCard = input("measuresPerCard")
+        let scroll = {cardCap: "in scroll mode", mode: "scroll"}
+        let engine = {cardCap: null, mode: "wait"}
+
+        expect(perCard.bounds(settings, engine)).toEqual({min: 1, max: 10, caption: "of 10"})
+        expect(perCard.hint(settings, engine)).not.toContain("Cards stop")
+
+        expect(perCard.bounds(settings, scroll)).toEqual({min: 1, max: MAX_MEASURES_PER_CARD, caption: `max ${MAX_MEASURES_PER_CARD}`})
+        expect(perCard.hint(settings, scroll))
+          .toContain(`Cards stop at ${MAX_MEASURES_PER_CARD} measures in scroll mode`)
+        // the app's staff whatever the reason when the page doesn't say
+        expect(perCard.bounds(settings).max).toEqual(MAX_MEASURES_PER_CARD)
+        expect(perCard.bounds(settings, {}).max).toEqual(MAX_MEASURES_PER_CARD)
+
+        expect(perCard.value({...settings, measuresPerCard: WHOLE_SECTION})).toBe(null)
+        expect(perCard.value({...settings, measuresPerCard: "2"})).toEqual(2)
+        expect(perCard.value({...settings, measuresPerCard: 7})).toEqual(7)
+      })
+
+      it("draws cards of any size on an engine's path and capped ones on the app's staff", function() {
+        let settings = longSettings({measuresPerCard: 5})
+
+        generator = sheetMusic.create(grand, null, settings, {engineCards: true})
+        expect(generator.cards.map(card => [card.startMeasure, card.endMeasure]))
+          .toEqual([[1, 5], [6, 10], [11, 15], [16, 16]])
+
+        generator = sheetMusic.create(grand, null, settings)
+        expect(generator.cards.every(card => card.measures.length <= MAX_MEASURES_PER_CARD)).toBe(true)
+        expect(generator.cards[0].measures).toEqual([1, 2, 3])
+
+        // a size past the section is the section on one card
+        generator = sheetMusic.create(grand, null, longSettings({measuresPerCard: 40}), {engineCards: true})
+        expect(generator.cards.map(card => card.measures.length)).toEqual([16])
+      })
+
+      it("loads stored settings from before the pickers, clamped to the piece", function() {
+        let fixed = fixGeneratorSettings(sheetMusic, {
+          piece: sixteenBars.id, song: "", startMeasure: 30, endMeasure: 40,
+          hand: BOTH_HANDS, measuresPerCard: "3", order: IN_ORDER,
+        })
+        expect(fixed.startMeasure).toEqual(16)
+        expect(fixed.endMeasure).toEqual(16)
+        expect(fixed.measuresPerCard).toEqual(3)
+
+        // a card size larger than a shorter piece's section still drills it
+        fixed = fixGeneratorSettings(sheetMusic, {
+          piece: piece.id, song: "", startMeasure: 0, endMeasure: 9,
+          hand: BOTH_HANDS, measuresPerCard: 12,
+        })
+        expect([fixed.startMeasure, fixed.endMeasure, fixed.measuresPerCard]).toEqual([0, 2, 12])
+        generator = sheetMusic.create(grand, null, settingsFor(fixed), {engineCards: true})
+        expect(generator.currentCard().measures).toEqual([0, 1, 2])
+        generator = sheetMusic.create(grand, null, settingsFor(fixed))
+        expect(generator.currentCard().measures).toEqual([0, 1, 2])
+
+        expect(fixGeneratorSettings(sheetMusic, {measuresPerCard: WHOLE_SECTION}).measuresPerCard)
+          .toEqual(WHOLE_SECTION)
+        expect(fixGeneratorSettings(sheetMusic, {measuresPerCard: "lots"}).measuresPerCard)
+          .toBeUndefined()
+      })
     })
 
     it("keeps pasted notation as a looping drill", function() {

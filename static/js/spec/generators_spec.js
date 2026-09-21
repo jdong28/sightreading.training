@@ -212,9 +212,15 @@ describe("octave numbering", function() {
       expect(generatorDefaultSettings(sheetMusic(), treble()).song).toEqual("e4")
     })
 
-    it("falls back to the default for a measures-per-card the cap no longer offers", function() {
+    it("keeps a stored measures-per-card past the cap, which only the app's staff holds to", function() {
       window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
         piece: "", song: "", measuresPerCard: String(MAX_MEASURES_PER_CARD + 5),
+      }))
+      expect(generatorDefaultSettings(sheetMusic(), treble()).measuresPerCard)
+        .toEqual(MAX_MEASURES_PER_CARD + 5)
+
+      window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+        piece: "", song: "", measuresPerCard: "many",
       }))
       expect(generatorDefaultSettings(sheetMusic(), treble()).measuresPerCard)
         .toEqual(WHOLE_SECTION)

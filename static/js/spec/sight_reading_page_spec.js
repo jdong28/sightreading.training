@@ -17,7 +17,7 @@ import drawerStyles from "st/components/sight_reading/programme_drawer.module.cs
 import {setAppStore} from "st/storage"
 import {importMusicXMLPiece, addPiece} from "st/sheet_music_deck"
 import {parseMusicXML} from "st/musicxml"
-import {STAVES, GENERATORS, SHEET_MUSIC_STORAGE_KEY, BOTH_HANDS} from "st/data"
+import {STAVES, GENERATORS, SHEET_MUSIC_STORAGE_KEY, BOTH_HANDS, WHOLE_SECTION} from "st/data"
 import {MAX_MEASURES_PER_CARD, RANDOM_ORDER, MeasureCardGenerator, cardColumns} from "st/measure_cards"
 import {DRILL_STORAGE_KEY, SCORE_DRILL_STORAGE_KEY, SheetMusicGenerator} from "st/generators"
 import {scopeEvent} from "st/events"
@@ -215,6 +215,18 @@ describe("sight reading page", function() {
 
   let click = button => flushSync(() => button.click())
 
+  // the number picker (st/components/number_picker) of the label in el
+  let picker = (el, label) => el.querySelector(`[role="spinbutton"][aria-label="${label}"]`)
+
+  // types text into the label's number picker and commits it with Enter
+  let typeNumber = (el, label, text) => {
+    let input = picker(el, label)
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(input, text)
+    flushSync(() => input.dispatchEvent(new Event("input", {bubbles: true})))
+    flushSync(() => input.dispatchEvent(new KeyboardEvent("keydown", {key: "Enter", bubbles: true})))
+    flushSync(() => {})
+  }
+
   let play = notes => {
     for (let note of notes) {
       flushSync(() => page.pressNote(note))
@@ -300,7 +312,7 @@ describe("sight reading page", function() {
     container.remove()
 
     window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
-      piece: "", song: "c4 d4 e4", startMeasure: 1, endMeasure: 2,
+      piece: "", song: "c4 d4 e4 f4 g4", startMeasure: 1, endMeasure: 2,
     }))
     el = renderScorePage()
     expect(el.textContent).toContain("Pasted song notation")
@@ -685,15 +697,89 @@ describe("sight reading page", function() {
     let pills = label => drawer.querySelector(`[role="group"][aria-label="${label}"]`)
 
     // the whole section is always walked in order, so no order to pick
-    expect(pills("measures per card")).not.toBe(null)
+    expect(pills("measures per card presets")).not.toBe(null)
     expect(pills("order")).toBe(null)
 
     // and the stored random order is still there to apply to a card size
-    click([...pills("measures per card").querySelectorAll("button")]
-      .find(pill => pill.textContent == "2"))
+    typeNumber(drawer, "measures per card", "2")
 
     expect(pills("order")).not.toBe(null)
     expect(page.state.notes.generator.deck.order).toEqual(RANDOM_ORDER)
+  })
+
+  it("picks the section and card size with number pickers clamped to the piece", async function() {
+    let {piece} = await importMusicXMLPiece("salon_octet.musicxml", octetXML, store)
+
+    window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+      piece: piece.id, startMeasure: 2, endMeasure: 5, hand: BOTH_HANDS, measuresPerCard: "all",
+    }))
+
+    let el = renderScorePage()
+    click(buttonLabelled(el, "Programme"))
+    let drawer = el.querySelector(`.${drawerStyles.drawer}`)
+    let values = () => ["start measure", "end measure"].map(label => picker(drawer, label).value)
+    let section = () => {
+      let {startMeasure, endMeasure} = page.state.currentGeneratorSettings
+      return [startMeasure, endMeasure]
+    }
+
+    // the piece's measure count is beside each
+    expect(picker(drawer, "end measure").getAttribute("aria-valuemax")).toEqual("8")
+    expect(drawer.textContent).toContain("of 8")
+
+    // a typed measure past the piece is its last
+    typeNumber(drawer, "end measure", "40")
+    expect(values()).toEqual(["2", "8"])
+    expect(section()).toEqual([2, 8])
+
+    // moving one end past the other drags it along
+    typeNumber(drawer, "end measure", "6")
+    typeNumber(drawer, "start measure", "7")
+    expect(section()).toEqual([7, 7])
+    typeNumber(drawer, "end measure", "3")
+    expect(section()).toEqual([3, 3])
+
+    // the step buttons and keys nudge it, never past the piece
+    click(buttonLabelled(drawer, "Increase end measure"))
+    expect(section()).toEqual([3, 4])
+    let end = picker(drawer, "end measure")
+    flushSync(() => end.dispatchEvent(new KeyboardEvent("keydown", {key: "End", bubbles: true})))
+    expect(section()).toEqual([3, 8])
+    expect(buttonLabelled(drawer, "Increase end measure").disabled).toBe(true)
+    flushSync(() => end.dispatchEvent(new KeyboardEvent("keydown", {key: "ArrowDown", bubbles: true})))
+    expect(section()).toEqual([3, 7])
+    expect(el.querySelector("h1").textContent).toContain("measures 3–7")
+
+    // on the app's staff a card stops at the cap, and says so
+    typeNumber(drawer, "measures per card", "5")
+    expect(page.state.currentGeneratorSettings.measuresPerCard).toEqual(MAX_MEASURES_PER_CARD)
+    expect(picker(drawer, "measures per card").getAttribute("aria-valuemax")).toEqual(`${MAX_MEASURES_PER_CARD}`)
+    expect(drawer.textContent).toContain(`max ${MAX_MEASURES_PER_CARD}`)
+    expect(drawer.textContent).toContain(`Cards stop at ${MAX_MEASURES_PER_CARD} measures`)
+    expect(page.currentCard().card.measures).toEqual([3, 4, 5])
+
+    // and the whole section is a pill beside it
+    click(buttonNamed(drawer, "all"))
+    expect(page.state.currentGeneratorSettings.measuresPerCard).toEqual(WHOLE_SECTION)
+    expect(picker(drawer, "measures per card").value).toEqual("")
+  })
+
+  it("keeps a stored section longer than a shorter piece inside it", async function() {
+    let {piece} = await importMusicXMLPiece("salon_octet.musicxml", octetXML, store)
+
+    window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+      piece: piece.id, startMeasure: 12, endMeasure: 30, hand: BOTH_HANDS, measuresPerCard: "9",
+    }))
+
+    let el = renderScorePage()
+    expect(el.querySelector("h1").textContent).toContain("measure 8")
+    // capped to what the app's staff fits
+    expect(page.currentCard().card.measures).toEqual([8])
+
+    click(buttonLabelled(el, "Programme"))
+    let drawer = el.querySelector(`.${drawerStyles.drawer}`)
+    expect(["start measure", "end measure", "measures per card"].map(label => picker(drawer, label).value))
+      .toEqual(["8", "8", "1"])
   })
 
   it("keeps a score note below the staff inside the plate in both modes", async function() {
@@ -1037,10 +1123,7 @@ describe("sight reading page", function() {
     expect(page.state.keySignature.name()).toEqual("F")
 
     // the E major section
-    let startMeasure = [...drawer.querySelectorAll("input[type=number]")][0]
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(startMeasure, "3")
-    flushSync(() => startMeasure.dispatchEvent(new Event("input", {bubbles: true})))
-    flushSync(() => {})
+    typeNumber(drawer, "start measure", "3")
     expect(page.state.keySignature.name()).toEqual("E")
 
     pickPiece("")
@@ -1080,7 +1163,7 @@ describe("sight reading page", function() {
     expect(buttonNamed(drawer, "Export library")).toBeDefined()
     expect(buttonNamed(drawer, "Take your seat")).toBeDefined()
     expect(drawer.querySelectorAll("input[type=file]").length).toEqual(2)
-    expect([...drawer.querySelectorAll("input[type=number]")].map(input => input.value)).toEqual(["1", "2"])
+    expect(["start measure", "end measure"].map(label => picker(drawer, label).value)).toEqual(["1", "2"])
 
     // the score supplies the staves, clefs and key, so the drawer has none of
     // the exercises' clef, exercise or key settings

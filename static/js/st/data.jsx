@@ -219,9 +219,9 @@ export function wholeSectionDrill(settings) {
 }
 
 // opts.capped false is the engine card (st/score_render), drawn by an engine
-// that lays out as many measures as it is given, so a whole section is one
-// looping card however long it is, still a deck so its measures' stats are
-// recorded
+// that lays out as many measures as it is given, so a card takes any number
+// of measures and a whole section is one looping card however long it is,
+// still a deck so its measures' stats are recorded
 export function measureCardDeck(staff, settings, {capped=true}={}) {
   let piece = sheetMusicPiece(settings)
   if (!piece) {
@@ -248,7 +248,7 @@ export function measureCardDeck(staff, settings, {capped=true}={}) {
   let measures = pieceSectionMeasures(staff, settings, pieceSong(piece))
   let cards = wholeSection && !capped ?
     (measures.length ? [sectionCard(measures)] : []) :
-    measureCards(measures, perCard)
+    measureCards(measures, perCard, {capped})
 
   // a whole section the cap already fits stays the single looping card
   let deck = wholeSection && capped && cards.length < 2 ? null :
@@ -297,6 +297,106 @@ export function sheetMusicPieceSettings(settings, song) {
   let endMeasure = Math.max(startMeasure, Math.min(startMeasure + 3, last))
 
   return {...settings, startMeasure, endMeasure, hand: BOTH_HANDS}
+}
+
+// the song of the sheet music settings: the imported piece's, else the pasted
+// notation's when it parses; null otherwise
+function sheetMusicSong(settings) {
+  let piece = sheetMusicPiece(settings)
+  if (piece) {
+    return pieceSong(piece)
+  }
+
+  return parseSongText(settings.song).song
+}
+
+// [first, last] measure numbers the section can be picked from (a pickup is
+// measure 0), or null when there is no song with measures to pick from
+export function sheetMusicMeasureBounds(settings) {
+  let song = sheetMusicSong(settings)
+  if (!song) {
+    return null
+  }
+
+  let [first, last] = measureNumberRange(song)
+  return last >= first ? [first, last] : null
+}
+
+// The section's start and end measures clamped to the song, start never after
+// end, so settings stored for a longer piece (or before the measures were
+// picked this way) still name measures of this one. Unchanged when there is
+// no song to clamp to
+export function sheetMusicSectionRange(settings) {
+  let start = Math.floor(settings.startMeasure)
+  let end = Math.floor(settings.endMeasure)
+  let bounds = sheetMusicMeasureBounds(settings)
+  if (!bounds) {
+    return {startMeasure: settings.startMeasure, endMeasure: settings.endMeasure}
+  }
+
+  let [first, last] = bounds
+  let clamp = (value, fallback) => Math.min(last, Math.max(first, Number.isFinite(value) ? value : fallback))
+  let startMeasure = clamp(start, first)
+  let endMeasure = Math.max(startMeasure, clamp(end, last))
+
+  return {startMeasure, endMeasure}
+}
+
+// The settings update for picking the section's start or end measure (name
+// "startMeasure" or "endMeasure"), clamped to the song: moving one past the
+// other drags the other along with it
+export function sheetMusicSectionUpdate(settings, name, value) {
+  let {startMeasure, endMeasure} = sheetMusicSectionRange(settings)
+  let bounds = sheetMusicMeasureBounds(settings)
+  if (bounds) {
+    value = Math.min(bounds[1], Math.max(bounds[0], value))
+  }
+
+  if (name == "startMeasure") {
+    return {startMeasure: value, endMeasure: Math.max(value, endMeasure)}
+  }
+
+  return {startMeasure: Math.min(value, startMeasure), endMeasure: value}
+}
+
+// the range the section's start and end measures are picked in, with the
+// song's last measure as the caption
+function sectionMeasureBounds(settings) {
+  let bounds = sheetMusicMeasureBounds(settings)
+  if (!bounds) {
+    return {min: 0, max: 9999}
+  }
+
+  let [first, last] = bounds
+  return {min: first, max: last, caption: `of ${last}`}
+}
+
+// how many measures the section has, at least 1
+export function sheetMusicSectionLength(settings) {
+  let song = sheetMusicSong(settings)
+  if (!song) {
+    return 1
+  }
+
+  let {startMeasure, endMeasure} = sheetMusicSectionRange(settings)
+  let count = measureNumberList(song)
+    .filter(number => number >= startMeasure && number <= endMeasure)
+    .length
+
+  return Math.max(1, count)
+}
+
+// The most measures a card of the section can have: the whole section when
+// an engine draws the cards (opts.capped false), else at most
+// MAX_MEASURES_PER_CARD, what the app's staff fits on the plate. capped says
+// whether that cap is what holds it below the section's length
+export function measuresPerCardLimit(settings, {capped=true}={}) {
+  let length = sheetMusicSectionLength(settings)
+  if (capped && length > MAX_MEASURES_PER_CARD) {
+    return {max: MAX_MEASURES_PER_CARD, capped: true}
+  }
+
+  return {max: length, capped: false}
 }
 
 // the trainer's key signature for the score's key at the start measure, so
@@ -629,18 +729,20 @@ const ALL_GENERATORS = [
       {
         name: "startMeasure",
         label: "start measure",
-        type: "number",
+        type: "measure",
         default: 1,
-        min: 0,
-        max: 9999,
+        bounds: settings => sectionMeasureBounds(settings),
+        update: (settings, value) => sheetMusicSectionUpdate(settings, "startMeasure", value),
+        value: settings => sheetMusicSectionRange(settings).startMeasure,
       },
       {
         name: "endMeasure",
         label: "end measure",
-        type: "number",
+        type: "measure",
         default: 4,
-        min: 0,
-        max: 9999,
+        bounds: settings => sectionMeasureBounds(settings),
+        update: (settings, value) => sheetMusicSectionUpdate(settings, "endMeasure", value),
+        value: settings => sheetMusicSectionRange(settings).endMeasure,
         hint: settings => {
           let piece = sheetMusicPiece(settings)
           return piece ? `The score has ${measuresDescription(pieceSong(piece))}` : null
@@ -667,13 +769,34 @@ const ALL_GENERATORS = [
       {
         name: "measuresPerCard",
         label: "measures per card",
-        type: "select",
+        type: "measure",
         default: WHOLE_SECTION,
-        values: [
-          {name: WHOLE_SECTION},
-          ...Array.from({length: MAX_MEASURES_PER_CARD}, (_, idx) => ({name: `${idx + 1}`})),
-        ],
-        hint: `All plays the whole section in order: up to ${MAX_MEASURES_PER_CARD} measures at a time in wait mode, continuously in scroll mode. A number shows that many measures of the section at a time, like a flashcard.`,
+        presets: [{name: WHOLE_SECTION, label: "all"}],
+        // context.cardCap: null when an engine draws the cards, else why the
+        // app's staff draws them, capped to what it fits on the plate (eg.
+        // "in scroll mode"), capped too when unset. context.mode: the page's
+        // wait or scroll mode
+        bounds: (settings, context={}) => {
+          let {max, capped} = measuresPerCardLimit(settings, {capped: context.cardCap !== null})
+          return {
+            min: 1,
+            max,
+            caption: capped ? `max ${max}` : `of ${sheetMusicSectionLength(settings)}`,
+          }
+        },
+        value: settings => Number(settings.measuresPerCard) >= 1 ?
+          Math.floor(Number(settings.measuresPerCard)) : null,
+        hint: (settings, context={}) => {
+          let engine = context.cardCap === null
+          let all = engine ? "All plays the whole section as one card." :
+            context.mode == "scroll" ? "All plays the whole section continuously." :
+            `All plays the whole section in order, up to ${MAX_MEASURES_PER_CARD} measures at a time.`
+          let {capped} = measuresPerCardLimit(settings, {capped: !engine})
+          let reason = context.cardCap ? ` ${context.cardCap}` : ""
+          let cap = capped ?
+            ` Cards stop at ${MAX_MEASURES_PER_CARD} measures${reason}, where the trainer's own staff draws them.` : ""
+          return `${all} A number shows that many measures of the section at a time, like a flashcard.${cap}`
+        },
         visible: settings => !!sheetMusicPiece(settings),
       },
       {
@@ -688,6 +811,13 @@ const ALL_GENERATORS = [
         visible: settings => !!sheetMusicPiece(settings) && Number(settings.measuresPerCard) >= 1,
       },
     ],
+    // a stored section clamped to its piece, eg. one picked on a longer piece
+    fixSettings: function(settings) {
+      if (typeof settings.startMeasure != "number" || typeof settings.endMeasure != "number") {
+        return {}
+      }
+      return sheetMusicSectionRange(settings)
+    },
     // shown under the inputs in the settings panel
     status: function(staff, settings) {
       return sheetMusicSection(staff, settings).status
