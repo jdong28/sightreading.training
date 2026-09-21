@@ -704,7 +704,6 @@ export default class SightReadingPage extends React.Component {
         let touched = Object.keys(this.state.touchedNotes)
         this.missColumn(column.filter((n) => !this.state.heldNotes[n]),
           this.state.notes.blamedNotes(touched, this.state.anyOctave))
-        this.slipped = false
         this.setState({heldNotes: {}, touchedNotes: {}})
         break
       }
@@ -899,6 +898,12 @@ export default class SightReadingPage extends React.Component {
         }
         break
       }
+    }
+
+    // a key down with none held starts a new try, which may slip again
+    // (releases batched into one render close the try only once)
+    if (!Object.keys(this.state.heldNotes).length) {
+      this.slipped = false
     }
 
     this.setState((s) => ({

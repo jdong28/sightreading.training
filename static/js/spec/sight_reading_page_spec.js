@@ -1001,6 +1001,24 @@ describe("sight reading page", function() {
       expect([review.itemId, review.staffMisses]).toEqual([`${piece.id}:both:1-1`, {upper: 1, lower: 0}])
     })
 
+    it("counts one slip for a wrong try whose keys come up together", async function() {
+      await renderSection({measuresPerCard: "1"})
+      let column = page.currentCard().card.columns[0]
+      let lower = column.find((note, idx) => column.staves[idx] == "lower")
+
+      flushSync(() => page.pressNote(lower))
+      flushSync(() => page.pressNote(WRONG_NOTE))
+      flushSync(() => {
+        page.releaseNote(WRONG_NOTE)
+        page.releaseNote(lower)
+      })
+      playHead()
+      await finished()
+
+      let [review] = await reviews()
+      expect([review.misses, review.staffMisses]).toEqual([1, {upper: 1, lower: 0}])
+    })
+
     it("writes one review a lap of a looping card", async function() {
       await renderSection({endMeasure: 2, measuresPerCard: WHOLE_SECTION})
       for (let i = 0; i < 5; i++) {
