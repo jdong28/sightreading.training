@@ -197,6 +197,37 @@ describe("spaced repetition records", function() {
       expect(store.study("p1")).toBe(null)
     })
 
+    it("adds no legacy review for an older export's rows the migrated items have outgrown", async function() {
+      await versionThreeDatabase(rows, [pieceData("p1", "Minuet", 1000), pieceData("p2", "Waltz", 2000)])
+      let store = await open({keep: true})
+      let migrated = await storedReviews(store)
+      let before = store.sectionStats("p1")
+
+      // exported from the same browser before its last practice
+      let library = {
+        format: LIBRARY_FORMAT,
+        version: 4,
+        pieces: [pieceData("p1", "Minuet", 1000)],
+        sectionStats: [
+          section("p1", 1, 4, {hits: 1, misses: 0, lastPracticed: 500}),
+          section("p1", 3, 3, {hits: 10, misses: 4, attempts: 3, lastPracticed: 2500, elapsedMs: 4000}),
+        ],
+      }
+
+      let result = await importLibraryFile(JSON.stringify(library), store)
+      expect(result.report.addedSections + result.report.updatedSections).toEqual(0)
+      expect(result.report.addedReviews).toEqual(0)
+      expect(await storedReviews(store)).toEqual(migrated)
+      expect(store.sectionStats("p1")).toEqual(before)
+
+      // a row practiced since still brings its totals and their review
+      library.sectionStats.push(section("p1", 5, 8, {lastPracticed: 4000}))
+      let newer = await importLibraryFile(JSON.stringify(library), store)
+      expect(newer.report.addedSections).toEqual(1)
+      expect(newer.report.addedReviews).toEqual(1)
+      expect((await storedReviews(store)).length).toEqual(migrated.length + 1)
+    })
+
     it("keeps card weights as they were", async function() {
       let weightRows = [section("p1", 1, 1, {hits: 3, misses: 8}), section("p1", 2, 2, {hits: 9, misses: 0})]
       let cards = [{measures: [1]}, {measures: [2]}, {measures: [1, 2]}, {measures: [3]}]

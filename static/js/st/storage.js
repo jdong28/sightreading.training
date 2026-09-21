@@ -1153,7 +1153,8 @@ export class LocalStore {
       let fileReviews = []
 
       // an imported item: added, or replacing the stored one when practiced
-      // more recently. totalsOnly keeps the rest of the stored item
+      // more recently. totalsOnly keeps the rest of the stored item. Returns
+      // whether the item was taken
       let mergeItem = (record, {totalsOnly=false}={}) => {
         let idx = itemIndex.get(record.id)
         if (idx === undefined) {
@@ -1172,9 +1173,10 @@ export class LocalStore {
           }
           report.updatedSections += 1
         } else {
-          return
+          return false
         }
         changedItems.add(record.id)
+        return true
       }
 
       if (data.version < 5) {
@@ -1185,8 +1187,10 @@ export class LocalStore {
 
           let row = {...stats, pieceId: pieceIds.get(stats.pieceId)}
           let item = itemFromSectionStats(row, now)
-          if (validItem(item)) {
-            mergeItem(item, {totalsOnly: true})
+          // the legacy review is a snapshot of the totals it brings, so a row
+          // the stored item has outgrown adds none: it would count its
+          // practice twice
+          if (validItem(item) && mergeItem(item, {totalsOnly: true})) {
             fileReviews.push(legacyReview(row))
           }
         }
