@@ -236,7 +236,7 @@ describe("spaced repetition records", function() {
       await versionThreeDatabase(weightRows, [pieceData("p1", "Minuet", 1000)])
       let store = await open({keep: true})
       expect(store.items("p1").map(item => [item.state, item.due])).toEqual([["tracked", undefined], ["tracked", undefined]])
-      expect(cardWeights(cards, store.items("p1"))).toEqual([3, 3, 3, 3])
+      expect(cardWeights(cards, store.items("p1"))).toEqual([2, 2, 2, 2])
     })
   })
 

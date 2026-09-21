@@ -55,7 +55,6 @@ export const PRACTICE_SETTINGS_KEY = "practice"
  * @property {{firstDays: number, easyFirstDays: number, maxDays: number}} caps
  * the most days of a first interval across days, of one after an easy first
  * sight, and of any interval
- * @property {number} rolloverHour the local hour a day starts at
  */
 export const DEFAULT_SCHEDULER_SETTINGS = deepFreeze({
   key: SCHEDULER_SETTINGS_KEY,
@@ -64,7 +63,6 @@ export const DEFAULT_SCHEDULER_SETTINGS = deepFreeze({
   w: [...DEFAULT_W],
   ladderMs: [30 * 1000, 2.5 * MINUTE, 10 * MINUTE],
   caps: {firstDays: 1, easyFirstDays: 4, maxDays: 120},
-  rolloverHour: 4,
 })
 
 /**
@@ -85,11 +83,15 @@ export const DEFAULT_PRACTICE_SETTINGS = deepFreeze({
 // last is on the same day
 export const SAME_DAY_DAYS = 0.5
 
+// the local hour a day starts at
+export const ROLLOVER_HOUR = 4
+
 // the half-life of an attempt in the recent miss rate
 export const RECENT_HALF_LIFE_DAYS = 14
 
-// the recall taken for an item with no schedule when weighing it, an even chance
-export const UNSCHEDULED_RECALL = 0.5
+// the recall taken for an item with no schedule when weighing it, so a
+// measure never played weighs 2, as much as one just failed at least
+export const UNSCHEDULED_RECALL = 0.75
 
 function deepFreeze(object) {
   for (let value of Object.values(object)) {
@@ -110,13 +112,12 @@ export function validSchedulerSettings(settings) {
     return false
   }
 
-  let {algo, retention, w, ladderMs, caps, rolloverHour} = settings
+  let {algo, retention, w, ladderMs, caps} = settings
   return Number.isInteger(algo) && algo >= 1 &&
     typeof retention == "number" && retention > 0 && retention < 1 &&
     Array.isArray(w) && w.length == DEFAULT_W.length && w.every(n => typeof n == "number" && Number.isFinite(n)) &&
     Array.isArray(ladderMs) && ladderMs.length > 0 && ladderMs.every(ms => typeof ms == "number" && ms >= 0) &&
-    !!caps && isPositive(caps.firstDays) && isPositive(caps.easyFirstDays) && isPositive(caps.maxDays) &&
-    Number.isInteger(rolloverHour) && rolloverHour >= 0 && rolloverHour < 24
+    !!caps && isPositive(caps.firstDays) && isPositive(caps.easyFirstDays) && isPositive(caps.maxDays)
 }
 
 /**
@@ -141,26 +142,24 @@ function modelOf(settings) {
 
 /**
  * The local day a time falls on, counting days from the epoch, where a day
- * starts at rolloverHour: 3 am belongs to the day before.
+ * starts at ROLLOVER_HOUR: 3 am belongs to the day before.
  * @param {number} time ms
- * @param {number} [rolloverHour]
  * @returns {number}
  */
-export function localDay(time, rolloverHour=DEFAULT_SCHEDULER_SETTINGS.rolloverHour) {
+export function localDay(time) {
   let date = new Date(time)
-  let day = date.getDate() - (date.getHours() < rolloverHour ? 1 : 0)
+  let day = date.getDate() - (date.getHours() < ROLLOVER_HOUR ? 1 : 0)
   return Math.round(Date.UTC(date.getFullYear(), date.getMonth(), day) / DAY)
 }
 
 /**
  * When a local day starts (see localDay), in local time.
  * @param {number} day
- * @param {number} [rolloverHour]
  * @returns {number} ms
  */
-export function dayStart(day, rolloverHour=DEFAULT_SCHEDULER_SETTINGS.rolloverHour) {
+export function dayStart(day) {
   let date = new Date(day * DAY)
-  return new Date(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), rolloverHour).getTime()
+  return new Date(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), ROLLOVER_HOUR).getTime()
 }
 
 /**
@@ -199,7 +198,7 @@ export function scheduled(item) {
  */
 export function applyGrade(item, grade, now, settings=DEFAULT_SCHEDULER_SETTINGS, {continuous=false}={}) {
   let model = modelOf(settings)
-  let {retention, ladderMs, caps, rolloverHour} = settings
+  let {retention, ladderMs, caps} = settings
   let fresh = !scheduled(item)
 
   let sameDay = true
@@ -209,7 +208,7 @@ export function applyGrade(item, grade, now, settings=DEFAULT_SCHEDULER_SETTINGS
       elapsedDays = Math.max(0, (now - item.last) / DAY)
       sameDay = elapsedDays < SAME_DAY_DAYS
     } else {
-      elapsedDays = Math.max(0, localDay(now, rolloverHour) - localDay(item.last, rolloverHour))
+      elapsedDays = Math.max(0, localDay(now) - localDay(item.last))
       sameDay = elapsedDays == 0
     }
   }
@@ -231,7 +230,7 @@ export function applyGrade(item, grade, now, settings=DEFAULT_SCHEDULER_SETTINGS
 
   // the due date days away, at the start of a local day
   let dueIn = days => continuous ? now + days * DAY :
-    dayStart(localDay(now, rolloverHour) + Math.max(1, Math.round(days)), rolloverHour)
+    dayStart(localDay(now) + Math.max(1, Math.round(days)))
 
   let graduate = cap => {
     next.state = "review"
@@ -294,8 +293,9 @@ export function predictedRecall(item, now, settings=DEFAULT_SCHEDULER_SETTINGS) 
 }
 
 /**
- * The share of columns missed in the item's recent attempts, each attempt
- * counted at half its weight every RECENT_HALF_LIFE_DAYS, so old misses fade.
+ * The share of columns missed in the item's recent attempts (all of them in
+ * an attempt graded again), each attempt counted at half its weight every
+ * RECENT_HALF_LIFE_DAYS, so old misses fade.
  * @param {ItemRecord} item
  * @param {number} now
  * @returns {number} 0-1, 0 with no recent attempts
@@ -304,8 +304,8 @@ export function recentMissRate(item, now) {
   let recent = item ? item.recent : []
   if (!recent.length) { return 0 }
 
-  let total = recent.reduce((sum, [at, columns, clean]) => {
-    let missed = columns > 0 ? (columns - clean) / columns : 0
+  let total = recent.reduce((sum, [at, columns, clean, grade]) => {
+    let missed = grade == 1 ? 1 : columns > 0 ? (columns - clean) / columns : 0
     let age = Math.max(0, (now - at) / DAY)
     return sum + missed * Math.pow(0.5, age / RECENT_HALF_LIFE_DAYS)
   }, 0)

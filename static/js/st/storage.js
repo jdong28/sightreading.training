@@ -819,26 +819,6 @@ export class LocalStore {
   }
 
   /**
-   * Replaces the scheduler or the practice settings record, by its key.
-   * Items keep the schedules they have; the new settings apply to the
-   * attempts after.
-   * @param {SchedulerSettings|PracticeSettings} settings
-   * @returns {Promise<Object>}
-   */
-  putSettings(settings) {
-    return this.mutate(async () => {
-      let name = settingsName(settings)
-      if (!name) {
-        throw new Error("Not valid settings")
-      }
-
-      await this.backend.write([{store: "meta", put: settings}])
-      this.cache = {...this.cache, settings: {...this.cache.settings, [name]: settings}}
-      return settings
-    })
-  }
-
-  /**
    * Adds or replaces a piece, in the same write as its source when one is given.
    * @param {PieceRecord} piece
    * @param {Object} [opts]

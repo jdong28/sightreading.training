@@ -187,7 +187,7 @@ describe("measure cards", function() {
 
       let items = [
         known,
-        // missed half the columns just now, never scheduled
+        // failed just now, never scheduled
         measure(0, {recent: [[now, 4, 2, 1]]}),
         // another hand's item, and a range, aren't the measure's
         measure(2, {hand: "upper", state: "review", s: 1, d: 5, last: now - 50 * DAY, due: now}),
@@ -195,7 +195,7 @@ describe("measure cards", function() {
       ]
 
       expect(cardWeights(measureCards(pickupMeasures(), 1), items, {now})).toEqual([
-        1 + 4 * (1 - UNSCHEDULED_RECALL) + 0.5,
+        1 + 4 * (1 - UNSCHEDULED_RECALL) + 1,
         1 + 4 * (1 - recall),
         1 + 4 * (1 - UNSCHEDULED_RECALL),
       ])
@@ -205,7 +205,7 @@ describe("measure cards", function() {
       expect(cardWeights(measureCards(pickupMeasures(), 2), items, {now})[0]).toBeCloseTo((first + second) / 2, 9)
 
       // untouched pieces weigh every measure the same
-      expect(cardWeights(measureCards(pickupMeasures(), 1), [], {now})).toEqual([3, 3, 3])
+      expect(cardWeights(measureCards(pickupMeasures(), 1), [], {now})).toEqual([2, 2, 2])
     })
 
     it("picks random cards by the items in the store", function() {

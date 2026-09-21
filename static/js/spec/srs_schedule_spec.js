@@ -4,7 +4,7 @@ import {makeFsrs, S_MIN} from "st/srs/fsrs"
 import {
   applyGrade, replay, localDay, dayStart, predictedRecall, recentMissRate, practiceWeight,
   schedulable, scheduled, validSchedulerSettings, validPracticeSettings,
-  DEFAULT_SCHEDULER_SETTINGS, DEFAULT_PRACTICE_SETTINGS, SCHEDULER_ALGO, UNSCHEDULED_RECALL,
+  DEFAULT_SCHEDULER_SETTINGS, DEFAULT_PRACTICE_SETTINGS, SCHEDULER_ALGO,
   DAY, MINUTE
 } from "st/srs/schedule"
 import {newItem, itemWithPractice, RECENT_ATTEMPTS} from "st/srs/records"
@@ -273,8 +273,6 @@ describe("spaced repetition scheduler", function() {
 
       expect(dayStart(localDay(at(11, 2)))).toEqual(at(10, 4))
       expect(dayStart(localDay(at(11, 9)))).toEqual(at(11, 4))
-      expect(localDay(at(11, 2), 0)).toEqual(localDay(at(11, 9), 0))
-      expect(dayStart(localDay(at(11, 2), 0), 0)).toEqual(at(11, 0))
     })
 
     it("takes 11 pm and 7 am as a day apart, and 11 pm and 1 am as the same day", function() {
@@ -297,7 +295,8 @@ describe("spaced repetition scheduler", function() {
 
     it("weighs an item by its predicted recall and recent misses", function() {
       expect(predictedRecall(bar(), now)).toBe(null)
-      expect(practiceWeight(null, now)).toEqual(1 + 4 * (1 - UNSCHEDULED_RECALL))
+      expect(practiceWeight(null, now)).toEqual(2)
+      expect(practiceWeight(bar(), now)).toEqual(2)
 
       // at its due date recall has fallen to the target
       let item = reviewItem(now - 10 * DAY, 10)
@@ -306,6 +305,21 @@ describe("spaced repetition scheduler", function() {
 
       // just reviewed, recall is certain
       expect(practiceWeight(reviewItem(now, 10), now)).toBeCloseTo(1, 9)
+    })
+
+    it("weighs a measure just failed at least as a measure never played", function() {
+      let neverPlayed = practiceWeight(bar(), now)
+      let failed = {...applyGrade(bar(), AGAIN, now - 10 * MINUTE), recent: [[now - 10 * MINUTE, 4, 3, AGAIN]]}
+      expect(recentMissRate(failed, now)).toBeCloseTo(1, 3)
+      expect(practiceWeight(failed, now)).toBeGreaterThanOrEqual(neverPlayed)
+
+      // failed at once, the two tie
+      let justFailed = {...applyGrade(bar(), AGAIN, now), recent: [[now, 4, 3, AGAIN]]}
+      expect(practiceWeight(justFailed, now)).toEqual(neverPlayed)
+
+      // a measure never played outranks one played clean
+      let clean = {...applyGrade(bar(), GOOD, now - 10 * MINUTE), recent: [[now - 10 * MINUTE, 4, 4, GOOD]]}
+      expect(practiceWeight(clean, now)).toBeLessThan(neverPlayed)
     })
 
     it("fades misses by half every two weeks", function() {
@@ -436,10 +450,17 @@ describe("spaced repetition scheduler", function() {
       expect(await store.backend.get("meta", "scheduler")).toEqual(DEFAULT_SCHEDULER_SETTINGS)
       expect(await store.backend.get("meta", "practice")).toEqual(DEFAULT_PRACTICE_SETTINGS)
 
-      let strict = {...DEFAULT_SCHEDULER_SETTINGS, retention: 0.95}
-      await store.putSettings(strict)
-      await expectAsync(store.putSettings({...strict, retention: 2})).toBeRejectedWithError("Not valid settings")
+      // a library's settings of the design's shape replace the store's, and
+      // one not valid is skipped
+      let strict = {
+        key: "scheduler", algo: SCHEDULER_ALGO, retention: 0.95, w: [...DEFAULT_SCHEDULER_SETTINGS.w],
+        ladderMs: [...DEFAULT_SCHEDULER_SETTINGS.ladderMs], caps: {firstDays: 1, easyFirstDays: 4, maxDays: 120},
+      }
+      let exported = await store.exportLibrary()
+      let result = await store.importLibrary({...exported, settings: [strict, {...DEFAULT_PRACTICE_SETTINGS, sessionMinutes: 0}]})
+      expect(result.importedSettings).toEqual(1)
       expect(store.schedulerSettings()).toEqual(strict)
+      expect(store.practiceSettings()).toEqual(DEFAULT_PRACTICE_SETTINGS)
 
       let reopened = await open({keep: true})
       expect(reopened.schedulerSettings()).toEqual(strict)
@@ -458,7 +479,7 @@ describe("spaced repetition scheduler", function() {
       expect(library.settings).toEqual([strict, DEFAULT_PRACTICE_SETTINGS])
 
       let other = await open()
-      let result = await other.importLibrary(library)
+      result = await other.importLibrary(library)
       expect(result.importedSettings).toEqual(2)
       expect(other.schedulerSettings()).toEqual(strict)
     })
