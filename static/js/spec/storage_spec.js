@@ -562,6 +562,25 @@ describe("local store", function() {
       expect(store.sectionStats("local").length).toEqual(1)
     })
 
+    it("adds no source to a stored piece whose song differs from the imported one", async function() {
+      let store = await open()
+      await store.putPiece(pieceData("a", "Rêverie", 1000, ["C4"]))
+
+      let library = {
+        format: LIBRARY_FORMAT,
+        version: LIBRARY_VERSION,
+        // the same id, re-imported elsewhere from a new version of the score
+        pieces: [pieceData("a", "Rêverie", 1000, ["D4"])],
+        sources: [{pieceId: "a", encoding: SOURCE_ENCODING, data: bytesToBase64(compressSource("<new/>")), storedAt: 5}],
+      }
+
+      let result = await importLibraryFile(JSON.stringify(library), store)
+      expect(result.report.existingPieces).toEqual(1)
+      expect(result.report.addedSources).toEqual(0)
+      expect(store.piece("a").song).toEqual(songData("C4"))
+      expect(await store.pieceSource("a")).toBe(null)
+    })
+
     it("imports a library exported before pieces kept their source", async function() {
       let store = await open()
       let library = {

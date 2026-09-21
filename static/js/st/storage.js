@@ -827,8 +827,9 @@ export class LocalStore {
   /**
    * Merges an exported library into this one in a single write. Sources and
    * section stats follow their piece (also when it matched a stored piece of
-   * another id). A source is added only to a piece without one, so importing
-   * a library fills in the sources of pieces stored before them. Section stats
+   * another id). A source is added only to a piece without one that holds
+   * the same song, so importing a library fills in the sources of pieces
+   * stored before them but never gives a piece the source of another song. Section stats
    * replace stored stats only when practiced more recently. Sessions are
    * added unless one of the same id is stored.
    * @param {LibraryExport} data
@@ -859,6 +860,7 @@ export class LocalStore {
       let byId = new Map(pieces.map(piece => [piece.id, piece]))
       let byContent = new Map(pieces.map(piece => [pieceContent(piece), piece]))
       let pieceIds = new Map() // imported id -> id in this library
+      let sameSongIds = new Set() // imported ids whose piece here holds the same song
       let ops = []
       let now = Date.now()
 
@@ -871,6 +873,9 @@ export class LocalStore {
         let existing = byId.get(piece.id) || byContent.get(pieceContent(piece))
         if (existing) {
           pieceIds.set(piece.id, existing.id)
+          if (JSON.stringify(existing.song) == JSON.stringify(piece.song)) {
+            sameSongIds.add(piece.id)
+          }
           report.existingPieces += 1
           continue
         }
@@ -886,6 +891,7 @@ export class LocalStore {
         byId.set(record.id, record)
         byContent.set(pieceContent(record), record)
         pieceIds.set(record.id, record.id)
+        sameSongIds.add(record.id)
         ops.push({store: "pieces", put: record})
         report.addedPieces += 1
       }
@@ -893,7 +899,7 @@ export class LocalStore {
       let sourceIds = new Set(await this.backend.getAllKeys("pieceSources"))
 
       for (let source of Array.isArray(data.sources) ? data.sources : []) {
-        let pieceId = source && pieceIds.get(source.pieceId)
+        let pieceId = source && sameSongIds.has(source.pieceId) && pieceIds.get(source.pieceId)
         if (!pieceId || sourceIds.has(pieceId)) {
           continue
         }
