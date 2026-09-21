@@ -1265,4 +1265,154 @@ describe("sight reading page", function() {
     expect(stats && [stats.hits, stats.misses]).toEqual([1, 1])
   })
 
+  describe("matching the notes played", function() {
+    let press = note => flushSync(() => page.pressNote(note))
+    let release = note => flushSync(() => page.releaseNote(note))
+    let counts = () => [page.state.stats.hits, page.state.stats.misses]
+    let head = () => [...page.state.notes.currentColumn()]
+
+    let renderPiece = async (xml, settings, drill) => {
+      let {piece} = await importMusicXMLPiece("piece.musicxml", xml, store)
+      if (drill) {
+        window.localStorage.setItem(SCORE_DRILL_STORAGE_KEY, JSON.stringify(drill))
+      }
+      window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+        piece: piece.id, startMeasure: 1, endMeasure: 8, hand: BOTH_HANDS, ...settings,
+      }))
+      let el = renderScorePage()
+      click(buttonNamed(el, "Begin"))
+      return piece
+    }
+
+    it("completes a note with a brushed neighbour still held, counting one miss", function() {
+      let el = renderPage()
+      click(buttonNamed(el, "Begin"))
+
+      let [note] = head()
+      press(WRONG_NOTE)
+      expect(page.state.noteShaking).toBe(true)
+      expect(head()).toEqual([note])
+      expect(counts()).toEqual([0, 1])
+
+      press(note)
+      expect(page.state.notes.length).toBeGreaterThan(0)
+      expect(counts()).toEqual([1, 1])
+      expect(page.state.stats.noteHitStats[WRONG_NOTE]).toBeUndefined()
+
+      // the keys let go after the column is done count for nothing
+      release(WRONG_NOTE)
+      release(note)
+      expect(counts()).toEqual([1, 1])
+
+      play(head())
+      expect(counts()).toEqual([2, 1])
+      expect(statValue(el, "Accuracy")).toEqual("67%")
+    })
+
+    it("counts a slip in the MIDI packet that completes the column, in either order", function() {
+      let el = renderPage()
+      click(buttonNamed(el, "Begin"))
+
+      for (let wrongFirst of [true, false]) {
+        let [note] = head()
+        let keys = wrongFirst ? [WRONG_NOTE, note] : [note, WRONG_NOTE]
+        flushSync(() => keys.forEach(key => page.pressNote(key)))
+        keys.forEach(release)
+      }
+
+      expect(counts()).toEqual([2, 2])
+    })
+
+    it("counts a column missed once however many slips and releases it takes", function() {
+      let el = renderPage()
+      click(buttonNamed(el, "Begin"))
+
+      let column = head()
+      play([WRONG_NOTE])
+      expect(counts()).toEqual([0, 1])
+      expect(page.state.touchedNotes).toEqual({})
+      expect(head()).toEqual(column)
+
+      // nothing matched when every key is up: the column is played afresh
+      play([WRONG_NOTE])
+      press("A#4")
+      release("A#4")
+      expect(counts()).toEqual([0, 1])
+      expect(head()).toEqual(column)
+
+      play(column)
+      expect(counts()).toEqual([1, 1])
+    })
+
+    it("completes a chord after a brushed neighbour on the measure cards", async function() {
+      let piece = await renderPiece(octetXML, {measuresPerCard: "2"})
+      expect(page.state.notes.generator instanceof MeasureCardGenerator).toBe(true)
+      expect(head()).toEqual(["C3", "C5"])
+
+      // a neighbour brushed and let go, then the chord
+      press("D5")
+      release("D5")
+      expect(counts()).toEqual([0, 1])
+      expect(head()).toEqual(["C3", "C5"])
+      play(["C3", "C5"])
+      expect(counts()).toEqual([1, 1])
+      expect(head()).toEqual(["D3", "D5"])
+
+      // a chord rolled one note at a time isn't a slip
+      press("D3")
+      press("D5")
+      release("D3")
+      release("D5")
+      expect(counts()).toEqual([2, 1])
+
+      // a neighbour brushed on the way, still down as the chord completes
+      press("E3")
+      press("F5")
+      press("E5")
+      expect(counts()).toEqual([3, 2])
+      expect(head()).toEqual(["F3", "F5"])
+      release("E3")
+      release("F5")
+      release("E5")
+
+      click(buttonNamed(container, "Rest"))
+      await waitFor(() => store.recentSessions().length == 1, "the session to be saved")
+
+      let measureStats = measure =>
+        store.sectionStats(piece.id).find(s => s.startMeasure == measure && s.endMeasure == measure)
+      expect([measureStats(1).hits, measureStats(1).misses]).toEqual([1, 1])
+      expect([measureStats(2).hits, measureStats(2).misses]).toEqual([1, 0])
+    })
+
+    it("completes a chord arriving one hand at a time around a held wrong key in the whole section", async function() {
+      await renderPiece(octetXML, {measuresPerCard: "all"}, {mode: "scroll"})
+      expect(page.state.notes.generator instanceof SheetMusicGenerator).toBe(true)
+      expect(head()).toEqual(["C3", "C5"])
+
+      press("C3")
+      press("B4")
+      expect(counts()).toEqual([0, 1])
+      press("C5")
+      expect(counts()).toEqual([1, 1])
+      expect(head()).toEqual(["D3", "D5"])
+    })
+
+    it("completes the notes over a note held on from an earlier column", async function() {
+      await renderPiece(leadRestXML, {endMeasure: 1})
+      expect(head()).toEqual(["C3", "C5"])
+
+      press("C3")
+      press("C5")
+      release("C5")
+      expect(head()).toEqual(["D5"])
+
+      // the held C3 isn't struck again, nor a slip, nor missed when let go
+      play(["D5"])
+      expect(head()).toEqual(["E5"])
+      play(["E5"])
+      release("C3")
+      expect(counts()).toEqual([3, 0])
+    })
+  })
+
 })

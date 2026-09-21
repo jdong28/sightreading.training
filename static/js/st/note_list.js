@@ -132,34 +132,29 @@ export default class NoteList extends Array {
     }
   }
 
-  // must be an array of notes
+  // Whether notes (an array of the keys touched) include every note of the
+  // head column. Other keys may be among them: a brushed neighbour doesn't
+  // stop the head matching, see strayNotes for telling them apart. An empty
+  // head column (a gap between cards) never matches
   matchesHead(notes, anyOctave=false) {
-    let first = this[0]
-
     if (!Array.isArray(notes)) {
       throw new Error("matchesHead: notes should be an array")
     }
 
-    if (Array.isArray(first)) {
-      if (first.length != notes.length) {
-        return false;
-      }
-      if (anyOctave) {
-        let noteSet = {}
-        notes.forEach((n) => noteSet[n.replace(/\d+$/, "")] = true)
-        return first.every((n) => noteSet[n.replace(/\d+$/, "")])
-      } else {
-        const pitches = notes.map(parseNote)
-        return first.map(parseNote).every((n) => pitches.indexOf(n) >= 0)
-      }
-    } else {
-      if (anyOctave) {
-        return notes.length == 1 && notesSame(notes[0], first)
-      } else {
-        return notes.length == 1 && parseNote(notes[0]) == parseNote(first)
-      }
+    let column = this.currentColumn()
+    return column.length > 0 && column.every(head =>
+      notes.some(note => this.sameNote(note, head, anyOctave)))
+  }
 
-    }
+  // The notes (keys touched) that aren't in the head column
+  strayNotes(notes, anyOctave=false) {
+    let column = this.currentColumn()
+    return notes.filter(note =>
+      !column.some(head => this.sameNote(note, head, anyOctave)))
+  }
+
+  sameNote(a, b, anyOctave) {
+    return anyOctave ? notesSame(a, b) : parseNote(a) == parseNote(b)
   }
 
   currentColumn() {
