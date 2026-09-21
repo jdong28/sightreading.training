@@ -1,7 +1,7 @@
 import MersenneTwister from "mersennetwister"
 
 import {
-  measureCards, sectionCard, cardColumn, measureWeight, cardWeights, nextCardIndex,
+  measureCards, sectionCard, cardColumn, cardWeights, nextCardIndex,
   MeasureCardDeck, MeasureCardGenerator, IN_ORDER, RANDOM_ORDER
 } from "st/measure_cards"
 
@@ -15,6 +15,8 @@ import {setAppStore} from "st/storage"
 import NoteList from "st/note_list"
 import NoteStats from "st/note_stats"
 import {AGAIN, HARD, GOOD, EASY} from "st/srs/grade"
+import {newItem} from "st/srs/records"
+import {predictedRecall, UNSCHEDULED_RECALL, DEFAULT_SCHEDULER_SETTINGS, DAY} from "st/srs/schedule"
 
 import {openTestStore, pickupScore, noteXML} from "spec/helpers"
 
@@ -172,31 +174,59 @@ describe("measure cards", function() {
       expect(counts[2] / picks).toBeCloseTo(0.25, 1)
     })
 
-    it("weights cards by the recorded accuracy of their measures", function() {
-      expect(measureWeight(undefined)).toEqual(1)
-      expect(measureWeight({hits: 9, misses: 0})).toEqual(1)
-      expect(measureWeight({hits: 1, misses: 4})).toEqual(3)
+    it("weights cards weakest first by their measures' items", function() {
+      let now = 100 * DAY
+      let measure = (startMeasure, fields={}) => ({
+        ...newItem({pieceId: "p", startMeasure, endMeasure: startMeasure}), ...fields,
+      })
+      // known a day ago, recall a little under the target
+      let known = measure(1, {state: "review", s: 10, d: 5, last: now - DAY, due: now + 9 * DAY})
+      let recall = predictedRecall(known, now)
+      expect(recall).toBeGreaterThan(0.98)
+      expect(recall).toBeLessThan(1)
 
-      let stats = [
-        {pieceId: "p", startMeasure: 1, endMeasure: 1, hits: 1, misses: 4},
-        // a range of measures isn't a measure's accuracy
-        {pieceId: "p", startMeasure: 0, endMeasure: 2, hits: 0, misses: 50},
+      let items = [
+        known,
+        // failed just now, never scheduled
+        measure(0, {recent: [[now, 4, 2, 1]]}),
+        // another hand's item, and a range, aren't the measure's
+        measure(2, {hand: "upper", state: "review", s: 1, d: 5, last: now - 50 * DAY, due: now}),
+        {...measure(0), endMeasure: 2, recent: [[now, 4, 0, 1]]},
       ]
 
-      expect(cardWeights(measureCards(pickupMeasures(), 2), stats)).toEqual([2, 1])
-      expect(cardWeights(measureCards(pickupMeasures(), 1), [])).toEqual([1, 1, 1])
+      expect(cardWeights(measureCards(pickupMeasures(), 1), items, {now})).toEqual([
+        1 + 4 * (1 - UNSCHEDULED_RECALL) + 1,
+        1 + 4 * (1 - recall),
+        1 + 4 * (1 - UNSCHEDULED_RECALL),
+      ])
+
+      // a card weighs the mean of its measures
+      let [first, second] = cardWeights(measureCards(pickupMeasures(), 1), items, {now})
+      expect(cardWeights(measureCards(pickupMeasures(), 2), items, {now})[0]).toBeCloseTo((first + second) / 2, 9)
+
+      // untouched pieces weigh every measure the same
+      expect(cardWeights(measureCards(pickupMeasures(), 1), [], {now})).toEqual([2, 2, 2])
     })
 
-    it("picks random cards by the stats in the store", function() {
+    it("picks random cards by the items in the store", function() {
+      let now = 100 * DAY
+      let measure = (startMeasure, fields) => ({
+        ...newItem({pieceId: "p", startMeasure, endMeasure: startMeasure}), state: "review", ...fields,
+      })
       let store = {
-        sectionStats: pieceId => pieceId == "p" ? [
-          {pieceId: "p", startMeasure: 2, endMeasure: 2, hits: 0, misses: 1000},
+        items: pieceId => pieceId == "p" ? [
+          // two known measures, played clean just now
+          measure(0, {s: 30, d: 3, last: now, due: now + 30 * DAY}),
+          measure(1, {s: 30, d: 3, last: now, due: now + 30 * DAY}),
+          // one likely forgotten, and missed when last played
+          measure(2, {s: 0.5, d: 9, last: now - 60 * DAY, due: now - 59 * DAY, recent: [[now - 60 * DAY, 3, 0, 1]]}),
         ] : [],
+        schedulerSettings: () => DEFAULT_SCHEDULER_SETTINGS,
       }
 
       let mt = new MersenneTwister(3)
       let deck = new MeasureCardDeck(cards(), {
-        pieceId: "p", order: RANDOM_ORDER, random: () => mt.random(), store,
+        pieceId: "p", order: RANDOM_ORDER, random: () => mt.random(), now: () => now, store,
       })
 
       let seen = [deck.index]
@@ -205,9 +235,11 @@ describe("measure cards", function() {
         seen.push(deck.index)
       }
 
-      // every other card is the measure missed most
-      let twos = seen.filter(idx => idx == 2).length
-      expect(twos).toBeGreaterThanOrEqual(9)
+      // nearly every other card is the measure likeliest forgotten, more
+      // often than either known one
+      let count = card => seen.filter(idx => idx == card).length
+      expect(count(2)).toBeGreaterThanOrEqual(8)
+      expect(count(2)).toBeGreaterThan(Math.max(count(0), count(1)))
     })
   })
 
@@ -711,7 +743,7 @@ describe("measure cards", function() {
         [`${piece.id}:upper:1-1`, {upper: 1, lower: 0}],
       ])
 
-      // the random picks still weigh every hand of a measure together
+      // the section stats still add up every hand of a measure
       expect(store.sectionStats(piece.id)).toEqual([jasmine.objectContaining({
         startMeasure: 1, endMeasure: 1, hits: 6, misses: 2, attempts: 2,
       })])

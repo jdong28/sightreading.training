@@ -38,6 +38,7 @@
   "author": "leaf corcoran",
   "license": "UNLICENSED",
   "devDependencies": {
-    "puppeteer": "25.11.0"
+    "puppeteer": "25.11.0",
+    "ts-fsrs": "5.4.2"
   }
 }
