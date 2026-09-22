@@ -362,16 +362,6 @@ export function inStudy(study) {
   return !!study && STUDYING.includes(study.status)
 }
 
-/**
- * Whether the programme is offered for a piece: it has a study or any
- * scheduled single measure (which free practice gives it).
- * @param {StudyRecord|null} study
- * @param {ItemRecord[]} items the piece's
- * @returns {boolean}
- */
-export function offersProgramme(study, items) {
-  return !!study || items.some(item => item.startMeasure == item.endMeasure && !item.beats && scheduled(item))
-}
 
 const HAND_WORDS = {both: "hands together", upper: "right hand", lower: "left hand"}
 

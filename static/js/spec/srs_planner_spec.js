@@ -1,7 +1,7 @@
 import MersenneTwister from "mersennetwister"
 
 import {
-  planNext, planState, planSummary, anchoredCard, mostOverduePiece, inStudy, offersProgramme,
+  planNext, planState, planSummary, anchoredCard, mostOverduePiece, inStudy,
   entryStatus, entryCaption,
   RETRY, LADDER, REVIEW, NEW, EARLY, RUN_THROUGH, WAIT, LADDER_CAP, IDLE_LADDER_CAP,
 } from "st/srs/planner"
@@ -328,9 +328,7 @@ describe("today's programme planner", function() {
       expect(mostOverduePiece({studies: [{...studies[1], status: "shelved"}], items, now: NOW})).toBe(null)
     })
 
-    it("offers the programme once a measure is scheduled, and makes it the default in study", function() {
-      expect(offersProgramme(null, [bar(1)])).toBe(false)
-      expect(offersProgramme(null, [inReview(1, {due: NOW})])).toBe(true)
+    it("makes the programme the default in study", function() {
       expect(inStudy(null)).toBe(false)
       expect(inStudy({pieceId: "p", status: "learning", startedAt: 0})).toBe(true)
       expect(inStudy({pieceId: "p", status: "shelved", startedAt: 0})).toBe(false)
@@ -483,11 +481,29 @@ describe("today's programme on the staff", function() {
     })
     const input = name => SHEET_MUSIC_GENERATOR.inputs.find(i => i.name == name)
 
-    it("offers the programme once a measure is scheduled and defaults to it in study", async function() {
-      expect(programmeOffered(settingsFor())).toBe(false)
-      expect(input("practice").visible(settingsFor())).toBe(false)
-      expect(plannedPractice(settingsFor({practice: PROGRAMME_PRACTICE}))).toBe(false)
+    it("offers a never practised piece the programme, which starts its study", async function() {
+      expect(store.items(piece.id)).toEqual([])
+      expect(programmeOffered(settingsFor())).toBe(true)
+      expect(input("practice").visible(settingsFor())).toBe(true)
+      expect(input("practice").value(settingsFor())).toEqual(FREE_PRACTICE)
+      expect(programmeOffered(settingsFor({piece: ""}))).toBe(false)
 
+      let generator = SHEET_MUSIC_GENERATOR.create(grand, null, settingsFor({practice: PROGRAMME_PRACTICE}))
+      generators.push(generator)
+      expect(generator instanceof PlanGenerator).toBe(true)
+      expect(generator.statusLine()).toEqual("New · bar 0")
+
+      let notes = new NoteList([], {generator})
+      notes.fillBuffer(8)
+      let stats = new NoteStats()
+      for (let i = 0; i < generator.currentCard().columns.length; i++) { notes = hit(notes, stats) }
+      await generator.finishing
+      await generator.studying
+      expect(store.study(piece.id)).toEqual(jasmine.objectContaining({status: "learning"}))
+      expect(plannedPractice(settingsFor())).toBe(true)
+    })
+
+    it("keeps free practice for a practised piece until it is in study", async function() {
       // free practice schedules the measures it plays
       let generator = SHEET_MUSIC_GENERATOR.create(grand, null, settingsFor())
       generators.push(generator)
@@ -497,8 +513,6 @@ describe("today's programme on the staff", function() {
       for (let i = 0; i < 3; i++) { notes = hit(notes, stats) }
       await generator.finishing
 
-      expect(programmeOffered(settingsFor())).toBe(true)
-      expect(input("practice").visible(settingsFor())).toBe(true)
       expect(plannedPractice(settingsFor())).toBe(false)
       expect(input("practice").value(settingsFor())).toEqual(FREE_PRACTICE)
       expect(plannedPractice(settingsFor({practice: PROGRAMME_PRACTICE}))).toBe(true)

@@ -27,7 +27,7 @@ import {
 
 import {getAppStore} from "st/storage"
 import {PlanDeck, PlanGenerator} from "st/plan_cards"
-import {inStudy, offersProgramme} from "st/srs/planner"
+import {inStudy} from "st/srs/planner"
 
 import {ChordGenerator, MultiKeyChordGenerator} from "st/chord_generators"
 import {GStaff, FStaff, GrandStaff, ChordStaff} from "st/components/staves"
@@ -134,17 +134,17 @@ export function measuresDescription(song) {
   return `measures ${first}–${last}`
 }
 
-// Whether the settings' piece is offered today's programme: once it has a
-// study or a scheduled measure (see offersProgramme)
-export function programmeOffered(settings, store=getAppStore()) {
-  let piece = sheetMusicPiece(settings)
-  return !!piece && offersProgramme(store.study(piece.id), store.items(piece.id))
+// Whether the settings' piece is offered today's programme: any imported
+// piece with measures, never practised included (its first programme card
+// puts it in study)
+export function programmeOffered(settings) {
+  return !!sheetMusicPiece(settings) && !!sheetMusicMeasureBounds(settings)
 }
 
-// Whether the settings play today's programme: when picked for a piece it is
-// offered, else by default for a piece in study
+// Whether the settings play today's programme: when picked, else by default
+// for a piece in study
 export function plannedPractice(settings, store=getAppStore()) {
-  if (settings.practice == FREE_PRACTICE || !programmeOffered(settings, store)) { return false }
+  if (settings.practice == FREE_PRACTICE || !programmeOffered(settings)) { return false }
   return settings.practice == PROGRAMME_PRACTICE || inStudy(store.study(settings.piece))
 }
 
