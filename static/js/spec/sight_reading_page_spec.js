@@ -121,6 +121,29 @@ let heldTrebleXML = `<?xml version="1.0" encoding="UTF-8"?>
   </part>
 </score-partwise>`
 
+// a two staff piece, one measure, whose column is [C#3, C#6]: C#6 is outside
+// the grand staff's usual C2-C6 range (as in the Nocturne's bar 7, see
+// sr-note-detection-l3), C#3 within it
+let wideRangeXML = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <work><work-title>Wide Range</work-title></work>
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes>
+        <divisions>1</divisions>
+        <time><beats>4</beats><beat-type>4</beat-type></time>
+        <staves>2</staves>
+        <clef number="1"><sign>G</sign><line>2</line></clef>
+        <clef number="2"><sign>F</sign><line>4</line></clef>
+      </attributes>
+      <note><pitch><step>C</step><alter>1</alter><octave>6</octave></pitch><duration>4</duration><staff>1</staff></note>
+      <backup><duration>4</duration></backup>
+      <note><pitch><step>C</step><alter>1</alter><octave>3</octave></pitch><duration>4</duration><staff>2</staff></note>
+    </measure>
+  </part>
+</score-partwise>`
+
 // C#4 is outside C major, so never a random note in that key
 const WRONG_NOTE = "C#4"
 
@@ -1015,6 +1038,56 @@ describe("sight reading page", function() {
         })
       }
     }
+
+    // D5(a): a note the fallback staff couldn't draw is dropped from the
+    // column, and a press of it is ignored outright rather than a wrong key
+    for (let [what, [note, props]] of Object.entries(cases)) {
+      it(`ignores a press of a note it had to drop from range, ${what} (D5a)`, async function() {
+        spyOn(console, "warn")
+        let {piece} = await importMusicXMLPiece("wide_range.musicxml", wideRangeXML, store)
+        window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+          piece: piece.id, startMeasure: 1, endMeasure: 1, hand: BOTH_HANDS, measuresPerCard: "all",
+        }))
+
+        let el = renderPage(ScorePage, props)
+        await waitFor(() => el.querySelector(`.${staffStyles.staff_notes}`) &&
+          el.textContent.includes(note), "the app's staff")
+
+        // the fallback staff drew only the in-range note; the column
+        // doesn't require the dropped C#6
+        expect([...page.state.notes.currentColumn()]).toEqual(["C#3"])
+
+        flushSync(() => page.beginSession())
+        play(["C#6"])
+        expect([page.state.stats.hits, page.state.stats.misses]).toEqual([0, 0])
+
+        play(["C#3"])
+        expect([page.state.stats.hits, page.state.stats.misses]).toEqual([1, 0])
+      })
+    }
+  })
+
+  // T1: the engine draws a piece's whole source, so detection covers the
+  // whole keyboard rather than the staff's own C2-C6 range
+  describe("whole keyboard detection on the engine path (T1)", function() {
+    it("keeps a note outside the grand staff's own range required, with no miss for it", async function() {
+      let {piece} = await importMusicXMLPiece("wide_range.musicxml", wideRangeXML, store)
+      window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+        piece: piece.id, startMeasure: 1, endMeasure: 1, hand: BOTH_HANDS, measuresPerCard: "all",
+      }))
+
+      let el = renderPage(ScorePage)
+      await waitFor(() => page.state.engineSource && page.state.engineSource.status == "ready",
+        "the engine's source")
+      await waitFor(() => [...page.state.notes.currentColumn()].includes("C#6"),
+        "the whole-keyboard column")
+
+      expect([...page.state.notes.currentColumn()].sort()).toEqual(["C#3", "C#6"])
+
+      flushSync(() => page.beginSession())
+      play(["C#3", "C#6"])
+      expect([page.state.stats.hits, page.state.stats.misses]).toEqual([1, 0])
+    })
   })
 
   // each pass through a card is an attempt, graded and written as reviews
