@@ -144,6 +144,32 @@ let wideRangeXML = `<?xml version="1.0" encoding="UTF-8"?>
   </part>
 </score-partwise>`
 
+// a two staff piece, one measure of two columns: a bass octave G#1+G#2 under
+// E4, then C3 under E4. G#1 is below the grand staff's usual C2-C6 range (as
+// in the Nocturne's bass), so the app staff drops it from the first column
+let splitOctaveXML = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <work><work-title>Split Octave</work-title></work>
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes>
+        <divisions>1</divisions>
+        <time><beats>4</beats><beat-type>4</beat-type></time>
+        <staves>2</staves>
+        <clef number="1"><sign>G</sign><line>2</line></clef>
+        <clef number="2"><sign>F</sign><line>4</line></clef>
+      </attributes>
+      <note><pitch><step>E</step><octave>4</octave></pitch><duration>2</duration><staff>1</staff></note>
+      <note><pitch><step>E</step><octave>4</octave></pitch><duration>2</duration><staff>1</staff></note>
+      <backup><duration>4</duration></backup>
+      <note><pitch><step>G</step><alter>1</alter><octave>1</octave></pitch><duration>2</duration><staff>2</staff></note>
+      <note><chord/><pitch><step>G</step><alter>1</alter><octave>2</octave></pitch><duration>2</duration><staff>2</staff></note>
+      <note><pitch><step>C</step><octave>3</octave></pitch><duration>2</duration><staff>2</staff></note>
+    </measure>
+  </part>
+</score-partwise>`
+
 // C#4 is outside C major, so never a random note in that key
 const WRONG_NOTE = "C#4"
 
@@ -1082,6 +1108,30 @@ describe("sight reading page", function() {
 
         play(["C#3"])
         expect([page.state.stats.hits, page.state.stats.misses]).toEqual([1, 1])
+      })
+
+      it(`ignores a dropped note of the card pressed after its column was hit, ${what} (D5a)`, async function() {
+        spyOn(console, "warn")
+        let {piece} = await importMusicXMLPiece("split_octave.musicxml", splitOctaveXML, store)
+        window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+          piece: piece.id, startMeasure: 1, endMeasure: 1, hand: BOTH_HANDS, measuresPerCard: "all",
+        }))
+
+        let el = renderPage(ScorePage, props)
+        await waitFor(() => el.querySelector(`.${staffStyles.staff_notes}`) &&
+          el.textContent.includes(note), "the app's staff")
+
+        expect([...page.state.notes.currentColumn()].sort()).toEqual(["E4", "G#2"])
+
+        // the octave's two note-ons arrive apart: G#2 first hits the column,
+        // and G#1, dropped from it, lands on the next column
+        flushSync(() => page.beginSession())
+        flushSync(() => page.pressNote("E4"))
+        flushSync(() => page.pressNote("G#2"))
+        expect([...page.state.notes.currentColumn()].sort()).toEqual(["C3", "E4"])
+
+        flushSync(() => page.pressNote("G#1"))
+        expect([page.state.stats.hits, page.state.stats.misses]).toEqual([1, 0])
       })
     }
   })

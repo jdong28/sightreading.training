@@ -142,9 +142,8 @@ describe("song sections", function() {
       ["E4"],
     ], "C3", "C6")
 
-    expect(columns.map(column => [...column])).toEqual([["C4"], ["E4"]])
-    expect(columns.map(column => column.dropped)).toEqual([["C2"], undefined])
-    expect(dropped).toEqual(2)
+    expect(columns).toEqual([["C4"], ["E4"]])
+    expect(dropped).toEqual(["C2", "A1"])
   })
 
   it("parses song text and reports errors", function() {

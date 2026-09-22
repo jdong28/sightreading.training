@@ -548,13 +548,13 @@ export default class SightReadingPage extends React.Component {
   }
 
   // D5(a): whether a pressed note is one the app staff's fallback had to
-  // drop from the current column, outside the staff's own range. The engine
+  // drop from the current card, outside the staff's own range. The engine
   // path (T1) never drops a note, so this only applies while the app staff
   // draws in its place (a piece with no stored source, or an engine failure)
   droppedStaffNote(note) {
-    let dropped = this.state.notes && this.state.notes.currentColumn().dropped
+    let current = this.currentCard()
     let pitch = parseNote(note)
-    return !!dropped && dropped.some(name => parseNote(name) == pitch)
+    return !!current && current.card.dropped.some(name => parseNote(name) == pitch)
   }
 
   // This generates a new set of notes, appropriate for when the generator or

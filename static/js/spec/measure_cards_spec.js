@@ -62,11 +62,13 @@ describe("measure cards", function() {
           startMeasure: 0, endMeasure: 1, measures: [0, 1],
           columns: [["D5"], ["G3", "G4"], ["A4"], ["B4"]],
           columnMeasures: [0, 1, 1, 1],
+          dropped: [],
         },
         {
           startMeasure: 2, endMeasure: 2, measures: [2],
           columns: [["C3", "E3", "G3", "C5"]],
           columnMeasures: [0],
+          dropped: [],
         },
       ])
     })

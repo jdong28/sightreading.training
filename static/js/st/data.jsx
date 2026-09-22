@@ -221,8 +221,8 @@ function sectionResult(staff, columns, parts, opts={}) {
     parts.push("section has no notes")
   }
 
-  if (dropped) {
-    let skipped = `${plural(dropped, "note")} outside the ${staff.name} staff range skipped`
+  if (dropped.length) {
+    let skipped = `${plural(dropped.length, "note")} outside the ${staff.name} staff range skipped`
     if (opts.suggestGrand && staff.name != "grand") {
       skipped += "; pick the grand staff to drill both hands"
     }
@@ -270,8 +270,8 @@ export function pieceSectionMeasures(staff, settings, song) {
       let columns = extractSectionColumns(song, {
         startMeasure: number, endMeasure: number, track: tracks, notation: true,
       })
-      let [visible] = filterColumnsToRange(columns, staff.range[0], staff.range[1])
-      return {number, columns: visible}
+      let [visible, dropped] = filterColumnsToRange(columns, staff.range[0], staff.range[1])
+      return {number, columns: visible, dropped}
     })
 }
 
