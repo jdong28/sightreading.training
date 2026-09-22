@@ -1180,6 +1180,13 @@ export default class SightReadingPage extends React.Component {
   recordSession() {
     let sectionPractice = this.takePractice()
 
+    // a session already recorded at rest is left alone: recording it again
+    // would relabel it with whatever staff or generator is current now
+    if (!this.state.session) {
+      this.savePractice(sectionPractice)
+      return
+    }
+
     let settings = this.currentSettings()
     let section = this.currentPieceSection()
     if (section) {
@@ -1543,7 +1550,10 @@ export default class SightReadingPage extends React.Component {
         onClick={() => this.openStatsLightbox()}
         onKeyDown={e => {
           if (e.key == "Enter" || e.key == " ") {
+            // Hotkeys listens on window, so without this the space bar would
+            // also reach skipCurrentNote via the keyMap
             e.preventDefault()
+            e.stopPropagation()
             this.openStatsLightbox()
           }
         }}>
