@@ -14,7 +14,7 @@ import {
 } from "st/sheet_music_deck"
 
 import {
-  pieceSection, sheetMusicSection, sheetMusicPieceSettings, sheetMusicStaffFor,
+  pieceSection, pieceSectionMeasures, sheetMusicSection, sheetMusicPieceSettings, sheetMusicStaffFor,
   sheetMusicKeyFor, measuresDescription, SHEET_MUSIC_GENERATOR, BOTH_HANDS, RIGHT_HAND, LEFT_HAND
 } from "st/data"
 
@@ -284,6 +284,61 @@ describe("sheet music deck", function() {
       // a single hand on its own staff needs no advice
       let right = pieceSection(treble, {startMeasure: 1, endMeasure: 2, hand: RIGHT_HAND}, song)
       expect(right.status).not.toContain("grand staff")
+    })
+  })
+
+  // T1: the engine draws a piece's whole source, so detection must too; only
+  // the app staff's own fallback (a piece it can't engrave) still needs a
+  // staff's notes clipped to what it can draw. Both sides call the same
+  // pieceSection/pieceSectionMeasures, fed the grand staff's usual C2–C6
+  // range or, on the engine path, the whole keyboard
+  describe("whole keyboard detection (T1)", function() {
+    // a bass G#1 and a treble C#6 at the same onset, both outside the grand
+    // staff's C2–C6 range (as in the Nocturne's bar 7, see sr-note-detection-l3)
+    let wideRangeXML = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes>
+        <divisions>1</divisions>
+        <time><beats>4</beats><beat-type>4</beat-type></time>
+        <staves>2</staves>
+        <clef number="1"><sign>G</sign><line>2</line></clef>
+        <clef number="2"><sign>F</sign><line>4</line></clef>
+      </attributes>
+      <note><pitch><step>C</step><alter>1</alter><octave>6</octave></pitch><duration>4</duration><staff>1</staff></note>
+      <backup><duration>4</duration></backup>
+      <note><pitch><step>G</step><alter>1</alter><octave>1</octave></pitch><duration>4</duration><staff>2</staff></note>
+    </measure>
+  </part>
+</score-partwise>`
+
+    let wholeKeyboard = {name: "grand", range: ["A0", "C8"]}
+    let settings = {startMeasure: 1, endMeasure: 1, hand: BOTH_HANDS}
+
+    it("pieceSectionMeasures keeps notes outside the grand staff's range given the whole keyboard", function() {
+      let song = parseMusicXML(wideRangeXML)
+      let measures = pieceSectionMeasures(wholeKeyboard, settings, song)
+      expect([...measures[0].columns[0]].sort()).toEqual(["C#6", "G#1"])
+    })
+
+    it("pieceSectionMeasures drops the same notes on the grand staff's own range", function() {
+      let song = parseMusicXML(wideRangeXML)
+      let measures = pieceSectionMeasures(grand, settings, song)
+      expect(measures[0].columns).toEqual([])
+    })
+
+    it("reports no notes skipped given the whole keyboard, unlike the grand staff's own range", function() {
+      let song = parseMusicXML(wideRangeXML)
+
+      let wide = pieceSection(wholeKeyboard, settings, song)
+      expect([...wide.columns[0]].sort()).toEqual(["C#6", "G#1"])
+      expect(wide.status).not.toContain("skipped")
+
+      let narrow = pieceSection(grand, settings, song)
+      expect(narrow.columns).toEqual([])
+      expect(narrow.status).toContain("2 notes outside the grand staff range skipped")
     })
   })
 

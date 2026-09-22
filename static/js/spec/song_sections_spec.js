@@ -143,7 +143,7 @@ describe("song sections", function() {
     ], "C3", "C6")
 
     expect(columns).toEqual([["C4"], ["E4"]])
-    expect(dropped).toEqual(2)
+    expect(dropped).toEqual(["C2", "A1"])
   })
 
   it("parses song text and reports errors", function() {

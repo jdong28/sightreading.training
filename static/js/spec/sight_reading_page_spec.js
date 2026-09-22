@@ -18,7 +18,7 @@ import {
 } from "st/data"
 import {PlanGenerator} from "st/plan_cards"
 import {AGAIN, GOOD, EASY} from "st/srs/grade"
-import {RANDOM_ORDER, MeasureCardGenerator} from "st/measure_cards"
+import {IN_ORDER, RANDOM_ORDER, MeasureCardGenerator} from "st/measure_cards"
 import {DRILL_STORAGE_KEY, SCORE_DRILL_STORAGE_KEY} from "st/generators"
 import {scopeEvent} from "st/events"
 import NoteStats from "st/note_stats"
@@ -117,6 +117,83 @@ let heldTrebleXML = `<?xml version="1.0" encoding="UTF-8"?>
       <backup><duration>4</duration></backup>
       ${["C", "G", "E", "C"].map(step =>
         `<note><pitch><step>${step}</step><octave>3</octave></pitch><duration>1</duration><voice>2</voice><type>quarter</type><staff>2</staff></note>`).join("")}
+    </measure>
+  </part>
+</score-partwise>`
+
+// a two staff piece, one measure, whose column is [C#3, C#6]: C#6 is outside
+// the grand staff's usual C2-C6 range (as in the Nocturne's bar 7, see
+// sr-note-detection-l3), C#3 within it
+let wideRangeXML = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <work><work-title>Wide Range</work-title></work>
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes>
+        <divisions>1</divisions>
+        <time><beats>4</beats><beat-type>4</beat-type></time>
+        <staves>2</staves>
+        <clef number="1"><sign>G</sign><line>2</line></clef>
+        <clef number="2"><sign>F</sign><line>4</line></clef>
+      </attributes>
+      <note><pitch><step>C</step><alter>1</alter><octave>6</octave></pitch><duration>4</duration><staff>1</staff></note>
+      <backup><duration>4</duration></backup>
+      <note><pitch><step>C</step><alter>1</alter><octave>3</octave></pitch><duration>4</duration><staff>2</staff></note>
+    </measure>
+  </part>
+</score-partwise>`
+
+// a two staff piece, one measure of two columns: a bass octave G#1+G#2 under
+// E4, then C3 under E4. G#1 is below the grand staff's usual C2-C6 range (as
+// in the Nocturne's bass), so the app staff drops it from the first column
+let splitOctaveXML = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <work><work-title>Split Octave</work-title></work>
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes>
+        <divisions>1</divisions>
+        <time><beats>4</beats><beat-type>4</beat-type></time>
+        <staves>2</staves>
+        <clef number="1"><sign>G</sign><line>2</line></clef>
+        <clef number="2"><sign>F</sign><line>4</line></clef>
+      </attributes>
+      <note><pitch><step>E</step><octave>4</octave></pitch><duration>2</duration><staff>1</staff></note>
+      <note><pitch><step>E</step><octave>4</octave></pitch><duration>2</duration><staff>1</staff></note>
+      <backup><duration>4</duration></backup>
+      <note><pitch><step>G</step><alter>1</alter><octave>1</octave></pitch><duration>2</duration><staff>2</staff></note>
+      <note><chord/><pitch><step>G</step><alter>1</alter><octave>2</octave></pitch><duration>2</duration><staff>2</staff></note>
+      <note><pitch><step>C</step><octave>3</octave></pitch><duration>2</duration><staff>2</staff></note>
+    </measure>
+  </part>
+</score-partwise>`
+
+// two measures on two staves: bar 1 ends on a bass octave G#1+G#2 under E4,
+// bar 2 is C3 under E4, with no G#1 anywhere in it
+let barOctaveXML = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <work><work-title>Bar Octave</work-title></work>
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes>
+        <divisions>1</divisions>
+        <time><beats>4</beats><beat-type>4</beat-type></time>
+        <staves>2</staves>
+        <clef number="1"><sign>G</sign><line>2</line></clef>
+        <clef number="2"><sign>F</sign><line>4</line></clef>
+      </attributes>
+      <note><pitch><step>E</step><octave>4</octave></pitch><duration>4</duration><staff>1</staff></note>
+      <backup><duration>4</duration></backup>
+      <note><pitch><step>G</step><alter>1</alter><octave>1</octave></pitch><duration>4</duration><staff>2</staff></note>
+      <note><chord/><pitch><step>G</step><alter>1</alter><octave>2</octave></pitch><duration>4</duration><staff>2</staff></note>
+    </measure>
+    <measure number="2">
+      <note><pitch><step>E</step><octave>4</octave></pitch><duration>4</duration><staff>1</staff></note>
+      <backup><duration>4</duration></backup>
+      <note><pitch><step>C</step><octave>3</octave></pitch><duration>4</duration><staff>2</staff></note>
     </measure>
   </part>
 </score-partwise>`
@@ -1015,6 +1092,125 @@ describe("sight reading page", function() {
         })
       }
     }
+
+    // D5(a): a note the fallback staff couldn't draw is dropped from the
+    // column, and a press of it is ignored outright rather than a wrong key
+    for (let [what, [note, props]] of Object.entries(cases)) {
+      it(`ignores a press of a note it had to drop from range, ${what} (D5a)`, async function() {
+        spyOn(console, "warn")
+        let {piece} = await importMusicXMLPiece("wide_range.musicxml", wideRangeXML, store)
+        window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+          piece: piece.id, startMeasure: 1, endMeasure: 1, hand: BOTH_HANDS, measuresPerCard: "all",
+        }))
+
+        let el = renderPage(ScorePage, props)
+        await waitFor(() => el.querySelector(`.${staffStyles.staff_notes}`) &&
+          el.textContent.includes(note), "the app's staff")
+
+        // the fallback staff drew only the in-range note; the column
+        // doesn't require the dropped C#6
+        expect([...page.state.notes.currentColumn()]).toEqual(["C#3"])
+
+        flushSync(() => page.beginSession())
+        play(["C#6"])
+        expect([page.state.stats.hits, page.state.stats.misses]).toEqual([0, 0])
+
+        play(["C#3"])
+        expect([page.state.stats.hits, page.state.stats.misses]).toEqual([1, 0])
+      })
+
+      it(`still counts a press outside the staff's range that the column never had a wrong key, ${what} (D5a)`, async function() {
+        spyOn(console, "warn")
+        let {piece} = await importMusicXMLPiece("wide_range.musicxml", wideRangeXML, store)
+        window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+          piece: piece.id, startMeasure: 1, endMeasure: 1, hand: BOTH_HANDS, measuresPerCard: "all",
+        }))
+
+        let el = renderPage(ScorePage, props)
+        await waitFor(() => el.querySelector(`.${staffStyles.staff_notes}`) &&
+          el.textContent.includes(note), "the app's staff")
+
+        flushSync(() => page.beginSession())
+        play(["A0"])
+        expect([page.state.stats.hits, page.state.stats.misses]).toEqual([0, 1])
+
+        play(["C#3"])
+        expect([page.state.stats.hits, page.state.stats.misses]).toEqual([1, 1])
+      })
+
+      it(`ignores a dropped note of the card pressed after its column was hit, ${what} (D5a)`, async function() {
+        spyOn(console, "warn")
+        let {piece} = await importMusicXMLPiece("split_octave.musicxml", splitOctaveXML, store)
+        window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+          piece: piece.id, startMeasure: 1, endMeasure: 1, hand: BOTH_HANDS, measuresPerCard: "all",
+        }))
+
+        let el = renderPage(ScorePage, props)
+        await waitFor(() => el.querySelector(`.${staffStyles.staff_notes}`) &&
+          el.textContent.includes(note), "the app's staff")
+
+        expect([...page.state.notes.currentColumn()].sort()).toEqual(["E4", "G#2"])
+
+        // the octave's two note-ons arrive apart: G#2 first hits the column,
+        // and G#1, dropped from it, lands on the next column
+        flushSync(() => page.beginSession())
+        flushSync(() => page.pressNote("E4"))
+        flushSync(() => page.pressNote("G#2"))
+        expect([...page.state.notes.currentColumn()].sort()).toEqual(["C3", "E4"])
+
+        flushSync(() => page.pressNote("G#1"))
+        expect([page.state.stats.hits, page.state.stats.misses]).toEqual([1, 0])
+      })
+
+      it(`ignores a dropped note pressed after its card's last column was hit, ${what} (D5a)`, async function() {
+        spyOn(console, "warn")
+        let {piece} = await importMusicXMLPiece("bar_octave.musicxml", barOctaveXML, store)
+        window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+          piece: piece.id, startMeasure: 1, endMeasure: 2, hand: BOTH_HANDS, measuresPerCard: "1",
+          order: IN_ORDER,
+        }))
+
+        let el = renderPage(ScorePage, props)
+        await waitFor(() => el.querySelector(`.${staffStyles.staff_notes}`) &&
+          el.textContent.includes(note), "the app's staff")
+
+        expect(page.currentCard().card.measures).toEqual([1])
+        expect([...page.state.notes.currentColumn()].sort()).toEqual(["E4", "G#2"])
+
+        // G#2 hits bar 1's last column and the deck moves on to bar 2 before
+        // G#1, dropped from bar 1, arrives
+        flushSync(() => page.beginSession())
+        flushSync(() => page.pressNote("E4"))
+        flushSync(() => page.pressNote("G#2"))
+        expect(page.currentCard().card.measures).toEqual([2])
+
+        flushSync(() => page.pressNote("G#1"))
+        expect([page.state.stats.hits, page.state.stats.misses]).toEqual([1, 0])
+      })
+    }
+  })
+
+  // T1: the engine draws a piece's whole source, so detection covers the
+  // whole keyboard rather than the staff's own C2-C6 range
+  describe("whole keyboard detection on the engine path (T1)", function() {
+    it("keeps a note outside the grand staff's own range required, with no miss for it", async function() {
+      let {piece} = await importMusicXMLPiece("wide_range.musicxml", wideRangeXML, store)
+      window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+        piece: piece.id, startMeasure: 1, endMeasure: 1, hand: BOTH_HANDS, measuresPerCard: "all",
+      }))
+
+      let el = renderPage(ScorePage)
+      await waitFor(() => page.state.engineSource && page.state.engineSource.status == "ready",
+        "the engine's source")
+      await waitFor(() => [...page.state.notes.currentColumn()].includes("C#6"),
+        "the whole-keyboard column")
+
+      expect([...page.state.notes.currentColumn()].sort()).toEqual(["C#3", "C#6"])
+
+      flushSync(() => page.beginSession())
+      play(["C#3", "C#6"])
+      expect([page.state.stats.hits, page.state.stats.misses]).toEqual([1, 0])
+    })
   })
 
   // each pass through a card is an attempt, graded and written as reviews

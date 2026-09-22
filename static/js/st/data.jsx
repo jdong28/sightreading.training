@@ -221,8 +221,8 @@ function sectionResult(staff, columns, parts, opts={}) {
     parts.push("section has no notes")
   }
 
-  if (dropped) {
-    let skipped = `${plural(dropped, "note")} outside the ${staff.name} staff range skipped`
+  if (dropped.length) {
+    let skipped = `${plural(dropped.length, "note")} outside the ${staff.name} staff range skipped`
     if (opts.suggestGrand && staff.name != "grand") {
       skipped += "; pick the grand staff to drill both hands"
     }
@@ -273,6 +273,19 @@ export function pieceSectionMeasures(staff, settings, song) {
       let [visible] = filterColumnsToRange(columns, staff.range[0], staff.range[1])
       return {number, columns: visible}
     })
+}
+
+// The pitches of an imported piece's drilled section (see drilledRange) that
+// the staff's range drops from its columns, empty for any other generator's
+// settings
+export function sectionDroppedPitches(staff, settings) {
+  let piece = sheetMusicPiece(settings)
+  let song = piece && pieceSong(piece)
+  if (!song) { return new Set() }
+
+  let columns = extractSectionColumns(song, {...drilledRange(settings), track: handTracks(song, settings.hand)})
+  let [, dropped] = filterColumnsToRange(columns, staff.range[0], staff.range[1])
+  return new Set(dropped.map(parseNote))
 }
 
 // The measures of the piece section as flashcards (see st/measure_cards), or

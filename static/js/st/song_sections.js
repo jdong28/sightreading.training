@@ -319,11 +319,11 @@ export function extractSectionColumns(song, opts={}) {
 }
 
 // Drops notes that fall outside [min, max] pitch (note names), removing
-// columns that become empty. Returns [columns, droppedCount].
+// columns that become empty. Returns [columns, droppedNotes].
 export function filterColumnsToRange(columns, min, max) {
   let minPitch = parseNote(min)
   let maxPitch = parseNote(max)
-  let dropped = 0
+  let dropped = []
 
   let out = []
   // the extras of columns dropped whole, drawn with the next column kept
@@ -333,7 +333,7 @@ export function filterColumnsToRange(columns, min, max) {
     let keep = column.map(note => {
       let pitch = parseNote(note)
       let inRange = pitch >= minPitch && pitch <= maxPitch
-      if (!inRange) { dropped++ }
+      if (!inRange) { dropped.push(note) }
       return inRange
     })
 

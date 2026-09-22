@@ -10,7 +10,9 @@ import styles from "./sight_reading_page.module.css"
 import staffStyles from "st/components/staff.module.css"
 
 import {noteName, parseNote} from "st/music"
-import {STAVES, GENERATORS, sheetMusicPiece, handTracks, drilledRange, RIGHT_HAND, LEFT_HAND} from "st/data"
+import {
+  STAVES, GENERATORS, sheetMusicPiece, handTracks, drilledRange, sectionDroppedPitches, RIGHT_HAND, LEFT_HAND,
+} from "st/data"
 import {pieceSong, pieceSource} from "st/sheet_music_deck"
 import {parseMusicXML} from "st/musicxml"
 import {getAppStore} from "st/storage"
@@ -47,6 +49,12 @@ import {SCROLL_WAIT} from "st/score_render/card_scroll"
 
 const DEFAULT_NOTE_WIDTH = 100
 const DEFAULT_SPEED = 4
+
+// the widest range a MIDI keyboard can send, used in place of a staff's own
+// range while the engine draws an imported piece's columns (T1): the engine
+// draws every note of the source regardless of what the staff can show, so
+// detection must cover it too
+const FULL_KEYBOARD_RANGE = ["A0", "C8"]
 
 // the height the new renderer paints the staff at inside the staff plate
 const STAFF_TWO_HEIGHT = 150
@@ -268,6 +276,9 @@ export default class SightReadingPage extends React.Component {
       engineSource: null,
       // the columns of the engine card a miss was counted on this pass
       engineMissed: [],
+      // the pitches the app staff's fallback drops from the drilled section
+      // (see droppedStaffNote)
+      droppedPitches: new Set(),
     }
   }
 
@@ -305,6 +316,8 @@ export default class SightReadingPage extends React.Component {
   updateEngineCard(prevState) {
     if (!this.programme.engine) { return }
 
+    let drewBefore = this.engineCards(prevState)
+
     this.loadEngineSource()
 
     // a card whose columns can't be joined (a piece stored without the
@@ -314,6 +327,12 @@ export default class SightReadingPage extends React.Component {
     if (current && (!joinable(current.card.columns) || this.engineStaves() === undefined)) {
       this.setState({engineSource: {...this.state.engineSource, status: "failed"}})
       return
+    }
+
+    // whole-keyboard detection (T1) depends on whether the engine actually
+    // draws the piece; rebuild the columns when that changes
+    if (drewBefore != this.engineCards()) {
+      this.refreshNoteList()
     }
 
     if (prevState.notes != this.state.notes && this.state.engineMissed.length) {
@@ -367,10 +386,11 @@ export default class SightReadingPage extends React.Component {
   }
 
   // whether the drill's cards are drawn by the programme's engine: an
-  // imported piece whose source is stored
-  engineCards() {
-    let source = this.state.engineSource
-    return !!(this.programme.engine && this.state.mode &&
+  // imported piece whose source is stored. Takes state so a caller can also
+  // ask of a previous render (see updateEngineCard)
+  engineCards(state=this.state) {
+    let source = state.engineSource
+    return !!(this.programme.engine && state.mode &&
       source && source.status == "ready" && this.currentPieceSection())
   }
 
@@ -522,6 +542,24 @@ export default class SightReadingPage extends React.Component {
     })
   }
 
+  // the staff a generator builds its columns for (T1): the whole keyboard
+  // while an imported piece is drawn by the engine, since the engine draws
+  // every note of its source whatever the staff can show; the staff's own
+  // range otherwise, so a generator's own notes and the app staff's
+  // fallback for a piece it can't engrave stay within what it can draw
+  columnStaff() {
+    let staff = this.state.currentStaff
+    return staff && this.engineCards() ? {...staff, range: FULL_KEYBOARD_RANGE} : staff
+  }
+
+  // D5(a): whether a pressed note is one the app staff's fallback had to
+  // drop from the drilled section, outside the staff's own range. The engine
+  // path (T1) never drops a note, so this only applies while the app staff
+  // draws in its place (a piece with no stored source, or an engine failure)
+  droppedStaffNote(note) {
+    return this.state.droppedPitches.has(parseNote(note))
+  }
+
   // This generates a new set of notes, appropriate for when the generator or
   // generator parameters have changed in some say
   refreshNoteList() {
@@ -535,12 +573,15 @@ export default class SightReadingPage extends React.Component {
       ...this.state.currentGeneratorSettings
     }
 
+    let staff = this.columnStaff()
     let generatorInstance = generator.create.call(
       generator,
-      this.state.currentStaff,
+      staff,
       this.state.keySignature,
       generatorSettings
     )
+    let droppedPitches = generator.name == "sheet music" ?
+      sectionDroppedPitches(staff, generatorSettings) : new Set()
 
     // the measure cards grade each pass by the drill it is played in
     if (generatorInstance.setDrill) {
@@ -565,7 +606,7 @@ export default class SightReadingPage extends React.Component {
     // enough columns to show the whole of any card of a piece
     let cardColumnCounts = (generatorInstance.cards || []).map(card => card.columns.length)
     notes.fillBuffer(Math.max(this.state.bufferSize, ...cardColumnCounts))
-    return this.setState({ notes: notes })
+    return this.setState({ notes, droppedPitches })
   }
 
   // keeps state.staffWidth up to date with the staff wrapper's width, which
@@ -904,6 +945,12 @@ export default class SightReadingPage extends React.Component {
     }
 
     switch (this.state.currentGenerator.mode) {
+      case "notes": {
+        // D5(a): a note the app staff's fallback had to drop from an
+        // imported piece's section is neither required nor a wrong key
+        if (this.droppedStaffNote(note)) { return }
+        break
+      }
       case "chords": {
         let ignoreAbove = this.state.currentGeneratorSettings.ignoreAbove
         if (ignoreAbove != null) {
