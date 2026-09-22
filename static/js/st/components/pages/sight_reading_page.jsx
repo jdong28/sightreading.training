@@ -916,9 +916,11 @@ export default class SightReadingPage extends React.Component {
       }
     }
 
-    // a key down with none held starts a new try, which may slip again
-    // (releases batched into one render close the try only once)
-    if (!Object.keys(this.state.heldNotes).length) {
+    // a key down with none of the column's touched keys held starts a new
+    // try, which may slip again; keys held from earlier columns don't carry
+    // a try on (releases batched into one render close the try only once)
+    let {heldNotes, touchedNotes} = this.state
+    if (!Object.keys(touchedNotes).some(n => heldNotes[n])) {
       this.slipped = false
     }
 

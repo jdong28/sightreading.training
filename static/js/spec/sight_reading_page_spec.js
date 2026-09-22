@@ -1547,6 +1547,27 @@ describe("sight reading page", function() {
       play(["G3"])
       expect(counts()).toEqual([2, 0])
     })
+
+    it("counts each wrong try with a key held across a hit as a further slip", async function() {
+      await renderPiece(heldTrebleXML, {endMeasure: 1})
+      let slipNotes = spyOn(page.state.stats, "slipNotes").and.callThrough()
+
+      press("C3")
+      press("G5")
+      release("C3")
+      expect(head()).toEqual(["G3"])
+
+      // the G5 is still down through both tries, as no key would be
+      press("E3")
+      release("E3")
+      press("D3")
+      release("D3")
+      expect(counts()).toEqual([1, 1])
+      expect(slipNotes).toHaveBeenCalledTimes(1)
+
+      play(["G3"])
+      expect(counts()).toEqual([2, 1])
+    })
   })
 
 })
