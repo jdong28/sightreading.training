@@ -10,7 +10,9 @@ import styles from "./sight_reading_page.module.css"
 import staffStyles from "st/components/staff.module.css"
 
 import {noteName, parseNote} from "st/music"
-import {STAVES, GENERATORS, sheetMusicPiece, handTracks, drilledRange, RIGHT_HAND, LEFT_HAND} from "st/data"
+import {
+  STAVES, GENERATORS, sheetMusicPiece, handTracks, drilledRange, sectionDroppedPitches, RIGHT_HAND, LEFT_HAND,
+} from "st/data"
 import {pieceSong, pieceSource} from "st/sheet_music_deck"
 import {parseMusicXML} from "st/musicxml"
 import {getAppStore} from "st/storage"
@@ -274,6 +276,9 @@ export default class SightReadingPage extends React.Component {
       engineSource: null,
       // the columns of the engine card a miss was counted on this pass
       engineMissed: [],
+      // the pitches the app staff's fallback drops from the drilled section
+      // (see droppedStaffNote)
+      droppedPitches: new Set(),
     }
   }
 
@@ -548,13 +553,11 @@ export default class SightReadingPage extends React.Component {
   }
 
   // D5(a): whether a pressed note is one the app staff's fallback had to
-  // drop from the current card, outside the staff's own range. The engine
+  // drop from the drilled section, outside the staff's own range. The engine
   // path (T1) never drops a note, so this only applies while the app staff
   // draws in its place (a piece with no stored source, or an engine failure)
   droppedStaffNote(note) {
-    let current = this.currentCard()
-    let pitch = parseNote(note)
-    return !!current && current.card.dropped.some(name => parseNote(name) == pitch)
+    return this.state.droppedPitches.has(parseNote(note))
   }
 
   // This generates a new set of notes, appropriate for when the generator or
@@ -570,12 +573,15 @@ export default class SightReadingPage extends React.Component {
       ...this.state.currentGeneratorSettings
     }
 
+    let staff = this.columnStaff()
     let generatorInstance = generator.create.call(
       generator,
-      this.columnStaff(),
+      staff,
       this.state.keySignature,
       generatorSettings
     )
+    let droppedPitches = generator.name == "sheet music" ?
+      sectionDroppedPitches(staff, generatorSettings) : new Set()
 
     // the measure cards grade each pass by the drill it is played in
     if (generatorInstance.setDrill) {
@@ -600,7 +606,7 @@ export default class SightReadingPage extends React.Component {
     // enough columns to show the whole of any card of a piece
     let cardColumnCounts = (generatorInstance.cards || []).map(card => card.columns.length)
     notes.fillBuffer(Math.max(this.state.bufferSize, ...cardColumnCounts))
-    return this.setState({ notes: notes })
+    return this.setState({ notes, droppedPitches })
   }
 
   // keeps state.staffWidth up to date with the staff wrapper's width, which

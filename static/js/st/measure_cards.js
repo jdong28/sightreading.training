@@ -24,8 +24,6 @@ export const RANDOM_ORDER = "random"
  * @property {number} number the score's bar number
  * @property {string[][]} columns each may carry the score's onsets and
  * notation (see extractSectionColumns in st/song_sections)
- * @property {string[]} [dropped] notes the staff's range left out of the
- * columns (see filterColumnsToRange in st/song_sections)
  */
 
 /**
@@ -35,7 +33,6 @@ export const RANDOM_ORDER = "random"
  * @property {number[]} measures bar numbers, in order
  * @property {string[][]} columns the columns of every measure, in order
  * @property {number[]} columnMeasures index into measures for each column
- * @property {string[]} dropped the notes every measure's columns left out
  */
 
 /**
@@ -78,7 +75,6 @@ export function sectionCard(measures) {
     measures: measures.map(measure => measure.number),
     columns,
     columnMeasures,
-    dropped: measures.flatMap(measure => measure.dropped || []),
   }
 }
 

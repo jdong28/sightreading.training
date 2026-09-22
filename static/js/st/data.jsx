@@ -270,9 +270,22 @@ export function pieceSectionMeasures(staff, settings, song) {
       let columns = extractSectionColumns(song, {
         startMeasure: number, endMeasure: number, track: tracks, notation: true,
       })
-      let [visible, dropped] = filterColumnsToRange(columns, staff.range[0], staff.range[1])
-      return {number, columns: visible, dropped}
+      let [visible] = filterColumnsToRange(columns, staff.range[0], staff.range[1])
+      return {number, columns: visible}
     })
+}
+
+// The pitches of an imported piece's drilled section (see drilledRange) that
+// the staff's range drops from its columns, empty for any other generator's
+// settings
+export function sectionDroppedPitches(staff, settings) {
+  let piece = sheetMusicPiece(settings)
+  let song = piece && pieceSong(piece)
+  if (!song) { return new Set() }
+
+  let columns = extractSectionColumns(song, {...drilledRange(settings), track: handTracks(song, settings.hand)})
+  let [, dropped] = filterColumnsToRange(columns, staff.range[0], staff.range[1])
+  return new Set(dropped.map(parseNote))
 }
 
 // The measures of the piece section as flashcards (see st/measure_cards), or

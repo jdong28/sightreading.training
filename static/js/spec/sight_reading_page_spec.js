@@ -18,7 +18,7 @@ import {
 } from "st/data"
 import {PlanGenerator} from "st/plan_cards"
 import {AGAIN, GOOD, EASY} from "st/srs/grade"
-import {RANDOM_ORDER, MeasureCardGenerator} from "st/measure_cards"
+import {IN_ORDER, RANDOM_ORDER, MeasureCardGenerator} from "st/measure_cards"
 import {DRILL_STORAGE_KEY, SCORE_DRILL_STORAGE_KEY} from "st/generators"
 import {scopeEvent} from "st/events"
 import NoteStats from "st/note_stats"
@@ -166,6 +166,34 @@ let splitOctaveXML = `<?xml version="1.0" encoding="UTF-8"?>
       <note><pitch><step>G</step><alter>1</alter><octave>1</octave></pitch><duration>2</duration><staff>2</staff></note>
       <note><chord/><pitch><step>G</step><alter>1</alter><octave>2</octave></pitch><duration>2</duration><staff>2</staff></note>
       <note><pitch><step>C</step><octave>3</octave></pitch><duration>2</duration><staff>2</staff></note>
+    </measure>
+  </part>
+</score-partwise>`
+
+// two measures on two staves: bar 1 ends on a bass octave G#1+G#2 under E4,
+// bar 2 is C3 under E4, with no G#1 anywhere in it
+let barOctaveXML = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <work><work-title>Bar Octave</work-title></work>
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes>
+        <divisions>1</divisions>
+        <time><beats>4</beats><beat-type>4</beat-type></time>
+        <staves>2</staves>
+        <clef number="1"><sign>G</sign><line>2</line></clef>
+        <clef number="2"><sign>F</sign><line>4</line></clef>
+      </attributes>
+      <note><pitch><step>E</step><octave>4</octave></pitch><duration>4</duration><staff>1</staff></note>
+      <backup><duration>4</duration></backup>
+      <note><pitch><step>G</step><alter>1</alter><octave>1</octave></pitch><duration>4</duration><staff>2</staff></note>
+      <note><chord/><pitch><step>G</step><alter>1</alter><octave>2</octave></pitch><duration>4</duration><staff>2</staff></note>
+    </measure>
+    <measure number="2">
+      <note><pitch><step>E</step><octave>4</octave></pitch><duration>4</duration><staff>1</staff></note>
+      <backup><duration>4</duration></backup>
+      <note><pitch><step>C</step><octave>3</octave></pitch><duration>4</duration><staff>2</staff></note>
     </measure>
   </part>
 </score-partwise>`
@@ -1129,6 +1157,32 @@ describe("sight reading page", function() {
         flushSync(() => page.pressNote("E4"))
         flushSync(() => page.pressNote("G#2"))
         expect([...page.state.notes.currentColumn()].sort()).toEqual(["C3", "E4"])
+
+        flushSync(() => page.pressNote("G#1"))
+        expect([page.state.stats.hits, page.state.stats.misses]).toEqual([1, 0])
+      })
+
+      it(`ignores a dropped note pressed after its card's last column was hit, ${what} (D5a)`, async function() {
+        spyOn(console, "warn")
+        let {piece} = await importMusicXMLPiece("bar_octave.musicxml", barOctaveXML, store)
+        window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+          piece: piece.id, startMeasure: 1, endMeasure: 2, hand: BOTH_HANDS, measuresPerCard: "1",
+          order: IN_ORDER,
+        }))
+
+        let el = renderPage(ScorePage, props)
+        await waitFor(() => el.querySelector(`.${staffStyles.staff_notes}`) &&
+          el.textContent.includes(note), "the app's staff")
+
+        expect(page.currentCard().card.measures).toEqual([1])
+        expect([...page.state.notes.currentColumn()].sort()).toEqual(["E4", "G#2"])
+
+        // G#2 hits bar 1's last column and the deck moves on to bar 2 before
+        // G#1, dropped from bar 1, arrives
+        flushSync(() => page.beginSession())
+        flushSync(() => page.pressNote("E4"))
+        flushSync(() => page.pressNote("G#2"))
+        expect(page.currentCard().card.measures).toEqual([2])
 
         flushSync(() => page.pressNote("G#1"))
         expect([page.state.stats.hits, page.state.stats.misses]).toEqual([1, 0])
