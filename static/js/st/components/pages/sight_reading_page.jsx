@@ -183,10 +183,7 @@ export default class SightReadingPage extends React.Component {
     this.pressNote = this.pressNote.bind(this)
     this.releaseNote = this.releaseNote.bind(this)
     this.onFullscreenChange = this.onFullscreenChange.bind(this)
-    // a session already recorded at rest is left alone (see closeSession)
-    this.onPageHide = () => {
-      if (this.state.session) { this.recordSession() }
-    }
+    this.onPageHide = () => this.recordSession()
     this.onResize = () => {
       let scale = staffScale()
       if (scale != this.state.scale) {
@@ -485,11 +482,7 @@ export default class SightReadingPage extends React.Component {
     window.removeEventListener("resize", this.onResize)
     this.observeStaffWrapper(null)
     this.stopClock()
-    // a session already recorded at rest keeps its label; only a session
-    // still running here needs saving before the page goes away
-    if (this.state.session) {
-      this.recordSession()
-    }
+    this.recordSession()
     this.stopGenerator(this.state.notes && this.state.notes.generator)
 
     if (this.state.slider) {
@@ -1180,6 +1173,13 @@ export default class SightReadingPage extends React.Component {
   recordSession() {
     let sectionPractice = this.takePractice()
 
+    // a session already recorded at rest is left alone: recording it again
+    // would relabel it with whatever staff or generator is current now
+    if (!this.state.session) {
+      this.savePractice(sectionPractice)
+      return
+    }
+
     let settings = this.currentSettings()
     let section = this.currentPieceSection()
     if (section) {
@@ -1207,13 +1207,9 @@ export default class SightReadingPage extends React.Component {
   }
 
   // Records the session played on the current staff and generator, returning
-  // the stats for the next one. A session already recorded at rest is left
-  // alone: recording it again here would relabel it with whatever staff or
-  // generator is current now, which may have changed since
+  // the stats for the next one
   closeSession() {
-    if (this.state.session) {
-      this.recordSession()
-    }
+    this.recordSession()
     this.missedNotes = null
     return this.newStats()
   }
