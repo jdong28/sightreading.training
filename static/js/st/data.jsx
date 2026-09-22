@@ -25,6 +25,10 @@ import {
   exportLibraryFile, importLibraryFile
 } from "st/sheet_music_deck"
 
+import {getAppStore} from "st/storage"
+import {PlanDeck, PlanGenerator} from "st/plan_cards"
+import {inStudy} from "st/srs/planner"
+
 import {ChordGenerator, MultiKeyChordGenerator} from "st/chord_generators"
 import {GStaff, FStaff, GrandStaff, ChordStaff} from "st/components/staves"
 
@@ -62,6 +66,16 @@ export const LEFT_HAND = "left hand (bass staff)"
 
 // the measures per card that drills the whole section as one looping card
 export const WHOLE_SECTION = "all"
+
+// the practice settings of an imported piece: today's programme, the
+// planned session of st/srs/planner, or free practice of a section picked
+// by hand
+export const PROGRAMME_PRACTICE = "programme"
+export const FREE_PRACTICE = "free practice"
+
+// the measures per card of the programme when the setting is the whole
+// section, which the programme doesn't play: the measure and the next
+export const PLAN_CARD_MEASURES = 2
 
 // track option names use the notation's own 0-based track index (t0, t1...)
 function sheetMusicTrackName(idx) {
@@ -118,6 +132,53 @@ export function measuresDescription(song) {
   }
 
   return `measures ${first}–${last}`
+}
+
+// Whether the settings' piece is offered today's programme: any imported
+// piece with measures, never practised included (its first programme card
+// puts it in study)
+export function programmeOffered(settings) {
+  return !!sheetMusicPiece(settings) && !!sheetMusicMeasureBounds(settings)
+}
+
+// Whether the settings play today's programme: when picked, else by default
+// for a piece in study
+export function plannedPractice(settings, store=getAppStore()) {
+  if (settings.practice == FREE_PRACTICE || !programmeOffered(settings)) { return false }
+  return settings.practice == PROGRAMME_PRACTICE || inStudy(store.study(settings.piece))
+}
+
+// the measures per card of the programme, see PLAN_CARD_MEASURES
+export function planCardMeasures(settings) {
+  let size = Number(settings.measuresPerCard)
+  return size >= 1 ? Math.floor(size) : PLAN_CARD_MEASURES
+}
+
+// The measures the settings drill: the section, or the whole piece for the
+// programme, which plans across all of it
+export function drilledRange(settings) {
+  let bounds = plannedPractice(settings) && sheetMusicMeasureBounds(settings)
+  if (bounds) {
+    return {startMeasure: bounds[0], endMeasure: bounds[1]}
+  }
+  return {startMeasure: settings.startMeasure, endMeasure: settings.endMeasure}
+}
+
+// The programme's generator for the settings: the piece's measures as
+// planned cards (st/plan_cards), or null for a piece without notes on the
+// staff
+export function planGenerator(staff, settings) {
+  let piece = sheetMusicPiece(settings)
+  let song = piece && pieceSong(piece)
+  if (!song) { return null }
+
+  let [startMeasure, endMeasure] = measureNumberRange(song)
+  let measures = pieceSectionMeasures(staff, {...settings, startMeasure, endMeasure}, song)
+  let deck = new PlanDeck(measures, {
+    pieceId: piece.id, hand: itemHand(settings.hand), cardMeasures: planCardMeasures(settings),
+  })
+
+  return deck.playable ? new PlanGenerator(deck) : null
 }
 
 // the hand of the items (st/srs/records) a hand setting practices, the
@@ -688,7 +749,8 @@ const ALL_GENERATORS = [
         removePiece: id => removePiece(id),
         exportLibrary: () => exportLibraryFile(),
         importLibrary: text => importLibraryFile(text),
-        // settings and staff for drilling a piece that was just picked
+        // settings and staff for drilling a piece that was just picked, in
+        // the practice the piece opens in by default
         pick: (settings, id) => {
           let piece = findPiece(id)
           let song = piece && pieceSong(piece)
@@ -697,11 +759,28 @@ const ALL_GENERATORS = [
           }
 
           return {
-            settings: sheetMusicPieceSettings({...settings, piece: id}, song),
+            settings: sheetMusicPieceSettings({...settings, piece: id, practice: null}, song),
             staff: sheetMusicStaffFor(song),
           }
         },
         hint: "Import a MusicXML file (.musicxml, .xml or compressed .mxl). Imported pieces stay in this browser's library; export it to keep a copy or move it to another browser.",
+      },
+      {
+        name: "practice",
+        label: "session",
+        type: "select",
+        // unset follows the piece: the programme once it is in study
+        default: null,
+        values: [
+          {name: PROGRAMME_PRACTICE},
+          {name: FREE_PRACTICE},
+        ],
+        value: settings => plannedPractice(settings) ? PROGRAMME_PRACTICE : FREE_PRACTICE,
+        hint: settings => plannedPractice(settings) ?
+          "Today's programme picks each measure: the ones due for review, new ones in score " +
+          "order, and those you missed again in a moment." :
+          "Free practice plays the measures you pick.",
+        visible: settings => programmeOffered(settings),
       },
       {
         name: "song",
@@ -719,6 +798,7 @@ const ALL_GENERATORS = [
         bounds: settings => sectionMeasureBounds(settings),
         update: (settings, value) => sheetMusicSectionUpdate(settings, "startMeasure", value),
         value: settings => sheetMusicSectionRange(settings).startMeasure,
+        visible: settings => !plannedPractice(settings),
       },
       {
         name: "endMeasure",
@@ -732,6 +812,7 @@ const ALL_GENERATORS = [
           let piece = sheetMusicPiece(settings)
           return piece ? `The score has ${measuresDescription(pieceSong(piece))}` : null
         },
+        visible: settings => !plannedPractice(settings),
       },
       {
         name: "track",
@@ -757,14 +838,17 @@ const ALL_GENERATORS = [
         type: "measure",
         default: WHOLE_SECTION,
         presets: [{name: WHOLE_SECTION, label: "all"}],
-        bounds: settings => ({
-          min: 1,
-          max: sheetMusicSectionLength(settings),
-          caption: `of ${sheetMusicSectionLength(settings)}`,
-        }),
+        bounds: settings => {
+          let max = plannedPractice(settings) ?
+            measureNumberList(sheetMusicSong(settings)).length : sheetMusicSectionLength(settings)
+          return {min: 1, max, caption: `of ${max}`}
+        },
         value: settings => Number(settings.measuresPerCard) >= 1 ?
           Math.floor(Number(settings.measuresPerCard)) : null,
-        hint: "All plays the whole section as one card. A number shows that many measures " +
+        hint: settings => plannedPractice(settings) ?
+          "The programme plays each measure it picks with the ones after it (or before it, " +
+          `at the end of the piece), this many in all; all plays ${PLAN_CARD_MEASURES}.` :
+          "All plays the whole section as one card. A number shows that many measures " +
           "of the section at a time, like a flashcard.",
         visible: settings => !!sheetMusicPiece(settings),
       },
@@ -778,7 +862,8 @@ const ALL_GENERATORS = [
         ],
         hint: "Random picks the weakest measures more often: those you are likeliest " +
           "to have forgotten, and those you missed lately.",
-        visible: settings => !!sheetMusicPiece(settings) && Number(settings.measuresPerCard) >= 1,
+        visible: settings => !!sheetMusicPiece(settings) && Number(settings.measuresPerCard) >= 1 &&
+          !plannedPractice(settings),
       },
     ],
     // a stored section clamped to its piece, eg. one picked on a longer piece
@@ -795,7 +880,7 @@ const ALL_GENERATORS = [
     // an imported piece is drawn in the score's key, see scoreKeySignature
     keySignature: function(settings) {
       let piece = sheetMusicPiece(settings)
-      return piece ? sheetMusicKeyFor(pieceSong(piece), settings.startMeasure) : null
+      return piece ? sheetMusicKeyFor(pieceSong(piece), drilledRange(settings).startMeasure) : null
     },
     // shown under the key pills when the key can't follow the score
     keyHint: function(settings) {
@@ -805,6 +890,11 @@ const ALL_GENERATORS = [
         "Re-import to follow the score key" : null
     },
     create: function(staff, keySignature, settings) {
+      let plan = plannedPractice(settings) && planGenerator(staff, settings)
+      if (plan) {
+        return plan
+      }
+
       let deck = measureCardDeck(staff, settings)
       if (deck) {
         return new MeasureCardGenerator(deck)

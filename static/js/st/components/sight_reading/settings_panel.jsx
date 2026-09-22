@@ -398,7 +398,8 @@ export class ScoreDrawer extends React.PureComponent {
             currentKey={this.props.currentKey}
             currentStaff={staff}
             currentSettings={this.props.currentGeneratorSettings}
-            setGenerator={this.props.setGenerator} />
+            setGenerator={this.props.setGenerator}
+            shown={this.props.open} />
           {this.renderKeyHint()}
         </SettingsGroup> : null}
 
@@ -446,6 +447,10 @@ export class GeneratorSettings extends React.PureComponent {
     // class names by this panel's style names, used in place of its styles
     // when the inputs are rendered outside the panel, eg. on the setup page
     classes: types.object,
+    // whether the inputs are shown, so they are drawn afresh when a drawer
+    // opens: some read the local store, eg. whether a piece is offered
+    // today's programme
+    shown: types.bool,
   }
 
   constructor(props) {
@@ -559,8 +564,11 @@ export class GeneratorSettings extends React.PureComponent {
     })
   }
 
+  // input.value, when given, reads the choice from the settings, eg. one
+  // that follows another setting while unset
   renderSelect(input, idx) {
-    let currentValue = this.cachedSettings[input.name]
+    let currentValue = input.value ? input.value(this.cachedSettings) : this.cachedSettings[input.name]
+    let hint = typeof input.hint == "function" ? input.hint(this.cachedSettings) : input.hint
 
     // option lists can depend on the other settings
     let values = typeof input.values == "function" ?
@@ -578,8 +586,9 @@ export class GeneratorSettings extends React.PureComponent {
     }
 
     // a few short choices are pills, longer lists keep the select
+    let control
     if (options.length <= MAX_PILL_OPTIONS && options.every(o => o.name.length <= MAX_PILL_LABEL)) {
-      return <div className={this.styles.pills} role="group" aria-label={input.label || input.name}>
+      control = <div className={this.styles.pills} role="group" aria-label={input.label || input.name}>
         {options.map(option =>
           <Pill
             variant="choice"
@@ -593,13 +602,18 @@ export class GeneratorSettings extends React.PureComponent {
             }}>{option.name}</Pill>
         )}
       </div>
+    } else {
+      control = <Select
+        className={this.styles.select_component}
+        onChange={ value => this.updateInputValue(input, value) }
+        value={currentValue}
+        options={options} />
     }
 
-    return <Select
-      className={this.styles.select_component}
-      onChange={ value => this.updateInputValue(input, value) }
-      value={currentValue}
-      options={options} />
+    return <>
+      {control}
+      {hint ? <div className={this.styles.input_hint}>{hint}</div> : null}
+    </>
   }
 
   // A measure number (see st/components/number_picker) in the range

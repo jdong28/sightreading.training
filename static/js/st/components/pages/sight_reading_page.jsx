@@ -10,7 +10,7 @@ import styles from "./sight_reading_page.module.css"
 import staffStyles from "st/components/staff.module.css"
 
 import {noteName, parseNote} from "st/music"
-import {STAVES, GENERATORS, sheetMusicPiece, handTracks, RIGHT_HAND, LEFT_HAND} from "st/data"
+import {STAVES, GENERATORS, sheetMusicPiece, handTracks, drilledRange, RIGHT_HAND, LEFT_HAND} from "st/data"
 import {pieceSong, pieceSource} from "st/sheet_music_deck"
 import {parseMusicXML} from "st/musicxml"
 import {getAppStore} from "st/storage"
@@ -26,7 +26,7 @@ import {dispatch, trigger} from "st/events"
 import {NOTE_EVENTS} from "st/midi"
 import {
   generatorDefaultSettings, storeCurrentDrill, currentStaffFor, currentGeneratorFor,
-  currentKeySignature, currentDrillMode, currentScrollSpeed, scoreKeySignature,
+  currentKeySignature, currentDrillMode, currentScrollSpeed, scoreKeySignature, storeGeneratorSettings,
   DRILL_STORAGE_KEY
 } from "st/generators"
 
@@ -146,6 +146,14 @@ export const EXERCISES_PROGRAMME = {
   // imported piece's cards from its source MusicXML, in place of the app's
   // own staff (see engineCard): in wait mode card by card, in scroll mode the
   // whole section on one line
+  // Preface, a component shown above the staff at rest, handed the
+  // generator, its settings (defaults filled in) and a setter of them, eg.
+  // the score page's "Tonight's programme" plate.
+  //
+  // A generator may also name what it plays (all optional): sectionLabel(),
+  // the title's words for its measures; cardLabel(), the plate's for its
+  // card; statusLine(), the status line while the session runs; caption(), a
+  // line under the staff once a card is done.
 }
 
 export const MISSING_ENGINE_SOURCE = "Drawn on the trainer's staff: this piece was imported " +
@@ -1133,8 +1141,7 @@ export default class SightReadingPage extends React.Component {
     return {
       pieceId: piece.id,
       pieceTitle: piece.title,
-      startMeasure: settings.startMeasure,
-      endMeasure: settings.endMeasure,
+      ...drilledRange(settings),
     }
   }
 
@@ -1229,6 +1236,7 @@ export default class SightReadingPage extends React.Component {
 
           <div className={styles.trainer_grid}>
             <div className={styles.trainer_main}>
+              {this.renderPreface()}
               {this.renderStaffPlate()}
               {this.renderTransport()}
               {this.renderStatCards()}
@@ -1291,13 +1299,21 @@ export default class SightReadingPage extends React.Component {
     return <div className={styles.programme_row}>{pill}</div>
   }
 
+  // the generator of the notes on the staff
+  currentNotesGenerator() {
+    return (this.state.notes && this.state.notes.generator) || null
+  }
+
   titleParts() {
     let section = this.currentPieceSection()
     if (section) {
       let hand = HAND_LABELS[this.currentSettings().hand] || "both hands"
+      let generator = this.currentNotesGenerator()
+      let measures = generator && generator.sectionLabel ? generator.sectionLabel() :
+        measuresLabel(section.startMeasure, section.endMeasure)
       return {
         title: section.pieceTitle,
-        italic: `${measuresLabel(section.startMeasure, section.endMeasure)}, ${hand}`,
+        italic: `${measures}, ${hand}`,
       }
     }
 
@@ -1339,7 +1355,9 @@ export default class SightReadingPage extends React.Component {
       let song = pieceSong(sheetMusicPiece(this.currentSettings()))
       let beats = song && song.metadata && song.metadata.beatsPerMeasure
       let {card, number} = this.currentCard() || {}
-      let measures = cardLabel(card, number, section)
+      let generator = this.currentNotesGenerator()
+      let measures = generator && generator.cardLabel && card ? generator.cardLabel() :
+        cardLabel(card, number, section)
       return beats ? `${beats} ♩ a bar · ${measures}` : measures
     }
 
@@ -1359,6 +1377,11 @@ export default class SightReadingPage extends React.Component {
     let notes = this.state.notes
     if (!notes || !notes.length) {
       return "No notes to read"
+    }
+
+    let line = notes.generator && notes.generator.statusLine && notes.generator.statusLine()
+    if (line) {
+      return line
     }
 
     if (this.state.currentGenerator?.mode == "chords") {
@@ -1422,8 +1445,34 @@ export default class SightReadingPage extends React.Component {
         })}>
         {staff}
       </div>
+      {this.renderCaption()}
       {this.renderEngineSourceNote()}
     </Plate>
+  }
+
+  // the generator's word on the card just played, eg. when it comes back
+  renderCaption() {
+    let generator = this.currentNotesGenerator()
+    let caption = this.state.session && generator && generator.caption && generator.caption()
+    return caption ? <p className={styles.plate_note} data-caption>{caption}</p> : null
+  }
+
+  // the programme's preface to a session, shown at rest
+  renderPreface() {
+    let Preface = this.programme.Preface
+    let generator = this.currentNotesGenerator()
+    if (!Preface || this.state.session || !generator) { return null }
+
+    return <Preface
+      generator={generator}
+      settings={this.currentSettings()}
+      setSettings={this._setSettings ||= settings => {
+        let generator = this.state.currentGenerator
+        if (generator.storageKey) {
+          storeGeneratorSettings(generator.storageKey, settings)
+        }
+        this.setGenerator(generator, settings)
+      }} />
   }
 
   // why a piece is drawn on the app's staff rather than from its score
