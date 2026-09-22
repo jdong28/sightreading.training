@@ -319,7 +319,8 @@ export function extractSectionColumns(song, opts={}) {
 }
 
 // Drops notes that fall outside [min, max] pitch (note names), removing
-// columns that become empty. Returns [columns, droppedCount].
+// columns that become empty. A kept column that lost notes lists them in
+// `dropped`. Returns [columns, droppedCount].
 export function filterColumnsToRange(columns, min, max) {
   let minPitch = parseNote(min)
   let maxPitch = parseNote(max)
@@ -338,6 +339,9 @@ export function filterColumnsToRange(columns, min, max) {
     })
 
     let kept = column.filter((note, idx) => keep[idx])
+    if (keep.includes(false)) {
+      kept.dropped = column.filter((note, idx) => !keep[idx])
+    }
     if (column.staves) {
       kept.staves = column.staves.filter((staff, idx) => keep[idx])
       kept.clefs = column.clefs

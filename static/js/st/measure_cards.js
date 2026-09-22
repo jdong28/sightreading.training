@@ -80,8 +80,9 @@ export function sectionCard(measures) {
 
 // what a copy of a column keeps for an engine's card to join it to the heads
 // it drew (see joinCard in st/score_render/card_join): the column's onset and
-// the score's notation of its notes and of the heads its ties run on to
-export const COLUMN_JOIN_KEYS = ["beat", "notation", "extras"]
+// the score's notation of its notes and of the heads its ties run on to, and
+// the notes the staff's range dropped from it (see filterColumnsToRange)
+export const COLUMN_JOIN_KEYS = ["beat", "notation", "extras", "dropped"]
 
 /**
  * A copy of the card's column for the drill, keeping what an engine's card

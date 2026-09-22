@@ -1064,6 +1064,25 @@ describe("sight reading page", function() {
         play(["C#3"])
         expect([page.state.stats.hits, page.state.stats.misses]).toEqual([1, 0])
       })
+
+      it(`still counts a press outside the staff's range that the column never had a wrong key, ${what} (D5a)`, async function() {
+        spyOn(console, "warn")
+        let {piece} = await importMusicXMLPiece("wide_range.musicxml", wideRangeXML, store)
+        window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+          piece: piece.id, startMeasure: 1, endMeasure: 1, hand: BOTH_HANDS, measuresPerCard: "all",
+        }))
+
+        let el = renderPage(ScorePage, props)
+        await waitFor(() => el.querySelector(`.${staffStyles.staff_notes}`) &&
+          el.textContent.includes(note), "the app's staff")
+
+        flushSync(() => page.beginSession())
+        play(["A0"])
+        expect([page.state.stats.hits, page.state.stats.misses]).toEqual([0, 1])
+
+        play(["C#3"])
+        expect([page.state.stats.hits, page.state.stats.misses]).toEqual([1, 1])
+      })
     }
   })
 
