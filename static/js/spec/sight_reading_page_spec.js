@@ -1121,6 +1121,28 @@ describe("sight reading page", function() {
       ])
     })
 
+    it("doesn't grade a card whose column was skipped with Space at Rest", async function() {
+      let el = await renderSection({measuresPerCard: "2"})
+      click(buttonNamed(el, "Rest"))
+
+      // Space skips a column even at rest, moving the card's pass along
+      flushSync(() => el.dispatchEvent(new KeyboardEvent("keydown", {key: " ", keyCode: 32, bubbles: true})))
+      expect(page.currentCard().card.measures).toEqual([1, 2])
+
+      // Begin abandons that pass: the rest of the card isn't graded, the next card is
+      click(buttonNamed(el, "Begin"))
+      playHead()
+      await finished()
+      expect(await reviews()).toEqual([])
+
+      playHead()
+      playHead()
+      await finished()
+      expect((await reviews()).map(r => r.itemId)).toEqual([
+        `${piece.id}:both:3-3`, `${piece.id}:both:3-4`, `${piece.id}:both:4-4`,
+      ])
+    })
+
     it("counts a section of one measure once", async function() {
       await renderSection({startMeasure: 3, endMeasure: 3})
       play([WRONG_NOTE])
