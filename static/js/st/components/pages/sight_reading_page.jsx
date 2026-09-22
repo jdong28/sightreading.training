@@ -234,11 +234,13 @@ export default class SightReadingPage extends React.Component {
       noteShaking: false,
       anyOctave: false,
 
-      // the set of notes that are currently held down
+      // the set of notes that are currently held down, kept across hits: a
+      // key is in it from its note on to its note off
       heldNotes: {},
 
       // the set of notes that have been touched since holding any one note.
-      // Resets to empty when all notes are released
+      // Resets to empty when all notes are released, and in notes mode at
+      // each hit
       touchedNotes: {},
 
       scrollSpeed: currentScrollSpeed(this.programme.storageKey),
@@ -703,16 +705,22 @@ export default class SightReadingPage extends React.Component {
 
         if (column.length == 0) {
           this.slipped = false
-          this.setState({heldNotes: {}, touchedNotes: {}})
+          this.setState({touchedNotes: {}})
+          break
+        }
+
+        // the keys let up played earlier columns (held across their hits),
+        // none this one: that isn't a try at it
+        let touched = Object.keys(this.state.touchedNotes)
+        if (!touched.length) {
           break
         }
 
         // every key is up without the column matched: it counts as missed
         // (once) and is played afresh from the next key down
-        let touched = Object.keys(this.state.touchedNotes)
-        this.missColumn(column.filter((n) => !this.state.heldNotes[n]),
+        this.missColumn(column,
           this.state.notes.blamedNotes(touched, this.state.anyOctave))
-        this.setState({heldNotes: {}, touchedNotes: {}})
+        this.setState({touchedNotes: {}})
         break
       }
 
@@ -796,9 +804,10 @@ export default class SightReadingPage extends React.Component {
           notes.pushRandom();
           this.state.stats.hitNotes(touched.filter((n) => !stray.includes(n)));
 
+          // the keys still down stay held: letting them up later is no try
+          // at the next column
           this.setState({
             notes,
-            heldNotes: {},
             touchedNotes: {},
             // a slip's shake plays out over the next column
             ...(stray.length ? {} : {noteShaking: false}),
@@ -882,7 +891,6 @@ export default class SightReadingPage extends React.Component {
     this.setState({
       notes,
       noteShaking: false,
-      heldNotes: {},
       touchedNotes: {}
     })
 
@@ -908,9 +916,11 @@ export default class SightReadingPage extends React.Component {
       }
     }
 
-    // a key down with none held starts a new try, which may slip again
-    // (releases batched into one render close the try only once)
-    if (!Object.keys(this.state.heldNotes).length) {
+    // a key down with none of the column's touched keys held starts a new
+    // try, which may slip again; keys held from earlier columns don't carry
+    // a try on (releases batched into one render close the try only once)
+    let {heldNotes, touchedNotes} = this.state
+    if (!Object.keys(touchedNotes).some(n => heldNotes[n])) {
       this.slipped = false
     }
 
@@ -921,7 +931,7 @@ export default class SightReadingPage extends React.Component {
   }
 
   releaseNote(note) {
-    // note might no longer be considered held if we just moved to next note
+    // a key pressed at rest, or before Begin or Rest, isn't held
     if (this.state.heldNotes[note]) {
       const heldNotes = {...this.state.heldNotes}
       delete heldNotes[note]

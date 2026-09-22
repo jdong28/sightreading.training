@@ -97,6 +97,30 @@ let leadRestXML = `<?xml version="1.0" encoding="UTF-8"?>
   </part>
 </score-partwise>`
 
+// a two staff 4/4 bar the right hand opens on a G5 held for three beats,
+// the left hand playing a quarter under it on each beat, closing on F5 over C3
+let heldTrebleXML = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <work><work-title>Held Treble</work-title></work>
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes>
+        <divisions>1</divisions>
+        <time><beats>4</beats><beat-type>4</beat-type></time>
+        <staves>2</staves>
+        <clef number="1"><sign>G</sign><line>2</line></clef>
+        <clef number="2"><sign>F</sign><line>4</line></clef>
+      </attributes>
+      <note><pitch><step>G</step><octave>5</octave></pitch><duration>3</duration><voice>1</voice><type>half</type><dot/><staff>1</staff></note>
+      <note><pitch><step>F</step><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>
+      <backup><duration>4</duration></backup>
+      ${["C", "G", "E", "C"].map(step =>
+        `<note><pitch><step>${step}</step><octave>3</octave></pitch><duration>1</duration><voice>2</voice><type>quarter</type><staff>2</staff></note>`).join("")}
+    </measure>
+  </part>
+</score-partwise>`
+
 // C#4 is outside C major, so never a random note in that key
 const WRONG_NOTE = "C#4"
 
@@ -1476,6 +1500,73 @@ describe("sight reading page", function() {
       play(["E5"])
       release("C3")
       expect(counts()).toEqual([3, 0])
+    })
+
+    it("completes a column after the other hand lets up its key over a key held across the hits", async function() {
+      await renderPiece(heldTrebleXML, {endMeasure: 1})
+      expect(head()).toEqual(["C3", "G5"])
+
+      press("C3")
+      press("G5")
+      release("C3")
+      expect(head()).toEqual(["G3"])
+      play(["G3"])
+      play(["E3"])
+      expect(head()).toEqual(["C3", "F5"])
+
+      // the G5 held since the first column is still down as the left hand
+      // lets its C3 up before the right hand's F5 lands: some key stays
+      // down, so the column is neither missed nor played afresh
+      press("C3")
+      release("C3")
+      expect(counts()).toEqual([3, 0])
+      press("F5")
+      expect(counts()).toEqual([4, 0])
+      expect(page.state.noteShaking).toBe(false)
+      release("F5")
+      release("G5")
+      expect(counts()).toEqual([4, 0])
+    })
+
+    it("counts nothing when keys held across a hit are let up alone", async function() {
+      await renderPiece(heldTrebleXML, {endMeasure: 1})
+
+      press("C3")
+      press("G5")
+      expect(head()).toEqual(["G3"])
+      expect(page.state.heldNotes).toEqual({C3: true, G5: true})
+
+      // they played the column before: letting them up isn't a try at this one
+      release("C3")
+      release("G5")
+      expect(page.state.heldNotes).toEqual({})
+      expect(counts()).toEqual([1, 0])
+      expect(page.state.noteShaking).toBe(false)
+      expect(head()).toEqual(["G3"])
+
+      play(["G3"])
+      expect(counts()).toEqual([2, 0])
+    })
+
+    it("counts each wrong try with a key held across a hit as a further slip", async function() {
+      await renderPiece(heldTrebleXML, {endMeasure: 1})
+      let slipNotes = spyOn(page.state.stats, "slipNotes").and.callThrough()
+
+      press("C3")
+      press("G5")
+      release("C3")
+      expect(head()).toEqual(["G3"])
+
+      // the G5 is still down through both tries, as no key would be
+      press("E3")
+      release("E3")
+      press("D3")
+      release("D3")
+      expect(counts()).toEqual([1, 1])
+      expect(slipNotes).toHaveBeenCalledTimes(1)
+
+      play(["G3"])
+      expect(counts()).toEqual([2, 1])
     })
   })
 
