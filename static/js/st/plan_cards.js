@@ -7,10 +7,12 @@
 
 import {getAppStore} from "st/storage"
 import {MeasureCardGenerator, sectionCard} from "st/measure_cards"
-import {passAttempts} from "st/srs/attempt"
+import {passAttempts, passPractice} from "st/srs/attempt"
+import {itemId, newItem, itemWithPractice} from "st/srs/records"
 import {scheduledAttempt} from "st/srs/schedule"
 import {
-  planNext, planState, planSummary, studyStatus, anchoredCard, entryStatus, entryCaption,
+  planNext, planState, planSummary, studyStatus, anchoredCard, onScheduleMeasures,
+  entryStatus, entryCaption,
 } from "st/srs/planner"
 
 // A deck of one card per playable measure of the piece, the card anchored on
@@ -186,7 +188,8 @@ export class PlanGenerator extends MeasureCardGenerator {
   // the planner is told how the pass went before it plans the next card:
   // the items as its attempts leave them, graded now though the hit on the
   // last column is counted just after (see notePlayed), so it is taken as
-  // hit unless it was scrolled past
+  // hit unless it was scrolled past. The measures played off schedule that
+  // didn't fail are settled here too, and written as practice alone
   finishPass(pass) {
     let opts = super.finishPass(pass)
     let entry = this.deck.entry
@@ -196,8 +199,21 @@ export class PlanGenerator extends MeasureCardGenerator {
 
     last.hit = hit || !scrolled
     let settings = this.deck.getStore().schedulerSettings()
-    let items = passAttempts(pass, opts).map(({id, build}) =>
-      scheduledAttempt(build(this.deck.item(id)), settings).item)
+    let {pieceId, hand} = this.deck
+    let barId = measure => itemId({pieceId, hand, startMeasure: measure, endMeasure: measure})
+    let onSchedule = onScheduleMeasures(pass.card.measures, measure => this.deck.item(barId(measure)), opts.at)
+      .map(barId)
+    let offSchedule = pass.card.measures.map(barId).filter(id => !onSchedule.includes(id))
+
+    let built = passAttempts(pass, opts).map(({id, build}) => build(this.deck.item(id)))
+    pass.practiceOnly = built.filter(({item, review}) => offSchedule.includes(item.id) && review.grade > 1)
+      .map(({item}) => item.id)
+
+    let {attempts, practice} = this.passRecords(pass, opts)
+    let items = [
+      ...attempts.map(({id, build}) => scheduledAttempt(build(this.deck.item(id)), settings).item),
+      ...practice.map(stint => itemWithPractice(this.deck.item(itemId(stint)) || newItem(stint, stint.at), stint)),
+    ]
     last.hit = hit
 
     this.deck.expect(items)
@@ -209,6 +225,22 @@ export class PlanGenerator extends MeasureCardGenerator {
     }
 
     return opts
+  }
+
+  // a pass's measures played off schedule that didn't fail (practiceOnly, set
+  // in finishPass) are its practice rather than graded attempts
+  passRecords(pass, opts) {
+    let records = super.passRecords(pass, opts)
+    let practiceOnly = pass.practiceOnly || []
+    if (!practiceOnly.length) { return records }
+
+    return {
+      attempts: records.attempts.filter(({id}) => !practiceOnly.includes(id)),
+      practice: [
+        ...records.practice,
+        ...passPractice(pass, opts).filter(stint => practiceOnly.includes(itemId(stint))),
+      ],
+    }
   }
 
   // The piece is in study once a card of its programme is played: learning

@@ -445,19 +445,27 @@ export class MeasureCardGenerator {
     let written = {pieceId: this.deck.pieceId, hand: this.deck.hand, at}
     let finished = Promise.resolve().then(() => {
       let store = this.deck.getStore()
-      let opts = {...written, sessionId: this.sessionId}
-      let attempts = passAttempts(pass, opts)
+      let {attempts, practice} = this.passRecords(pass, {...written, sessionId: this.sessionId})
 
-      if (attempts.length) {
-        return Promise.all(attempts.map(({id, build}) =>
-          store.recordAttempt(stored => build(stored.item(id)))))
-      }
-
-      return Promise.all(passPractice(pass, opts).map(practice =>
-        store.recordSectionPractice(practice)))
+      return Promise.all([
+        ...attempts.map(({id, build}) => store.recordAttempt(stored => build(stored.item(id)))),
+        ...practice.map(stint => store.recordSectionPractice(stint)),
+      ])
     }).catch(err => console.warn("Couldn't save the attempt", err))
 
     this.finishing = Promise.all([this.finishing, finished])
     return written
+  }
+
+  /**
+   * What a finished pass is written as: its graded attempts (see
+   * passAttempts), else its practice (see passPractice)
+   * @param {AttemptPass} pass
+   * @param {Object} opts as for passAttempts
+   * @returns {{attempts: Object[], practice: Object[]}}
+   */
+  passRecords(pass, opts) {
+    let attempts = passAttempts(pass, opts)
+    return {attempts, practice: attempts.length ? [] : passPractice(pass, opts)}
   }
 }

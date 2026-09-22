@@ -5,7 +5,8 @@
 // the items as stored, so a reload in mid-session carries on with the same
 // queue. What the planner knows of the session so far (when it started, how
 // many cards were played, how many of them brought new measures, the card
-// just played) it reads from the attempts the items keep in recent.
+// just played) it reads from the attempts the items keep in recent and
+// their last practice.
 //
 // The queue, first match wins:
 // 1. a ladder rung come due, earliest first, the immediate retry after an
@@ -26,6 +27,12 @@
 // 6. the next ladder rung, played before it comes due.
 // Never the measure just played, save the retry and a piece of one measure.
 //
+// Off schedule: a measure on the ladder played before its rung comes due (the
+// last entry, or a neighbour in a card) is graded only when it fails, else
+// its pass is practice alone, so a rung is never climbed early
+// (onScheduleMeasures). Measures in review keep the scheduler's same-day rule
+// and a measure never scheduled gets its first-sight review.
+//
 // The session is endless: its length (the practice settings' sessionMinutes)
 // is a soft target, past which the programme reads complete and the queue
 // carries on.
@@ -34,7 +41,7 @@
 // measures per card anchored on its measure (anchoredCard), so the measure
 // is practised with its neighbours. The entry's schedule comes from its
 // measure's own review; the other measures of the card are reviewed as any
-// card's measures are.
+// card's measures are, under the off-schedule rule above.
 
 import {itemId} from "st/srs/records"
 import {
@@ -96,6 +103,23 @@ export function anchoredCard(measures, measure, size) {
 }
 
 /**
+ * The measures of a card played now whose grades the schedule asks for: any
+ * not on the ladder (never scheduled, or in review, which the scheduler's
+ * same-day rule looks after) and ladder rungs come due. A pass at the others
+ * is graded only when it fails, else it is practice alone.
+ * @param {number[]} card the card's measures
+ * @param {function(number): (ItemRecord|null)} itemOf the item of a measure
+ * @param {number} now
+ * @returns {number[]}
+ */
+export function onScheduleMeasures(card, itemOf, now) {
+  return card.filter(measure => {
+    let item = itemOf(measure)
+    return !item || !scheduled(item) || !ON_LADDER.includes(item.state) || item.due <= now
+  })
+}
+
+/**
  * The planner's inputs.
  * @typedef {Object} PlanInput
  * @property {string} pieceId
@@ -120,9 +144,12 @@ export function anchoredCard(measures, measure, size) {
  * @property {string} hand
  */
 
+// when an item was played: its graded attempts, and its last practice
+const playedAt = item => [...item.recent.map(([at]) => at), item.lastPracticed]
+
 // the session so far as the attempts on the items tell it
 function sittingOf(items, now) {
-  let times = [...new Set(items.flatMap(item => item.recent.map(([at]) => at)))]
+  let times = [...new Set(items.flatMap(playedAt))]
     .filter(at => at <= now)
     .sort((a, b) => b - a)
 
@@ -175,7 +202,7 @@ export function planState({
   // card, and the entry named
   let lastCard = sitting.last != null && now - sitting.last <= SITTING_GAP_MS ? sitting.last : null
   let recent = new Set(lastCard == null ? [] :
-    bars.filter(item => item.recent.some(([at]) => at == lastCard)).map(item => item.id))
+    bars.filter(item => playedAt(item).includes(lastCard)).map(item => item.id))
   if (previous) { recent.add(previous) }
 
   let today = localDay(now)

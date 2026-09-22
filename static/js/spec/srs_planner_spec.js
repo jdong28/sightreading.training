@@ -1,7 +1,7 @@
 import MersenneTwister from "mersennetwister"
 
 import {
-  planNext, planState, planSummary, anchoredCard, mostOverduePiece, inStudy,
+  planNext, planState, planSummary, anchoredCard, onScheduleMeasures, mostOverduePiece, inStudy,
   entryStatus, entryCaption,
   RETRY, LADDER, REVIEW, NEW, EARLY, RUN_THROUGH, WAIT, LADDER_CAP, IDLE_LADDER_CAP,
 } from "st/srs/planner"
@@ -78,6 +78,27 @@ describe("today's programme planner", function() {
       expect(anchoredCard(measures, 2, 1)).toEqual([2])
       expect(anchoredCard(measures, 2, 9)).toEqual(measures)
       expect(anchoredCard([7], 7, 2)).toEqual([7])
+    })
+
+    it("grades a card's measures played before their schedule asks only when they fail", function() {
+      let items = new Map([
+        // a rung waiting, played as the last entry or as a neighbour
+        [1, onLadder(1, {due: NOW + MINUTE})],
+        [2, onLadder(2, {due: NOW + 5 * MINUTE, state: "relearning"})],
+        // a rung come due
+        [3, onLadder(3, {due: NOW})],
+        // in review played again today (a run-through) or before it is due:
+        // the scheduler's same-day rule looks after it
+        [4, inReview(4, {due: NOW + 9 * DAY, last: NOW - 10 * MINUTE})],
+        [5, inReview(5, {due: NOW + 9 * DAY, last: NOW - 3 * DAY})],
+        // tracked, never scheduled: its first sight
+        [6, bar(6, {attempts: 2, lastPracticed: NOW - DAY})],
+      ])
+      let itemOf = measure => items.get(measure) || null
+
+      expect(onScheduleMeasures([1], itemOf, NOW)).toEqual([])
+      expect(onScheduleMeasures([1], itemOf, NOW + MINUTE)).toEqual([1])
+      expect(onScheduleMeasures([1, 2, 3, 4, 5, 6, 7], itemOf, NOW)).toEqual([3, 4, 5, 6, 7])
     })
   })
 
@@ -202,7 +223,9 @@ describe("today's programme planner", function() {
       let reasons = new Set()
 
       for (let day = 0; day < 12; day++) {
+        // each day is a session of its own
         now = NOW + day * DAY
+        previous = null
         for (let card = 0; card < 40; card++) {
           let {entry} = planNext({pieceId: "p", items: [...items.values()], measures: MEASURES, now})
           expect(entry).not.toBe(null)
@@ -216,10 +239,14 @@ describe("today's programme planner", function() {
 
           let grade = random.random() < 0.15 ? AGAIN : random.random() < 0.3 ? HARD : GOOD
           let stored = items.get(entry.itemId) || bar(entry.measure)
-          let next = applyGrade(stored, grade, now, settings)
-          next = {
-            ...next, lastPracticed: now, attempts: stored.attempts + 1,
+          let early = !onScheduleMeasures([entry.measure], () => stored, now).length
+          let next = early && grade > AGAIN ? {...stored, lastPracticed: now, attempts: stored.attempts + 1} : {
+            ...applyGrade(stored, grade, now, settings), lastPracticed: now, attempts: stored.attempts + 1,
             recent: [...stored.recent, [now, 4, grade >= 3 ? 4 : 2, grade]].slice(-RECENT_ATTEMPTS),
+          }
+          if (early) {
+            expect(next.due).withContext(`${entry.reason} ${entry.measure} climbed early`)
+              .toBeLessThanOrEqual(Math.max(stored.due, now))
           }
           items.set(entry.itemId, next)
           previous = entry
@@ -456,6 +483,48 @@ describe("today's programme on the staff", function() {
     expect(notesOf(notes).slice(0, 2)).toEqual([["D5"], []])
   })
 
+  it("grades a measure played before its rung only when it fails, a neighbour never seen at first sight", async function() {
+    let {deck, generator, notes} = generatorFor(2)
+    generator.setDrill(() => ({mode: "scroll"}))
+    let stats = new NoteStats()
+    let bar = measure => store.item(`${piece.id}:both:${measure}-${measure}`)
+    let barReviews = async measure => (await store.reviews({pieceId: piece.id}))
+      .filter(review => review.itemId == bar(measure).id)
+
+    // the pickup, new, with measure 1 never seen: both at first sight
+    notes = await playCard({generator, notes}, stats)
+    expect([bar(0).state, bar(1).state]).toEqual(["learning", "learning"])
+    expect((await barReviews(1)).map(review => review.was)).toEqual(["new"])
+    let waiting = bar(1)
+
+    // measure 2, new, with measure 1 on its rung well before it is due
+    expect(deck.entry).toEqual(jasmine.objectContaining({reason: NEW, measure: 2}))
+    notes = await playCard({generator, notes}, stats)
+    expect(bar(2).state).toEqual("learning")
+    expect(await barReviews(1)).toHaveSize(1)
+    expect(bar(1)).toEqual(jasmine.objectContaining({
+      state: waiting.state, step: waiting.step, due: waiting.due, reps: waiting.reps, recent: waiting.recent,
+      hits: waiting.hits + 3, lastPracticed: time,
+    }))
+
+    // nothing else to play: the pickup's rung early, which fails, with measure
+    // 1 played cleanly again
+    expect(deck.entry).toEqual(jasmine.objectContaining({reason: WAIT, measure: 0}))
+    let pickup = bar(0)
+    stats.missNotes(["D5"])
+    notes = await playCard({generator, notes}, stats)
+    expect(await barReviews(0)).toHaveSize(2)
+    expect(bar(0)).toEqual(jasmine.objectContaining({reps: pickup.reps + 1, lastGrade: AGAIN, step: 0}))
+    expect(await barReviews(1)).toHaveSize(1)
+    expect(bar(1).due).toEqual(waiting.due)
+
+    // its retry is due, so it is graded
+    expect(deck.entry).toEqual(jasmine.objectContaining({reason: RETRY, measure: 0}))
+    notes = await playCard({generator, notes}, stats)
+    expect(await barReviews(0)).toHaveSize(3)
+    expect(bar(1).due).toEqual(waiting.due)
+  })
+
   it("resumes the same queue from the store after a reload", async function() {
     let first = generatorFor(1)
     let stats = new NoteStats()
@@ -521,6 +590,19 @@ describe("today's programme on the staff", function() {
       expect(plannedPractice(settingsFor())).toBe(true)
       expect(input("practice").value(settingsFor())).toEqual(PROGRAMME_PRACTICE)
       expect(plannedPractice(settingsFor({practice: FREE_PRACTICE}))).toBe(false)
+    })
+
+    it("opens a picked piece in its own default practice", async function() {
+      let other = (await importMusicXMLPiece("other.musicxml", pickupScore({title: "Other Minuet"}), store)).piece
+      await store.putStudy({pieceId: piece.id, status: "learning", startedAt: NOW})
+
+      let picked = input("piece").pick(settingsFor({piece: other.id, practice: FREE_PRACTICE}), piece.id).settings
+      expect(picked.practice).toBe(null)
+      expect(plannedPractice(picked)).toBe(true)
+
+      let back = input("piece").pick({...picked, practice: PROGRAMME_PRACTICE}, other.id).settings
+      expect(back.practice).toBe(null)
+      expect(plannedPractice(back)).toBe(false)
     })
 
     it("plays the whole piece in the programme and the section in free practice", async function() {

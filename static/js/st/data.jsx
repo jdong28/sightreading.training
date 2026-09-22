@@ -749,7 +749,8 @@ const ALL_GENERATORS = [
         removePiece: id => removePiece(id),
         exportLibrary: () => exportLibraryFile(),
         importLibrary: text => importLibraryFile(text),
-        // settings and staff for drilling a piece that was just picked
+        // settings and staff for drilling a piece that was just picked, in
+        // the practice the piece opens in by default
         pick: (settings, id) => {
           let piece = findPiece(id)
           let song = piece && pieceSong(piece)
@@ -758,7 +759,7 @@ const ALL_GENERATORS = [
           }
 
           return {
-            settings: sheetMusicPieceSettings({...settings, piece: id}, song),
+            settings: sheetMusicPieceSettings({...settings, piece: id, practice: null}, song),
             staff: sheetMusicStaffFor(song),
           }
         },
