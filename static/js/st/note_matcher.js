@@ -10,18 +10,21 @@
 // exactly as the same presses spread out in time would be.
 //
 // Nothing here touches React, the DOM or the stats: a call answers with the
-// list as it now stands, the keys down and touched, and the events the page
-// applies (a miss counted on a column, a hit that advanced it, the chord
-// drill's release check).
+// list as it now stands and the keys down and touched, and tells opts.onEvent
+// each judgement it makes (a miss counted on a column, a hit that advanced
+// it, the chord drill's release check) at the point it makes it, so every
+// judgement reaches the stats before the list advance the ones after it
+// describe.
 
 export default class NoteMatcher {
   // notes is the NoteList the drill is playing (the matcher advances it);
   // opts are the options detection reads: the generator's mode ("notes" or
-  // "chords") and anyOctave
+  // "chords") and anyOctave, and onEvent, told each judgement as it is made
   constructor(notes, opts={}) {
     this.notes = notes || null
     this.mode = opts.mode || "notes"
     this.anyOctave = !!opts.anyOctave
+    this.onEvent = opts.onEvent || null
 
     // the keys physically down, from each note on to its note off. It
     // survives a hit, so letting up keys that played earlier columns is no
@@ -79,13 +82,12 @@ export default class NoteMatcher {
     this.held = {...this.held, [note]: true}
     this.touched = {...this.touched, [note]: true}
 
-    let events = []
     // chords only check on release
     if (this.mode == "notes") {
-      this.judgePress(note, events)
+      this.judgePress(note)
     }
 
-    return this.result(events)
+    return this.result()
   }
 
   // A key came up. The release check runs at most once an event, when the
@@ -103,16 +105,20 @@ export default class NoteMatcher {
     delete this.held[note]
 
     if (Object.keys(this.held).length) {
-      return this.result([])
+      return this.result()
     }
 
-    let events = []
-    this.judgeRelease(events)
-    return this.result(events)
+    this.judgeRelease()
+    return this.result()
+  }
+
+  // tells the page what a key down or up did, as it is judged
+  emit(event) {
+    if (this.onEvent) { this.onEvent(event) }
   }
 
   // called on every key down in notes mode
-  judgePress(note, events) {
+  judgePress(note) {
     let notes = this.notes
     if (!notes) { return }
 
@@ -128,7 +134,7 @@ export default class NoteMatcher {
     // same event that completes the column is counted before the hit
     let stray = notes.strayNotes(touched, this.anyOctave)
     if (stray.includes(note) || (matched && stray.length && this.missedNotes != notes)) {
-      events.push(this.missColumn(notes.currentColumn(), notes.blamedNotes(touched, this.anyOctave)))
+      this.emit(this.missColumn(notes.currentColumn(), notes.blamedNotes(touched, this.anyOctave)))
     }
 
     if (!matched) { return }
@@ -144,7 +150,7 @@ export default class NoteMatcher {
     // next column
     this.touched = {}
 
-    events.push({
+    this.emit({
       type: "hit",
       // the keys the stats credit the column with: the slipped ones don't
       hitNotes: touched.filter(n => !stray.includes(n)),
@@ -156,7 +162,7 @@ export default class NoteMatcher {
   }
 
   // called when the keys down reach 0
-  judgeRelease(events) {
+  judgeRelease() {
     let notes = this.notes
     if (!notes) { return }
 
@@ -177,7 +183,7 @@ export default class NoteMatcher {
 
         // every key is up without the column matched: it counts as missed
         // (once) and is played afresh from the next key down
-        events.push(this.missColumn(column, notes.blamedNotes(touched, this.anyOctave)))
+        this.emit(this.missColumn(column, notes.blamedNotes(touched, this.anyOctave)))
         this.touched = {}
         return
       }
@@ -192,10 +198,10 @@ export default class NoteMatcher {
           advanced.pushRandom()
           this.notes = advanced
           this.clear()
-          events.push({type: "chordHit", from})
+          this.emit({type: "chordHit", from})
         } else {
           this.clear()
-          events.push({type: "chordMiss"})
+          this.emit({type: "chordMiss"})
         }
         return
       }
@@ -223,12 +229,11 @@ export default class NoteMatcher {
     return {type: "miss", missed, blamed, counted, notes: this.notes}
   }
 
-  result(events) {
+  result() {
     return {
       notes: this.notes,
       held: {...this.held},
       touched: {...this.touched},
-      events,
     }
   }
 }

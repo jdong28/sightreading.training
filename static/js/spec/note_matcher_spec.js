@@ -2,20 +2,25 @@ import NoteList from "st/note_list"
 import NoteMatcher from "st/note_matcher"
 
 // A matcher over an explicit run of columns: the generator hands out the
-// columns still to come, and empty ones once they run out
+// columns still to come, and empty ones once they run out. Every judgement
+// it makes is collected on matcher.judged, in the order it made them
 let matcherFor = (columns, opts={}) => {
   let rest = [...columns]
   let notes = new NoteList([], {generator: {nextNote: () => rest.shift() || []}})
   notes.fillBuffer(columns.length)
-  return new NoteMatcher(notes, opts)
+
+  let judged = []
+  let matcher = new NoteMatcher(notes, {...opts, onEvent: event => judged.push(event)})
+  matcher.judged = judged
+  return matcher
 }
 
 // Plays a script of ["on"|"off", note, timeStamp] against the matcher (plus
 // ["forget"], the stats starting over), returning what it judged: one line
 // an event, in the order the matcher produced them
 let run = (matcher, script) => {
-  let log = []
   let sorted = notes => [...notes].sort().join("+")
+  matcher.judged.length = 0
 
   for (let [what, note, at] of script) {
     if (what == "forget") {
@@ -23,24 +28,23 @@ let run = (matcher, script) => {
       continue
     }
 
-    let result = what == "on" ? matcher.noteOn(note, at) : matcher.noteOff(note, at)
-    if (!result) { continue }
-
-    for (let event of result.events) {
-      switch (event.type) {
-        case "miss":
-          log.push(`${event.counted || "uncounted"} ${sorted(event.blamed)}`)
-          break
-        case "hit":
-          log.push(`hit ${sorted(event.hitNotes)}`)
-          break
-        default:
-          log.push(event.type)
-      }
+    if (what == "on") {
+      matcher.noteOn(note, at)
+    } else {
+      matcher.noteOff(note, at)
     }
   }
 
-  return log
+  return matcher.judged.map(event => {
+    switch (event.type) {
+      case "miss":
+        return `${event.counted || "uncounted"} ${sorted(event.blamed)}`
+      case "hit":
+        return `hit ${sorted(event.hitNotes)}`
+      default:
+        return event.type
+    }
+  })
 }
 
 let head = matcher => [...matcher.notes.currentColumn()]
@@ -170,20 +174,30 @@ describe("note matcher", function() {
 
       // the chord's three keys come up in one packet, and only the last of
       // them, when no key is left down, checks the release
-      let ups = ["C4", "E4", "G4"].map(note => matcher.noteOff(note, 1100))
-      expect(ups.map(r => r.events.map(e => e.type))).toEqual([[], [], ["chordHit"]])
+      let ups = ["C4", "E4", "G4"].map(note => {
+        matcher.judged.length = 0
+        matcher.noteOff(note, 1100)
+        return matcher.judged.map(event => event.type)
+      })
+      expect(ups).toEqual([[], [], ["chordHit"]])
 
       // a key that was never down releases nothing at all
+      matcher.judged.length = 0
       expect(matcher.noteOff("G4", 1200)).toBe(null)
+      expect(matcher.judged).toEqual([])
     })
 
     it("counts one miss for a column whose keys all come up in one event", function() {
       let matcher = matcherFor([["C4", "E4"], ["G4"]])
       run(matcher, [["on", "C4", 1000], ["on", "D4", 1000]])
 
-      let ups = [matcher.noteOff("C4", 1100), matcher.noteOff("D4", 1100)]
-      expect(ups.map(r => r.events.length)).toEqual([0, 1])
-      expect(ups[1].events[0].counted).toBe(null)
+      let ups = ["C4", "D4"].map(note => {
+        matcher.judged.length = 0
+        matcher.noteOff(note, 1100)
+        return [...matcher.judged]
+      })
+      expect(ups.map(events => events.length)).toEqual([0, 1])
+      expect(ups[1][0].counted).toBe(null)
     })
   })
 })

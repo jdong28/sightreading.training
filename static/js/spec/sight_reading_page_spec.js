@@ -1390,6 +1390,32 @@ describe("sight reading page", function() {
       expect(written.map(r => [r.mode, r.speed, r.grade, r.hesitations])).toEqual(
         Array(3).fill(["scroll", page.state.scrollSpeed, GOOD, 0]))
     })
+
+    // one press can both slip on the head column and complete it: the slip
+    // is counted on the column played, before it is taken off the list, so
+    // the column counts as hit and the one after it is charged nothing
+    it("counts a press that both slips and completes a column on the column it played", async function() {
+      await renderSection({measuresPerCard: "3"}, {mode: "scroll"})
+
+      // the wrong key is still down as the column it slipped on scrolls past
+      flushSync(() => page.pressNote(WRONG_NOTE))
+      flushSync(() => page.state.slider.onLoop())
+
+      let column = [...page.state.notes.currentColumn()]
+      flushSync(() => column.forEach(note => page.pressNote(note)))
+      flushSync(() => [WRONG_NOTE, ...column].forEach(note => page.releaseNote(note)))
+
+      playHead()
+      await finished()
+
+      let written = await reviews()
+      expect(written.map(r => [r.itemId, r.misses, r.clean, r.skipped])).toEqual([
+        [`${piece.id}:both:1-1`, 2, 0, 0],
+        [`${piece.id}:both:1-3`, 3, 1, 0],
+        [`${piece.id}:both:2-2`, 1, 0, 0],
+        [`${piece.id}:both:3-3`, 0, 1, 0],
+      ])
+    })
   })
 
   describe("today's programme", function() {

@@ -241,7 +241,7 @@ export default class SightReadingPage extends React.Component {
     // Detection lives in the matcher (st/note_matcher): every MIDI event is
     // fed to it synchronously, one at a time, and it owns the keys down, the
     // keys touched and the head column. The page renders what it returns
-    this.matcher = new NoteMatcher(null)
+    this.matcher = new NoteMatcher(null, {onEvent: event => this.applyEvent(event)})
 
     this.state = {
       newRenderer: props.useStaffTwo || false,
@@ -769,52 +769,61 @@ export default class SightReadingPage extends React.Component {
     return Math.floor((clockNow - sessionStartedAt) / 1000)
   }
 
-  // Renders one event's judgement: the matcher has already decided what the
-  // key down or up did to the drill, and the page turns that into the stats,
-  // the staff's marks, the slider and the sets it draws
-  applyMatch(result) {
+  // Judges one MIDI event through the matcher: it tells the page each
+  // judgement as it makes it, so a miss reaches the stats before the column
+  // it was counted on is shifted off the list, and what they all did to the
+  // drill is rendered in one update
+  judge(judgement) {
+    this.matchUpdate = {}
+    let result = judgement()
+    let update = this.matchUpdate
+    this.matchUpdate = null
+
     if (!result) { return }
 
-    let update = {
+    this.setState({
+      ...update,
       heldNotes: result.held,
       touchedNotes: result.touched,
+    })
+  }
+
+  // Renders one judgement of the matcher's: the stats, the staff's marks,
+  // the slider and the sets the page draws
+  applyEvent(event) {
+    let update = this.matchUpdate
+
+    switch (event.type) {
+      case "miss":
+        this.countMiss(event, update)
+        break
+
+      case "hit":
+        gaEvent("sight_reading", "note", "hit")
+        this.state.stats.hitNotes(event.hitNotes)
+        update.notes = this.matcher.notes
+        this.advanceEngineMarks(event.from, this.matcher.notes)
+        // a slip's shake plays out over the next column
+        if (!event.stray) { update.noteShaking = false }
+        this.state.slider.add(this.columnAdvance(event.from))
+        break
+
+      case "chordHit":
+        gaEvent("sight_reading", "chord", "hit")
+        this.state.stats.hitNotes([])
+        update.notes = this.matcher.notes
+        this.advanceEngineMarks(event.from, this.matcher.notes)
+        update.noteShaking = false
+        this.state.slider.add(1)
+        break
+
+      case "chordMiss":
+        gaEvent("sight_reading", "chord", "miss")
+        this.state.stats.missNotes([])
+        update.noteShaking = true
+        setTimeout(() => this.setState({noteShaking: false}), 500);
+        break
     }
-
-    for (let event of result.events) {
-      switch (event.type) {
-        case "miss":
-          this.countMiss(event, update)
-          break
-
-        case "hit":
-          gaEvent("sight_reading", "note", "hit")
-          this.state.stats.hitNotes(event.hitNotes)
-          update.notes = result.notes
-          this.advanceEngineMarks(event.from, result.notes)
-          // a slip's shake plays out over the next column
-          if (!event.stray) { update.noteShaking = false }
-          this.state.slider.add(this.columnAdvance(event.from))
-          break
-
-        case "chordHit":
-          gaEvent("sight_reading", "chord", "hit")
-          this.state.stats.hitNotes([])
-          update.notes = result.notes
-          this.advanceEngineMarks(event.from, result.notes)
-          update.noteShaking = false
-          this.state.slider.add(1)
-          break
-
-        case "chordMiss":
-          gaEvent("sight_reading", "chord", "miss")
-          this.state.stats.missNotes([])
-          update.noteShaking = true
-          setTimeout(() => this.setState({noteShaking: false}), 500);
-          break
-      }
-    }
-
-    this.setState(update)
   }
 
   // The miss the matcher counted on the head column, at most once however
@@ -922,13 +931,13 @@ export default class SightReadingPage extends React.Component {
       }
     }
 
-    this.applyMatch(this.matcher.noteOn(note, timeStamp))
+    this.judge(() => this.matcher.noteOn(note, timeStamp))
   }
 
   // A key came up. The matcher runs the release check at most once an event,
   // when the last key down comes up
   releaseNote(note, timeStamp) {
-    this.applyMatch(this.matcher.noteOff(note, timeStamp))
+    this.judge(() => this.matcher.noteOff(note, timeStamp))
   }
 
   onMidiMessage(message) {
