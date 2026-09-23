@@ -21,7 +21,7 @@ import {AGAIN, GOOD, EASY} from "st/srs/grade"
 import {IN_ORDER, RANDOM_ORDER, MeasureCardGenerator} from "st/measure_cards"
 import {DRILL_STORAGE_KEY, SCORE_DRILL_STORAGE_KEY} from "st/generators"
 import {scopeEvent} from "st/events"
-import NoteStats from "st/note_stats"
+import NoteStats, {addNoteListener} from "st/note_stats"
 import {parseNote} from "st/music"
 import {openTestStore, noteXML, reverieOpening, keyChangeScore} from "spec/helpers"
 
@@ -1519,6 +1519,15 @@ describe("sight reading page", function() {
     let counts = () => [page.state.stats.hits, page.state.stats.misses]
     let head = () => [...page.state.notes.currentColumn()]
 
+    // a fixed run of columns in place of the generator's random ones, empty
+    // once they run out
+    let runOfColumns = columns => {
+      let rest = [...columns]
+      let notes = new NoteList([], {generator: {nextNote: () => rest.shift() || []}})
+      notes.fillBuffer(columns.length)
+      return notes
+    }
+
     let renderPiece = async (xml, settings, drill) => {
       let {piece} = await importMusicXMLPiece("piece.musicxml", xml, store)
       if (drill) {
@@ -1583,18 +1592,47 @@ describe("sight reading page", function() {
       expect(counts()).toEqual([1, 1])
     })
 
+    // The presses of one MIDI packet are judged one at a time against the
+    // head each of them saw: a wrong key before the completing press slips
+    // on the column it completes, and one after it is a miss on the column
+    // the hit moved on to. Either order judges what the same presses spread
+    // out in time do
     it("counts a slip in the MIDI packet that completes the column, in either order", function() {
       let el = renderPage()
       click(buttonNamed(el, "Begin"))
 
-      for (let wrongFirst of [true, false]) {
-        let [note] = head()
-        let keys = wrongFirst ? [WRONG_NOTE, note] : [note, WRONG_NOTE]
-        flushSync(() => keys.forEach(key => page.pressNote(key)))
+      let judged = []
+      let stopListening = addNoteListener(({type, notes, blamed}) =>
+        judged.push(`${type} ${(blamed || notes).join("+")}`))
+
+      // what the keys judged, the column they left at the head, and the hits
+      // and misses they counted
+      let playKeys = (keys, batched) => {
+        let [hits, misses] = counts()
+        judged = []
+        flushSync(() => page.setState({notes: runOfColumns([["C4"], ["E4"], ["G4"]])}))
+
+        if (batched) {
+          flushSync(() => keys.forEach(key => page.pressNote(key)))
+        } else {
+          keys.forEach(press)
+        }
         keys.forEach(release)
+
+        return [judged, head(), [page.state.stats.hits - hits, page.state.stats.misses - misses]]
       }
 
-      expect(counts()).toEqual([2, 2])
+      try {
+        let wrongFirst = playKeys(["D4", "C4"], true)
+        expect(wrongFirst).toEqual([["miss C4", "hit C4"], ["E4"], [1, 1]])
+        expect(playKeys(["D4", "C4"], false)).toEqual(wrongFirst)
+
+        let wrongAfter = playKeys(["C4", "D4"], true)
+        expect(wrongAfter).toEqual([["hit C4", "miss E4"], ["E4"], [1, 1]])
+        expect(playKeys(["C4", "D4"], false)).toEqual(wrongAfter)
+      } finally {
+        stopListening()
+      }
     })
 
     it("counts nothing for keys pressed on an empty head column", function() {

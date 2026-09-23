@@ -315,8 +315,7 @@ export default class SightReadingPage extends React.Component {
   }
 
   // Keeps the engine card's inputs in step with the drill: the source of the
-  // drilled piece read, and the misses marked on the card cleared when a new
-  // pass of it starts
+  // drilled piece read, and the card the engine draws
   updateEngineCard(prevState) {
     if (!this.programme.engine) { return }
 
@@ -338,15 +337,21 @@ export default class SightReadingPage extends React.Component {
     if (drewBefore != this.engineCards()) {
       this.refreshNoteList()
     }
+  }
 
-    if (prevState.notes != this.state.notes && this.state.engineMissed.length) {
-      let before = this.cardHead(prevState.notes)
-      let after = this.cardHead(this.state.notes)
-      if (before.generator != after.generator || before.index == null ||
-          after.index == null || after.index <= before.index)
-      {
-        this.setState({engineMissed: []})
-      }
+  // The misses marked on the engine card belong to the pass of it being
+  // played: the head moving on to another card, back round to this one's
+  // start, or on to a rebuilt drill starts it clean. The reset is queued
+  // with the advance that caused it, so a miss judged after it in the same
+  // MIDI packet keeps its mark
+  advanceEngineMarks(from, to) {
+    let before = this.cardHead(from)
+    let after = this.cardHead(to)
+
+    if (before.generator != after.generator || before.index == null ||
+        after.index == null || after.index <= before.index)
+    {
+      this.setState(state => state.engineMissed.length ? {engineMissed: []} : null)
     }
   }
 
@@ -628,6 +633,7 @@ export default class SightReadingPage extends React.Component {
     // the render that draws it
     this.matcher.setNotes(notes)
     this.matcher.mode = generator.mode
+    this.advanceEngineMarks(this.state.notes, notes)
 
     return this.setState({ notes, droppedPitches })
   }
@@ -784,6 +790,7 @@ export default class SightReadingPage extends React.Component {
           gaEvent("sight_reading", "note", "hit")
           this.state.stats.hitNotes(event.hitNotes)
           update.notes = result.notes
+          this.advanceEngineMarks(event.from, result.notes)
           // a slip's shake plays out over the next column
           if (!event.stray) { update.noteShaking = false }
           this.state.slider.add(this.columnAdvance(event.from))
@@ -793,6 +800,7 @@ export default class SightReadingPage extends React.Component {
           gaEvent("sight_reading", "chord", "hit")
           this.state.stats.hitNotes([])
           update.notes = result.notes
+          this.advanceEngineMarks(event.from, result.notes)
           update.noteShaking = false
           this.state.slider.add(1)
           break
@@ -875,6 +883,7 @@ export default class SightReadingPage extends React.Component {
     // the keys still down stay held; the next column is played afresh
     this.matcher.setNotes(notes)
     this.matcher.clearTouched()
+    this.advanceEngineMarks(this.state.notes, notes)
 
     this.setState({
       notes,
@@ -1008,6 +1017,7 @@ export default class SightReadingPage extends React.Component {
           let notes = this.state.notes.clone()
           notes.shift();
           notes.pushRandom();
+          this.advanceEngineMarks(this.state.notes, notes)
           this.setState({ notes })
 
           let slider = this.state.slider
