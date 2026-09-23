@@ -133,7 +133,9 @@ describe("note matcher", function() {
     let matcher = matcherFor([["C4"], ["G4"]])
     matcher.noteOn("C4", 1234)
     expect(matcher.lastEventAt).toEqual(1234)
-    expect(matcher.noteOff("C4", 1290).at).toEqual(1290)
+
+    matcher.noteOff("C4", 1290)
+    expect(matcher.lastEventAt).toEqual(1290)
   })
 
   // The matcher judges one event at a time, so presses that arrived in one

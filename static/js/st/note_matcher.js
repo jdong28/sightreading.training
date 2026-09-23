@@ -146,7 +146,6 @@ export default class NoteMatcher {
 
     events.push({
       type: "hit",
-      column: from.currentColumn(),
       // the keys the stats credit the column with: the slipped ones don't
       hitNotes: touched.filter(n => !stray.includes(n)),
       // the list as it was, for the width the staff slides by
@@ -229,7 +228,6 @@ export default class NoteMatcher {
       notes: this.notes,
       held: {...this.held},
       touched: {...this.touched},
-      at: this.lastEventAt,
       events,
     }
   }
