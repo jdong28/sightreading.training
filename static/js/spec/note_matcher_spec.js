@@ -162,17 +162,17 @@ describe("note matcher", function() {
       expect(together).toEqual([["miss C4", "uncounted C4"], ["C4"]])
     })
 
-    it("checks the release of one event at most once", function() {
-      let matcher = matcherFor([["C4", "E4"], ["G4"]])
-      matcher.noteOn("C4", 1000)
-      matcher.noteOn("E4", 1000)
+    it("checks the release once however many keys come up together", function() {
+      let matcher = matcherFor([["C4", "E4", "G4"], ["D4", "F4", "A4"]], {mode: "chords"})
+      run(matcher, [["on", "C4", 1000], ["on", "E4", 1000], ["on", "G4", 1000]])
 
-      // the column hit, so the keys coming up are no try at the next one
-      expect([matcher.noteOff("C4", 1100).released, matcher.noteOff("E4", 1100).released])
-        .toEqual([false, true])
+      // the chord's three keys come up in one packet, and only the last of
+      // them, when no key is left down, checks the release
+      let ups = ["C4", "E4", "G4"].map(note => matcher.noteOff(note, 1100))
+      expect(ups.map(r => r.events.map(e => e.type))).toEqual([[], [], ["chordHit"]])
 
       // a key that was never down releases nothing at all
-      expect(matcher.noteOff("E4", 1200)).toBe(null)
+      expect(matcher.noteOff("G4", 1200)).toBe(null)
     })
 
     it("counts one miss for a column whose keys all come up in one event", function() {

@@ -489,6 +489,31 @@ describe("score page engine card", function() {
     expect(headElements()).toEqual(first)
   })
 
+  // the misses of one MIDI packet are judged against the head each of them
+  // saw, so a packet that slips on one column, completes it and slips on the
+  // next must mark both: the second mark used to be built over the state as
+  // it stood before the packet, dropping the first
+  it("marks every column a MIDI packet misses", async function() {
+    await drillPiece(reverieOpening(), {startMeasure: 2, endMeasure: 4})
+    renderScorePage()
+    await cardDrawn()
+
+    flushSync(() => page.beginSession())
+    let first = headElements()
+    let column = [...page.state.notes.currentColumn()]
+
+    flushSync(() => {
+      page.pressNote("C#1")
+      for (let note of column) { page.pressNote(note) }
+      page.pressNote("D#1")
+    })
+
+    expect(page.state.engineMissed).toEqual([0, 1])
+    expect(page.state.notes.currentColumn().cardIndex).toEqual(1)
+    expect(first.every(head => head.classList.contains(MARK_CLASSES.missed))).toBe(true)
+    expect(headElements().every(head => head.classList.contains(MARK_CLASSES.missed))).toBe(true)
+  })
+
   it("keeps drawing from the score after a section of rests alone", async function() {
     let piece = await drillPiece(reverieOpening(), {startMeasure: 1, endMeasure: 1})
     let el = renderScorePage()

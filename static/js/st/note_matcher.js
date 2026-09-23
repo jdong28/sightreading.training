@@ -85,7 +85,7 @@ export default class NoteMatcher {
       this.judgePress(note, events)
     }
 
-    return this.result(events, false)
+    return this.result(events)
   }
 
   // A key came up. The release check runs at most once an event, when the
@@ -103,12 +103,12 @@ export default class NoteMatcher {
     delete this.held[note]
 
     if (Object.keys(this.held).length) {
-      return this.result([], false)
+      return this.result([])
     }
 
     let events = []
     this.judgeRelease(events)
-    return this.result(events, true)
+    return this.result(events)
   }
 
   // called on every key down in notes mode
@@ -224,13 +224,12 @@ export default class NoteMatcher {
     return {type: "miss", missed, blamed, counted, notes: this.notes}
   }
 
-  result(events, released) {
+  result(events) {
     return {
       notes: this.notes,
       held: {...this.held},
       touched: {...this.touched},
       at: this.lastEventAt,
-      released,
       events,
     }
   }

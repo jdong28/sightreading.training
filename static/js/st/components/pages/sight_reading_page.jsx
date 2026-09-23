@@ -822,14 +822,21 @@ export default class SightReadingPage extends React.Component {
       this.state.stats.slipNotes(event.missed, event.blamed)
     }
 
-    let {index} = this.cardHead(event.notes)
-    let engineMissed = update.engineMissed || this.state.engineMissed
-    if (index != null && !engineMissed.includes(index)) {
-      update.engineMissed = [...engineMissed, index]
-    }
+    this.markMissedCard(this.cardHead(event.notes).index)
 
     update.noteShaking = true
     setTimeout(() => this.setState({noteShaking: false}), 500);
+  }
+
+  // Marks a column missed on the engine card. Every miss of one MIDI packet
+  // is judged against its own head, so the marks are added one at a time
+  // over the state as it stands, never over a batch's stale copy
+  markMissedCard(index) {
+    if (index == null) { return }
+
+    this.setState(state => state.engineMissed.includes(index)
+      ? null
+      : {engineMissed: [...state.engineMissed, index]})
   }
 
   skipCurrentNote() {
@@ -992,11 +999,7 @@ export default class SightReadingPage extends React.Component {
           // notes scrolling past at rest aren't misses
           if (column.length && this.state.session) {
             this.state.stats.missNotes(column);
-
-            let index = column.cardIndex
-            if (index != null && !this.state.engineMissed.includes(index)) {
-              this.setState({engineMissed: [...this.state.engineMissed, index]})
-            }
+            this.markMissedCard(column.cardIndex)
           }
           // the room the column leaving the staff held, which the notes slide
           // by, so a long note holds the staff for as many beats as the score
