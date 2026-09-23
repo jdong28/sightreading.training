@@ -345,6 +345,8 @@ export default class SightReadingPage extends React.Component {
   // with the advance that caused it, so a miss judged after it in the same
   // MIDI packet keeps its mark
   advanceEngineMarks(from, to) {
+    if (!this.programme.engine) { return }
+
     let before = this.cardHead(from)
     let after = this.cardHead(to)
 

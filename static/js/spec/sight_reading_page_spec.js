@@ -1535,6 +1535,45 @@ describe("sight reading page", function() {
     })
   })
 
+  // the chord staff's drill, a ChordList of chords judged only on the
+  // release of every key
+  describe("chords mode", function() {
+    let renderChords = () => {
+      window.localStorage.setItem(DRILL_STORAGE_KEY,
+        JSON.stringify({staff: "chord", generator: "random"}))
+      let el = renderPage()
+      click(buttonNamed(el, "Begin"))
+      return el
+    }
+
+    it("hits a chord on the release of the keys that complete it", function() {
+      renderChords()
+      expect(page.state.currentGenerator.mode).toEqual("chords")
+
+      let chord = page.state.notes[0]
+      let keys = chord.getRange(4, 3)
+
+      // a chord judges nothing until every key is up
+      flushSync(() => keys.forEach(note => page.pressNote(note)))
+      expect([page.state.stats.hits, page.state.stats.misses]).toEqual([0, 0])
+
+      flushSync(() => keys.forEach(note => page.releaseNote(note)))
+      expect([page.state.stats.hits, page.state.stats.misses]).toEqual([1, 0])
+      expect(page.state.notes[0]).not.toBe(chord)
+      expect(page.state.heldNotes).toEqual({})
+    })
+
+    it("misses a chord whose keys don't match on their release", function() {
+      renderChords()
+      let chord = page.state.notes[0]
+
+      flushSync(() => page.pressNote(WRONG_NOTE))
+      flushSync(() => page.releaseNote(WRONG_NOTE))
+      expect([page.state.stats.hits, page.state.stats.misses]).toEqual([0, 1])
+      expect(page.state.notes[0]).toBe(chord)
+    })
+  })
+
   describe("matching the notes played", function() {
     let press = note => flushSync(() => page.pressNote(note))
     let release = note => flushSync(() => page.releaseNote(note))
