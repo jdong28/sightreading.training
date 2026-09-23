@@ -1391,6 +1391,26 @@ describe("sight reading page", function() {
         Array(3).fill(["scroll", page.state.scrollSpeed, GOOD, 0]))
     })
 
+    // the scroll loop's own advance reaches the matcher as it is made, not
+    // when React renders it, so a key that arrives before that render is
+    // judged against the column the loop left on the line
+    it("judges a key arriving before the loop's render against the column it left", async function() {
+      await renderSection({measuresPerCard: "3"}, {mode: "scroll"})
+
+      let scrolled = [...page.state.notes.currentColumn()]
+      let onLine = [...page.state.notes[1]]
+      expect(onLine).not.toEqual(scrolled)
+
+      // the loop's render is still pending when the key goes down
+      page.state.slider.onLoop()
+      flushSync(() => scrolled.forEach(note => page.pressNote(note)))
+      flushSync(() => scrolled.forEach(note => page.releaseNote(note)))
+
+      // the column that scrolled past can't be played any more: the keys are
+      // a wrong try at the one the loop left, not a hit on the one it took
+      expect(page.state.stats.hits).toEqual(0)
+    })
+
     // one press can both slip on the head column and complete it: the slip
     // is counted on the column played, before it is taken off the list, so
     // the column counts as hit and the one after it is charged nothing
@@ -1584,15 +1604,6 @@ describe("sight reading page", function() {
     let counts = () => [page.state.stats.hits, page.state.stats.misses]
     let head = () => [...page.state.notes.currentColumn()]
 
-    // a fixed run of columns in place of the generator's random ones, empty
-    // once they run out
-    let runOfColumns = columns => {
-      let rest = [...columns]
-      let notes = new NoteList([], {generator: {nextNote: () => rest.shift() || []}})
-      notes.fillBuffer(columns.length)
-      return notes
-    }
-
     let renderPiece = async (xml, settings, drill) => {
       let {piece} = await importMusicXMLPiece("piece.musicxml", xml, store)
       if (drill) {
@@ -1657,44 +1668,70 @@ describe("sight reading page", function() {
       expect(counts()).toEqual([1, 1])
     })
 
+    it("counts a slip in the MIDI packet that completes the column, in either order", function() {
+      let el = renderPage()
+      click(buttonNamed(el, "Begin"))
+
+      for (let wrongFirst of [true, false]) {
+        let [note] = head()
+        let keys = wrongFirst ? [WRONG_NOTE, note] : [note, WRONG_NOTE]
+        flushSync(() => keys.forEach(key => page.pressNote(key)))
+        keys.forEach(release)
+      }
+
+      expect(counts()).toEqual([2, 2])
+    })
+
     // The presses of one MIDI packet are judged one at a time against the
-    // head each of them saw: a wrong key before the completing press slips
-    // on the column it completes, and one after it is a miss on the column
+    // head each of them saw: a wrong key before the press that completes the
+    // column slips on that column, and one after it is a miss on the column
     // the hit moved on to. Either order judges what the same presses spread
     // out in time do
-    it("counts a slip in the MIDI packet that completes the column, in either order", function() {
+    it("counts a slip batched with the completing press on the head that saw it", function() {
       let el = renderPage()
       click(buttonNamed(el, "Begin"))
 
       let judged = []
       let stopListening = addNoteListener(({type, notes, blamed}) =>
-        judged.push(`${type} ${(blamed || notes).join("+")}`))
+        judged.push([type, [...(blamed || notes)].sort()]))
 
-      // what the keys judged, the column they left at the head, and the hits
-      // and misses they counted
-      let playKeys = (keys, batched) => {
-        let [hits, misses] = counts()
-        judged = []
-        flushSync(() => page.setState({notes: runOfColumns([["C4"], ["E4"], ["G4"]])}))
+      // one order played against the drill's own next column, as one MIDI
+      // packet or spread out in time: what it judged, the columns it was
+      // judged against and the head it left
+      let playOrder = (wrongFirst, batched) => {
+        judged.length = 0
+        let column = head()
+        let next = [...page.state.notes[1]]
+        let keys = wrongFirst ? [WRONG_NOTE, ...column] : [...column, WRONG_NOTE]
 
         if (batched) {
           flushSync(() => keys.forEach(key => page.pressNote(key)))
         } else {
           keys.forEach(press)
         }
-        keys.forEach(release)
+        for (let key of keys) { release(key) }
 
-        return [judged, head(), [page.state.stats.hits - hits, page.state.stats.misses - misses]]
+        return {judged: [...judged], column: column.sort(), next, head: head()}
       }
 
       try {
-        let wrongFirst = playKeys(["D4", "C4"], true)
-        expect(wrongFirst).toEqual([["miss C4", "hit C4"], ["E4"], [1, 1]])
-        expect(playKeys(["D4", "C4"], false)).toEqual(wrongFirst)
+        for (let batched of [true, false]) {
+          let wrongFirst = playOrder(true, batched)
+          expect(wrongFirst.judged).toEqual([
+            ["miss", wrongFirst.column], ["hit", wrongFirst.column],
+          ])
+          expect(wrongFirst.head).toEqual(wrongFirst.next)
 
-        let wrongAfter = playKeys(["C4", "D4"], true)
-        expect(wrongAfter).toEqual([["hit C4", "miss E4"], ["E4"], [1, 1]])
-        expect(playKeys(["C4", "D4"], false)).toEqual(wrongAfter)
+          let wrongAfter = playOrder(false, batched)
+          expect(wrongAfter.judged).toEqual([
+            ["hit", wrongAfter.column], ["miss", [...wrongAfter.next].sort()],
+          ])
+          expect(wrongAfter.head).toEqual(wrongAfter.next)
+
+          // the column that miss was counted on is played, so the next
+          // order starts on one with no miss of its own yet
+          play(head())
+        }
       } finally {
         stopListening()
       }

@@ -1028,6 +1028,7 @@ export default class SightReadingPage extends React.Component {
           let notes = this.state.notes.clone()
           notes.shift();
           notes.pushRandom();
+          this.matcher.setNotes(notes)
           this.advanceEngineMarks(this.state.notes, notes)
           this.setState({ notes })
 
