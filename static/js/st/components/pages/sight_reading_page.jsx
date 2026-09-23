@@ -1028,6 +1028,8 @@ export default class SightReadingPage extends React.Component {
           let notes = this.state.notes.clone()
           notes.shift();
           notes.pushRandom();
+          // the matcher judges against the looped list from the next event
+          // on, before the render that draws it
           this.matcher.setNotes(notes)
           this.advanceEngineMarks(this.state.notes, notes)
           this.setState({ notes })
