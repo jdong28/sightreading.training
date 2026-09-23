@@ -1,4 +1,5 @@
 import NoteList from "st/note_list"
+import NoteMatcher from "st/note_matcher"
 import ChordList from "st/chord_list"
 import NoteStats from "st/note_stats"
 import SlideToZero from "st/slide_to_zero"
@@ -237,18 +238,19 @@ export default class SightReadingPage extends React.Component {
     // the key the user picked, drawn unless the generator sets its own
     this.userKey = this.programme.userKey()
 
+    // Detection lives in the matcher (st/note_matcher): every MIDI event is
+    // fed to it synchronously, one at a time, and it owns the keys down, the
+    // keys touched and the head column. The page renders what it returns
+    this.matcher = new NoteMatcher(null)
+
     this.state = {
       newRenderer: props.useStaffTwo || false,
       noteShaking: false,
       anyOctave: false,
 
-      // the set of notes that are currently held down, kept across hits: a
-      // key is in it from its note on to its note off
+      // the matcher's keys down and keys touched, mirrored here for the
+      // staff and the keyboard to draw. The matcher is what judges them
       heldNotes: {},
-
-      // the set of notes that have been touched since holding any one note.
-      // Resets to empty when all notes are released, and in notes mode at
-      // each hit
       touchedNotes: {},
 
       scrollSpeed: currentScrollSpeed(this.programme.storageKey),
@@ -284,6 +286,8 @@ export default class SightReadingPage extends React.Component {
 
   // TODO trigger this as watching component
   componentDidUpdate(prevProps, prevState) {
+    this.syncMatcher()
+
     // transitioning to new staff or generator or key signature
     if (prevState.currentStaff != this.state.currentStaff ||
         prevState.currentGenerator != this.state.currentGenerator ||
@@ -344,6 +348,19 @@ export default class SightReadingPage extends React.Component {
         this.setState({engineMissed: []})
       }
     }
+  }
+
+  // The matcher advances the note list the page renders, so the two hold the
+  // same list: every other change to it (a rebuilt drill, a skipped column,
+  // a spec's own list) is adopted here, along with the options detection
+  // reads
+  syncMatcher() {
+    let {notes, currentGenerator, anyOctave} = this.state
+    if (notes !== this.matcher.notes) {
+      this.matcher.setNotes(notes)
+    }
+    this.matcher.mode = currentGenerator ? currentGenerator.mode : "notes"
+    this.matcher.anyOctave = anyOctave
   }
 
   // the generator of notes and the index in its card of their head column
@@ -606,6 +623,12 @@ export default class SightReadingPage extends React.Component {
     // enough columns to show the whole of any card of a piece
     let cardColumnCounts = (generatorInstance.cards || []).map(card => card.columns.length)
     notes.fillBuffer(Math.max(this.state.bufferSize, ...cardColumnCounts))
+
+    // the matcher judges against the new list from the next event on, before
+    // the render that draws it
+    this.matcher.setNotes(notes)
+    this.matcher.mode = generator.mode
+
     return this.setState({ notes, droppedPitches })
   }
 
@@ -666,6 +689,7 @@ export default class SightReadingPage extends React.Component {
   beginSession() {
     if (this.state.session) { return }
 
+    this.matcher.clear()
     this.restartSession({
       session: true,
       heldNotes: {},
@@ -702,6 +726,7 @@ export default class SightReadingPage extends React.Component {
 
     this.stopClock()
 
+    this.matcher.clear()
     this.setState({
       session: false,
       clockNow: Date.now(),
@@ -738,161 +763,72 @@ export default class SightReadingPage extends React.Component {
     return Math.floor((clockNow - sessionStartedAt) / 1000)
   }
 
-  // called when held notes reaches 0
-  checkRelease() {
-    switch (this.state.currentGenerator.mode) {
-      case "notes": {
-        let column = this.state.notes.currentColumn()
+  // Renders one event's judgement: the matcher has already decided what the
+  // key down or up did to the drill, and the page turns that into the stats,
+  // the staff's marks, the slider and the sets it draws
+  applyMatch(result) {
+    if (!result) { return }
 
-        if (column.length == 0) {
-          this.slipped = false
-          this.setState({touchedNotes: {}})
+    let update = {
+      heldNotes: result.held,
+      touchedNotes: result.touched,
+    }
+
+    for (let event of result.events) {
+      switch (event.type) {
+        case "miss":
+          this.countMiss(event, update)
           break
-        }
 
-        // the keys let up played earlier columns (held across their hits),
-        // none this one: that isn't a try at it
-        let touched = Object.keys(this.state.touchedNotes)
-        if (!touched.length) {
+        case "hit":
+          gaEvent("sight_reading", "note", "hit")
+          this.state.stats.hitNotes(event.hitNotes)
+          update.notes = result.notes
+          // a slip's shake plays out over the next column
+          if (!event.stray) { update.noteShaking = false }
+          this.state.slider.add(this.columnAdvance(event.from))
           break
-        }
 
-        // every key is up without the column matched: it counts as missed
-        // (once) and is played afresh from the next key down
-        this.missColumn(column,
-          this.state.notes.blamedNotes(touched, this.state.anyOctave))
-        this.setState({touchedNotes: {}})
-        break
-      }
-
-      case "chords": {
-        let touched = Object.keys(this.state.touchedNotes);
-
-        if (this.state.notes.matchesHead(touched) && touched.length > 2) {
-          gaEvent("sight_reading", "chord", "hit");
-          let notes = this.state.notes.clone()
-
-          notes.shift()
-          notes.pushRandom()
-
+        case "chordHit":
+          gaEvent("sight_reading", "chord", "hit")
           this.state.stats.hitNotes([])
-
-          this.setState({
-            notes,
-            noteShaking: false,
-            heldNotes: {},
-            touchedNotes: {},
-          })
-
+          update.notes = result.notes
+          update.noteShaking = false
           this.state.slider.add(1)
-        } else {
-          gaEvent("sight_reading", "chord", "miss");
+          break
 
+        case "chordMiss":
+          gaEvent("sight_reading", "chord", "miss")
           this.state.stats.missNotes([])
-
-          this.setState({
-            noteShaking: true,
-            heldNotes: {},
-            touchedNotes: {},
-          })
-
+          update.noteShaking = true
           setTimeout(() => this.setState({noteShaking: false}), 500);
-        }
-        break
+          break
       }
     }
+
+    this.setState(update)
   }
 
-  // called on every noteOn with the note pressed
-  // return true to trigger redraw
-  checkPress(note) {
-    switch (this.state.currentGenerator.mode) {
-      case "notes": {
-        let {notes, anyOctave} = this.state
-
-        // presses batched into one render (eg. a chord's note-ons in one MIDI
-        // packet) all see the same head, only the first one may advance it
-        if (this.advancedNotes == notes) {
-          return false
-        }
-
-        // nothing to play (eg. an empty section): no key is a slip, as no
-        // release is a miss
-        if (!notes.currentColumn().length) {
-          return false
-        }
-
-        let touched = Object.keys(this.state.touchedNotes);
-        let matched = notes.matchesHead(touched, anyOctave)
-
-        // pressing a key outside the column is a slip: the column counts as
-        // missed, but the keys touched still go on to complete it. A slip
-        // batched with the notes completing the column is counted before
-        // the hit, whichever press is checked first
-        let stray = notes.strayNotes(touched, anyOctave)
-        if (stray.includes(note) || (matched && stray.length && this.missedNotes != notes)) {
-          this.missColumn(notes.currentColumn(), notes.blamedNotes(touched, anyOctave))
-        }
-
-        if (matched) {
-          gaEvent("sight_reading", "note", "hit");
-
-          this.advancedNotes = notes
-          this.slipped = false
-          let advance = this.columnAdvance(notes)
-          notes = notes.clone()
-          notes.shift();
-          notes.pushRandom();
-          this.state.stats.hitNotes(touched.filter((n) => !stray.includes(n)));
-
-          // the keys still down stay held: letting them up later is no try
-          // at the next column
-          this.setState({
-            notes,
-            touchedNotes: {},
-            // a slip's shake plays out over the next column
-            ...(stray.length ? {} : {noteShaking: false}),
-          })
-
-          this.state.slider.add(advance)
-
-          return true
-        } else {
-          return false
-        }
-      }
-
-      case "chords": {
-        // chords only check on release
-        return false
-      }
-    }
-  }
-
-  // Counts the head column of notes as missed, at most once however many
-  // slips and releases it takes to complete it, shaking the notes and
-  // marking the column on an engine card each time. missed are the column's
-  // notes the stats count against, blamed those the miss is put down to (see
-  // NoteList#blamedNotes)
-  missColumn(missed, blamed) {
-    if (this.missedNotes != this.state.notes) {
-      this.missedNotes = this.state.notes
+  // The miss the matcher counted on the head column, at most once however
+  // many slips and releases it takes to complete it: counted says whether
+  // the stats take it as the column's miss, as a further slip in the same
+  // column (the measure cards' grade counts every try gone wrong), or as
+  // neither. The column is marked on an engine card and the notes shake
+  countMiss(event, update) {
+    if (event.counted == "miss") {
       gaEvent("sight_reading", "note", "miss");
-      this.state.stats.missNotes(missed, blamed);
-    } else if (!this.slipped) {
-      // the grade of the measure cards counts every try gone wrong
-      this.state.stats.slipNotes(missed, blamed)
+      this.state.stats.missNotes(event.missed, event.blamed);
+    } else if (event.counted == "slip") {
+      this.state.stats.slipNotes(event.missed, event.blamed)
     }
-    // one slip a try, from a key down to every key up
-    this.slipped = true
 
-    let {index} = this.cardHead(this.state.notes)
-    let engineMissed = this.state.engineMissed
+    let {index} = this.cardHead(event.notes)
+    let engineMissed = update.engineMissed || this.state.engineMissed
     if (index != null && !engineMissed.includes(index)) {
-      engineMissed = [...engineMissed, index]
+      update.engineMissed = [...engineMissed, index]
     }
 
-    this.setState({noteShaking: true, engineMissed})
+    update.noteShaking = true
     setTimeout(() => this.setState({noteShaking: false}), 500);
   }
 
@@ -929,6 +865,10 @@ export default class SightReadingPage extends React.Component {
     notes.shift()
     notes.pushRandom()
 
+    // the keys still down stay held; the next column is played afresh
+    this.matcher.setNotes(notes)
+    this.matcher.clearTouched()
+
     this.setState({
       notes,
       noteShaking: false,
@@ -938,7 +878,10 @@ export default class SightReadingPage extends React.Component {
     this.state.slider.add(advance)
   }
 
-  pressNote(note) {
+  // A key went down, with the timeStamp of the MIDI event that brought it
+  // (the on-screen keyboard has none). The guards that aren't the matching
+  // rules stay here; everything the press does to the drill is the matcher's
+  pressNote(note, timeStamp) {
     // key presses at rest aren't judged
     if (!this.state.session) {
       return
@@ -963,36 +906,13 @@ export default class SightReadingPage extends React.Component {
       }
     }
 
-    // a key down with none of the column's touched keys held starts a new
-    // try, which may slip again; keys held from earlier columns don't carry
-    // a try on (releases batched into one render close the try only once)
-    let {heldNotes, touchedNotes} = this.state
-    if (!Object.keys(touchedNotes).some(n => heldNotes[n])) {
-      this.slipped = false
-    }
-
-    this.setState((s) => ({
-      heldNotes: {...s.heldNotes, [note]: true},
-      touchedNotes: {...s.touchedNotes, [note]: true}
-    }), () => this.checkPress(note))
+    this.applyMatch(this.matcher.noteOn(note, timeStamp))
   }
 
-  releaseNote(note) {
-    // a key pressed at rest, or before Begin or Rest, isn't held
-    if (this.state.heldNotes[note]) {
-      const heldNotes = {...this.state.heldNotes}
-      delete heldNotes[note]
-
-      this.setState((s) => {
-        const heldNotes = {...s.heldNotes}
-        delete heldNotes[note]
-        return { heldNotes }
-      }, () => {
-        if (Object.keys(this.state.heldNotes).length == 0) {
-          this.checkRelease()
-        }
-      })
-    }
+  // A key came up. The matcher runs the release check at most once an event,
+  // when the last key down comes up
+  releaseNote(note, timeStamp) {
+    this.applyMatch(this.matcher.noteOff(note, timeStamp))
   }
 
   onMidiMessage(message) {
@@ -1006,16 +926,20 @@ export default class SightReadingPage extends React.Component {
 
     // console.debug("midi", pitch, velocity, NOTE_EVENTS[type])
 
+    // each message is matched synchronously, in the order it arrived, so a
+    // packet's notes are judged as the same notes spread out in time are
+    let timeStamp = message.timeStamp
+
     if (NOTE_EVENTS[type] == "noteOn") {
       if (velocity == 0) {
-        this.releaseNote(n);
+        this.releaseNote(n, timeStamp);
       } else if (!document.hidden) { // ignore when the browser tab isn't active
-        this.pressNote(n);
+        this.pressNote(n, timeStamp);
       }
     }
 
     if (NOTE_EVENTS[type] == "noteOff") {
-      this.releaseNote(n);
+      this.releaseNote(n, timeStamp);
     }
   }
 
@@ -1274,7 +1198,8 @@ export default class SightReadingPage extends React.Component {
   // the stats for the next one
   closeSession() {
     this.recordSession()
-    this.missedNotes = null
+    // the stats start over, so the column under way may count a miss again
+    this.matcher.forgetMisses()
     return this.newStats()
   }
 

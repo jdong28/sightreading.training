@@ -22,6 +22,7 @@ import {IN_ORDER, RANDOM_ORDER, MeasureCardGenerator} from "st/measure_cards"
 import {DRILL_STORAGE_KEY, SCORE_DRILL_STORAGE_KEY} from "st/generators"
 import {scopeEvent} from "st/events"
 import NoteStats from "st/note_stats"
+import {parseNote} from "st/music"
 import {openTestStore, noteXML, reverieOpening, keyChangeScore} from "spec/helpers"
 
 // a two staff 3/4 piece, measures 1 and 2
@@ -1511,6 +1512,10 @@ describe("sight reading page", function() {
   describe("matching the notes played", function() {
     let press = note => flushSync(() => page.pressNote(note))
     let release = note => flushSync(() => page.releaseNote(note))
+    // a note on through the page's own Web MIDI handler, as the device sends
+    // it: several in one flushSync are one MIDI packet, delivered in one task
+    let midiOn = (note, timeStamp=0) =>
+      page.onMidiMessage({data: new Uint8Array([0x90, parseNote(note), 100]), timeStamp})
     let counts = () => [page.state.stats.hits, page.state.stats.misses]
     let head = () => [...page.state.notes.currentColumn()]
 
@@ -1763,6 +1768,27 @@ describe("sight reading page", function() {
 
       play(["G3"])
       expect(counts()).toEqual([2, 1])
+    })
+
+    // M7 of the note detection report: two key-downs crossing a column
+    // boundary in one MIDI packet used to be judged through setState
+    // callbacks that all saw the same head, so the second one was a stray on
+    // the column the first completed: a false slip, and the column it really
+    // belonged to stalled. The matcher judges each press against the head it
+    // actually saw, so the packet plays like the same presses spread out
+    it("judges the presses of one MIDI packet against the head each saw (M7)", async function() {
+      await renderPiece(leadRestXML, {endMeasure: 1})
+      expect(head()).toEqual(["C3", "C5"])
+
+      press("C3")
+      flushSync(() => {
+        midiOn("C5")
+        midiOn("D5")
+      })
+
+      expect(counts()).toEqual([2, 0])
+      expect(head()).toEqual(["E5"])
+      expect(page.state.noteShaking).toBe(false)
     })
   })
 
