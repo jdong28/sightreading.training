@@ -2,18 +2,18 @@ import MersenneTwister from "mersennetwister"
 
 import {
   planNext, planState, planSummary, anchoredCard, onScheduleMeasures, mostOverduePiece, inStudy,
-  entryStatus, entryCaption,
+  entryStatus, entryCaption, cardCaption, blamedStaves,
   RETRY, LADDER, REVIEW, NEW, EARLY, RUN_THROUGH, WAIT, LADDER_CAP, IDLE_LADDER_CAP,
 } from "st/srs/planner"
 import {
-  applyGrade, DEFAULT_SCHEDULER_SETTINGS, DEFAULT_PRACTICE_SETTINGS,
+  applyGrade, replay, DEFAULT_SCHEDULER_SETTINGS, DEFAULT_PRACTICE_SETTINGS,
   SCHEDULER_ALGO, DAY, MINUTE,
 } from "st/srs/schedule"
 import {newItem, itemId, RECENT_ATTEMPTS} from "st/srs/records"
 import {PlanDeck, PlanGenerator} from "st/plan_cards"
 import {MeasureCardGenerator, COLUMN_JOIN_KEYS} from "st/measure_cards"
 import {
-  SHEET_MUSIC_GENERATOR, BOTH_HANDS, PROGRAMME_PRACTICE, FREE_PRACTICE, WHOLE_SECTION,
+  SHEET_MUSIC_GENERATOR, BOTH_HANDS, RIGHT_HAND, LEFT_HAND, PROGRAMME_PRACTICE, FREE_PRACTICE, WHOLE_SECTION,
   plannedPractice, programmeOffered, drilledRange, PLAN_CARD_MEASURES,
 } from "st/data"
 import {importMusicXMLPiece} from "st/sheet_music_deck"
@@ -23,7 +23,7 @@ import NoteStats from "st/note_stats"
 
 import {openTestStore, pickupScore} from "spec/helpers"
 
-const AGAIN = 1, HARD = 2, GOOD = 3
+const AGAIN = 1, HARD = 2, GOOD = 3, EASY = 4
 
 // a local time, so day boundaries hold in any time zone
 const at = (day, hour, minute=0) => new Date(2026, 2, day, hour, minute).getTime()
@@ -343,6 +343,178 @@ describe("today's programme planner", function() {
     })
   })
 
+  describe("hands apart and rests", function() {
+    const ago = minutes => NOW - minutes * MINUTE
+
+    // a single measure item of piece p rebuilt by the scheduler from its
+    // graded attempts, [at, grade] each
+    const graded = (measure, attempts, hand="both") => {
+      let id = itemId({pieceId: "p", hand, startMeasure: measure, endMeasure: measure})
+      let item = replay(attempts.map(([time, grade]) => ({
+        itemId: id, at: time, pieceId: "p", kind: "attempt", grade, columns: 4, clean: grade > AGAIN ? 4 : 1,
+      })))
+      return {...item, attempts: attempts.length, lastPracticed: attempts[attempts.length - 1][0]}
+    }
+
+    // the review of bar 3 played hands together at a time, its misses split by staff
+    const blame = (time, upper, lower, misses=Math.max(upper, lower)) => new Map([["p:both:3-3", {
+      itemId: "p:both:3-3", at: time, pieceId: "p", kind: "attempt", grade: AGAIN, misses,
+      staffMisses: {upper, lower},
+    }]])
+
+    const APART = {upper: MEASURES, lower: MEASURES}
+
+    // the other bars in review, played a few minutes ago
+    const planned = (items, extra) => planNext({
+      pieceId: "p", items: [...settled([3]), ...items], measures: MEASURES, now: NOW,
+      handMeasures: APART, ...extra,
+    })
+    const entryIn = (items, extra) => {
+      let {entry} = planned(items, extra)
+      return [entry.reason, entry.measure, entry.hand]
+    }
+
+    it("offers a bar hands apart when it fails on one hand's misses, at first sight or twice running", function() {
+      let firstSight = graded(3, [[ago(1), AGAIN]])
+      let twice = graded(3, [[ago(5), GOOD], [ago(3), AGAIN], [ago(1), AGAIN]])
+      let once = graded(3, [[ago(3), GOOD], [ago(1), AGAIN]])
+
+      let rows = [
+        ["the left hand's misses at first sight", firstSight, blame(ago(1), 0, 3), {}, [LADDER, 3, "lower"]],
+        ["the right hand's", firstSight, blame(ago(1), 2, 0), {}, [LADDER, 3, "upper"]],
+        ["two thirds of them on one staff", firstSight, blame(ago(1), 0, 2, 3), {}, [LADDER, 3, "lower"]],
+        ["both staves blamed, the one with more misses first", firstSight, blame(ago(1), 2, 3), {}, [LADDER, 3, "lower"]],
+        ["one miss", firstSight, blame(ago(1), 0, 1), {}, [RETRY, 3, "both"]],
+        ["misses under two thirds on either staff", firstSight, blame(ago(1), 2, 2, 4), {}, [RETRY, 3, "both"]],
+        ["twice running later", twice, blame(ago(1), 0, 3), {}, [LADDER, 3, "lower"]],
+        ["a first failure after a good pass", once, blame(ago(1), 0, 3), {}, [RETRY, 3, "both"]],
+        ["the review of an earlier attempt", firstSight, blame(ago(2), 0, 3), {}, [RETRY, 3, "both"]],
+        ["no review read and no hand played alone", firstSight, new Map(), {}, [RETRY, 3, "both"]],
+        ["a piece of one staff", firstSight, blame(ago(1), 3, 0), {handMeasures: null}, [RETRY, 3, "both"]],
+        ["a bar the left hand has no notes in", firstSight, blame(ago(1), 0, 3),
+          {handMeasures: {upper: MEASURES, lower: [1, 2]}}, [RETRY, 3, "both"]],
+      ]
+
+      for (let [name, item, lastReviews, extra, expected] of rows) {
+        expect(entryIn([item], {lastReviews, ...extra})).withContext(name).toEqual(expected)
+      }
+
+      // the hand alone's item, by the id it will be written under
+      let {entry} = planned([firstSight], {lastReviews: blame(ago(1), 0, 3)})
+      expect([entry.itemId, entry.item]).toEqual(["p:lower:3-3", null])
+      expect(entryStatus(entry, {now: NOW})).toEqual("Once more · bar 3 · left hand")
+    })
+
+    it("never splits a session played with one hand", function() {
+      let failed = {...graded(3, [[ago(1), AGAIN]], "upper")}
+      let {entry, state} = planNext({
+        pieceId: "p", items: [failed], measures: MEASURES, now: NOW, hand: "upper", handMeasures: APART,
+        lastReviews: new Map([[failed.id, {...blame(ago(1), 3, 0).get("p:both:3-3"), itemId: failed.id}]]),
+      })
+      expect([entry.reason, entry.measure, entry.hand]).toEqual([RETRY, 3, "upper"])
+      expect(state.scaffolds.size).toEqual(0)
+    })
+
+    it("returns the bar hands together once its hand holds", function() {
+      let failed = graded(3, [[ago(10), AGAIN]])
+      let left = attempts => attempts.length ? [graded(3, attempts, "lower")] : []
+
+      let rows = [
+        ["not played alone yet", {}, [], "lower"],
+        ["good once", {}, [[ago(8), GOOD]], "lower"],
+        ["good twice running", {}, [[ago(8), GOOD], [ago(6), GOOD]], undefined],
+        ["graduated by an easy first sight", {}, [[ago(8), EASY]], undefined],
+        ["good, then hard", {}, [[ago(8), GOOD], [ago(6), HARD]], "lower"],
+        ["again, then good twice running", {}, [[ago(8), AGAIN], [ago(6), GOOD], [ago(4), GOOD]], undefined],
+        ["held before the failure only", {}, [[ago(30), GOOD], [ago(20), GOOD]], "lower"],
+        ["played alone, its review not read yet", {lastReviews: new Map()}, [[ago(8), GOOD]], "lower"],
+      ]
+
+      for (let [name, extra, attempts, hand] of rows) {
+        let {state} = planned([failed, ...left(attempts)], {lastReviews: blame(ago(10), 0, 3), ...extra})
+        expect(state.scaffolds.get(3)).withContext(name).toEqual(hand)
+      }
+
+      // once held, the bar itself comes straight back
+      let held = left([[ago(8), GOOD], [ago(6), GOOD]])
+      expect(entryIn([failed, ...held], {lastReviews: blame(ago(10), 0, 3)})).toEqual([RETRY, 3, "both"])
+
+      // both staves blamed: the other hand next, then together
+      let right = graded(3, [[ago(8), GOOD], [ago(6), GOOD]], "upper")
+      let both = blame(ago(10), 3, 3)
+      expect(planned([failed, right], {lastReviews: both}).state.scaffolds.get(3)).toEqual("lower")
+      expect(planned([failed, right, ...held], {lastReviews: both}).state.scaffolds.get(3)).toBe(undefined)
+
+      // failing together again sends it back to the hand
+      let again = graded(3, [[ago(10), AGAIN], [ago(2), AGAIN]])
+      expect(entryIn([again, ...held], {lastReviews: blame(ago(2), 0, 2)})).toEqual([LADDER, 3, "lower"])
+    })
+
+    it("rests a bar failing a third time in a sitting until the next", function() {
+      let rows = [
+        ["failed together, then twice alone", [[ago(10), AGAIN]], [[ago(8), AGAIN], [ago(6), AGAIN]], true],
+        ["failed three times together", [[ago(10), AGAIN], [ago(8), AGAIN], [ago(6), AGAIN]], [], true],
+        ["failed twice", [[ago(10), AGAIN], [ago(8), AGAIN]], [], false],
+        ["failed twice yesterday and once today",
+          [[NOW - DAY - 2 * MINUTE, AGAIN], [NOW - DAY - MINUTE, AGAIN], [ago(1), AGAIN]], [], false],
+      ]
+
+      for (let [name, together, alone, rests] of rows) {
+        let items = [graded(3, together), ...(alone.length ? [graded(3, alone, "lower")] : [])]
+        let last = together[together.length - 1][0]
+        let {entry, state} = planned(items, {lastReviews: blame(last, 0, 3)})
+        expect(state.resting.has(3)).withContext(name).toBe(rests)
+        if (rests) {
+          expect(entry.measure).withContext(name).not.toEqual(3)
+        }
+      }
+
+      // its due date is left as it is, so it opens the next sitting, still
+      // on its hand alone
+      let items = [graded(3, [[ago(10), AGAIN]]), graded(3, [[ago(8), AGAIN], [ago(6), AGAIN]], "lower")]
+      let later = {lastReviews: blame(ago(10), 0, 3), now: NOW + 2 * 3600 * 1000}
+      expect(entryIn(items, later)).toEqual([LADDER, 3, "lower"])
+
+      // a bar resting is no work left in the programme, but a piece whose
+      // every bar rests plays one all the same
+      let alone = planNext({
+        pieceId: "p", items, measures: [3], now: NOW, handMeasures: APART, lastReviews: blame(ago(10), 0, 3),
+      })
+      expect(alone.complete).toBe(true)
+      expect([alone.entry.measure, alone.entry.hand]).toEqual([3, "lower"])
+    })
+
+    it("words the card after a failure", function() {
+      let failed = graded(3, [[ago(1), AGAIN]])
+      let state = extra => planState({
+        pieceId: "p", items: [...settled([3]), failed, ...(extra || [])], measures: MEASURES, now: NOW,
+        handMeasures: APART, lastReviews: blame(ago(1), 0, 3),
+      })
+      let together = {reason: NEW, measure: 3, hand: "both", itemId: "p:both:3-3", item: null}
+      let alone = {reason: LADDER, measure: 3, hand: "lower", itemId: "p:lower:3-3", item: null}
+
+      expect(cardCaption(together, failed, state())).toEqual("Left hand alone, then together")
+
+      let once = graded(3, [[ago(0.5), GOOD]], "lower")
+      expect(cardCaption(alone, once, state([once]))).toEqual("again in a moment")
+
+      let held = graded(3, [[ago(0.8), GOOD], [ago(0.5), GOOD]], "lower")
+      expect(cardCaption(alone, held, state([held]))).toEqual("hands together next")
+
+      let failing = graded(3, [[ago(0.8), AGAIN], [ago(0.5), AGAIN]], "lower")
+      expect(cardCaption(alone, failing, state([failing]))).toEqual("Bar 3 rests until tomorrow")
+    })
+
+    it("reads the hands a failure's misses fall on", function() {
+      let review = (upper, lower, misses) => ({misses, staffMisses: {upper, lower}})
+      expect(blamedStaves(review(0, 3, 3))).toEqual(["lower"])
+      expect(blamedStaves(review(4, 5, 6))).toEqual(["lower", "upper"])
+      expect(blamedStaves(review(2, 1, 3))).toEqual(["upper"])
+      expect(blamedStaves(review(1, 1, 1))).toEqual([])
+      expect(blamedStaves({misses: 3})).toBe(null)
+    })
+  })
+
   describe("pieces in study", function() {
     it("suggests the piece with the most measures due", function() {
       let due = (pieceId, measure, dueAt) => ({...inReview(measure, {due: dueAt}), pieceId,
@@ -353,6 +525,27 @@ describe("today's programme planner", function() {
       expect(mostOverduePiece({studies, items, now: NOW})).toEqual("b")
       expect(mostOverduePiece({studies: studies.filter(s => s.pieceId != "b"), items, now: NOW})).toEqual("a")
       expect(mostOverduePiece({studies: [{...studies[1], status: "shelved"}], items, now: NOW})).toBe(null)
+    })
+
+    it("counts a bar's hand alone only while the hand scaffold offers it", function() {
+      let studies = ["p", "q"].map(pieceId => ({pieceId, status: "learning", startedAt: 0}))
+      let item = (fields, hand="both", pieceId="p") => ({...fields, pieceId, hand,
+        id: itemId({pieceId, hand, startMeasure: fields.startMeasure, endMeasure: fields.endMeasure})})
+      // q has one bar due, just after p's left hand
+      let other = item(inReview(1, {due: NOW - DAY + 5000}), "both", "q")
+      // a left hand alone due, its bar played together since
+      let left = item(onLadder(3, {due: NOW - DAY, last: NOW - DAY - 20 * MINUTE}), "lower")
+
+      let rows = [
+        ["a retired scaffold", [item(inReview(3, {due: NOW + 5 * DAY}))], "q"],
+        ["an active scaffold", [item(onLadder(3, {due: NOW - DAY + 1000, last: NOW - DAY - 30 * MINUTE, grade: AGAIN}))], "p"],
+        ["a bar only practised with one hand", [], "p"],
+      ]
+
+      for (let [name, together, expected] of rows) {
+        expect(mostOverduePiece({studies, items: [other, left, ...together], now: NOW}))
+          .withContext(name).toEqual(expected)
+      }
     })
 
     it("makes the programme the default in study", function() {
@@ -397,15 +590,15 @@ describe("today's programme on the staff", function() {
   })
 
   // the measures of pickupScore on the grand staff, with their beats
-  let pool = () => {
-    let settings = {piece: piece.id, song: "", startMeasure: 0, endMeasure: 2, hand: BOTH_HANDS}
+  let pool = (hand=BOTH_HANDS) => {
+    let settings = {piece: piece.id, song: "", startMeasure: 0, endMeasure: 2, hand}
     let generator = SHEET_MUSIC_GENERATOR.create(grand, null, {...settings, practice: FREE_PRACTICE, measuresPerCard: 1})
     generator.stop()
     return generator.cards.map(card => ({number: card.startMeasure, columns: card.columns}))
   }
 
-  let generatorFor = (cardMeasures=2) => {
-    let deck = new PlanDeck(pool(), {pieceId: piece.id, cardMeasures, store, now: () => time})
+  let generatorFor = (cardMeasures=2, opts={}) => {
+    let deck = new PlanDeck(pool(), {pieceId: piece.id, cardMeasures, store, now: () => time, ...opts})
     let generator = new PlanGenerator(deck, {now: () => time})
     generators.push(generator)
     let notes = new NoteList([], {generator})
@@ -513,6 +706,51 @@ describe("today's programme on the staff", function() {
     expect(generator.statusLine()).toEqual("Once more · bar 0")
     expect(generator.caption()).toEqual("again in a moment")
     expect(notesOf(notes).slice(0, 2)).toEqual([["D5"], []])
+  })
+
+  it("offers a bar failing on the left hand's notes as the left hand alone, then together", async function() {
+    // the pools first: making one stops the generator playing
+    let measures = pool()
+    let hands = {upper: pool(RIGHT_HAND), lower: pool(LEFT_HAND)}
+    let {deck, generator, notes} = generatorFor(1, {hands})
+    let stats = new NoteStats()
+    notes = await playCard({generator, notes}, stats)
+
+    // measure 1 at first sight, its bass G3 missed twice
+    expect(deck.entry).toEqual(jasmine.objectContaining({reason: NEW, measure: 1, hand: "both"}))
+    stats.missNotes(["G3"])
+    stats.missNotes(["G3"])
+    notes = await playCard({generator, notes}, stats)
+
+    expect(store.item(`${piece.id}:both:1-1`).lastGrade).toEqual(AGAIN)
+    expect(deck.entry).toEqual(jasmine.objectContaining({reason: LADDER, measure: 1, hand: "lower"}))
+    expect(generator.statusLine()).toEqual("Once more · bar 1 · left hand")
+    expect(generator.caption()).toEqual("♩ ≈ 60 · no stops · Left hand alone, then together")
+    expect(generator.currentCard()).toEqual(jasmine.objectContaining({measures: [1], hand: "lower"}))
+    expect(notesOf(notes).slice(0, 2)).toEqual([["G3"], []])
+
+    // a reload plans the same hand alone
+    let reloaded = new PlanDeck(measures, {pieceId: piece.id, cardMeasures: 1, hands, store, now: () => time})
+    expect(reloaded.entry).toEqual(deck.entry)
+
+    // the left hand alone is written to its own item, and holds at once
+    notes = await playCard({generator, notes}, stats)
+    let reviews = await store.reviews({pieceId: piece.id})
+    expect(reviews[reviews.length - 1].itemId).toEqual(`${piece.id}:lower:1-1`)
+    expect(store.item(`${piece.id}:lower:1-1`).state).toEqual("review")
+    expect(generator.caption()).toEqual("hands together next")
+    expect(deck.entry).toEqual(jasmine.objectContaining({reason: RETRY, measure: 1, hand: "both"}))
+    expect(notesOf(notes).slice(0, 4)).toEqual([["G3", "G4"], ["A4"], ["B4"], []])
+  })
+
+  it("never splits a piece played without its hands", async function() {
+    let {deck, generator, notes} = generatorFor(1)
+    let stats = new NoteStats()
+    notes = await playCard({generator, notes}, stats)
+    stats.missNotes(["G3"])
+    stats.missNotes(["G3"])
+    notes = await playCard({generator, notes}, stats)
+    expect(deck.entry).toEqual(jasmine.objectContaining({reason: RETRY, measure: 1, hand: "both"}))
   })
 
   it("grades a measure played before its rung only when it fails, a neighbour never seen at first sight", async function() {

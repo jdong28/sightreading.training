@@ -12,7 +12,7 @@ import staffStyles from "st/components/staff.module.css"
 
 import {noteName, parseNote} from "st/music"
 import {
-  STAVES, GENERATORS, sheetMusicPiece, handTracks, drilledRange, sectionDroppedPitches, RIGHT_HAND, LEFT_HAND,
+  STAVES, GENERATORS, sheetMusicPiece, handTracks, handSetting, drilledRange, sectionDroppedPitches, RIGHT_HAND, LEFT_HAND,
 } from "st/data"
 import {pieceSong, pieceSource} from "st/sheet_music_deck"
 import {parseMusicXML} from "st/musicxml"
@@ -427,13 +427,21 @@ export default class SightReadingPage extends React.Component {
     return source.status == "loading" || (this.engineCards() && !this.state.staffWidth)
   }
 
+  // The hand setting the card at the head is played with: the hand alone
+  // today's programme offers it as, else the settings'
+  cardHand() {
+    let current = this.currentCard()
+    let hand = current && current.card.hand
+    return hand ? handSetting(hand) : this.currentSettings().hand
+  }
+
   // The score staves the drill's tracks read, the ones the engine draws:
   // null for every staff, undefined when the stored song's tracks can't be
   // told among the score's
   engineStaves() {
     let settings = this.currentSettings()
     let song = pieceSong(sheetMusicPiece(settings))
-    let tracks = handTracks(song, settings.hand)
+    let tracks = handTracks(song, this.cardHand())
     if (!tracks) { return null }
 
     let all = this.state.engineSource?.trackStaves

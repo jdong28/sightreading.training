@@ -166,16 +166,25 @@ export function drilledRange(settings) {
 
 // The programme's generator for the settings: the piece's measures as
 // planned cards (st/plan_cards), or null for a piece without notes on the
-// staff
+// staff. Played hands together on a piece with a staff per hand, each hand's
+// notes alone are there for the hand scaffold (see st/srs/planner)
 export function planGenerator(staff, settings) {
   let piece = sheetMusicPiece(settings)
   let song = piece && pieceSong(piece)
   if (!song) { return null }
 
   let [startMeasure, endMeasure] = measureNumberRange(song)
-  let measures = pieceSectionMeasures(staff, {...settings, startMeasure, endMeasure}, song)
+  let whole = {...settings, startMeasure, endMeasure}
+  let measures = pieceSectionMeasures(staff, whole, song)
+  let hand = itemHand(settings.hand)
+  let staves = staffTracks(song)
+  let hands = hand == "both" && staves.treble.length && staves.bass.length ? {
+    upper: pieceSectionMeasures(staff, {...whole, hand: RIGHT_HAND}, song),
+    lower: pieceSectionMeasures(staff, {...whole, hand: LEFT_HAND}, song),
+  } : null
+
   let deck = new PlanDeck(measures, {
-    pieceId: piece.id, hand: itemHand(settings.hand), cardMeasures: planCardMeasures(settings),
+    pieceId: piece.id, hand, hands, cardMeasures: planCardMeasures(settings),
   })
 
   return deck.playable ? new PlanGenerator(deck) : null
@@ -191,6 +200,18 @@ export function itemHand(hand) {
       return "lower"
     default:
       return "both"
+  }
+}
+
+// the hand setting that practices the items of an item hand, see itemHand
+export function handSetting(hand) {
+  switch (hand) {
+    case "upper":
+      return RIGHT_HAND
+    case "lower":
+      return LEFT_HAND
+    default:
+      return BOTH_HANDS
   }
 }
 

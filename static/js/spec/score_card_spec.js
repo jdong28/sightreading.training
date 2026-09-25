@@ -952,6 +952,73 @@ describe("score page engine card", function() {
   <part id="P2"><measure number="1">${attributes([["F", 4]], 1)}${notesOn(leftNotes, 3, 1)}</measure></part>`),
   }
 
+  // the page's card drawn again, to read what the engine drew
+  let drawnAgain = async () => {
+    let join
+    let props = page.engineCard()
+    let own = document.createElement("div")
+    own.style.width = "1100px"
+    document.body.appendChild(own)
+    let ownRoot = createRoot(own)
+    try {
+      flushSync(() => ownRoot.render(React.createElement(ScoreCard, {
+        ...props, onDrawn: drawn => join = drawn,
+      })))
+      await waitFor(() => join, {message: "the card drawn again"})
+    } finally {
+      flushSync(() => ownRoot.unmount())
+      own.remove()
+    }
+    return join
+  }
+
+  it("draws the left hand alone when today's programme offers a bar failing on its notes", async function() {
+    let bars = [1, 2].map(number => `<measure number="${number}">${number == 1 ? attributes([["G", 2], ["F", 4]], 2) : ""}${notesOn(rightNotes, 5, 1)}<backup><duration>4</duration></backup>${notesOn(leftNotes, 3, 2)}</measure>`)
+    let piece = await drillPiece(scoreOf("<score-part id=\"P1\"><part-name>Piano</part-name></score-part>",
+      `<part id="P1">${bars.join("")}</part>`), {startMeasure: 1, endMeasure: 2, measuresPerCard: "1"})
+    await store.putStudy({pieceId: piece.id, status: "learning", startedAt: Date.now()})
+    renderScorePage()
+    await cardDrawn()
+
+    flushSync(() => page.beginSession())
+    let generator = page.state.notes.generator
+    expect(generator.statusLine()).toEqual("New · bar 1")
+
+    // a wrong key under the right hand's note on each of two columns: the
+    // left hand's notes are blamed, and the bar fails
+    for (let [left, right] of [["C3", "E5"], ["G3", "G5"]]) {
+      flushSync(() => page.pressNote(right))
+      flushSync(() => page.pressNote("A#2"))
+      flushSync(() => page.releaseNote("A#2"))
+      flushSync(() => page.pressNote(left))
+      flushSync(() => page.releaseNote(left))
+      flushSync(() => page.releaseNote(right))
+    }
+    play(["E3", "C5"])
+    play(["G3", "E5"])
+    await generator.finishing
+    flushSync(() => page.forceUpdate())
+
+    let failed = (await store.reviews({pieceId: piece.id})).find(review => review.itemId == `${piece.id}:both:1-1`)
+    expect([failed.grade, failed.staffMisses]).toEqual([1, {upper: 0, lower: 2}])
+
+    expect(generator.statusLine()).toEqual("Once more · bar 1 · left hand")
+    expect(page.currentCard().card.hand).toEqual("lower")
+    expect([...page.state.notes.currentColumn()]).toEqual(["C3"])
+
+    let join = await drawnAgain()
+    expect(join.join.unmatched).toEqual([])
+    expect(join.result.notes.map(note => note.pitch).sort())
+      .toEqual(leftNotes.map(step => parseNote(`${step}3`)).sort())
+
+    // the left hand alone is written to its own item
+    for (let step of leftNotes) {
+      play([`${step}3`])
+    }
+    await generator.finishing
+    expect(store.item(`${piece.id}:lower:1-1`)).not.toBe(null)
+  })
+
   for (let [shape, xml] of Object.entries(SCORE_SHAPES)) {
     for (let [hand, pitches] of [
       [RIGHT_HAND, rightNotes.map(step => parseNote(`${step}5`))],
@@ -962,23 +1029,7 @@ describe("score page engine card", function() {
         renderScorePage()
         await cardDrawn()
 
-        // the page's card drawn again, to read what the engine drew
-        let join
-        let props = page.engineCard()
-        let own = document.createElement("div")
-        own.style.width = "1100px"
-        document.body.appendChild(own)
-        let ownRoot = createRoot(own)
-        try {
-          flushSync(() => ownRoot.render(React.createElement(ScoreCard, {
-            ...props, onDrawn: drawn => join = drawn,
-          })))
-          await waitFor(() => join, {message: "the card drawn again"})
-        } finally {
-          flushSync(() => ownRoot.unmount())
-          own.remove()
-        }
-
+        let join = await drawnAgain()
         expect(join.join.unmatched).toEqual([])
         expect(join.join.heads.every(heads => heads.length > 0)).toBe(true)
         expect(join.result.notes.map(note => note.pitch).sort()).toEqual([...pitches].sort())

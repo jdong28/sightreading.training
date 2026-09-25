@@ -3,32 +3,71 @@
 // (st/measure_cards) so the page draws, detects and records it as it does
 // any card. Each card is the planner's next measure anchored in a card of
 // the player's measures per card (anchoredCard), and the next is planned
-// when a card is done, from the piece's items as its attempts leave them.
+// when a card is done, from the piece's items as its attempts leave them. A
+// bar the hand scaffold offers hands apart is a card of that bar alone, of
+// that hand's notes, and its attempts are written to that hand's items.
 
 import {getAppStore} from "st/storage"
 import {MeasureCardGenerator, sectionCard} from "st/measure_cards"
+import {passAttempts} from "st/srs/attempt"
+import {AGAIN} from "st/srs/grade"
 import {itemId, newItem, itemWithPractice} from "st/srs/records"
 import {scheduledAttempt} from "st/srs/schedule"
 import {
   planNext, planState, planSummary, studyStatus, anchoredCard,
-  entryStatus, entryCaption,
+  entryStatus, cardCaption, WAIT,
 } from "st/srs/planner"
 
+// the last graded review known of each item of a piece, by store then piece
+// id then item id, which the hand scaffold reads the blamed hand from: read
+// from the log when a deck is made (reviews are never cached) and kept up to
+// date by the attempts a deck plans from, so a rebuilt drill keeps them
+const knownReviews = new WeakMap()
+
+function reviewsKnown(store, pieceId) {
+  let pieces = knownReviews.get(store)
+  if (!pieces) {
+    pieces = new Map()
+    knownReviews.set(store, pieces)
+  }
+
+  let reviews = pieces.get(pieceId)
+  if (!reviews) {
+    reviews = new Map()
+    pieces.set(pieceId, reviews)
+  }
+  return reviews
+}
+
+// keeps the later of each item's graded reviews
+function learnReviews(known, reviews) {
+  for (let review of reviews) {
+    if (review.kind != "attempt" || !review.grade) { continue }
+    let before = known.get(review.itemId)
+    if (!before || before.at < review.at) {
+      known.set(review.itemId, review)
+    }
+  }
+}
+
 // A deck of one card per playable measure of the piece, the card anchored on
-// it, showing the one the planner picks
+// it, showing the one the planner picks, and for a session hands together on
+// a piece with a staff per hand, a card of each measure for each hand alone
 export class PlanDeck {
   /**
    * @param {PoolMeasure[]} measures every measure of the piece, in score order
    * @param {Object} opts
    * @param {string} opts.pieceId
-   * @param {string} [opts.hand] one of HANDS (st/srs/records)
+   * @param {string} [opts.hand] one of HANDS (st/srs/records), the session's
+   * @param {{upper: PoolMeasure[], lower: PoolMeasure[]}} [opts.hands] every
+   * measure of the piece with each hand's notes alone, for the hand scaffold
    * @param {number} [opts.cardMeasures] measures per card
    * @param {function(): number} [opts.now]
    * @param {LocalStore} [opts.store] the app's store by default
    */
-  constructor(measures, {pieceId, hand="both", cardMeasures=1, now=Date.now, store}) {
+  constructor(measures, {pieceId, hand="both", hands=null, cardMeasures=1, now=Date.now, store}) {
     this.pieceId = pieceId
-    this.hand = hand
+    this.sessionHand = hand
     this.cardMeasures = cardMeasures
     this.now = now
     this.store = store
@@ -39,8 +78,18 @@ export class PlanDeck {
     this.cards = this.measures.map(measure =>
       sectionCard(anchoredCard(numbers, measure, cardMeasures).map(n => byNumber.get(n))))
 
+    // each hand's cards of a measure alone, by hand then measure
+    this.handCards = new Map(hand == "both" && hands ? Object.entries(hands).map(([staff, pool]) =>
+      [staff, new Map(pool.filter(measure => measure.columns.length)
+        .map(measure => [measure.number, {...sectionCard([measure]), hand: staff}]))]) : [])
+    this.handMeasures = this.handCards.size ? Object.fromEntries([...this.handCards]
+      .map(([staff, cards]) => [staff, [...cards.keys()]])) : null
+
     // items as the attempts not yet stored leave them, by id
     this.pending = new Map()
+
+    this.reviews = reviewsKnown(this.getStore(), pieceId)
+    this.loadReviews()
 
     this.index = null
     this.entry = null
@@ -49,6 +98,21 @@ export class PlanDeck {
 
   getStore() {
     return this.store || getAppStore()
+  }
+
+  // reads the piece's reviews from the log, for the next cards planned
+  loadReviews() {
+    let store = this.getStore()
+    if (!store.reviews) { return }
+
+    this.reviewsRead = store.reviews({pieceId: this.pieceId})
+      .then(reviews => learnReviews(this.reviews, reviews))
+      .catch(err => console.warn("Couldn't read the piece's reviews", err))
+  }
+
+  /** @returns {string} the hand of the card being shown, the session's or a hand alone */
+  get hand() {
+    return this.entry ? this.entry.hand : this.sessionHand
   }
 
   /** @returns {boolean} whether the piece has a measure to play */
@@ -63,7 +127,10 @@ export class PlanDeck {
 
   /** @returns {MeasureCard|null} the card being shown */
   get card() {
-    return this.index == null ? null : this.cards[this.index]
+    if (this.index == null) { return null }
+
+    let apart = this.entry.hand != this.sessionHand && this.handCards.get(this.entry.hand)
+    return apart ? apart.get(this.entry.measure) : this.cards[this.index]
   }
 
   /**
@@ -95,7 +162,9 @@ export class PlanDeck {
       pieceId: this.pieceId,
       items: this.items(),
       measures: this.measures,
-      hand: this.hand,
+      hand: this.sessionHand,
+      handMeasures: this.handMeasures,
+      lastReviews: this.reviews,
       now: this.now(),
       settings: store.schedulerSettings(),
       practice: store.practiceSettings(),
@@ -111,13 +180,15 @@ export class PlanDeck {
   }
 
   /**
-   * Items an attempt leaves, until the store has them
+   * Items an attempt leaves, until the store has them, and its reviews
    * @param {ItemRecord[]} items
+   * @param {ReviewRecord[]} [reviews]
    */
-  expect(items) {
+  expect(items, reviews=[]) {
     for (let item of items) {
       this.pending.set(item.id, item)
     }
+    learnReviews(this.reviews, reviews)
   }
 
   /** @returns {boolean} whether the programme reads complete now */
@@ -206,21 +277,43 @@ export class PlanGenerator extends MeasureCardGenerator {
     last.hit = hit || !scrolled
     let settings = this.deck.getStore().schedulerSettings()
     let {attempts, practice} = this.passRecords(pass, opts)
+    let graded = attempts.map(({id, build}) => scheduledAttempt(build(this.deck.item(id)), settings))
     let items = [
-      ...attempts.map(({id, build}) => scheduledAttempt(build(this.deck.item(id)), settings).item),
+      ...graded.map(attempt => attempt.item),
       ...practice.map(stint => itemWithPractice(this.deck.item(itemId(stint)) || newItem(stint, stint.at), stint)),
     ]
     last.hit = hit
 
-    this.deck.expect(items)
+    this.deck.expect(items, graded.map(attempt => attempt.review))
     let item = entry && items.find(item => item.id == entry.itemId)
-    this.lastCaption = item ? entryCaption(item, opts.at) : null
+    this.lastCaption = entry ? cardCaption(entry, item || null, planState(this.deck.planInput())) : null
 
     if (items.length) {
       this.markStudy(opts.at)
     }
 
     return opts
+  }
+
+  /**
+   * As MeasureCardGenerator#practiceOnly, save that a hand alone the scaffold
+   * offers climbs its own ladder from the bar's failure, so its bar is on
+   * schedule unless it was offered while waiting
+   * @param {AttemptPass} pass complete
+   * @param {Object} opts as for passAttempts
+   * @returns {string[]}
+   */
+  practiceOnly(pass, opts) {
+    let entry = this.deck.entry
+    if (!entry || entry.hand == this.deck.sessionHand) { return super.practiceOnly(pass, opts) }
+
+    if (!pass.practiceOnly) {
+      pass.practiceOnly = entry.reason != WAIT ? [] : passAttempts(pass, opts)
+        .filter(({id, build}) => build(this.deck.item(id)).review.grade > AGAIN)
+        .map(({id}) => id)
+    }
+
+    return pass.practiceOnly
   }
 
   // The piece is in study once a card of its programme is played: learning
