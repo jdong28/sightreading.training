@@ -23,6 +23,7 @@ import {DRILL_STORAGE_KEY, SCORE_DRILL_STORAGE_KEY} from "st/generators"
 import {scopeEvent} from "st/events"
 import NoteStats, {addNoteListener} from "st/note_stats"
 import {parseNote} from "st/music"
+import {KEYBOARD_MAP, SYMBOL_MAP_INVERSE} from "st/keyboard_input"
 import {openTestStore, noteXML, reverieOpening, keyChangeScore} from "spec/helpers"
 
 // a two staff 3/4 piece, measures 1 and 2
@@ -1552,6 +1553,51 @@ describe("sight reading page", function() {
       flushSync(() => {})
       expect(page.state.notes.generator instanceof PlanGenerator).toBe(false)
       expect(page.state.notes.generator.currentCard().measures).toEqual([3, 4])
+    })
+  })
+
+  describe("on-screen keyboard", function() {
+    it("starts hidden and the header toggle shows it", function() {
+      let el = renderPage()
+      expect(buttonNamed(el, "Hide keyboard")).toBeUndefined()
+      expect(el.querySelector('[class*="keyboard_inner"]')).toBeNull()
+
+      click(buttonNamed(el, "Show keyboard"))
+      expect(el.querySelector('[class*="keyboard_inner"]')).not.toBeNull()
+      expect(buttonNamed(el, "Hide keyboard")).toBeDefined()
+    })
+
+    // the computer keyboard played as a piano, as the window sees it: the
+    // key of st/keyboard_input's map (rooted on middle C) that plays the note
+    let keyCodeFor = note => {
+      let offset = parseNote(note) - parseNote("C4")
+      let key = Object.keys(KEYBOARD_MAP).find(k => KEYBOARD_MAP[k] == offset)
+      return SYMBOL_MAP_INVERSE[key] ? +SYMBOL_MAP_INVERSE[key] : key.toUpperCase().charCodeAt(0)
+    }
+
+    let typeKey = (type, keyCode) => flushSync(() =>
+      document.body.dispatchEvent(new KeyboardEvent(type, {keyCode, bubbles: true})))
+
+    it("plays the column with a typed key while the keyboard is hidden", function() {
+      let el = renderPage()
+
+      // the drill kept to the notes the map plays, middle C and up
+      flushSync(() => page.setGenerator(page.state.currentGenerator, {
+        ...page.state.currentGeneratorSettings,
+        noteRange: [parseNote("C4"), parseNote("C6")],
+      }))
+
+      click(buttonNamed(el, "Begin"))
+      expect(el.querySelector('[class*="keyboard_inner"]')).toBeNull()
+
+      let column = [...page.state.notes.currentColumn()]
+      column.forEach(note => typeKey("keydown", keyCodeFor(note)))
+      expect(page.state.heldNotes).toEqual(Object.fromEntries(column.map(n => [n, true])))
+
+      column.forEach(note => typeKey("keyup", keyCodeFor(note)))
+      expect(page.state.heldNotes).toEqual({})
+      expect(statValue(el, "Notes read")).toEqual("1")
+      expect(statValue(el, "Accuracy")).toEqual("100%")
     })
   })
 
