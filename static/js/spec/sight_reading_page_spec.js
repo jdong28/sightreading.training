@@ -122,6 +122,32 @@ let heldTrebleXML = `<?xml version="1.0" encoding="UTF-8"?>
   </part>
 </score-partwise>`
 
+// a two staff 4/4 bar the Nocturne's opening chord E4+G#4+C#5 struck on
+// each beat over a bass quarter, C#2 first (the report's column 0 of bars
+// 1-4, see sr-note-detection-l3): a bar to play with the pedal down
+let pedalChordXML = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <work><work-title>Pedal Chord</work-title></work>
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes>
+        <divisions>1</divisions>
+        <key><fifths>4</fifths></key>
+        <time><beats>4</beats><beat-type>4</beat-type></time>
+        <staves>2</staves>
+        <clef number="1"><sign>G</sign><line>2</line></clef>
+        <clef number="2"><sign>F</sign><line>4</line></clef>
+      </attributes>
+      ${[0, 1, 2, 3].map(() => [["E", 4, 0], ["G", 4, 1], ["C", 5, 1]].map(([step, octave, alter], idx) =>
+        `<note>${idx ? "<chord/>" : ""}<pitch><step>${step}</step>${alter ? `<alter>${alter}</alter>` : ""}<octave>${octave}</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>`).join("")).join("")}
+      <backup><duration>4</duration></backup>
+      ${[["C", 2], ["G", 2], ["C", 3], ["G", 2]].map(([step, octave]) =>
+        `<note><pitch><step>${step}</step><alter>1</alter><octave>${octave}</octave></pitch><duration>1</duration><voice>2</voice><type>quarter</type><staff>2</staff></note>`).join("")}
+    </measure>
+  </part>
+</score-partwise>`
+
 // a two staff piece, one measure, whose column is [C#3, C#6]: C#6 is outside
 // the grand staff's usual C2-C6 range (as in the Nocturne's bar 7, see
 // sr-note-detection-l3), C#3 within it
@@ -1749,6 +1775,9 @@ describe("sight reading page", function() {
       expect(page.state.noteShaking).toBe(false)
     })
 
+    // letting every key up used to play the column afresh, forgetting the
+    // keys touched; releases judge nothing now (T4), so the wrong key stays
+    // touched until the column completes
     it("counts a column missed once however many slips and releases it takes", function() {
       let el = renderPage()
       click(buttonNamed(el, "Begin"))
@@ -1756,10 +1785,9 @@ describe("sight reading page", function() {
       let column = head()
       play([WRONG_NOTE])
       expect(counts()).toEqual([0, 1])
-      expect(page.state.touchedNotes).toEqual({})
+      expect(page.state.touchedNotes).toEqual({[WRONG_NOTE]: true})
       expect(head()).toEqual(column)
 
-      // nothing matched when every key is up: the column is played afresh
       play([WRONG_NOTE])
       press("A#4")
       release("A#4")
@@ -1856,8 +1884,8 @@ describe("sight reading page", function() {
       expect(head()).toEqual(["C3", "F5"])
 
       // the G5 held since the first column is still down as the left hand
-      // lets its C3 up before the right hand's F5 lands: some key stays
-      // down, so the column is neither missed nor played afresh
+      // lets its C3 up before the right hand's F5 lands: no release judges
+      // the column, so it is neither missed nor played afresh
       press("C3")
       release("C3")
       expect(counts()).toEqual([3, 0])
@@ -1908,6 +1936,133 @@ describe("sight reading page", function() {
 
       play(["G3"])
       expect(counts()).toEqual([2, 1])
+    })
+
+    // T4 of the note detection report: releases never judge. Every key up
+    // before a column completed used to miss it and forget the keys struck,
+    // so a column whose keys weren't all down at once stalled the drill
+    // while the player played on. With the pedal down pianists let keys up
+    // early, which is what "pedalling throws off the detection" was
+    describe("releases never judge (T4)", function() {
+      let midiOff = (note, timeStamp) =>
+        page.onMidiMessage({data: new Uint8Array([0x80, parseNote(note), 0]), timeStamp})
+      // a timeline of [timeStamp, "on"|"off", note], each its own MIDI packet
+      let perform = events => {
+        for (let [at, what, note] of [...events].sort((a, b) => a[0] - b[0])) {
+          flushSync(() => what == "on" ? midiOn(note, at) : midiOff(note, at))
+        }
+      }
+      let sorted = column => [...column].sort()
+      let chord = ["C#5", "E4", "G#4"]
+      let bass = ["C#2", "G#2", "C#3", "G#2"]
+
+      // the hits and misses the stats count, as their listeners hear them
+      let listen = () => {
+        let events = []
+        return {events, stop: addNoteListener(({type}) => events.push(type))}
+      }
+
+      // M3: the bass key comes up 20 ms before the right hand's chord lands
+      it("completes a column whose one hand is let up before the other lands (M3)", async function() {
+        await renderPiece(pedalChordXML, {endMeasure: 1})
+        expect(sorted(head())).toEqual(sorted(["C#2", ...chord]))
+
+        perform([
+          [0, "on", "C#2"], [97, "off", "C#2"],
+          ...chord.map(note => [117, "on", note]),
+        ])
+
+        expect(counts()).toEqual([1, 0])
+        expect(sorted(head())).toEqual(sorted(["G#2", ...chord]))
+        expect(page.state.noteShaking).toBe(false)
+      })
+
+      // A7: every bass key lifted 100 ms after it is struck, 120 ms before
+      // the right hand lands, and the chord let up before the next beat
+      it("follows a bar played with keys let up early under the pedal (A7)", async function() {
+        await renderPiece(pedalChordXML, {endMeasure: 1})
+        let listening = listen()
+
+        try {
+          perform(bass.flatMap((note, beat) => {
+            let at = beat * 1000
+            return [
+              [at, "on", note], [at + 100, "off", note],
+              ...chord.flatMap(key => [[at + 120, "on", key], [at + 900, "off", key]]),
+            ]
+          }))
+        } finally {
+          listening.stop()
+        }
+
+        expect(counts()).toEqual([4, 0])
+        expect(listening.events).toEqual(["hit", "hit", "hit", "hit"])
+        expect(page.state.heldNotes).toEqual({})
+      })
+
+      // A5: a rolled chord caught by the pedal, each key up 60 ms after it
+      // goes down and the next 80 ms after the one before
+      it("completes rolled chords whose every key is up before the next goes down (A5)", async function() {
+        await renderPiece(pedalChordXML, {endMeasure: 1})
+
+        perform(bass.flatMap((note, beat) =>
+          [note, "E4", "G#4", "C#5"].flatMap((key, idx) => {
+            let at = beat * 1000 + idx * 80
+            return [[at, "on", key], [at + 60, "off", key]]
+          })))
+
+        expect(counts()).toEqual([4, 0])
+      })
+
+      it("completes a column assembled slowly, one key at a time", async function() {
+        await renderPiece(pedalChordXML, {endMeasure: 1})
+
+        perform(["C#2", ...chord].flatMap((key, idx) =>
+          [[idx * 5000, "on", key], [idx * 5000 + 200, "off", key]]))
+
+        expect(counts()).toEqual([1, 0])
+        expect(sorted(head())).toEqual(sorted(["G#2", ...chord]))
+      })
+
+      it("counts one slip for a wrong key alone then released", async function() {
+        await renderPiece(pedalChordXML, {endMeasure: 1})
+        let judged = listen()
+        let slipNotes = spyOn(page.state.stats, "slipNotes").and.callThrough()
+        let marked = spyOn(page, "markMissedCard").and.callThrough()
+
+        try {
+          perform([[0, "on", "D4"], [80, "off", "D4"]])
+        } finally {
+          judged.stop()
+        }
+
+        expect(judged.events).toEqual(["miss"])
+        expect(slipNotes).not.toHaveBeenCalled()
+        expect(marked).toHaveBeenCalledTimes(1)
+        expect(counts()).toEqual([0, 1])
+
+        // the column is still under way, and its keys complete it
+        perform(["C#2", ...chord].map(key => [200, "on", key]))
+        expect(counts()).toEqual([1, 1])
+      })
+
+      it("records the spread of a column's keys on its hit", async function() {
+        await renderPiece(pedalChordXML, {endMeasure: 1})
+        let spreads = []
+        let applyEvent = page.applyEvent.bind(page)
+        spyOn(page, "applyEvent").and.callFake(event => {
+          if (event.type == "hit") { spreads.push(event.spread) }
+          return applyEvent(event)
+        })
+
+        perform([
+          [0, "on", "C#2"], [97, "off", "C#2"],
+          ...chord.map(note => [117, "on", note]),
+          [1000, "on", "G#2"], ...chord.map((note, idx) => [1300 + idx * 40, "on", note]),
+        ])
+
+        expect(spreads).toEqual([117, 380])
+      })
     })
 
     // M7 of the note detection report: two key-downs crossing a column

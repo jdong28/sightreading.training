@@ -829,7 +829,7 @@ export default class SightReadingPage extends React.Component {
   }
 
   // The miss the matcher counted on the head column, at most once however
-  // many slips and releases it takes to complete it: counted says whether
+  // many slips it takes to complete it: counted says whether
   // the stats take it as the column's miss, as a further slip in the same
   // column (the measure cards' grade counts every try gone wrong), or as
   // neither. The column is marked on an engine card and the notes shake

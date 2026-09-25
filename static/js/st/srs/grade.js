@@ -31,8 +31,8 @@ export const EASY_PACE = 1.15
 /**
  * What detection saw on one column of an attempt.
  * @typedef {Object} AttemptColumn
- * @property {number} misses slips on the column, each wrong key pressed or
- * every key let up unmatched
+ * @property {number} misses slips on the column, each try with a wrong key
+ * pressed
  * @property {boolean} [skipped] passed over without being played
  * @property {number|null} [ms] time on the column: from the column before
  * it done to it done
