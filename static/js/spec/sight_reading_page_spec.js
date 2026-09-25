@@ -1555,6 +1555,18 @@ describe("sight reading page", function() {
     })
   })
 
+  describe("on-screen keyboard", function() {
+    it("starts hidden and the header toggle shows it", function() {
+      let el = renderPage()
+      expect(buttonNamed(el, "Hide keyboard")).toBeUndefined()
+      expect(el.querySelector('[class*="keyboard_inner"]')).toBeNull()
+
+      click(buttonNamed(el, "Show keyboard"))
+      expect(el.querySelector('[class*="keyboard_inner"]')).not.toBeNull()
+      expect(buttonNamed(el, "Hide keyboard")).toBeDefined()
+    })
+  })
+
   // the chord staff's drill, a ChordList of chords judged only on the
   // release of every key
   describe("chords mode", function() {

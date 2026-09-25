@@ -258,7 +258,7 @@ export default class SightReadingPage extends React.Component {
       noteWidth: DEFAULT_NOTE_WIDTH,
 
       bufferSize: 10,
-      keyboardOpen: true,
+      keyboardOpen: false,
       settingsOpen: false,
       scale: staffScale(),
       // the width the staff wrapper gives the staff, measured once mounted
