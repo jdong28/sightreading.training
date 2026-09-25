@@ -34,8 +34,8 @@ export default class NoteMatcher {
     this.onEvent = opts.onEvent || null
 
     // the keys physically down, from each note on to its note off. It
-    // survives a hit, so letting up keys that played earlier columns is no
-    // try at the current one
+    // survives a hit, so a wrong key still down as a column completes is
+    // counted on it; letting keys up judges nothing (T4)
     this.held = {}
 
     // the keys struck at the head column since it became the head, wrong
@@ -50,8 +50,8 @@ export default class NoteMatcher {
     this.firstAt = null
 
     // the note list a miss was last counted on (a column counts missed once
-    // however many slips it takes), and whether the try in
-    // progress has already counted a slip
+    // however many slips it takes), and whether the try in progress has
+    // already counted a slip
     this.missedNotes = null
     this.slipped = false
 
@@ -186,8 +186,9 @@ export default class NoteMatcher {
     advanced.pushRandom()
 
     this.notes = advanced
-    // the keys still down stay held: letting them up later is no try at the
-    // next column
+    // the next column is played afresh from the next key down: the keys
+    // still down stay held, but none of them is credited to it
+    // (score-sustained credit is a later step)
     this.clearTouched()
 
     this.emit({

@@ -829,10 +829,10 @@ export default class SightReadingPage extends React.Component {
   }
 
   // The miss the matcher counted on the head column, at most once however
-  // many slips it takes to complete it: counted says whether
-  // the stats take it as the column's miss, as a further slip in the same
-  // column (the measure cards' grade counts every try gone wrong), or as
-  // neither. The column is marked on an engine card and the notes shake
+  // many slips it takes to complete it: counted says whether the stats take
+  // it as the column's miss, as a further slip in the same column (the
+  // measure cards' grade counts every try gone wrong), or as neither. The
+  // column is marked on an engine card and the notes shake
   countMiss(event, update) {
     if (event.counted == "miss") {
       gaEvent("sight_reading", "note", "miss");
@@ -936,8 +936,9 @@ export default class SightReadingPage extends React.Component {
     this.judge(() => this.matcher.noteOn(note, timeStamp))
   }
 
-  // A key came up. The matcher runs the release check at most once an event,
-  // when the last key down comes up
+  // A key came up. In notes mode the matcher judges nothing on it; the chord
+  // drill's release check runs at most once an event, when the last key down
+  // comes up
   releaseNote(note, timeStamp) {
     this.judge(() => this.matcher.noteOff(note, timeStamp))
   }
