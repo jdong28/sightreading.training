@@ -21,7 +21,7 @@ import {
 import {setAppStore} from "st/storage"
 import {
   openTestStore, pickupScore, noteXML, reverieOpening, keyChangeScore, nocturneBars5to6,
-  LITTLE_WALTZ_XML, littleWaltzMXL
+  tiedTrillScore, LITTLE_WALTZ_XML, littleWaltzMXL
 } from "spec/helpers"
 
 let tuples = notes => [...notes]
@@ -72,6 +72,18 @@ describe("sheet music deck", function() {
         .map(column => column.allowed || null)
       expect(allowed(restored)).toEqual(allowed(song))
       expect(allowed(restored).filter(a => a).length).toEqual(5)
+    })
+
+    it("round trips the beat an ornament on a tie's continuation sounds from", function() {
+      let song = parseMusicXML(tiedTrillScore())
+      let stored = JSON.parse(JSON.stringify(songToJSON(song)))
+
+      expect(stored.tracks[0].ornaments).toEqual([{neighbours: ["D5"], trill: true, at: 4}])
+
+      let allowed = s => extractSectionColumns(s, {startMeasure: 1, endMeasure: 2, notation: true})
+        .map(column => column.allowed || null)
+      expect(allowed(songFromJSON(stored))).toEqual(allowed(song))
+      expect(allowed(song).filter(a => a).length).toEqual(4)
     })
 
     it("keeps the ratio of a triplet the score writes late in the piece", function() {

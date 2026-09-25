@@ -6,7 +6,7 @@ import {
   parseSongText, staffTracks
 } from "st/song_sections"
 import {parseMusicXML} from "st/musicxml"
-import {noteXML, nocturneBars5to6} from "spec/helpers"
+import {noteXML, nocturneBars5to6, tiedTrillScore} from "spec/helpers"
 
 import {
   SheetMusicGenerator, generatorDefaultSettings, storeGeneratorSettings,
@@ -261,6 +261,19 @@ describe("song sections", function() {
 
       expect(judged.map(event => event.type)).toEqual(["hit", "miss"])
       expect([...matcher.notes.currentColumn()]).toEqual(["A3"])
+    })
+
+    it("allows a trill written on a tie's continuation only from that continuation on", function() {
+      let columns = extractSectionColumns(parseMusicXML(tiedTrillScore()),
+        {startMeasure: 1, endMeasure: 2, notation: true})
+
+      // bar 1 holds the same C5 but writes no trill, so nothing is allowed
+      // there; from bar 2 the trill allows its upper note and the C5 it
+      // strikes again
+      expect(allowances(columns)).toEqual([
+        [["G3", "C5"], null], [["A3"], null], [["B3"], null], [["C4"], null],
+        [["G3"], ["C5", "D5"]], [["A3"], ["C5", "D5"]], [["B3"], ["C5", "D5"]], [["C4"], ["C5", "D5"]],
+      ])
     })
 
     it("keeps a column's allowances through the range filter and the generator's copies", function() {

@@ -4,7 +4,7 @@ import {
   DAMAGED_ARCHIVE_MESSAGE, NO_SCORE_MESSAGE
 } from "st/musicxml"
 import {SongNote, measureStartsUntil, clickStartsMeasure} from "st/song_note_list"
-import {reverieOpening, nocturneBars5to6, LITTLE_WALTZ_XML, littleWaltzMXL} from "spec/helpers"
+import {reverieOpening, nocturneBars5to6, tiedTrillScore, LITTLE_WALTZ_XML, littleWaltzMXL} from "spec/helpers"
 
 // [note, start, duration] tuples of a note list, in document order
 let tuples = notes => [...notes].map(n => [n.note, n.start, n.duration])
@@ -922,6 +922,32 @@ describe("musicxml ornaments", function() {
     // the trill mark still trills its own note; the line says nothing the
     // importer can run to a stop, so the notes after it are not trilled
     expect(ornaments(song)).toEqual([["C5", 0, {neighbours: ["D5"], trill: true}]])
+  })
+
+  it("gives a grace note to a note written after it, never one a backup put before it", function() {
+    let song = parseMusicXML(partwise(`
+<measure number="1">
+  ${attributes({staves: 2, clefs: [[1, "G", 2], [2, "F", 4]]})}
+  ${note("F", 5, 2, "<staff>1</staff>")}
+  ${grace("E", 5, "<staff>1</staff>")}
+  <backup><duration>2</duration></backup>
+  ${note("C", 3, 2, "<staff>2</staff>")}
+  ${note("D", 3, 2, "<staff>2</staff>")}
+</measure>`))
+
+    // no note writes a <voice>, so every note of the bar shares one: the
+    // grace is written half way through it, so the C3 the backup put on the
+    // downbeat isn't the note it leads into, the D3 after it is
+    expect(ornaments(song)).toEqual([["D3", 2, {graces: ["E5"]}]])
+  })
+
+  it("starts an ornament written on a tie's continuation at that continuation", function() {
+    let song = parseMusicXML(tiedTrillScore())
+
+    expect(tuples(song.tracks[0])).toEqual([["C5", 0, 8]])
+    // the trill is written in bar 2, so it sounds from beat 4, not from the
+    // merged note's own start
+    expect(ornaments(song)).toEqual([["C5", 0, {neighbours: ["D5"], trill: true, at: 4}]])
   })
 
   it("keeps the ornaments of the notes a tie merges", function() {

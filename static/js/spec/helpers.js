@@ -216,6 +216,32 @@ export const nocturneBars5to6 = () => {
 </score-partwise>`
 }
 
+// Two 4/4 bars in C major whose right hand holds C5 tied across the barline,
+// with the trill written on the continuation in bar 2, over the left hand's
+// quarters G3 A3 B3 C4 in each bar
+export const tiedTrillScore = () => {
+  let quarters = () => ["G", "A", "B", "C"].map((step, idx) =>
+    noteXML(step, idx == 3 ? 4 : 3, 1, 2, "<voice>5</voice>")).join("")
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes><divisions>1</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><staves>2</staves><clef number="1"><sign>G</sign><line>2</line></clef><clef number="2"><sign>F</sign><line>4</line></clef></attributes>
+      ${noteXML("C", 5, 4, 1, "<voice>1</voice><tie type=\"start\"/>")}
+      <backup><duration>4</duration></backup>
+      ${quarters()}
+    </measure>
+    <measure number="2">
+      ${noteXML("C", 5, 4, 1, "<voice>1</voice><tie type=\"stop\"/><notations><ornaments><trill-mark/></ornaments></notations>")}
+      <backup><duration>4</duration></backup>
+      ${quarters()}
+    </measure>
+  </part>
+</score-partwise>`
+}
+
 // A 4/4 single staff piece of four whole notes in the given key signatures
 // (in fifths): the first key from measure 1, the second, if any, from
 // measure 3

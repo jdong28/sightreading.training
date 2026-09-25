@@ -417,9 +417,9 @@ function walkPart(measures, partName) {
   let beatsPerMeasure = null
   let fifths = null
 
-  // grace notes waiting for the note they lead into, by voice. A grace note
-  // is written in the measure of the note it leads into, so none is kept past
-  // the end of one
+  // grace notes waiting for the note they lead into, by voice, as {at, names}
+  // of the position they are written at. A grace note is written in the
+  // measure of the note it leads into, so none is kept past the end of one
   let pendingGraces = new Map()
   // the trills whose wavy line is still running, by voice and line number,
   // each {voice, sides} of the neighbours it alternates with
@@ -520,7 +520,9 @@ function walkPart(measures, partName) {
             let parts = gracePitch && pitchParts(gracePitch)
             if (parts) {
               written.push({staff, ...parts, at: position})
-              pendingGraces.set(voice, [...(pendingGraces.get(voice) || []), spellNote(parts)])
+              let pending = pendingGraces.get(voice)
+              let names = pending && pending.at == position ? pending.names : []
+              pendingGraces.set(voice, {at: position, names: [...names, spellNote(parts)]})
             }
             break
           }
@@ -579,9 +581,11 @@ function walkPart(measures, partName) {
             ...(voice ? {voice} : null),
           }
 
+          // only a note the graces lead into takes them: one written after
+          // them, never one an earlier <backup> put before them
           let graces = pendingGraces.get(voice)
-          if (graces) {
-            event.graces = graces
+          if (graces && graces.at <= start) {
+            event.graces = graces.names
             pendingGraces.delete(voice)
           }
 
@@ -703,8 +707,11 @@ function scoreTitle(root) {
 // its trill, turn or mordent alternates it with, marked note.ornaments.trill
 // when that ornament keeps alternating (see TRILLS). Neither is played for the
 // note, so neither is required, but a player playing them as written doesn't
-// slip (see column.allowed in st/song_sections)
-function addOrnaments(note, event) {
+// slip (see column.allowed in st/song_sections). An ornament written on a
+// tie's continuation, at, sounds from there on rather than over the whole
+// merged note: note.ornaments.at, the beat its neighbours start at, kept only
+// when that is past the note's own start
+function addOrnaments(note, event, at) {
   for (let field of ["graces", "neighbours"]) {
     let names = event[field]
     if (!names || !names.length) { continue }
@@ -714,8 +721,14 @@ function addOrnaments(note, event) {
     note.ornaments[field] = [...kept, ...names.filter(name => !kept.includes(name))]
   }
 
-  if (event.trill && note.ornaments && note.ornaments.neighbours) {
+  if (!event.neighbours || !event.neighbours.length) { return }
+
+  if (event.trill) {
     note.ornaments.trill = true
+  }
+
+  if (at > note.start && note.ornaments.at == null) {
+    note.ornaments.at = at
   }
 }
 
@@ -859,7 +872,7 @@ export function parseMusicXML(text) {
           // the note the tie runs to is drawn as its own head, tied to the
           // one before it, though only the merged note is played
           pending.notation.ties.push({start: noteStart, ...notationFor(event)})
-          addOrnaments(pending, event)
+          addOrnaments(pending, event, noteStart)
           if (!event.tieStart) {
             delete pendingTies[key]
           }
@@ -869,7 +882,7 @@ export function parseMusicXML(text) {
 
       let note = new SongNote(event.name, noteStart, event.duration)
       note.notation = {...notationFor(event), ties: []}
-      addOrnaments(note, event)
+      addOrnaments(note, event, noteStart)
       song.pushWithTrack(note, track)
 
       if (event.tieStart) {
