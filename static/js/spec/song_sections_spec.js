@@ -15,6 +15,7 @@ import {
 } from "st/generators"
 import {sheetMusicSection} from "st/data"
 import NoteList from "st/note_list"
+import NoteMatcher from "st/note_matcher"
 
 describe("song sections", function() {
   // two measures of 4/4, two tracks
@@ -208,6 +209,58 @@ describe("song sections", function() {
         [["B3", "E5"], ["F5"]],
         [["C4", "F5"], null],
       ])
+    })
+
+    // 4/4, C major: a whole note C5 carrying one ornament over the left
+    // hand's quarters G3 A3 B3 C4
+    let heldOrnament = marks => parseMusicXML(`<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes><divisions>1</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><staves>2</staves><clef number="1"><sign>G</sign><line>2</line></clef><clef number="2"><sign>F</sign><line>4</line></clef></attributes>
+      ${noteXML("C", 5, 4, 1, `<voice>1</voice><notations><ornaments>${marks}</ornaments></notations>`)}
+      <backup><duration>4</duration></backup>
+      ${["G", "A", "B"].map(step => noteXML(step, 3, 1, 2, "<voice>5</voice>")).join("")}
+      ${noteXML("C", 4, 1, 2, "<voice>5</voice>")}
+    </measure>
+  </part>
+</score-partwise>`)
+
+    let heldColumns = marks =>
+      extractSectionColumns(heldOrnament(marks), {startMeasure: 1, endMeasure: 1, notation: true})
+
+    it("allows the ornamented note again while a trill alternates, but never for a mordent", function() {
+      // the mordent plays its lower note at the onset only, so the C5 it is
+      // written on is an allowance at no column under it
+      expect(allowances(heldColumns("<mordent/>"))).toEqual([
+        [["G3", "C5"], ["B4"]], [["A3"], ["B4"]], [["B3"], ["B4"]], [["C4"], ["B4"]],
+      ])
+
+      // the trill keeps alternating, so it strikes C5 again after its onset
+      expect(allowances(heldColumns("<trill-mark/>"))).toEqual([
+        [["G3", "C5"], ["D5"]], [["A3"], ["C5", "D5"]], [["B3"], ["C5", "D5"]], [["C4"], ["C5", "D5"]],
+      ])
+    })
+
+    it("counts a slip for a mordent's note struck again at a column that doesn't play it", function() {
+      let columns = heldColumns("<mordent/>")
+      let queued = [...columns]
+      let notes = new NoteList([], {generator: {nextNote: () => queued.shift() || []}})
+      notes.fillBuffer(columns.length)
+
+      let judged = []
+      let matcher = new NoteMatcher(notes, {onEvent: event => judged.push(event)})
+
+      // the first column played and let go, then C5 struck again over A3
+      matcher.noteOn("G3")
+      matcher.noteOn("C5")
+      matcher.noteOff("G3")
+      matcher.noteOff("C5")
+      matcher.noteOn("C5")
+
+      expect(judged.map(event => event.type)).toEqual(["hit", "miss"])
+      expect([...matcher.notes.currentColumn()]).toEqual(["A3"])
     })
 
     it("keeps a column's allowances through the range filter and the generator's copies", function() {

@@ -63,7 +63,7 @@ describe("sheet music deck", function() {
       expect(stored.format).toEqual(3)
       // one entry a note of the right hand's track, as its notation
       expect(stored.tracks[0].ornaments).toEqual([
-        null, {neighbours: ["G#5"]}, {graces: ["E5", "F#5"]}, null,
+        null, {neighbours: ["G#5"], trill: true}, {graces: ["E5", "F#5"]}, null,
       ])
       expect(stored.tracks[1].ornaments).toBeUndefined()
 

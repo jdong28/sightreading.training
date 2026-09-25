@@ -167,18 +167,22 @@ function tieHeads(note, staff) {
 // The score's ornament notes a player may add at the column of onsetNotes, at
 // beat, without a slip (st/note_matcher): the grace notes leading into its
 // notes, and the notes of every trill, turn or mordent of ornamented (notes
-// with neighbours) sounding at it, the ornamented note itself among them as
-// a trill strikes it again. A pitch the column plays is required rather than
-// allowed, so it isn't one. Pitch sorted, one name a pitch
+// with neighbours) sounding at it, and the ornamented note itself at the
+// columns a trill (ornaments.trill) strikes it again at, after its own onset.
+// A pitch the column plays is required rather than allowed, so it isn't one.
+// Pitch sorted, one name a pitch
 function allowedExtras(beat, onsetNotes, ornamented, required) {
   let names = onsetNotes.flatMap(note => (note.ornaments && note.ornaments.graces) || [])
 
   for (let note of ornamented) {
     let sounding = note.start <= beat + ONSET_EPSILON / 2 &&
       note.start + note.duration > beat + ONSET_EPSILON / 2
-    if (sounding) {
-      names.push(note.note, ...note.ornaments.neighbours)
+    if (!sounding) { continue }
+
+    if (note.ornaments.trill && note.start < beat - ONSET_EPSILON / 2) {
+      names.push(note.note)
     }
+    names.push(...note.ornaments.neighbours)
   }
 
   let seen = new Set(required)

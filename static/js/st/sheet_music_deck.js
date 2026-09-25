@@ -68,7 +68,8 @@ function notationToJSON(notation) {
 }
 
 // The ornaments of a note as they are stored (and read back), null for a
-// note without any: the note names of each field, if it has any
+// note without any: the note names of each field, if it has any, and whether
+// the neighbours are a trill's (see addOrnaments in st/musicxml)
 function ornamentsToJSON(ornaments) {
   let out = {}
   for (let field of ["graces", "neighbours"]) {
@@ -77,6 +78,9 @@ function ornamentsToJSON(ornaments) {
     if (names.length) {
       out[field] = names
     }
+  }
+  if (out.neighbours && ornaments.trill) {
+    out.trill = true
   }
   return Object.keys(out).length ? out : null
 }
