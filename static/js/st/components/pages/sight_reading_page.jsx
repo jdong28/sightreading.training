@@ -3,7 +3,7 @@ import NoteMatcher from "st/note_matcher"
 import ChordList from "st/chord_list"
 import NoteStats from "st/note_stats"
 import SlideToZero from "st/slide_to_zero"
-import Keyboard from "st/components/keyboard"
+import Keyboard, {KeyboardInput} from "st/components/keyboard"
 import StatsLightbox from "st/components/sight_reading/stats_lightbox"
 import Hotkeys from "st/components/hotkeys"
 
@@ -1667,6 +1667,12 @@ export default class SightReadingPage extends React.Component {
 
     return <footer className={classNames(styles.keyboard_footer, {[styles.collapsed]: !open})}>
       <div className={styles.piano_lid} aria-hidden="true" />
+      {// the keys drawn bring their own typing input, so the hidden keyboard
+       // keeps the computer keyboard playable with this one
+       hasKeyboard && !open ? <KeyboardInput
+        midiOutput={this.props.midiOutput}
+        onKeyDown={this.pressNote}
+        onKeyUp={this.releaseNote} /> : null}
       {content}
     </footer>
   }

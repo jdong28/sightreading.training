@@ -8,6 +8,26 @@ import * as types from "prop-types"
 
 import styles from "./keyboard.module.css"
 
+function noteDown(props, note) {
+  if (props.onKeyDown) {
+    props.onKeyDown(note);
+  }
+
+  if (props.midiOutput) {
+    props.midiOutput.noteOn(parseNote(note), 100)
+  }
+}
+
+function noteUp(props, note) {
+  if (props.onKeyUp) {
+    props.onKeyUp(note);
+  }
+
+  if (props.midiOutput) {
+    props.midiOutput.noteOff(parseNote(note), 100)
+  }
+}
+
 export default class Keyboard extends React.PureComponent {
   static propTypes = {
     lower: types.oneOfType([types.string, types.number]),
@@ -25,7 +45,6 @@ export default class Keyboard extends React.PureComponent {
       // used for showing :active effect on keys when using touch device
       activeNotes: {}
     }
-    this.heldKeyboardKeys = {}
     this.activeTouches = {}
 
     this.onMouseDown = this.onMouseDown.bind(this)
@@ -41,63 +60,12 @@ export default class Keyboard extends React.PureComponent {
     return LETTER_OFFSETS[pitch % 12] === 0;
   }
 
-  componentDidMount() {
-    this.downListener = event => {
-      if (event.shiftKey || event.altKey || event.ctrlKey) {
-        return
-      }
-
-      // typing into settings inputs (eg. pasted song notation) is not playing
-      if (event.target.matches("input, textarea")) {
-        return
-      }
-
-      const key = keyCodeToChar(event.keyCode)
-      const note = noteForKey("C4", key)
-
-      if (note && !this.heldKeyboardKeys[note]) {
-        this.heldKeyboardKeys[note] = true
-        this.triggerNoteDown(note)
-      }
-    }
-
-    this.upListener = event => {
-      const key = keyCodeToChar(event.keyCode)
-      const note = noteForKey("C4", key)
-
-      if (note && this.heldKeyboardKeys[note]) {
-        this.heldKeyboardKeys[note] = false
-        this.triggerNoteUp(note)
-      }
-    }
-
-    window.addEventListener("keydown", this.downListener)
-    window.addEventListener("keyup", this.upListener)
-  }
-
-  componentWillUnmount() {
-    window.removeEventListener("keydown", this.downListener)
-    window.removeEventListener("keyup", this.upListener)
-  }
-
   triggerNoteDown(note) {
-    if (this.props.onKeyDown) {
-      this.props.onKeyDown(note);
-    }
-
-    if (this.props.midiOutput) {
-      this.props.midiOutput.noteOn(parseNote(note), 100)
-    }
+    noteDown(this.props, note)
   }
 
   triggerNoteUp(note) {
-    if (this.props.onKeyUp) {
-      this.props.onKeyUp(note);
-    }
-
-    if (this.props.midiOutput) {
-      this.props.midiOutput.noteOff(parseNote(note), 100)
-    }
+    noteUp(this.props, note)
   }
 
   onTouchStart(e) {
@@ -193,7 +161,70 @@ export default class Keyboard extends React.PureComponent {
       </div>)
     }
 
-    return <div className={classNames(styles.keyboard, "keyboard", this.props.className)}>{keys}</div>
+    return <div className={classNames(styles.keyboard, "keyboard", this.props.className)}>
+      <KeyboardInput
+        midiOutput={this.props.midiOutput}
+        onKeyDown={this.props.onKeyDown}
+        onKeyUp={this.props.onKeyUp} />
+      {keys}
+    </div>
   }
 
+}
+
+// the computer keyboard played as a piano (the z/x/c... mapping), drawing no
+// keys of its own so typing plays whether or not a Keyboard is on screen
+export class KeyboardInput extends React.PureComponent {
+  static propTypes = {
+    onKeyDown: types.func,
+    onKeyUp: types.func,
+  }
+
+  constructor(props) {
+    super(props)
+    this.heldKeyboardKeys = {}
+  }
+
+  componentDidMount() {
+    this.downListener = event => {
+      if (event.shiftKey || event.altKey || event.ctrlKey) {
+        return
+      }
+
+      // typing into settings inputs (eg. pasted song notation) is not playing
+      if (event.target.matches("input, textarea")) {
+        return
+      }
+
+      const key = keyCodeToChar(event.keyCode)
+      const note = noteForKey("C4", key)
+
+      if (note && !this.heldKeyboardKeys[note]) {
+        this.heldKeyboardKeys[note] = true
+        noteDown(this.props, note)
+      }
+    }
+
+    this.upListener = event => {
+      const key = keyCodeToChar(event.keyCode)
+      const note = noteForKey("C4", key)
+
+      if (note && this.heldKeyboardKeys[note]) {
+        this.heldKeyboardKeys[note] = false
+        noteUp(this.props, note)
+      }
+    }
+
+    window.addEventListener("keydown", this.downListener)
+    window.addEventListener("keyup", this.upListener)
+  }
+
+  componentWillUnmount() {
+    window.removeEventListener("keydown", this.downListener)
+    window.removeEventListener("keyup", this.upListener)
+  }
+
+  render() {
+    return null
+  }
 }
