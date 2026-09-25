@@ -151,25 +151,32 @@ export function cardWeights(cards, items, {hand="both", now=Date.now(), settings
 /**
  * The caption after a pass (see passPace in st/srs/attempt): its pace as a
  * quarter note tempo and where it stopped, eg. "♩ ≈ 52 · no stops" or
- * "♩ ≈ 40 · 2 stops, bar 19"; the stops alone when the columns carry no
- * score rhythm.
+ * "♩ ≈ 40 · 2 stops, bar 19". Nothing without a pace, which needs the
+ * score's rhythm on every column of the card.
  * @param {{pace: number|null, beats: boolean, stops: number[]}|null} played
  * @returns {string|null} null without a pace
  */
 export function paceCaption(played) {
-  if (!played || played.pace == null) { return null }
+  if (!played || !played.beats || !(played.pace > 0)) { return null }
 
-  let {pace, beats, stops} = played
+  let {pace, stops} = played
   let bars = [...new Set(stops)]
   let stopped = !stops.length ? "no stops" :
-    `${stops.length} ${stops.length == 1 ? "stop" : "stops"}, ${bars.length == 1 ? "bar" : "bars"} ${listWords(bars)}`
+    `${stops.length} ${stops.length == 1 ? "stop" : "stops"}, ${bars.length == 1 ? "bar" : "bars"} ${barWords(bars)}`
 
-  return beats && pace > 0 ? `♩ ≈ ${Math.round(60 * 1000 / pace)} · ${stopped}` : stopped
+  return `♩ ≈ ${Math.round(60 * 1000 / pace)} · ${stopped}`
 }
 
-// eg. "17, 19 and 21"
-const listWords = words => words.length < 2 ? words.join("") :
-  `${words.slice(0, -1).join(", ")} and ${words[words.length - 1]}`
+// The first MAX_CAPTION_BARS bars, the rest counted:
+// eg. "17, 19 and 21", "17, 19, 21 and 2 more"
+const MAX_CAPTION_BARS = 3
+
+const barWords = bars => {
+  let shown = bars.slice(0, MAX_CAPTION_BARS)
+  let rest = bars.length - shown.length
+  let last = rest ? `${rest} more` : shown.pop()
+  return shown.length ? `${shown.join(", ")} and ${last}` : `${last}`
+}
 
 /**
  * Picks the card after previous (null for the first card). Only cards with

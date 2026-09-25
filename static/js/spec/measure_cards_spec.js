@@ -266,10 +266,18 @@ describe("measure cards", function() {
         .toEqual("♩ ≈ 120 · 4 stops, bars 17, 19 and 21")
     })
 
-    it("says only the stops without the score's rhythm, and nothing without a pace", function() {
-      expect(paceCaption({pace: 800, beats: false, stops: [3]})).toEqual("1 stop, bar 3")
-      expect(paceCaption({pace: 800, beats: false, stops: []})).toEqual("no stops")
+    it("counts the stop bars past the first three", function() {
+      expect(paceCaption({pace: 1000, beats: true, stops: [2, 4, 6, 9]}))
+        .toEqual("♩ ≈ 60 · 4 stops, bars 2, 4, 6 and 1 more")
+      expect(paceCaption({pace: 1000, beats: true, stops: [2, 2, 4, 6, 9, 11, 14]}))
+        .toEqual("♩ ≈ 60 · 7 stops, bars 2, 4, 6 and 3 more")
+    })
+
+    it("says nothing without a pace or the score's rhythm", function() {
+      expect(paceCaption({pace: 800, beats: false, stops: [3]})).toBe(null)
+      expect(paceCaption({pace: 800, beats: false, stops: []})).toBe(null)
       expect(paceCaption({pace: null, beats: true, stops: []})).toBe(null)
+      expect(paceCaption({pace: 0, beats: true, stops: []})).toBe(null)
       expect(paceCaption(null)).toBe(null)
     })
   })
