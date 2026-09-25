@@ -49,6 +49,7 @@ shows this route instead:
    fix the wrong bars: the bar count, parts and clefs first, then the notes.
    Export it as MusicXML (`.mxl`).
 3. Import the `.mxl` with *Import MusicXML*. Importing a corrected file again
-   replaces the piece and keeps its stats, as long as the bar count and parts
-   are unchanged, so notes can be fixed section by section.
+   replaces the piece and keeps its stats only while its title, parts and
+   printed bar numbers stay the same, so set the piece's title in MuseScore
+   before the first import and notes can then be fixed section by section.
 

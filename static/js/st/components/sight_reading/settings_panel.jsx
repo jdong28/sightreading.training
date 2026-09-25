@@ -736,7 +736,7 @@ export class GeneratorSettings extends React.PureComponent {
       </div>
       {message && message.text ?
         <div className={message.error ? this.styles.input_error : this.styles.input_notice}>{message.text}</div> : null}
-      {message && message.pdf ? <PdfSteps fileName={message.pdf} /> : null}
+      {message && message.pdf ? <PdfSteps fileName={message.fileName} /> : null}
       {input.hint ? <div className={this.styles.input_hint}>{input.hint}</div> : null}
     </div>
   }
@@ -751,7 +751,7 @@ export class GeneratorSettings extends React.PureComponent {
     // nothing recognises a score in a PDF, so point at the route to MusicXML
     // and add no piece
     if (/\.pdf$/i.test(file.name) || file.type == "application/pdf") {
-      this.setState({deckMessage: {pdf: file.name}})
+      this.setState({deckMessage: {pdf: true, fileName: file.name}})
       return
     }
 

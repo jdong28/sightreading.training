@@ -195,6 +195,23 @@ describe("app routing", function() {
       expect(store.pieces().length).toEqual(1)
     })
 
+    it("answers a PDF with no file name with the conversion steps too", function() {
+      let el = renderApp("/sheet-music")
+      let drawer = el.querySelector(`.${drawerStyles.drawer}`)
+      let fileInput = drawer.querySelector(`.${drawerStyles.file_input} > input[type=file]`)
+
+      Object.defineProperty(fileInput, "files", {
+        value: [new File(["%PDF-1.4"], "", {type: "application/pdf"})],
+        configurable: true,
+      })
+      flushSync(() => fileInput.dispatchEvent(new Event("change", {bubbles: true})))
+      flushSync(() => {})
+
+      expect(drawer.textContent).toContain("PDFs need converting first")
+      expect(drawer.textContent).toContain("keeps the piece's stats")
+      expect(store.pieces()).toEqual([])
+    })
+
     it("renders the exercises page at /", function() {
       let el = renderApp("/")
 
