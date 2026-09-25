@@ -4,6 +4,7 @@ import Slider from "st/components/slider"
 import NumberPicker from "st/components/number_picker"
 import Select from "st/components/select"
 import {Pill} from "st/components/salon"
+import PdfSteps from "st/components/sight_reading/pdf_steps"
 import {scoreEnginesPath} from "st/score_render/route"
 import {trigger} from "st/events"
 import {
@@ -716,7 +717,7 @@ export class GeneratorSettings extends React.PureComponent {
           <span className={this.styles.file_pill}>Import MusicXML</span>
           <input
             type="file"
-            accept=".musicxml,.xml,.mxl,application/vnd.recordare.musicxml+xml,application/xml,text/xml"
+            accept=".musicxml,.xml,.mxl,.pdf,application/pdf,application/vnd.recordare.musicxml+xml,application/xml,text/xml"
             onChange={e => this.importPiece(input, e)} />
         </label>
         {input.exportLibrary ?
@@ -733,8 +734,9 @@ export class GeneratorSettings extends React.PureComponent {
               onChange={e => this.importLibrary(input, e)} />
           </label> : null}
       </div>
-      {message ?
+      {message && message.text ?
         <div className={message.error ? this.styles.input_error : this.styles.input_notice}>{message.text}</div> : null}
+      {message && message.pdf ? <PdfSteps fileName={message.pdf} /> : null}
       {input.hint ? <div className={this.styles.input_hint}>{input.hint}</div> : null}
     </div>
   }
@@ -745,6 +747,13 @@ export class GeneratorSettings extends React.PureComponent {
 
     // let the same file be picked again
     e.target.value = ""
+
+    // nothing recognises a score in a PDF, so point at the route to MusicXML
+    // and add no piece
+    if (/\.pdf$/i.test(file.name) || file.type == "application/pdf") {
+      this.setState({deckMessage: {pdf: file.name}})
+      return
+    }
 
     this.setState({deckMessage: {text: `Importing ${file.name}…`}})
 

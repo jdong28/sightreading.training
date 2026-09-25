@@ -155,6 +155,46 @@ describe("app routing", function() {
       expect(await pieceSource(piece.id, store)).toEqual(LITTLE_WALTZ_XML)
     })
 
+    it("answers a PDF picked in the score page's deck with the conversion steps and adds no piece", async function() {
+      let el = renderApp("/sheet-music")
+      let drawer = el.querySelector(`.${drawerStyles.drawer}`)
+      let fileInput = drawer.querySelector(`.${drawerStyles.file_input} > input[type=file]`)
+      expect(fileInput.accept.split(",")).toContain(".pdf")
+
+      Object.defineProperty(fileInput, "files", {
+        value: [new File(["%PDF-1.4"], "nocturne.pdf", {type: "application/pdf"})],
+        configurable: true,
+      })
+      flushSync(() => fileInput.dispatchEvent(new Event("change", {bubbles: true})))
+      flushSync(() => {})
+
+      let text = drawer.textContent
+      expect(text).toContain("PDFs need converting first")
+      expect(text).toContain("nocturne.pdf")
+      expect(text).toContain("Audiveris")
+      expect(text).toContain("MuseScore Studio")
+      expect(text).toContain("keeps the piece's stats")
+      expect([...drawer.querySelectorAll("a")].map(a => a.getAttribute("href")))
+        .toContain("https://audiveris.github.io/audiveris/")
+      expect(text).not.toContain("Importing nocturne.pdf")
+      expect(store.pieces()).toEqual([])
+
+      // a MusicXML pick still imports, and clears the steps
+      Object.defineProperty(fileInput, "files", {
+        value: [new File([littleWaltzMXL()], "little_waltz.mxl")],
+        configurable: true,
+      })
+      flushSync(() => fileInput.dispatchEvent(new Event("change", {bubbles: true})))
+
+      for (let tries = 0; tries < 100 && !drawer.textContent.includes("is in the deck"); tries++) {
+        await new Promise(resolve => setTimeout(resolve, 10))
+      }
+
+      expect(drawer.textContent).toContain("\"little waltz\" is in the deck")
+      expect(drawer.textContent).not.toContain("PDFs need converting first")
+      expect(store.pieces().length).toEqual(1)
+    })
+
     it("renders the exercises page at /", function() {
       let el = renderApp("/")
 
