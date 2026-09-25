@@ -12,7 +12,7 @@
 // and the misses are also split by the score staff of the notes blamed.
 
 import {itemId, newItem, itemWithPractice, RECENT_ATTEMPTS, STAVES} from "st/srs/records"
-import {gradeAttempt, attemptPace, GRADE_ALGO} from "st/srs/grade"
+import {gradeAttempt, attemptPace, hesitations, GRADE_ALGO} from "st/srs/grade"
 
 // time on one column longer than this is a pause, left out of elapsed times
 export const PAUSE_MS = 30 * 1000
@@ -219,6 +219,31 @@ function gradedColumn(pass, idx, mode) {
     skipped: column.done && !column.hit && !(mode == "scroll" && column.misses > 0),
     ms: column.ms,
     gap,
+  }
+}
+
+/**
+ * The pace of a pass played through in one go in wait mode, as its grade
+ * reads it (see attemptPace and hesitations in st/srs/grade): null for any
+ * other pass, whose pace the player didn't set.
+ * @param {AttemptPass} pass complete
+ * @returns {{pace: number|null, beats: boolean, stops: number[]}|null} pace
+ * in ms per beat (per column when beats is false, the columns carrying no
+ * score rhythm), and the bar number of each column hesitated on
+ */
+export function passPace(pass) {
+  if (!pass.complete || !pass.graded || !pass.played || !pass.drill || pass.drill.mode != "wait") {
+    return null
+  }
+
+  let columns = pass.columns.map((column, idx) => gradedColumn(pass, idx, "wait"))
+  let pace = attemptPace(columns)
+  let {card} = pass
+
+  return {
+    pace,
+    beats: card.columns.every(column => column.beat != null),
+    stops: hesitations(columns, {pace}).map(idx => card.measures[card.columnMeasures[idx]]),
   }
 }
 
