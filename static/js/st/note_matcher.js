@@ -43,7 +43,10 @@ export default class NoteMatcher {
     // cleared at a hit or when another list takes over
     this.touched = {}
 
-    // when the first of the head column's own keys went down, for its spread
+    // whether one of the head column's own keys has gone down at it, and
+    // when the first of them did, for its spread: null when that press
+    // carried no timeStamp (the on-screen keyboard)
+    this.firstDown = false
     this.firstAt = null
 
     // the note list a miss was last counted on (a column counts missed once
@@ -58,15 +61,15 @@ export default class NoteMatcher {
   }
 
   // adopts a note list built elsewhere (a rebuilt drill, a column scrolled
-  // past): the keys struck and let up since the old head became the head
-  // are dropped, as they would count for its new one ever after. Keys still
-  // down stay touched, a wrong one counting on the column it is played on
+  // past): the keys struck at the old head are dropped, so its new one is
+  // played afresh from the next key down, however many keys are still down.
+  // A key held over is neither credited to the new column (score-sustained
+  // credit is a later step) nor counted against it, having been judged on
+  // the column it was played on
   setNotes(notes) {
     notes = notes || null
     if (notes !== this.notes) {
-      let down = Object.keys(this.touched).filter(n => this.held[n])
       this.clearTouched()
-      for (let n of down) { this.touched[n] = true }
     }
     this.notes = notes
   }
@@ -81,6 +84,7 @@ export default class NoteMatcher {
   // still down left held (a skipped column)
   clearTouched() {
     this.touched = {}
+    this.firstDown = false
     this.firstAt = null
   }
 
@@ -161,14 +165,16 @@ export default class NoteMatcher {
     }
 
     // the first of the column's own keys down starts its spread
-    if (!stray.includes(note) && this.firstAt == null) {
+    if (!stray.includes(note) && !this.firstDown) {
+      this.firstDown = true
       this.firstAt = timeStamp ?? null
     }
 
     if (!matched) { return }
 
     // from the first of the column's keys down to this one, which completed
-    // it: null for presses with no timeStamp (the on-screen keyboard)
+    // it: null when either press came with no timeStamp (the on-screen
+    // keyboard), as their distance apart isn't known
     let spread = this.firstAt != null && timeStamp != null
       ? timeStamp - this.firstAt
       : null

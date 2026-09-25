@@ -167,19 +167,38 @@ describe("note matcher", function() {
     expect(matcher.touched).toEqual({C4: true, D4: true})
   })
 
-  it("drops the keys let up from those touched when it adopts another list", function() {
+  // Adopting another list (a rebuilt drill, a column scrolled past) plays its
+  // head afresh: no key struck at the old one counts for it, whether it was
+  // let up or is still down. Score-sustained held credit is a later step (T6)
+  it("drops the keys struck at the old head when it adopts another list", function() {
     let matcher = matcherFor([["C4", "G4"], ["A4"]])
     run(matcher, [["on", "C4"], ["off", "C4"], ["on", "D4"]])
 
     let rebuilt = new NoteList([["C4", "E4"], ["A4"]], {generator: {nextNote: () => []}})
     matcher.setNotes(rebuilt)
-    expect(matcher.touched).toEqual({D4: true})
+    expect(matcher.touched).toEqual({})
     expect(matcher.held).toEqual({D4: true})
 
-    // the C4 let up on the old head doesn't count for the new one, while the
-    // wrong D4 still down counts on the column it is played on
-    expect(run(matcher, [["on", "E4"]])).toEqual([])
-    expect(run(matcher, [["on", "C4"]])).toEqual(["miss C4+E4", "hit C4+E4"])
+    // the wrong D4 still down was counted on the column it was played on,
+    // and isn't counted again on the new head, which its own keys complete
+    expect(run(matcher, [["on", "C4"], ["on", "E4"]])).toEqual(["hit C4+E4"])
+  })
+
+  it("needs the new head's keys struck again however many are already down", function() {
+    let matcher = matcherFor([["C4", "E4", "G4"], ["B4"]])
+    run(matcher, [["on", "C4"], ["on", "E4"]])
+
+    let scrolled = new NoteList([["C4", "E4"], ["B4"]], {generator: {nextNote: () => []}})
+    matcher.setNotes(scrolled)
+
+    // C4 and E4 are still down, but neither went down at this column, so it
+    // isn't complete: a wrong key slips on it and leaves it on the list
+    expect(run(matcher, [["on", "D4"]])).toEqual(["miss C4+E4"])
+    expect(head(matcher)).toEqual(["C4", "E4"])
+
+    // struck again, they complete it, and the D4 held through isn't recounted
+    expect(run(matcher, [["on", "C4"], ["on", "E4"]])).toEqual(["hit C4+E4"])
+    expect(head(matcher)).toEqual(["B4"])
   })
 
   // The spread of a column: from the first of its keys to go down in the
@@ -218,6 +237,13 @@ describe("note matcher", function() {
 
     it("is null for presses with no timeStamp", function() {
       expect(spreads([["C4", "E4"], ["A4"]], [["on", "C4"], ["on", "E4"]])).toEqual([null])
+    })
+
+    // the on-screen keyboard's presses carry no timeStamp, so a column with
+    // one of them among its keys has no spread to report, whichever it was
+    it("is null when either end of the column came with no timeStamp", function() {
+      expect(spreads([["C4", "E4"], ["A4"]], [["on", "C4"], ["on", "E4", 5000]])).toEqual([null])
+      expect(spreads([["C4", "E4"], ["A4"]], [["on", "C4", 1000], ["on", "E4"]])).toEqual([null])
     })
   })
 
