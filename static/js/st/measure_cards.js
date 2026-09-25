@@ -84,19 +84,16 @@ export function sectionCard(measures) {
   }
 }
 
-// what a copy of a column keeps for an engine's card to join it to the heads
-// it drew (see joinCard in st/score_render/card_join): the column's onset and
-// the score's notation of its notes and of the heads its ties run on to
-export const COLUMN_JOIN_KEYS = ["beat", "notation", "extras"]
-
-// what a copy of a column keeps for the drill: what an engine joins it by,
-// and the score's ornament notes the matcher allows at it (column.allowed,
-// see extractSectionColumns in st/song_sections)
-export const COLUMN_COPY_KEYS = [...COLUMN_JOIN_KEYS, "allowed"]
+// what a copy of a column keeps for the drill: the column's onset and the
+// score's notation of its notes and of the heads its ties run on to, for an
+// engine's card to join it to the heads it drew (see joinCard in
+// st/score_render/card_join), and the score's ornament notes the matcher
+// allows at it (column.allowed, see extractSectionColumns in st/song_sections)
+export const COLUMN_JOIN_KEYS = ["beat", "notation", "extras", "allowed"]
 
 /**
  * A copy of the card's column for the drill, keeping what an engine's card
- * joins it by and the ornaments it allows (see COLUMN_COPY_KEYS), and
+ * joins it by and the ornaments it allows (see COLUMN_JOIN_KEYS), and
  * `cardIndex`, idx, which of the card's columns it is, so the page can mark
  * it on a card an engine drew
  * (st/score_render)
@@ -108,7 +105,7 @@ export function cardColumn(card, idx) {
   let source = card.columns[idx]
   let column = [...source]
 
-  for (let key of COLUMN_COPY_KEYS) {
+  for (let key of COLUMN_JOIN_KEYS) {
     if (source[key] != null) {
       column[key] = source[key]
     }

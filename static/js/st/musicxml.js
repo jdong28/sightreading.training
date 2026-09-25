@@ -288,6 +288,26 @@ function ornamentNeighbours(noteEl) {
   return neighbours
 }
 
+// The wavy lines a note starts or stops, as [{number, type}]. A trill over
+// more than the note carrying its mark runs a <wavy-line> from that note to
+// the one it stops on, so every note under the line is trilled too
+function wavyLines(noteEl) {
+  let lines = []
+
+  for (let notations of childEls(noteEl, "notations")) {
+    for (let ornaments of childEls(notations, "ornaments")) {
+      for (let el of childEls(ornaments, "wavy-line")) {
+        lines.push({
+          number: el.getAttribute("number") || "1",
+          type: el.getAttribute("type") || "start",
+        })
+      }
+    }
+  }
+
+  return lines
+}
+
 function clefSign(clefEl) {
   let sign = (childText(clefEl, "sign") || "").toLowerCase()
   if (sign == "g" || sign == "f" || sign == "c") {
@@ -389,10 +409,11 @@ function walkPart(measures, partName) {
   let beatsPerMeasure = null
   let fifths = null
 
-  // grace notes waiting for the note they lead into, and the last note, by
-  // staff and voice
+  // grace notes waiting for the note they lead into, by staff and voice
   let pendingGraces = new Map()
-  let lastNotes = new Map()
+  // the trills whose wavy line is still running, by staff, voice and line
+  // number, each {voiceKey, sides} of the neighbours it alternates with
+  let openTrills = new Map()
 
   measures.forEach((measureEl, measureIdx) => {
     let position = 0 // in divisions, relative to measure start
@@ -541,11 +562,40 @@ function walkPart(measures, partName) {
           }
 
           let neighbours = ornamentNeighbours(el)
+
+          // a wavy line runs the trill it starts on to every note under it,
+          // each trilled with its own neighbours, up to the note it stops on
+          let stopped = []
+          for (let {number, type} of wavyLines(el)) {
+            let lineKey = `${voiceKey}:${number}`
+            if (type == "stop") {
+              stopped.push(lineKey)
+            } else if (type == "start") {
+              openTrills.set(lineKey, {
+                voiceKey,
+                sides: neighbours.length ? neighbours.map(n => n.side) : ["upper"],
+              })
+            }
+          }
+
+          if (!neighbours.length) {
+            let sides = new Set()
+            for (let line of openTrills.values()) {
+              if (line.voiceKey == voiceKey) {
+                line.sides.forEach(side => sides.add(side))
+              }
+            }
+            neighbours = [...sides].map(side => ({side, alter: null}))
+          }
+
+          for (let lineKey of stopped) {
+            openTrills.delete(lineKey)
+          }
+
           if (neighbours.length) {
             ornamented.push({event, staff, parts, neighbours, at: start, idx: written.length - 1, fifths})
           }
 
-          lastNotes.set(voiceKey, event)
           part.events.push(event)
           break
         }
@@ -575,14 +625,6 @@ function walkPart(measures, partName) {
     part.beatsPerMeasureAt[measureIdx] = beatsPerMeasure
     part.fifthsAt[measureIdx] = fifths
   })
-
-  // grace notes with no note after them in their voice follow the last one
-  for (let [voiceKey, graces] of pendingGraces) {
-    let last = lastNotes.get(voiceKey)
-    if (last) {
-      last.graces = [...(last.graces || []), ...graces]
-    }
-  }
 
   if (part.staves.size == 0) {
     part.staves.add(1)

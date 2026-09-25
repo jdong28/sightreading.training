@@ -780,7 +780,7 @@ describe("musicxml ornaments", function() {
     ])
   })
 
-  it("gives a grace note to the next note of its voice, and those left at the end to the last", function() {
+  it("gives a grace note to the next note of its voice", function() {
     let song = parseMusicXML(partwise(`
 <measure number="1">
   ${attributes({})}
@@ -789,7 +789,6 @@ describe("musicxml ornaments", function() {
   ${note("C", 5, 2, "<voice>1</voice>")}
   ${grace("B", 4, "<voice>1</voice>")}
   ${note("E", 5, 2, "<voice>1</voice>")}
-  ${grace("F", 5, "<voice>1</voice>")}
   <backup><duration>4</duration></backup>
   ${note("G", 3, 4, "<voice>2</voice>")}
 </measure>`))
@@ -797,7 +796,7 @@ describe("musicxml ornaments", function() {
     expect(ornaments(song)).toEqual([
       ["C5", 0, {graces: ["D5"]}],
       ["G3", 0, {graces: ["A3"]}],
-      ["E5", 2, {graces: ["B4", "F5"]}],
+      ["E5", 2, {graces: ["B4"]}],
     ])
   })
 
@@ -829,6 +828,34 @@ describe("musicxml ornaments", function() {
       // the marks: a sharp below the turn, a natural above the trill
       ["A4", 6, {neighbours: ["Bb4", "G#4"]}],
       ["D5", 7, {neighbours: ["E5"]}],
+    ])
+  })
+
+  it("trills every note under a wavy line, across the bar, in its own voice only", function() {
+    let treble = "<voice>1</voice><staff>1</staff>"
+    let wavy = type => `<wavy-line type="${type}" number="1"/>`
+    let song = parseMusicXML(partwise(`
+<measure number="1">
+  ${attributes({fifths: 1, staves: 2, clefs: [[1, "G", 2], [2, "F", 4]]})}
+  ${note("D", 5, 1, ornamented(`<trill-mark/>${wavy("start")}`, treble))}
+  ${note("E", 5, 1, treble)}
+  ${note("G", 5, 1, treble)}
+  <backup><duration>3</duration></backup>
+  ${note("B", 3, 4, "<voice>5</voice><staff>2</staff>")}
+</measure>
+<measure number="2">
+  ${note("A", 5, 1, ornamented(wavy("stop"), treble))}
+  ${note("B", 5, 3, treble)}
+</measure>`))
+
+    // one sharp: each note under the line is trilled with its own upper
+    // neighbour, up to and including the note the line stops on. The left
+    // hand's note under the line is in another voice, so it is not trilled
+    expect(ornaments(song)).toEqual([
+      ["D5", 0, {neighbours: ["E5"]}],
+      ["E5", 1, {neighbours: ["F#5"]}],
+      ["G5", 2, {neighbours: ["A5"]}],
+      ["A5", 4, {neighbours: ["B5"]}],
     ])
   })
 

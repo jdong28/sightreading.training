@@ -177,6 +177,39 @@ describe("song sections", function() {
       ])
     })
 
+    it("allows a trill written over more than one note at every column under its wavy line", function() {
+      // C major, 4/4: the right hand's quarters C5 D5 E5 under a trill's wavy
+      // line, then F5 after it stops, over the left hand's G3 A3 B3 C4
+      let treble = "<voice>1</voice>"
+      let trilled = (step, octave, line) => noteXML(step, octave, 1, 1,
+        `${treble}<notations><ornaments>${line}</ornaments></notations>`)
+      let song = parseMusicXML(`<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes><divisions>1</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><staves>2</staves><clef number="1"><sign>G</sign><line>2</line></clef><clef number="2"><sign>F</sign><line>4</line></clef></attributes>
+      ${trilled("C", 5, "<trill-mark/><wavy-line type=\"start\" number=\"1\"/>")}
+      ${noteXML("D", 5, 1, 1, treble)}
+      ${trilled("E", 5, "<wavy-line type=\"stop\" number=\"1\"/>")}
+      ${noteXML("F", 5, 1, 1, treble)}
+      <backup><duration>4</duration></backup>
+      ${["G", "A", "B"].map(step => noteXML(step, 3, 1, 2, "<voice>5</voice>")).join("")}
+      ${noteXML("C", 4, 1, 2, "<voice>5</voice>")}
+    </measure>
+  </part>
+</score-partwise>`)
+
+      // each note under the line allows its own upper neighbour; the note
+      // after the line stops allows none
+      expect(allowances(extractSectionColumns(song, {startMeasure: 1, endMeasure: 1, notation: true}))).toEqual([
+        [["G3", "C5"], ["D5"]],
+        [["A3", "D5"], ["E5"]],
+        [["B3", "E5"], ["F5"]],
+        [["C4", "F5"], null],
+      ])
+    })
+
     it("keeps a column's allowances through the range filter and the generator's copies", function() {
       let column = Object.assign(["C2", "C4"], {allowed: ["D4"]})
       let [[kept]] = filterColumnsToRange([column], "C3", "C6")
