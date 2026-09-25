@@ -21,7 +21,8 @@ import {AGAIN, GOOD, EASY} from "st/srs/grade"
 import {IN_ORDER, RANDOM_ORDER, MeasureCardGenerator} from "st/measure_cards"
 import {DRILL_STORAGE_KEY, SCORE_DRILL_STORAGE_KEY} from "st/generators"
 import {scopeEvent} from "st/events"
-import NoteStats from "st/note_stats"
+import NoteStats, {addNoteListener} from "st/note_stats"
+import {parseNote} from "st/music"
 import {openTestStore, noteXML, reverieOpening, keyChangeScore} from "spec/helpers"
 
 // a two staff 3/4 piece, measures 1 and 2
@@ -1389,6 +1390,52 @@ describe("sight reading page", function() {
       expect(written.map(r => [r.mode, r.speed, r.grade, r.hesitations])).toEqual(
         Array(3).fill(["scroll", page.state.scrollSpeed, GOOD, 0]))
     })
+
+    // the scroll loop's own advance reaches the matcher as it is made, not
+    // when React renders it, so a key that arrives before that render is
+    // judged against the column the loop left on the line
+    it("judges a key arriving before the loop's render against the column it left", async function() {
+      await renderSection({measuresPerCard: "3"}, {mode: "scroll"})
+
+      let scrolled = [...page.state.notes.currentColumn()]
+      let onLine = [...page.state.notes[1]]
+      expect(onLine).not.toEqual(scrolled)
+
+      // the loop's render is still pending when the key goes down
+      page.state.slider.onLoop()
+      flushSync(() => scrolled.forEach(note => page.pressNote(note)))
+      flushSync(() => scrolled.forEach(note => page.releaseNote(note)))
+
+      // the column that scrolled past can't be played any more: the keys are
+      // a wrong try at the one the loop left, not a hit on the one it took
+      expect(page.state.stats.hits).toEqual(0)
+    })
+
+    // one press can both slip on the head column and complete it: the slip
+    // is counted on the column played, before it is taken off the list, so
+    // the column counts as hit and the one after it is charged nothing
+    it("counts a press that both slips and completes a column on the column it played", async function() {
+      await renderSection({measuresPerCard: "3"}, {mode: "scroll"})
+
+      // the wrong key is still down as the column it slipped on scrolls past
+      flushSync(() => page.pressNote(WRONG_NOTE))
+      flushSync(() => page.state.slider.onLoop())
+
+      let column = [...page.state.notes.currentColumn()]
+      flushSync(() => column.forEach(note => page.pressNote(note)))
+      flushSync(() => [WRONG_NOTE, ...column].forEach(note => page.releaseNote(note)))
+
+      playHead()
+      await finished()
+
+      let written = await reviews()
+      expect(written.map(r => [r.itemId, r.misses, r.clean, r.skipped])).toEqual([
+        [`${piece.id}:both:1-1`, 2, 0, 0],
+        [`${piece.id}:both:1-3`, 3, 1, 0],
+        [`${piece.id}:both:2-2`, 1, 0, 0],
+        [`${piece.id}:both:3-3`, 0, 1, 0],
+      ])
+    })
   })
 
   describe("today's programme", function() {
@@ -1508,9 +1555,52 @@ describe("sight reading page", function() {
     })
   })
 
+  // the chord staff's drill, a ChordList of chords judged only on the
+  // release of every key
+  describe("chords mode", function() {
+    let renderChords = () => {
+      window.localStorage.setItem(DRILL_STORAGE_KEY,
+        JSON.stringify({staff: "chord", generator: "random"}))
+      let el = renderPage()
+      click(buttonNamed(el, "Begin"))
+      return el
+    }
+
+    it("hits a chord on the release of the keys that complete it", function() {
+      renderChords()
+      expect(page.state.currentGenerator.mode).toEqual("chords")
+
+      let chord = page.state.notes[0]
+      let keys = chord.getRange(4, 3)
+
+      // a chord judges nothing until every key is up
+      flushSync(() => keys.forEach(note => page.pressNote(note)))
+      expect([page.state.stats.hits, page.state.stats.misses]).toEqual([0, 0])
+
+      flushSync(() => keys.forEach(note => page.releaseNote(note)))
+      expect([page.state.stats.hits, page.state.stats.misses]).toEqual([1, 0])
+      expect(page.state.notes[0]).not.toBe(chord)
+      expect(page.state.heldNotes).toEqual({})
+    })
+
+    it("misses a chord whose keys don't match on their release", function() {
+      renderChords()
+      let chord = page.state.notes[0]
+
+      flushSync(() => page.pressNote(WRONG_NOTE))
+      flushSync(() => page.releaseNote(WRONG_NOTE))
+      expect([page.state.stats.hits, page.state.stats.misses]).toEqual([0, 1])
+      expect(page.state.notes[0]).toBe(chord)
+    })
+  })
+
   describe("matching the notes played", function() {
     let press = note => flushSync(() => page.pressNote(note))
     let release = note => flushSync(() => page.releaseNote(note))
+    // a note on through the page's own Web MIDI handler, as the device sends
+    // it: several in one flushSync are one MIDI packet, delivered in one task
+    let midiOn = (note, timeStamp=0) =>
+      page.onMidiMessage({data: new Uint8Array([0x90, parseNote(note), 100]), timeStamp})
     let counts = () => [page.state.stats.hits, page.state.stats.misses]
     let head = () => [...page.state.notes.currentColumn()]
 
@@ -1590,6 +1680,61 @@ describe("sight reading page", function() {
       }
 
       expect(counts()).toEqual([2, 2])
+    })
+
+    // The presses of one MIDI packet are judged one at a time against the
+    // head each of them saw: a wrong key before the press that completes the
+    // column slips on that column, and one after it is a miss on the column
+    // the hit moved on to. Either order judges what the same presses spread
+    // out in time do
+    it("counts a slip batched with the completing press on the head that saw it", function() {
+      let el = renderPage()
+      click(buttonNamed(el, "Begin"))
+
+      let judged = []
+      let stopListening = addNoteListener(({type, notes, blamed}) =>
+        judged.push([type, [...(blamed || notes)].sort()]))
+
+      // one order played against the drill's own next column, as one MIDI
+      // packet or spread out in time: what it judged, the columns it was
+      // judged against and the head it left
+      let playOrder = (wrongFirst, batched) => {
+        judged.length = 0
+        let column = head()
+        let next = [...page.state.notes[1]]
+        let keys = wrongFirst ? [WRONG_NOTE, ...column] : [...column, WRONG_NOTE]
+
+        if (batched) {
+          flushSync(() => keys.forEach(key => page.pressNote(key)))
+        } else {
+          keys.forEach(press)
+        }
+        for (let key of keys) { release(key) }
+
+        return {judged: [...judged], column: column.sort(), next, head: head()}
+      }
+
+      try {
+        for (let batched of [true, false]) {
+          let wrongFirst = playOrder(true, batched)
+          expect(wrongFirst.judged).toEqual([
+            ["miss", wrongFirst.column], ["hit", wrongFirst.column],
+          ])
+          expect(wrongFirst.head).toEqual(wrongFirst.next)
+
+          let wrongAfter = playOrder(false, batched)
+          expect(wrongAfter.judged).toEqual([
+            ["hit", wrongAfter.column], ["miss", [...wrongAfter.next].sort()],
+          ])
+          expect(wrongAfter.head).toEqual(wrongAfter.next)
+
+          // the column that miss was counted on is played, so the next
+          // order starts on one with no miss of its own yet
+          play(head())
+        }
+      } finally {
+        stopListening()
+      }
     })
 
     it("counts nothing for keys pressed on an empty head column", function() {
@@ -1763,6 +1908,27 @@ describe("sight reading page", function() {
 
       play(["G3"])
       expect(counts()).toEqual([2, 1])
+    })
+
+    // M7 of the note detection report: two key-downs crossing a column
+    // boundary in one MIDI packet used to be judged through setState
+    // callbacks that all saw the same head, so the second one was a stray on
+    // the column the first completed: a false slip, and the column it really
+    // belonged to stalled. The matcher judges each press against the head it
+    // actually saw, so the packet plays like the same presses spread out
+    it("judges the presses of one MIDI packet against the head each saw (M7)", async function() {
+      await renderPiece(leadRestXML, {endMeasure: 1})
+      expect(head()).toEqual(["C3", "C5"])
+
+      press("C3")
+      flushSync(() => {
+        midiOn("C5")
+        midiOn("D5")
+      })
+
+      expect(counts()).toEqual([2, 0])
+      expect(head()).toEqual(["E5"])
+      expect(page.state.noteShaking).toBe(false)
     })
   })
 

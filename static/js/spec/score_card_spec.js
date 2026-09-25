@@ -489,6 +489,59 @@ describe("score page engine card", function() {
     expect(headElements()).toEqual(first)
   })
 
+  // the misses of one MIDI packet are judged against the head each of them
+  // saw, so a packet that slips on one column, completes it and slips on the
+  // next must mark both: the second mark used to be built over the state as
+  // it stood before the packet, dropping the first
+  it("marks every column a MIDI packet misses", async function() {
+    await drillPiece(reverieOpening(), {startMeasure: 2, endMeasure: 4})
+    renderScorePage()
+    await cardDrawn()
+
+    flushSync(() => page.beginSession())
+    let first = headElements()
+    let column = [...page.state.notes.currentColumn()]
+
+    flushSync(() => {
+      page.pressNote("C#1")
+      for (let note of column) { page.pressNote(note) }
+      page.pressNote("D#1")
+    })
+
+    expect(page.state.engineMissed).toEqual([0, 1])
+    expect(page.state.notes.currentColumn().cardIndex).toEqual(1)
+    expect(first.every(head => head.classList.contains(MARK_CLASSES.missed))).toBe(true)
+    expect(headElements().every(head => head.classList.contains(MARK_CLASSES.missed))).toBe(true)
+  })
+
+  // the marks of the pass just finished are cleared with the hit that wraps
+  // the card, so a miss judged after it in the same MIDI packet belongs to
+  // the new pass and keeps its mark, as it does when the two are spread out
+  it("keeps the mark of a miss judged after a card-wrapping hit in one packet", async function() {
+    await drillPiece(reverieOpening(), {startMeasure: 2, endMeasure: 4})
+    renderScorePage()
+    await cardDrawn()
+
+    flushSync(() => page.beginSession())
+    let first = headElements()
+    let columns = page.currentCard().card.columns
+
+    for (let idx = 0; idx < columns.length - 1; idx++) {
+      play(page.state.notes.currentColumn())
+    }
+    expect(page.state.notes.currentColumn().cardIndex).toEqual(columns.length - 1)
+
+    let last = [...page.state.notes.currentColumn()]
+    flushSync(() => {
+      for (let note of last) { page.pressNote(note) }
+      page.pressNote("C#1")
+    })
+
+    expect(page.state.notes.currentColumn().cardIndex).toEqual(0)
+    expect(page.state.engineMissed).toEqual([0])
+    expect(first.every(head => head.classList.contains(MARK_CLASSES.missed))).toBe(true)
+  })
+
   it("keeps drawing from the score after a section of rests alone", async function() {
     let piece = await drillPiece(reverieOpening(), {startMeasure: 1, endMeasure: 1})
     let el = renderScorePage()
