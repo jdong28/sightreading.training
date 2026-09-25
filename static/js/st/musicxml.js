@@ -305,10 +305,10 @@ function wavyLines(noteEl) {
   for (let notations of childEls(noteEl, "notations")) {
     for (let ornaments of childEls(notations, "ornaments")) {
       for (let el of childEls(ornaments, "wavy-line")) {
-        lines.push({
-          number: el.getAttribute("number") || "1",
-          type: el.getAttribute("type") || "start",
-        })
+        let type = el.getAttribute("type")
+        if (type != "start" && type != "stop") { continue }
+
+        lines.push({number: el.getAttribute("number") || "1", type})
       }
     }
   }
@@ -417,7 +417,9 @@ function walkPart(measures, partName) {
   let beatsPerMeasure = null
   let fifths = null
 
-  // grace notes waiting for the note they lead into, by staff and voice
+  // grace notes waiting for the note they lead into, by voice. A grace note
+  // is written in the measure of the note it leads into, so none is kept past
+  // the end of one
   let pendingGraces = new Map()
   // the trills whose wavy line is still running, by voice and line number,
   // each {voice, sides} of the neighbours it alternates with
@@ -495,7 +497,6 @@ function walkPart(measures, partName) {
           // one pitch apart (see joinCard in st/score_render/card_join). A
           // rest keeps none
           let voice = +(childText(el, "voice") || 0)
-          let voiceKey = `${staff}:${voice}`
 
           // A wavy line runs its trill from the note it starts on to the note
           // it stops on, whichever staff either is written on. The lines this
@@ -513,12 +514,13 @@ function walkPart(measures, partName) {
 
           if (hasChild(el, "grace")) {
             // a grace note has no duration, so it isn't a note of its own: it
-            // is kept with the note it leads into, the next of its voice
+            // is kept with the note it leads into, the next of its voice,
+            // whichever staff either is written on
             let gracePitch = childEl(el, "pitch")
             let parts = gracePitch && pitchParts(gracePitch)
             if (parts) {
               written.push({staff, ...parts, at: position})
-              pendingGraces.set(voiceKey, [...(pendingGraces.get(voiceKey) || []), spellNote(parts)])
+              pendingGraces.set(voice, [...(pendingGraces.get(voice) || []), spellNote(parts)])
             }
             break
           }
@@ -577,10 +579,10 @@ function walkPart(measures, partName) {
             ...(voice ? {voice} : null),
           }
 
-          let graces = pendingGraces.get(voiceKey)
+          let graces = pendingGraces.get(voice)
           if (graces) {
             event.graces = graces
-            pendingGraces.delete(voiceKey)
+            pendingGraces.delete(voice)
           }
 
           let {neighbours, trill} = ornamentNeighbours(el)
@@ -629,6 +631,8 @@ function walkPart(measures, partName) {
         })
       })
     }
+
+    pendingGraces.clear()
 
     part.measureDurations[measureIdx] = maxPosition / divisions
     part.beatsPerMeasureAt[measureIdx] = beatsPerMeasure

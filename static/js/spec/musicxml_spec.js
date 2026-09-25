@@ -878,6 +878,25 @@ describe("musicxml ornaments", function() {
     ])
   })
 
+  it("gives a grace note written on the other staff to the note it leads into", function() {
+    let song = parseMusicXML(partwise(`
+<measure number="1">
+  ${attributes({staves: 2, clefs: [[1, "G", 2], [2, "F", 4]]})}
+  ${grace("A", 3, "<voice>1</voice><staff>2</staff>")}
+  ${note("C", 5, 2, treble)}
+  ${note("E", 5, 2, treble)}
+  ${grace("F", 5, treble)}
+</measure>
+<measure number="2">
+  ${note("G", 3, 4, "<voice>1</voice><staff>2</staff>")}
+</measure>`))
+
+    // the left hand's grace note leads into the right hand's C5, and the one
+    // left over at the end of the bar leads into no note of it, so it reaches
+    // neither the G3 of the next bar nor anything else
+    expect(ornaments(song)).toEqual([["C5", 0, {graces: ["A3"]}]])
+  })
+
   it("trills nothing for a wavy line written with no trill mark", function() {
     let song = parseMusicXML(partwise(`
 <measure number="1">
@@ -889,6 +908,20 @@ describe("musicxml ornaments", function() {
 </measure>`))
 
     expect(ornaments(song)).toEqual([])
+  })
+
+  it("opens no span for a wavy line that doesn't say whether it starts or stops", function() {
+    let song = parseMusicXML(partwise(`
+<measure number="1">
+  ${attributes({})}
+  ${note("C", 5, 1, ornamented("<trill-mark/><wavy-line/>", treble))}
+  ${note("D", 5, 1, treble)}
+  ${note("E", 5, 1, treble)}
+</measure>`))
+
+    // the trill mark still trills its own note; the line says nothing the
+    // importer can run to a stop, so the notes after it are not trilled
+    expect(ornaments(song)).toEqual([["C5", 0, {neighbours: ["D5"], trill: true}]])
   })
 
   it("keeps the ornaments of the notes a tie merges", function() {
