@@ -24,7 +24,7 @@ import {scopeEvent} from "st/events"
 import NoteStats, {addNoteListener} from "st/note_stats"
 import {parseNote} from "st/music"
 import {KEYBOARD_MAP, SYMBOL_MAP_INVERSE} from "st/keyboard_input"
-import {openTestStore, noteXML, reverieOpening, keyChangeScore} from "spec/helpers"
+import {openTestStore, noteXML, reverieOpening, keyChangeScore, nocturneBars5to6} from "spec/helpers"
 
 // a two staff 3/4 piece, measures 1 and 2
 let minuetXML = `<?xml version="1.0" encoding="UTF-8"?>
@@ -1291,6 +1291,90 @@ describe("sight reading page", function() {
       flushSync(() => page.beginSession())
       play(["C#3", "C#6"])
       expect([page.state.stats.hits, page.state.stats.misses]).toEqual([1, 0])
+    })
+  })
+
+  // T7: the score's ornaments played as written are allowed extras, never
+  // required and never a slip (the report's B5)
+  describe("ornament allowances (T7)", function() {
+    // Bars 5–6 of the Nocturne as a pianist plays them at 60 bpm, as the
+    // report's B5 performance: the left hand's eighths legato, the right
+    // hand's G#5, then the trill on F#5 as twelve notes from the upper one,
+    // 110 ms apart, and the grace notes E5 and F#5 just before the G#5 they
+    // lead into. extra adds [ms, note] presses of 50 ms. Returns [ms, "on" |
+    // "off", note] in time order
+    let asWritten = (extra=[]) => {
+      let events = []
+      let key = (note, on, off) => events.push([on, "on", note], [off, "off", note])
+
+      // the G#5 comes up just before the trill strikes it again
+      key("G#5", 0, 1985)
+      for (let idx = 0; idx < 12; idx++) {
+        key(idx % 2 ? "F#5" : "G#5", 2000 + idx * 110, 2090 + idx * 110)
+      }
+      key("E5", 3870, 3925)
+      key("F#5", 3935, 3990)
+      key("G#5", 4000, 5985)
+      key("C#5", 6000, 8030)
+
+      let figure = ["C#3", "G#3", "E4", "C#4"]
+      let left = [...figure, "C#3", "A3", "D#4", "C#4", ...figure, ...figure]
+      left.forEach((note, idx) => key(note, idx * 500, (idx + 1) * 500 + 30))
+
+      for (let [at, note] of extra) {
+        key(note, at, at + 50)
+      }
+
+      // stable, so the trill's first note at 2000 comes before the bass
+      return events.sort((a, b) => a[0] - b[0])
+    }
+
+    // each MIDI message through the page's own handler, in its own task
+    let perform = events => {
+      for (let [at, what, note] of events) {
+        let status = what == "on" ? 0x90 : 0x80
+        flushSync(() => page.onMidiMessage({data: new Uint8Array([status, parseNote(note), 100]), timeStamp: at}))
+      }
+    }
+
+    let renderNocturne = async (render) => {
+      let {piece} = await importMusicXMLPiece("nocturne.musicxml", nocturneBars5to6(), store)
+      window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+        piece: piece.id, startMeasure: 1, endMeasure: 2, hand: BOTH_HANDS, measuresPerCard: "all",
+      }))
+      return render()
+    }
+
+    let engineReady = async () => {
+      await waitFor(() => page.state.engineSource && page.state.engineSource.status == "ready",
+        "the engine's source")
+      await waitFor(() => page.state.notes.currentColumn()[0] == "C#3", "the section's columns")
+    }
+
+    it("counts no slip for bars 5–6 of the Nocturne played as written", async function() {
+      await renderNocturne(() => renderPage(ScorePage))
+      await engineReady()
+
+      flushSync(() => page.beginSession())
+      perform(asWritten())
+      expect([page.state.stats.hits, page.state.stats.misses]).toEqual([16, 0])
+    })
+
+    it("allows the ornaments on the app staff's fallback too", async function() {
+      await renderNocturne(renderScorePage)
+      flushSync(() => page.beginSession())
+      perform(asWritten())
+      expect([page.state.stats.hits, page.state.stats.misses]).toEqual([16, 0])
+    })
+
+    it("still counts a slip for a brushed key that isn't one of the ornaments", async function() {
+      await renderNocturne(() => renderPage(ScorePage))
+      await engineReady()
+
+      flushSync(() => page.beginSession())
+      // A5, under the trill on F#5 whose other note is G#5
+      perform(asWritten([[2560, "A5"]]))
+      expect([page.state.stats.hits, page.state.stats.misses]).toEqual([16, 1])
     })
   })
 

@@ -136,6 +136,15 @@ export default class NoteMatcher {
   noteOn(note, timeStamp) {
     this.lastEventAt = timeStamp ?? null
 
+    // an ornament the score writes at the head column (a grace note, or a
+    // note of a trill, turn or mordent) played as written is an allowed
+    // extra (rule 2.2): the key is down, but it isn't required, isn't a slip
+    // and is no part of the try at the column
+    if (this.mode == "notes" && this.notes && this.notes.allowedInHead(note, this.anyOctave)) {
+      this.held = {...this.held, [note]: true}
+      return this.result()
+    }
+
     // a key down with none of the column's touched keys held starts a new
     // try, which may slip again; keys held from earlier columns don't carry
     // a try on. A try only bounds the slips counted: letting its keys up

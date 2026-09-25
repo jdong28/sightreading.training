@@ -6,7 +6,7 @@ import {
   parseSongText, staffTracks
 } from "st/song_sections"
 import {parseMusicXML} from "st/musicxml"
-import {noteXML} from "spec/helpers"
+import {noteXML, nocturneBars5to6} from "spec/helpers"
 
 import {
   SheetMusicGenerator, generatorDefaultSettings, storeGeneratorSettings,
@@ -144,6 +144,47 @@ describe("song sections", function() {
 
     expect(columns).toEqual([["C4"], ["E4"]])
     expect(dropped).toEqual(["C2", "A1"])
+  })
+
+  // T7: the ornaments a player may add at a column without a slip
+  describe("ornament allowances", function() {
+    let allowances = columns => columns.map(column => [[...column], column.allowed || null])
+
+    it("allows the Nocturne's trill over every column it sounds at, and its grace notes at their note's", function() {
+      let song = parseMusicXML(nocturneBars5to6())
+
+      for (let notation of [false, true]) {
+        let columns = extractSectionColumns(song, {startMeasure: 1, endMeasure: 2, notation})
+        expect(allowances(columns).slice(3, 10)).toEqual([
+          [["C#4"], null],
+          // the trill on F#5 with its upper note, G#5: F#5 itself is required
+          // where it is struck, allowed again while it sounds
+          [["C#3", "F#5"], ["G#5"]],
+          [["A3"], ["F#5", "G#5"]],
+          [["D#4"], ["F#5", "G#5"]],
+          [["C#4"], ["F#5", "G#5"]],
+          // the grace notes E5 and F#5 into G#5
+          [["C#3", "G#5"], ["E5", "F#5"]],
+          [["G#3"], null],
+        ])
+        expect(columns.filter(column => column.allowed).length).toEqual(5)
+      }
+
+      // the right hand alone allows the same
+      let right = extractSectionColumns(song, {startMeasure: 1, endMeasure: 2, track: staffTracks(song).treble})
+      expect(allowances(right)).toEqual([
+        [["G#5"], null], [["F#5"], ["G#5"]], [["G#5"], ["E5", "F#5"]], [["C#5"], null],
+      ])
+    })
+
+    it("keeps a column's allowances through the range filter and the generator's copies", function() {
+      let column = Object.assign(["C2", "C4"], {allowed: ["D4"]})
+      let [[kept]] = filterColumnsToRange([column], "C3", "C6")
+      expect(allowances([kept])).toEqual([[["C4"], ["D4"]]])
+
+      let g = new SheetMusicGenerator([kept])
+      expect(g.nextNote().allowed).toEqual(["D4"])
+    })
   })
 
   it("parses song text and reports errors", function() {

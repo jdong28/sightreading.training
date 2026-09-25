@@ -4,7 +4,7 @@ import {
   DAMAGED_ARCHIVE_MESSAGE, NO_SCORE_MESSAGE
 } from "st/musicxml"
 import {SongNote, measureStartsUntil, clickStartsMeasure} from "st/song_note_list"
-import {reverieOpening, LITTLE_WALTZ_XML, littleWaltzMXL} from "spec/helpers"
+import {reverieOpening, nocturneBars5to6, LITTLE_WALTZ_XML, littleWaltzMXL} from "spec/helpers"
 
 // [note, start, duration] tuples of a note list, in document order
 let tuples = notes => [...notes].map(n => [n.note, n.start, n.duration])
@@ -747,5 +747,103 @@ describe("reading a MusicXML file", function() {
     scrambled.fill(0xff, 80, 200)
     fails(scrambled, DAMAGED_ARCHIVE_MESSAGE)
     fails(strToU8("PK\u0003\u0004 not really a zip"), DAMAGED_ARCHIVE_MESSAGE)
+  })
+})
+
+// T7 of the note detection report: the score's ornaments are kept on the
+// note they are played with, for the drill to allow them as extras
+describe("musicxml ornaments", function() {
+  // [note, start, ornaments] of the notes with any, by onset
+  let ornaments = song => [...song].filter(n => n.ornaments)
+    .sort((a, b) => a.start - b.start || a.note.localeCompare(b.note))
+    .map(n => [n.note, n.start, n.ornaments])
+
+  let ornamented = (marks, extra="") =>
+    `<notations><ornaments>${marks}</ornaments></notations>${extra}`
+
+  let grace = (step, octave, extra="", alter=null) => `
+<note>
+  <grace slash="yes"/>
+  <pitch><step>${step}</step>${alter != null ? `<alter>${alter}</alter>` : ""}<octave>${octave}</octave></pitch>
+  ${extra}
+</note>`
+
+  it("keeps the Nocturne's grace notes with the note they lead into, and its trill's neighbour in the key", function() {
+    let song = parseMusicXML(nocturneBars5to6())
+
+    // the grace notes are no notes of their own
+    expect(tuples(song.tracks[0])).toEqual([["G#5", 0, 2], ["F#5", 2, 2], ["G#5", 4, 2], ["C#5", 6, 2]])
+    // four sharps: the note above F#5 is G#5
+    expect(ornaments(song)).toEqual([
+      ["F#5", 2, {neighbours: ["G#5"]}],
+      ["G#5", 4, {graces: ["E5", "F#5"]}],
+    ])
+  })
+
+  it("gives a grace note to the next note of its voice, and those left at the end to the last", function() {
+    let song = parseMusicXML(partwise(`
+<measure number="1">
+  ${attributes({})}
+  ${grace("D", 5, "<voice>1</voice>")}
+  ${grace("A", 3, "<voice>2</voice>")}
+  ${note("C", 5, 2, "<voice>1</voice>")}
+  ${grace("B", 4, "<voice>1</voice>")}
+  ${note("E", 5, 2, "<voice>1</voice>")}
+  ${grace("F", 5, "<voice>1</voice>")}
+  <backup><duration>4</duration></backup>
+  ${note("G", 3, 4, "<voice>2</voice>")}
+</measure>`))
+
+    expect(ornaments(song)).toEqual([
+      ["C5", 0, {graces: ["D5"]}],
+      ["G3", 0, {graces: ["A3"]}],
+      ["E5", 2, {graces: ["B4", "F5"]}],
+    ])
+  })
+
+  it("spells a trill's, turn's and mordent's neighbours by the key, the measure's accidentals and the marks", function() {
+    let song = parseMusicXML(partwise(`
+<measure number="1">
+  ${attributes({fifths: -2})}
+  ${note("E", 5, 1, ornamented("<trill-mark/>"), -1)}
+  ${note("C", 5, 1, ornamented("<mordent/>"))}
+  ${note("B", 4, 1, ornamented("<inverted-mordent/>"), -1)}
+  ${note("D", 5, 1, ornamented("<turn/>"))}
+</measure>
+<measure number="2">
+  ${note("F", 5, 1, "", 1)}
+  ${note("E", 5, 1, ornamented("<trill-mark/>"), -1)}
+  ${note("A", 4, 1, ornamented("<turn/><accidental-mark placement=\"below\">sharp</accidental-mark>"))}
+  ${note("D", 5, 1, ornamented("<trill-mark/><accidental-mark>natural</accidental-mark>"))}
+</measure>`))
+
+    expect(ornaments(song)).toEqual([
+      // two flats, Bb and Eb: above Eb5 is F5, below C5 is Bb4 (the octave
+      // turns at C), above Bb4 is C5, around D5 are Eb5 and C5
+      ["Eb5", 0, {neighbours: ["F5"]}],
+      ["C5", 1, {neighbours: ["Bb4"]}],
+      ["Bb4", 2, {neighbours: ["C5"]}],
+      ["D5", 3, {neighbours: ["Eb5", "C5"]}],
+      // the F#5 written earlier in the measure is in force
+      ["Eb5", 5, {neighbours: ["F#5"]}],
+      // the marks: a sharp below the turn, a natural above the trill
+      ["A4", 6, {neighbours: ["Bb4", "G#4"]}],
+      ["D5", 7, {neighbours: ["E5"]}],
+    ])
+  })
+
+  it("keeps the ornaments of the notes a tie merges", function() {
+    let song = parseMusicXML(partwise(`
+<measure number="1">
+  ${attributes({})}
+  ${grace("B", 4)}
+  ${note("C", 5, 4, `<tie type="start"/>${ornamented("<trill-mark/>")}`)}
+</measure>
+<measure number="2">
+  ${note("C", 5, 4, "<tie type=\"stop\"/>")}
+</measure>`))
+
+    expect(tuples(song)).toEqual([["C5", 0, 8]])
+    expect(ornaments(song)).toEqual([["C5", 0, {graces: ["B4"], neighbours: ["D5"]}]])
   })
 })

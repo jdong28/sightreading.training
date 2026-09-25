@@ -164,14 +164,45 @@ function tieHeads(note, staff) {
   }))
 }
 
+// The score's ornament notes a player may add at the column of onsetNotes, at
+// beat, without a slip (st/note_matcher): the grace notes leading into its
+// notes, and the notes of every trill, turn or mordent of ornamented (notes
+// with neighbours) sounding at it, the ornamented note itself among them as
+// a trill strikes it again. A pitch the column plays is required rather than
+// allowed, so it isn't one. Pitch sorted, one name a pitch
+function allowedExtras(beat, onsetNotes, ornamented, required) {
+  let names = onsetNotes.flatMap(note => (note.ornaments && note.ornaments.graces) || [])
+
+  for (let note of ornamented) {
+    let sounding = note.start <= beat + ONSET_EPSILON / 2 &&
+      note.start + note.duration > beat + ONSET_EPSILON / 2
+    if (sounding) {
+      names.push(note.note, ...note.ornaments.neighbours)
+    }
+  }
+
+  let seen = new Set(required)
+  let allowed = []
+  for (let name of names) {
+    let pitch = parseNote(name)
+    if (seen.has(pitch)) { continue }
+    seen.add(pitch)
+    allowed.push(name)
+  }
+
+  return allowed.sort((a, b) => parseNote(a) - parseNote(b))
+}
+
 // group notes by quantized onset into pitch sorted, deduplicated columns.
+// A column with ornaments to allow (see allowedExtras, given ornamented)
+// carries them as column.allowed.
 // Each entry is [note, staff]; given clefsAt (see grandStaffClefs) the column
 // carries the staves as column.staves, one per note (the first of notes
 // sharing a pitch), and the clefs at its onset as column.clefs. When the
 // notes also carry the score's notation the column carries column.beat, the
 // beat it falls on, column.notation, what each of its notes is drawn as, and
 // column.extras
-function groupByOnset(entries, clefsAt) {
+function groupByOnset(entries, clefsAt, ornamented=[]) {
   let byOnset = new Map()
 
   for (let entry of entries) {
@@ -207,6 +238,11 @@ function groupByOnset(entries, clefsAt) {
     notes.sort((a, b) => a.pitch - b.pitch)
     let column = notes.map(note => note.name)
     let beat = byOnset.get(key)[0][0].start
+
+    let allowed = allowedExtras(beat, byOnset.get(key).map(([note]) => note), ornamented, seen)
+    if (allowed.length) {
+      column.allowed = allowed
+    }
 
     if (clefsAt) {
       column.staves = notes.map(note => note.staff)
@@ -253,6 +289,8 @@ function attachExtras(columns, extras) {
 // the score's notation also carry column.beat, column.notation and
 // column.extras, the rests and tied continuation heads drawn after them, each
 // on the staff it is written on
+// a column the score ornaments carries column.allowed, the ornament notes a
+// player may add at it without a slip (see allowedExtras)
 // returns array of columns, each an ascending array of note names
 export function extractSectionColumns(song, opts={}) {
   let [firstMeasure] = measureNumberRange(song)
@@ -291,7 +329,12 @@ export function extractSectionColumns(song, opts={}) {
 
   let inRange = entries.filter(([note]) => inBeatRange(note.start))
 
-  let columns = groupByOnset(inRange, grand && grandStaffClefs(song, grand, trackIndices))
+  // a trill may start before the section and sound on into it, so its note
+  // is looked for among every note of the tracks
+  let ornamented = entries.map(([note]) => note)
+    .filter(note => note.ornaments && note.ornaments.neighbours)
+
+  let columns = groupByOnset(inRange, grand && grandStaffClefs(song, grand, trackIndices), ornamented)
 
   if (!grand) {
     return columns
@@ -338,6 +381,9 @@ export function filterColumnsToRange(columns, min, max) {
     })
 
     let kept = column.filter((note, idx) => keep[idx])
+    if (column.allowed) {
+      kept.allowed = column.allowed
+    }
     if (column.staves) {
       kept.staves = column.staves.filter((staff, idx) => keep[idx])
       kept.clefs = column.clefs

@@ -3,7 +3,7 @@ import {parseNote, noteName, MajorScale, Chord, KeySignature, ChromaticKeySignat
 import MersenneTwister from "mersennetwister"
 
 import {shuffled} from "st/util"
-import {COLUMN_JOIN_KEYS} from "st/measure_cards"
+import {COLUMN_COPY_KEYS} from "st/measure_cards"
 
 // takes generator object from data
 export function generatorDefaultSettings(generator, staff) {
@@ -832,7 +832,7 @@ export class SheetMusicGenerator {
     this.position += 1
 
     let copy = [...column]
-    for (let key of COLUMN_JOIN_KEYS) {
+    for (let key of COLUMN_COPY_KEYS) {
       if (column[key] != null) {
         copy[key] = column[key]
       }

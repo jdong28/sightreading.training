@@ -172,6 +172,50 @@ export const reverieOpening = () => `<?xml version="1.0" encoding="UTF-8"?>
   </part>
 </score-partwise>`
 
+// Bars 5–6 of Chopin's Nocturne in C♯ minor as MuseScore Studio 4 exports it,
+// with layout, beams, slurs, pedal marks and directions left out and the
+// divisions brought down from 360360 to 2 (it reads as measures 1–2). C♯
+// minor (four sharps), 4/4, both staves:
+//   5: staff 1 voice 1 G#5 (half), then F#5 (half) under a trill mark; staff 2
+//     voice 5 the eighths C#3 G#3 E4 C#4 C#3 A3 D#4 C#4
+//   6: staff 1 the slashed grace notes E5 F#5 into G#5 (half), then C#5
+//     (half); staff 2 the eighths C#3 G#3 E4 C#4 twice
+export const nocturneBars5to6 = () => {
+  let pitch = (step, alter, octave) =>
+    `<pitch><step>${step}</step>${alter ? `<alter>${alter}</alter>` : ""}<octave>${octave}</octave></pitch>`
+  let half = (step, alter, octave, notations="") =>
+    `<note>${pitch(step, alter, octave)}<duration>4</duration><voice>1</voice><type>half</type><staff>1</staff>${notations}</note>`
+  let grace = (step, alter, octave) =>
+    `<note><grace slash="yes"/>${pitch(step, alter, octave)}<voice>1</voice><type>eighth</type><staff>1</staff></note>`
+  let eighths = pitches => pitches.map(([step, alter, octave]) =>
+    `<note>${pitch(step, alter, octave)}<duration>1</duration><voice>5</voice><type>eighth</type><staff>2</staff></note>`).join("\n      ")
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <work><work-title>Nocturne in C sharp Minor</work-title></work>
+  <part-list>
+    <score-part id="P1"><part-name print-object="no">Piano</part-name></score-part>
+  </part-list>
+  <part id="P1">
+    <measure number="5">
+      <attributes><divisions>2</divisions><key><fifths>4</fifths></key><time symbol="common"><beats>4</beats><beat-type>4</beat-type></time><staves>2</staves><clef number="1"><sign>G</sign><line>2</line></clef><clef number="2"><sign>F</sign><line>4</line></clef></attributes>
+      ${half("G", 1, 5)}
+      ${half("F", 1, 5, "<notations><ornaments><trill-mark/><wavy-line type=\"start\" number=\"1\"/><wavy-line type=\"stop\" number=\"1\"/></ornaments></notations>")}
+      <backup><duration>8</duration></backup>
+      ${eighths([["C", 1, 3], ["G", 1, 3], ["E", 0, 4], ["C", 1, 4], ["C", 1, 3], ["A", 0, 3], ["D", 1, 4], ["C", 1, 4]])}
+    </measure>
+    <measure number="6">
+      ${grace("E", 0, 5)}
+      ${grace("F", 1, 5)}
+      ${half("G", 1, 5)}
+      ${half("C", 1, 5)}
+      <backup><duration>8</duration></backup>
+      ${eighths([["C", 1, 3], ["G", 1, 3], ["E", 0, 4], ["C", 1, 4], ["C", 1, 3], ["G", 1, 3], ["E", 0, 4], ["C", 1, 4]])}
+    </measure>
+  </part>
+</score-partwise>`
+}
+
 // A 4/4 single staff piece of four whole notes in the given key signatures
 // (in fifths): the first key from measure 1, the second, if any, from
 // measure 3
