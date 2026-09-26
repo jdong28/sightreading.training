@@ -16,7 +16,6 @@ import {
 } from "st/data"
 import {pieceSong, pieceSource} from "st/sheet_music_deck"
 import {parseMusicXML} from "st/musicxml"
-import {ONSET_EPSILON} from "st/song_sections"
 import {getAppStore} from "st/storage"
 import {
   ProgrammeDrawer, generatorLabel, staffLabel, keyLabel
@@ -305,6 +304,17 @@ export default class SightReadingPage extends React.Component {
       }
     }
 
+    // today's programme offers a hand alone in wait mode alone, so a bar the
+    // scaffold split returns hands together once the drill scrolls, taking
+    // the practice of the pass the card it leaves was collecting
+    let playing = this.state.notes && this.state.notes.generator
+    if (prevState.mode != this.state.mode && playing && playing.replan) {
+      this.flushPractice(playing)
+      if (playing.replan()) {
+        this.refreshNoteList(playing)
+      }
+    }
+
     // a rebuilt drill abandons the pass the old generator was collecting
     let before = prevState.notes && prevState.notes.generator
     if (before && before != (this.state.notes && this.state.notes.generator)) {
@@ -324,11 +334,12 @@ export default class SightReadingPage extends React.Component {
 
     this.loadEngineSource()
 
-    // a card whose columns can't be joined (a piece stored without the
-    // score's rhythm), or whose hand's staves can't be told in the score, is
-    // drawn by the app's staff
+    // a piece whose columns can't be joined (stored without the score's
+    // rhythm), or whose session hand's staves can't be told in the score, is
+    // drawn by the app's staff throughout
     let current = this.engineCards() && this.currentCard()
-    if (current && (!joinable(current.card.columns) || this.engineStaves() === undefined)) {
+    if (current && (!joinable(current.card.columns) ||
+        this.handStaves(this.currentSettings().hand) === undefined)) {
       this.setState({engineSource: {...this.state.engineSource, status: "failed"}})
       return
     }
@@ -429,17 +440,11 @@ export default class SightReadingPage extends React.Component {
   }
 
   // The hand setting the card at the head is drawn with: the hand alone
-  // today's programme offers it as, else the settings'. In scroll mode the
-  // engine draws the whole section once and the slider only moves along it,
-  // so the session's hand stands for every card there and a hand alone
-  // restricts the keys the drill asks for rather than what is drawn
+  // today's programme offers it as, else the settings'
   cardHand() {
-    let settings = this.currentSettings()
-    if (this.state.mode == "scroll") { return settings.hand }
-
     let current = this.currentCard()
     let hand = current && current.card.hand
-    return hand ? handSetting(hand) : settings.hand
+    return hand ? handSetting(hand) : this.currentSettings().hand
   }
 
   // The score staves a hand setting's tracks read: null for every staff,
@@ -462,15 +467,12 @@ export default class SightReadingPage extends React.Component {
     return cache.staves
   }
 
-  // The staves the engine draws: the card's hand alone where the score can
-  // tell them apart, else the session's, so narrowing to a card never fails
-  // the piece's source — only the session's own hand can do that
+  // The staves the engine draws: the card's own hand, the session's unless
+  // today's programme offers the card as one hand alone. undefined where the
+  // score can't tell them apart, which leaves that card to the app's staff
+  // rather than failing the piece's source (see engineCard)
   engineStaves() {
-    let session = this.handStaves(this.currentSettings().hand)
-    if (session === undefined) { return undefined }
-
-    let narrowed = this.handStaves(this.cardHand())
-    return narrowed === undefined ? session : narrowed
+    return this.handStaves(this.cardHand())
   }
 
   // The engine card's props for the card at the head of the drill, or null
@@ -608,37 +610,6 @@ export default class SightReadingPage extends React.Component {
   // draws in its place (a piece with no stored source, or an engine failure)
   droppedStaffNote(note) {
     return this.state.droppedPitches.has(parseNote(note))
-  }
-
-  // D5(b): whether a pressed note is one the staff draws beside the card's
-  // own. A bar today's programme offers as one hand alone is still drawn
-  // with the other hand's notes wherever the staves drawn aren't narrowed to
-  // it — the one system of scroll mode, or a hand the score can't tell apart
-  // — and the other hand's notes from the onset judged before the head
-  // through the head's own are then neither required nor a wrong key, so a
-  // hand playing between the judged hand's onsets reads as engraved. The
-  // head comes from the matcher's own list, which it advances as it judges,
-  // so presses batched into one render each see the head they landed on
-  besideStaffNote(note) {
-    if (!this.engineCards()) { return false }
-
-    let generator = this.state.notes && this.state.notes.generator
-    let current = generator && generator.besideColumns && this.currentCard()
-    if (!current) { return false }
-    if (this.state.mode != "scroll" && this.handStaves(this.cardHand()) !== undefined) { return false }
-
-    if (!this.beside || this.beside.card != current.card) {
-      this.beside = {card: current.card, onsets: generator.besideColumns().map(column =>
-        ({beat: column.beat, pitches: new Set(column.map(parseNote))}))}
-    }
-
-    let pitch = parseNote(note)
-    let head = (this.matcher.notes || this.state.notes).currentColumn()
-    if (head.some(required => parseNote(required) == pitch)) { return false }
-
-    let judged = head.cardIndex > 0 ? current.card.columns[head.cardIndex - 1].beat : -Infinity
-    return this.beside.onsets.some(onset => onset.beat > judged - ONSET_EPSILON &&
-      onset.beat < head.beat + ONSET_EPSILON && onset.pitches.has(pitch))
   }
 
   // This generates a new set of notes, appropriate for when the generator or
@@ -999,7 +970,7 @@ export default class SightReadingPage extends React.Component {
         // D5(a): a note the app staff's fallback had to drop from an
         // imported piece's section, or (b) one the staff draws beside the
         // card's own, is neither required nor a wrong key
-        if (this.droppedStaffNote(note) || this.besideStaffNote(note)) { return }
+        if (this.droppedStaffNote(note)) { return }
         break
       }
       case "chords": {

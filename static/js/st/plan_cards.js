@@ -5,7 +5,9 @@
 // the player's measures per card (anchoredCard), and the next is planned
 // when a card is done, from the piece's items as its attempts leave them. A
 // bar the hand scaffold offers hands apart is a card of that bar alone, of
-// that hand's notes, and its attempts are written to that hand's items.
+// that hand's notes, and its attempts are written to that hand's items; the
+// scaffold is offered in wait mode alone, so a failing bar returns hands
+// together while the drill scrolls.
 
 import {getAppStore} from "st/storage"
 import {MeasureCardGenerator, sectionCard} from "st/measure_cards"
@@ -85,6 +87,9 @@ export class PlanDeck {
     // whether a card is being played, which the generator keeps up to date:
     // the plan made again after the read waits rather than throw a pass away
     this.playing = () => false
+    // whether the drill waits at each column, which the generator keeps up
+    // to date: the hand scaffold is offered in wait mode alone
+    this.waiting = () => true
 
     if (this.advance().failing.size) {
       this.ready = this.loadReviews()
@@ -172,7 +177,7 @@ export class PlanDeck {
       items: this.items(),
       measures: this.measures,
       hand: this.sessionHand,
-      handMeasures: this.handMeasures,
+      handMeasures: this.waiting() ? this.handMeasures : null,
       lastReviews: this.reviews,
       now: this.now(),
       settings: store.schedulerSettings(),
@@ -258,15 +263,29 @@ export class PlanGenerator extends MeasureCardGenerator {
   }
 
   /**
-   * Plans again for a programme with no card, which the page asks for at
-   * Begin: every bar the piece has left rested in the sitting before, and
-   * the one that is over opens them again (see the planner's rest rule).
+   * @param {function(): {mode: string, speed?: number}} drill see
+   * MeasureCardGenerator#setDrill. The scaffold is offered in wait mode
+   * alone, so the card showing is planned again once the drill is known
+   */
+  setDrill(drill) {
+    super.setDrill(drill)
+    this.deck.waiting = () => this.drill().mode != "scroll"
+    this.replan()
+  }
+
+  /**
+   * Plans again when the card showing isn't one to play now: a programme
+   * with no card, which the page asks for at Begin (every bar the piece has
+   * left rested in the sitting before, and the one that is over opens them
+   * again), or a hand alone while the drill scrolls, where a failing bar
+   * returns hands together.
    * @returns {boolean} whether there is a card to play now
    */
   replan() {
-    if (this.deck.card) { return false }
+    let entry = this.deck.entry
+    if (entry && (this.deck.waiting() || entry.hand == this.deck.sessionHand)) { return false }
 
-    this.deck.advance()
+    this.deck.advance(false)
     this.startCard()
     return !!this.deck.card
   }
@@ -321,20 +340,6 @@ export class PlanGenerator extends MeasureCardGenerator {
   /** @returns {Object} what the programme holds, see planSummary */
   summary() {
     return this.deck.summary()
-  }
-
-  /**
-   * The columns of the card's bar the other hand plays, which a staff that
-   * draws more than the card draws beside a hand alone the scaffold offers;
-   * each carries the onset it sounds at (beat)
-   * @returns {string[][]} empty while the card is the session's own hand
-   */
-  besideColumns() {
-    let entry = this.deck.entry
-    if (!entry || entry.hand == this.deck.sessionHand) { return [] }
-
-    let other = entry.hand == "upper" ? "lower" : "upper"
-    return this.deck.handCard(other, entry.measure).columns
   }
 
   // the planner is told how the pass went before it plans the next card:
