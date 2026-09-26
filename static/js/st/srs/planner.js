@@ -43,10 +43,11 @@
 // the last review of each bar, and writes nothing, so the schedule stays what
 // replay rebuilds.
 //
-// Rest it until tomorrow: a bar failing a third time in a sitting, whichever
-// hand it was played with, is not offered again in the sitting. Its due date
-// is left as it is, so it opens the next sitting. With every bar left resting
-// the programme has no entry at all until then.
+// Rest it until the next sitting: a bar failing a third time in a sitting,
+// whichever hand it was played with, is not offered again in the sitting. Its
+// due date is left as it is, so it opens the next sitting. With every bar left
+// resting the programme has no entry at all until then. A bar resting is no
+// work left in the sitting, but it is still learned (planSummary).
 //
 // Off schedule: a measure on the ladder played before its rung comes due (the
 // last entry, or a neighbour in a card) is graded only when it fails, else
@@ -494,7 +495,7 @@ export function planNext(input) {
 /**
  * What the programme holds for the piece before a session: the reviews due
  * and about how long they take, the new measures on offer, the target, and
- * the measures learned (in review) out of all.
+ * the measures learned (in review) out of all, a bar resting among them.
  * @param {PlanInput} input
  * @returns {{due: number, dueMinutes: number, newMeasures: number, targetMinutes: number, learned: number, measures: number}}
  */
@@ -506,7 +507,7 @@ export function planSummary(input) {
     dueMinutes: due ? Math.max(1, Math.round(due * state.cardMs / MINUTE)) : 0,
     newMeasures: state.unseen.length,
     targetMinutes: (input.practice || DEFAULT_PRACTICE_SETTINGS).sessionMinutes,
-    learned: state.review.length,
+    learned: state.live.filter(item => item.state == "review").length,
     measures: input.measures.length,
   }
 }
@@ -640,8 +641,8 @@ export function entryCaption(item, now) {
 
 /**
  * The caption after a card of the programme, from the state the attempt
- * leaves: its bar resting until tomorrow, eg. "Bar 19 rests until
- * tomorrow"; the hand scaffold offering it a hand alone next, eg. "Left hand
+ * leaves: its bar resting until the next sitting, eg. "Bar 19 rests until
+ * your next sitting"; the hand scaffold offering it a hand alone next, eg. "Left hand
  * alone, then together"; the scaffold done with it, "hands together next";
  * else when it comes back (entryCaption).
  * @param {PlanEntry} entry the card's
@@ -651,7 +652,7 @@ export function entryCaption(item, now) {
  */
 export function cardCaption(entry, item, state) {
   let {measure} = entry
-  if (state.resting.has(measure)) { return `Bar ${measure} rests until tomorrow` }
+  if (state.resting.has(measure)) { return `Bar ${measure} rests until your next sitting` }
 
   let scaffold = state.scaffolds.get(measure)
   if (scaffold && scaffold != entry.hand) {

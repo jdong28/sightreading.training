@@ -317,6 +317,22 @@ describe("today's programme planner", function() {
       expect(planSummary({pieceId: "p", items, measures: MEASURES, now: NOW})).toEqual({
         due: 2, dueMinutes: 1, newMeasures: 5, targetMinutes: 20, learned: 2, measures: 8,
       })
+
+      // bar 1's left hand alone failed three times in the sitting, so the bar
+      // rests: it is no work left, but it is still one of the bars learned
+      let rested = {
+        ...bar(1),
+        hand: "lower",
+        id: itemId({pieceId: "p", hand: "lower", startMeasure: 1, endMeasure: 1}),
+        recent: [3, 2, 1].map(n => [NOW - n * MINUTE, 4, 0, AGAIN]),
+        lastPracticed: NOW - MINUTE,
+      }
+      let resting = {
+        pieceId: "p", items: [...items, rested], measures: MEASURES, now: NOW,
+        handMeasures: {upper: MEASURES, lower: MEASURES},
+      }
+      expect(planState(resting).resting.has(1)).toBe(true)
+      expect(planSummary(resting)).toEqual(jasmine.objectContaining({due: 1, learned: 2}))
     })
   })
 
@@ -546,7 +562,7 @@ describe("today's programme planner", function() {
       expect(cardCaption(alone, held, state([held]))).toEqual("hands together next")
 
       let failing = graded(3, [[ago(0.8), AGAIN], [ago(0.5), AGAIN]], "lower")
-      expect(cardCaption(alone, failing, state([failing]))).toEqual("Bar 3 rests until tomorrow")
+      expect(cardCaption(alone, failing, state([failing]))).toEqual("Bar 3 rests until your next sitting")
     })
 
     it("reads the hands a failure's misses fall on", function() {
@@ -862,8 +878,8 @@ describe("today's programme on the staff", function() {
     expect([...planState(deck.planInput()).resting].sort()).toEqual([0, 1, 2])
     expect(deck.entry).toBe(null)
     expect(generator.currentCard()).toBe(null)
-    expect(generator.statusLine()).toEqual("Programme complete · every bar rests until tomorrow")
-    expect(generator.caption()).toEqual("Bar 2 rests until tomorrow")
+    expect(generator.statusLine()).toEqual("Programme complete · every bar rests until your next sitting")
+    expect(generator.caption()).toEqual("Bar 2 rests until your next sitting")
     expect(notesOf(notes).every(column => column.length == 0)).toBe(true)
 
     // Begin plans again, and only the sitting that is over opens them
