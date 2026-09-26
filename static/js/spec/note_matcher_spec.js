@@ -42,7 +42,7 @@ let run = (matcher, script) => {
       case "hit":
         return `hit ${sorted(event.hitNotes)}` +
           (event.credited.length ? ` (early ${sorted(event.credited)})` : "") +
-          (event.heldNotes.length ? ` (held ${sorted(event.heldNotes)})` : "")
+          (event.heldCredited.length ? ` (held ${sorted(event.heldCredited)})` : "")
       default:
         return event.type
     }
@@ -592,7 +592,7 @@ describe("note matcher", function() {
       run(matcher, [["on", "Bb3", 0], ["on", "C4", 500], ["on", "D5", 1000], ["on", "G4", 1500]])
 
       let hits = matcher.judged.filter(event => event.type == "hit")
-      expect(hits.map(event => [[...event.hitNotes].sort(), event.heldNotes, event.spread])).toEqual([
+      expect(hits.map(event => [[...event.hitNotes].sort(), event.heldCredited, event.spread])).toEqual([
         [["Bb3"], [], 0],
         [["C4"], [], 0],
         [["Bb3", "D5"], ["Bb3"], 0],

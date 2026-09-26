@@ -56,10 +56,9 @@
 // keys struck at it, which is what a hesitation is read from (so a column
 // completed late by a key held instead of struck again, or by a slow roll,
 // isn't one); how many of its keys were credited early (above) and held
-// over (heldCredit, rule 1); and, in scroll mode,
-// how long it stood on the hit line before it completed (late), which is
-// recorded but never a miss: scroll mode scrolls to the line and waits
-// (ruling D4(a)). See measured.
+// over (heldCredit, rule 1); and, in scroll mode, how long it stood on the
+// hit line before it completed (late), which is recorded but never a miss:
+// scroll mode scrolls to the line and waits (ruling D4(a)). See measured.
 
 // W_early: how long a key of the next column may wait for the column under
 // way to complete before it counts as a slip on it (ruling D2(a): about
@@ -317,7 +316,7 @@ export default class NoteMatcher {
   // The head column is complete, its last required key down at completedAt
   // (null when every key of it was held): it moves on, and the keys held
   // early for the next column are credited to it, completing it too if they
-  // are all of it with its keys held (rule 3)
+  // are all of it (rule 3), never by the credit it holds, which stays lazy
   hit(completedAt) {
     let notes = this.notes
     let column = notes.currentColumn()
@@ -351,7 +350,7 @@ export default class NoteMatcher {
       credited: this.credited,
       // the column's keys the score still sounds that were held rather than
       // struck again (rule 1), which measured counts as its heldCredit
-      heldNotes: held,
+      heldCredited: held,
       // what the grade reads on the column, as it went with it (see measured)
       ...measured,
     }

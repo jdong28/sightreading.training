@@ -2462,7 +2462,7 @@ describe("sight reading page", function() {
         let credits = []
         let applyEvent = page.applyEvent.bind(page)
         spyOn(page, "applyEvent").and.callFake(event => {
-          if (event.type == "hit") { credits.push(event.heldNotes.map(parseNote)) }
+          if (event.type == "hit") { credits.push(event.heldCredited.map(parseNote)) }
           return applyEvent(event)
         })
         return credits
