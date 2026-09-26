@@ -7,7 +7,8 @@
 // each column falls on, the notated value of each of its notes, and the rests
 // and tied continuation heads between it and the next column, which an
 // engine's card joins its drawn heads by (st/score_render/card_join). None of
-// it is ever matched against what is played.
+// it is ever matched against what is played; only the notes the score still
+// sounds at a column's onset (column.sustained) change what completes it.
 
 import {parseNote} from "st/music"
 import SongParser from "st/song_parser"
@@ -283,6 +284,36 @@ function attachExtras(columns, extras) {
   return columns
 }
 
+// Gives each column with a beat column.sustained, its notes the score still
+// sounds at its onset from an earlier one (a key two voices share, or notes
+// that overlap), when it has any: S(c) of the note detection report, which
+// the drill credits held rather than struck again (st/note_matcher). A note
+// that ends at the onset, as a repeated note struck again does, isn't
+// sounding there. entries are every note of the tracks, since a note from
+// before the section may still sound in it; a tied note is one note
+// already, so its tie sounds on to the last head it runs to
+function markSustained(columns, entries) {
+  let spans = new Map()
+  for (let [note] of entries) {
+    let pitch = parseNote(note.note)
+    if (!spans.has(pitch)) { spans.set(pitch, []) }
+    spans.get(pitch).push([note.start, note.start + note.duration])
+  }
+
+  for (let column of columns) {
+    if (column.beat == null) { continue }
+
+    let beat = column.beat
+    let sustained = column.filter(name =>
+      (spans.get(parseNote(name)) || []).some(([start, stop]) =>
+        start < beat - ONSET_EPSILON / 2 && stop > beat + ONSET_EPSILON / 2))
+
+    if (sustained.length) {
+      column.sustained = sustained
+    }
+  }
+}
+
 // song: MultiTrackSong (or any SongNoteList)
 // opts.startMeasure, opts.endMeasure: inclusive measure range, numbered as
 // in measureBeatRange
@@ -294,7 +325,8 @@ function attachExtras(columns, extras) {
 // staff the tracks are on (see grandStaffClefs); the columns of notes carrying
 // the score's notation also carry column.beat, column.notation and
 // column.extras, the rests and tied continuation heads drawn after them, each
-// on the staff it is written on
+// on the staff it is written on, and column.sustained when the score still
+// sounds some of its notes from an earlier onset (see markSustained)
 // whatever opts.notation is, a column the score ornaments carries
 // column.allowed, the ornament notes a player may add at it without a slip
 // (see allowedExtras)
@@ -347,6 +379,8 @@ export function extractSectionColumns(song, opts={}) {
     return columns
   }
 
+  markSustained(columns, entries)
+
   // The heads a tie runs on to are drawn wherever they fall, even when the
   // note they are tied from is in an earlier measure of the piece, so they
   // are collected from every note of the tracks rather than from the range
@@ -394,6 +428,10 @@ export function filterColumnsToRange(columns, min, max) {
     if (column.staves) {
       kept.staves = column.staves.filter((staff, idx) => keep[idx])
       kept.clefs = column.clefs
+    }
+    if (column.sustained) {
+      let sustained = column.sustained.filter(note => kept.includes(note))
+      if (sustained.length) { kept.sustained = sustained }
     }
     if (column.notation) {
       kept.beat = column.beat

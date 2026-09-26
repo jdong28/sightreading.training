@@ -41,7 +41,8 @@ let run = (matcher, script) => {
         return `${event.counted || "uncounted"} ${sorted(event.blamed)}`
       case "hit":
         return `hit ${sorted(event.hitNotes)}` +
-          (event.early.length ? ` (early ${sorted(event.early)})` : "")
+          (event.early.length ? ` (early ${sorted(event.early)})` : "") +
+          ((event.heldCredit || []).length ? ` (held ${sorted(event.heldCredit)})` : "")
       default:
         return event.type
     }
@@ -194,7 +195,8 @@ describe("note matcher", function() {
 
   // Adopting another list (a rebuilt drill, a column scrolled past) plays its
   // head afresh: no key struck at the old one counts for it, whether it was
-  // let up or is still down. Score-sustained held credit is a later step (T6)
+  // let up or is still down, but for a key held that the score still sounds
+  // at the new head (score-sustained credit, below)
   it("drops the keys struck at the old head when it adopts another list", function() {
     let matcher = matcherFor([["C4", "G4"], ["A4"]])
     run(matcher, [["on", "C4"], ["off", "C4"], ["on", "D4"]])
@@ -387,6 +389,155 @@ describe("note matcher", function() {
 
     expect(matcher.held).toEqual({C4: true, D4: true})
     expect(matcher.touched).toEqual({C4: true})
+  })
+
+  // T6 of the note detection report, rule 1's held credit: a key the score
+  // still sounds at a column's onset from an earlier one (column.sustained,
+  // see extractSectionColumns), held rather than struck again, counts toward
+  // the column (ruling D3(a)). It is credited lazily, when the next key goes
+  // down or when it would complete the column, never before the column is
+  // the head, and striking the key again counts as well
+  describe("score-sustained credit (T6)", function() {
+    let sustain = (column, ...notes) => Object.assign(column, {sustained: notes})
+
+    // the drill only ever sustains an imported piece's columns, which reach
+    // it as one card's and each carry which of the card's columns it is
+    let asCard = columns => columns.map((column, idx) => Object.assign(column, {cardIndex: idx}))
+
+    // the Rêverie's left hand, from its bar 1 (see reverieOpening): Bb3 C4,
+    // then Bb3 at beats 5.5 and 6, each still sounding from an earlier onset,
+    // then C4 D4
+    let reverie = () => [["Bb3"], ["C4"], sustain(["Bb3"], "Bb3"), sustain(["Bb3"], "Bb3"), ["C4"], ["D4"]]
+
+    let rules = [
+      ["credits a key the score still sounds, held, once the next key goes down",
+        reverie(),
+        [["on", "Bb3", 0], ["on", "C4", 500], ["off", "C4", 900], ["on", "C4", 1500]],
+        ["hit Bb3", "hit C4", "hit Bb3 (held Bb3)", "hit Bb3 (held Bb3)", "hit C4"], ["D4"]],
+
+      ["never credits a key held before the column is the head, nor as it becomes it",
+        reverie(),
+        [["on", "Bb3", 0], ["on", "C4", 500]],
+        ["hit Bb3", "hit C4"], ["Bb3"]],
+
+      // ruling D3(a): striking it again is accepted too, and the column after
+      // it, which the key still sounds into, isn't credited in advance
+      ["completes the column with the key struck again, with no slip",
+        reverie(),
+        [["on", "Bb3", 0], ["on", "C4", 500], ["off", "Bb3", 900], ["on", "Bb3", 1000],
+          ["off", "Bb3", 1400], ["on", "Bb3", 1500], ["on", "C4", 2000]],
+        ["hit Bb3", "hit C4", "hit Bb3", "hit Bb3", "hit C4"], ["D4"]],
+
+      ["credits the key held when it is struck again for one column and held for the next",
+        reverie(),
+        [["on", "Bb3", 0], ["on", "C4", 500], ["off", "Bb3", 900], ["on", "Bb3", 1000], ["on", "C4", 2000]],
+        ["hit Bb3", "hit C4", "hit Bb3", "hit Bb3 (held Bb3)", "hit C4"], ["D4"]],
+
+      ["completes a column with its other keys struck while the sustained one is held",
+        [["Bb3"], ["C4"], sustain(["Bb3", "D5"], "Bb3"), ["G4"]],
+        [["on", "Bb3", 0], ["on", "C4", 500], ["on", "D5", 1000]],
+        ["hit Bb3", "hit C4", "hit Bb3+D5 (held Bb3)"], ["G4"]],
+
+      // the key held is the column's already, so a slip alongside it is
+      // never blamed on it (its hand isn't the one that missed)
+      ["blames a slip on the column's other keys, not the one it credits held",
+        [["Bb3"], ["C4"], sustain(["Bb3", "D5"], "Bb3"), ["G4"]],
+        [["on", "Bb3", 0], ["on", "C4", 500], ["on", "F4", 1000]],
+        ["hit Bb3", "hit C4", "miss D5"], ["Bb3", "D5"]],
+
+      ["credits nothing for a sustained key let up before the next key down",
+        reverie(),
+        [["on", "Bb3", 0], ["on", "C4", 500], ["off", "Bb3", 900], ["on", "D4", 1500]],
+        ["hit Bb3", "hit C4", "miss Bb3"], ["Bb3"]],
+
+      // the report's Nocturne C#4 at beats 9.5 and 10: the eighth ends as the
+      // half is struck, so the score doesn't still sound it, and holding it
+      // through still leaves the column waiting for it
+      ["gives no credit to a repeated note the score strikes again, held through",
+        [["C#3", "G#4"], ["C#4"], ["G#2", "C#4"], ["E4"]],
+        [["on", "C#3", 0], ["on", "G#4", 0], ["on", "C#4", 750], ["on", "G#2", 1000], ["on", "E4", 1500]],
+        ["hit C#3+G#4", "hit C#4"], ["G#2", "C#4"]],
+
+      ["credits a wrong key's column held and judges the key at the column after it",
+        reverie(),
+        [["on", "Bb3", 0], ["on", "C4", 500], ["on", "F4", 1500]],
+        ["hit Bb3", "hit C4", "hit Bb3 (held Bb3)", "hit Bb3 (held Bb3)", "miss C4"], ["C4"]],
+
+      // a key struck early doesn't let held credit finish the column as it
+      // becomes the head: the shared key may still be struck again at its
+      // own onset (D3(a)), which completes the column with no slip
+      ["waits at a column of a key struck early for the shared key struck again",
+        [["Bb3"], ["C4"], sustain(["Bb3", "E4"], "Bb3"), ["G4"]],
+        [["on", "Bb3", 0], ["on", "E4", 400], ["on", "C4", 500],
+          ["off", "Bb3", 780], ["on", "Bb3", 800]],
+        ["hit Bb3", "hit C4", "hit Bb3+E4 (early E4)"], ["G4"]],
+
+      ["completes the column of a key struck early and a key held, once the next key goes down",
+        [["Bb3"], ["C4"], sustain(["Bb3", "E4"], "Bb3"), ["G4"]],
+        [["on", "Bb3", 0], ["on", "E4", 400], ["on", "C4", 500], ["on", "G4", 1500]],
+        ["hit Bb3", "hit C4", "hit Bb3+E4 (early E4) (held Bb3)", "hit G4"], []],
+
+      ["settles no held column on a key of the column just completed struck again",
+        reverie(),
+        [["on", "Bb3", 0], ["on", "C4", 500], ["off", "C4", 540], ["on", "C4", 600]],
+        ["hit Bb3", "hit C4"], ["Bb3"]],
+    ]
+
+    for (let [what, columns, script, judged, left, opts] of rules) {
+      it(what, function() {
+        let matcher = matcherFor(asCard(columns), opts)
+        expect(run(matcher, script)).toEqual(judged)
+        expect(head(matcher)).toEqual(left)
+      })
+    }
+
+    it("credits the stats with the key held, and times the column by its keys struck", function() {
+      let matcher = matcherFor([["Bb3"], ["C4"], sustain(["Bb3", "D5"], "Bb3"), sustain(["Bb3"], "Bb3"), ["G4"]])
+      run(matcher, [["on", "Bb3", 0], ["on", "C4", 500], ["on", "D5", 1000], ["on", "G4", 1500]])
+
+      let hits = matcher.judged.filter(event => event.type == "hit")
+      expect(hits.map(event => [[...event.hitNotes].sort(), event.heldCredit, event.spread])).toEqual([
+        [["Bb3"], [], 0],
+        [["C4"], [], 0],
+        [["Bb3", "D5"], ["Bb3"], 0],
+        // no key of it went down, so there is nothing to time
+        [["Bb3"], ["Bb3"], null],
+        [["G4"], [], 0],
+      ])
+    })
+
+    it("credits a key held over to the head of a list it adopts, once the next key goes down", function() {
+      let matcher = matcherFor([["Bb3"], ["C4"]])
+      run(matcher, [["on", "Bb3", 0]])
+
+      let rebuilt = new NoteList([sustain(["Bb3"], "Bb3"), ["C4"]], {generator: {nextNote: () => []}})
+      matcher.setNotes(rebuilt)
+      expect(head(matcher)).toEqual(["Bb3"])
+
+      expect(run(matcher, [["on", "C4", 1000]])).toEqual(["hit Bb3 (held Bb3)", "hit C4"])
+    })
+
+    // a looping card of two columns the key it holds sounds on through: the
+    // key would go on crediting every lap, so one key down settles the rest
+    // of the lap under way and stops where the card ends
+    it("settles the lap under way at one key down, not the laps after it", function() {
+      let position = 0
+      let notes = new NoteList([], {generator: {nextNote: () => {
+        let column = sustain(["Bb3"], "Bb3")
+        column.cardIndex = position++ % 2
+        return column
+      }}})
+      notes.fillBuffer(4)
+      let judged = []
+      let matcher = new NoteMatcher(notes, {onEvent: event => judged.push(event)})
+      matcher.judged = judged
+
+      // Bb3 strikes the card's first column and is held through the second,
+      // which the stray D4 settles; the next lap waits to be played
+      run(matcher, [["on", "Bb3", 0], ["on", "D4", 1000]])
+      expect(judged.map(event => event.type)).toEqual(["hit", "hit", "miss"])
+      expect(head(matcher)).toEqual(["Bb3"])
+    })
   })
 
   it("records the timeStamp of the event it was fed", function() {
