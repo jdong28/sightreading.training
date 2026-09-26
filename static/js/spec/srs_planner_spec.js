@@ -204,6 +204,15 @@ describe("today's programme planner", function() {
 
       // one fewer in progress and the next new measure comes through
       expect(entryOf([...[1, 2, 3].map(failed), inReview(5, {due: NOW - DAY})])).toEqual([NEW, 4])
+
+      // with nothing else to play either, the four still hold the cap: the
+      // sitting has no card left rather than a new bar in their place
+      let alone = plan([1, 2, 3, 4].map(failed))
+      expect([...alone.state.resting].sort()).toEqual([1, 2, 3, 4])
+      expect(alone.state.unseen).toEqual([5, 6, 7, 8])
+      expect(alone.entry).toBe(null)
+
+      expect(entryOf([1, 2, 3].map(failed))).toEqual([NEW, 4])
     })
 
     it("offers new measures only while the due reviews fit in the time left", function() {

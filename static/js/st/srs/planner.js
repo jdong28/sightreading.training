@@ -429,7 +429,9 @@ function candidates(state, {avoid}) {
 
   let newMeasures = unseen.map(measure => newSlot(state, measure)).filter(other)
 
-  let idle = !rungs.length && !due.length && !early.length && !runThrough.length
+  // a bar resting is work the sitting has parked, not room for more
+  let idle = !rungs.length && !due.length && !early.length && !runThrough.length &&
+    !state.resting.size
   let cap = idle ? IDLE_LADDER_CAP : LADDER_CAP
   let remainingMs = state.targetMs - state.elapsedMs
   let fits = dueReviews.length * state.cardMs <= REVIEW_SHARE * remainingMs
@@ -474,8 +476,9 @@ export function planNext(input) {
     [next] = candidates(state, {avoid: false})
   }
 
-  // a piece whose every measure waits past the target: its first new one
-  if (!next && state.unseen.length) {
+  // a piece whose every measure waits past the target: its first new one,
+  // unless bars are resting, which the cap counts as work in progress
+  if (!next && state.unseen.length && !state.resting.size) {
     next = {reason: NEW, slot: newSlot(state, state.unseen[0])}
   }
 
