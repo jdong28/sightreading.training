@@ -475,9 +475,17 @@ export default class SightReadingPage extends React.Component {
   // Whether a bar may be offered as one hand alone (the hand scaffold of
   // today's programme): only where the staff drawing the cards can draw one
   // hand of the piece by itself, which the engine can't where the score
-  // can't tell that hand's staves from the rest
+  // can't tell that hand's staves from the rest. Nothing is offered apart
+  // until the piece's source has settled and the staff is known. Read on
+  // every plan, so it leaves the one slot of the staves cache to the card
+  // being drawn
   handsApart() {
-    return !this.engineCards() || this.handStaves(LEFT_HAND) !== undefined
+    let source = this.state.engineSource
+    if (this.programme.engine && (!source || source.status == "loading")) { return false }
+    if (!this.engineCards()) { return true }
+
+    let song = pieceSong(sheetMusicPiece(this.currentSettings()))
+    return !!(song && source.trackStaves && source.trackStaves.length == song.tracks.length)
   }
 
   // The engine card's props for the card at the head of the drill, or null
