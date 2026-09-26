@@ -315,13 +315,8 @@ describe("today's programme planner", function() {
         onLadder(3, {due: NOW + 5 * MINUTE}),
       ]
       expect(planSummary({pieceId: "p", items, measures: MEASURES, now: NOW})).toEqual({
-        due: 2, dueMinutes: 1, newMeasures: 5, targetMinutes: 20, learned: 2, measures: 8, hand: "both",
+        due: 2, dueMinutes: 1, newMeasures: 5, targetMinutes: 20, learned: 2, measures: 8,
       })
-
-      // the hand the programme is played with, which the plate counts the
-      // due items of in other pieces (mostOverduePiece)
-      expect(planSummary({pieceId: "p", items, measures: MEASURES, now: NOW, hand: "lower"}).hand)
-        .toEqual("lower")
     })
   })
 
@@ -557,10 +552,35 @@ describe("today's programme planner", function() {
           .withContext(name).toEqual(expected)
       }
 
-      // played with the left hand, those are the programme's own items: due
-      // however its bar stands hands together
+      // a study played with the left hand: those are its programme's own
+      // items, due however their bar stands hands together
       let retired = [other, left, item(inReview(3, {due: NOW + 5 * DAY}))]
-      expect(mostOverduePiece({studies, items: retired, now: NOW, hand: "lower"})).toEqual("p")
+      expect(mostOverduePiece({studies: [{...studies[0], hand: "lower"}, studies[1]], items: retired, now: NOW}))
+        .toEqual("p")
+    })
+
+    it("counts each piece by the hand its own study is played with", function() {
+      let item = (fields, hand, pieceId) => ({...fields, pieceId, hand,
+        id: itemId({pieceId, hand, startMeasure: fields.startMeasure, endMeasure: fields.endMeasure})})
+
+      // p is practised hands together, with one bar due; q is practised with
+      // the right hand, over bars in review from an earlier hands together
+      // phase, and has two right hand bars due
+      let items = [
+        item(inReview(1, {due: NOW - DAY}), "both", "p"),
+        ...[1, 2].map(m => item(inReview(m, {due: NOW + 5 * DAY}), "both", "q")),
+        ...[1, 2].map(m => item(inReview(m, {due: NOW - DAY}), "upper", "q")),
+      ]
+      let studies = [
+        {pieceId: "p", status: "learning", startedAt: 0},
+        {pieceId: "q", status: "learning", startedAt: 0, hand: "upper"},
+      ]
+
+      expect(mostOverduePiece({studies, items, now: NOW})).toEqual("q")
+
+      // hands together, q's right hand items are scaffolds its bars retired
+      let together = [studies[0], {pieceId: "q", status: "learning", startedAt: 0}]
+      expect(mostOverduePiece({studies: together, items, now: NOW})).toEqual("p")
     })
 
     it("makes the programme the default in study", function() {
@@ -895,10 +915,15 @@ describe("today's programme on the staff", function() {
     expect(reloaded.deck.entry).toEqual(entry)
   })
 
-  it("marks the piece maintaining once every measure is scheduled", async function() {
+  it("marks the piece maintaining once every measure is scheduled, under the hand it is played with", async function() {
     let {generator, notes} = await generatorFor(3)
     notes = await playCard({generator, notes}, new NoteStats())
-    expect(store.study(piece.id).status).toEqual("maintaining")
+    expect(store.study(piece.id))
+      .toEqual(jasmine.objectContaining({status: "maintaining", hand: "both"}))
+
+    let left = await generatorFor(3, {hand: "lower"})
+    left.notes = await playCard(left, new NoteStats())
+    expect(store.study(piece.id).hand).toEqual("lower")
   })
 
   describe("settings", function() {

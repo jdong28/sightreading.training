@@ -427,12 +427,18 @@ export default class SightReadingPage extends React.Component {
     return source.status == "loading" || (this.engineCards() && !this.state.staffWidth)
   }
 
-  // The hand setting the card at the head is played with: the hand alone
-  // today's programme offers it as, else the settings'
+  // The hand setting the card at the head is drawn with: the hand alone
+  // today's programme offers it as, else the settings'. In scroll mode the
+  // engine draws the whole section once and the slider only moves along it,
+  // so the session's hand stands for every card there and a hand alone
+  // restricts the keys the drill asks for rather than what is drawn
   cardHand() {
+    let settings = this.currentSettings()
+    if (this.state.mode == "scroll") { return settings.hand }
+
     let current = this.currentCard()
     let hand = current && current.card.hand
-    return hand ? handSetting(hand) : this.currentSettings().hand
+    return hand ? handSetting(hand) : settings.hand
   }
 
   // The score staves the drill's tracks read, the ones the engine draws:

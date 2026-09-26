@@ -495,14 +495,13 @@ export function planNext(input) {
  * and about how long they take, the new measures on offer, the target, and
  * the measures learned (in review) out of all.
  * @param {PlanInput} input
- * @returns {{due: number, dueMinutes: number, newMeasures: number, targetMinutes: number, learned: number, measures: number, hand: string}}
+ * @returns {{due: number, dueMinutes: number, newMeasures: number, targetMinutes: number, learned: number, measures: number}}
  */
 export function planSummary(input) {
   let state = planState(input)
   let due = state.dueReviews.length + state.ladder.filter(slot => slot.due < state.endOfToday).length
   return {
     due,
-    hand: state.hand,
     dueMinutes: due ? Math.max(1, Math.round(due * state.cardMs / MINUTE)) : 0,
     newMeasures: state.unseen.length,
     targetMinutes: (input.practice || DEFAULT_PRACTICE_SETTINGS).sessionMinutes,
@@ -524,24 +523,24 @@ export function studyStatus(input) {
 /**
  * Which piece in study most needs practice: the one with the most single
  * measures due by the end of today, the earliest due first on a tie; null
- * when nothing is due. The items counted are the programme's own, hands
- * together and the hand it is played with, plus a bar's other hand alone
- * while its bar is in trouble hands together: a hand alone left over from a
- * scaffold the bar has since held is retired, and never flags its piece.
+ * when nothing is due. Each piece is counted by the hand its own study is
+ * played with (hands together by default): its programme's items, hands
+ * together and that hand, plus a bar's other hand alone while its bar is in
+ * trouble hands together. A hand alone left over from a scaffold the bar has
+ * since held is retired, and never flags its piece.
  * @param {Object} opts
  * @param {StudyRecord[]} opts.studies
  * @param {ItemRecord[]} opts.items every piece's
  * @param {number} opts.now
- * @param {string} [opts.hand] the hand the programme is played with, one of
- * HANDS
  * @returns {string|null} a piece id
  */
-export function mostOverduePiece({studies, items, now, hand="both"}) {
+export function mostOverduePiece({studies, items, now}) {
   let endOfToday = dayStart(localDay(now) + 1)
-  let studied = new Set(studies.filter(study => STUDYING.includes(study.status)).map(s => s.pieceId))
+  let studied = new Map(studies.filter(study => STUDYING.includes(study.status))
+    .map(study => [study.pieceId, study.hand || "both"]))
 
   let best = null
-  for (let pieceId of studied) {
+  for (let [pieceId, hand] of studied) {
     let bars = items.filter(item => item.pieceId == pieceId && item.startMeasure == item.endMeasure &&
       !item.beats)
     let together = new Map(bars.filter(item => item.hand == "both").map(item => [item.startMeasure, item]))

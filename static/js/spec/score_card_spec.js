@@ -1011,6 +1011,27 @@ describe("score page engine card", function() {
     expect(join.result.notes.map(note => note.pitch).sort())
       .toEqual(leftNotes.map(step => parseNote(`${step}3`)).sort())
 
+    // scroll mode draws the whole section on one line and the slider only
+    // moves along it, so the hand alone restricts the keys the drill asks
+    // for rather than what is drawn: the system stays the session's own
+    expect(page.engineCard().staves).not.toBe(null)
+    flushSync(() => page.setMode("scroll"))
+    await cardDrawn()
+
+    expect(page.currentCard().card.hand).toEqual("lower")
+    expect([...page.state.notes.currentColumn()]).toEqual(["C3"])
+    expect(page.engineCard().staves).toBe(null)
+
+    let system = await drawnAgain()
+    let distinct = pitches => [...new Set(pitches)].sort((a, b) => a - b)
+    expect(distinct(system.result.notes.map(note => note.pitch))).toEqual(distinct([
+      ...leftNotes.map(step => parseNote(`${step}3`)),
+      ...rightNotes.map(step => parseNote(`${step}5`)),
+    ]))
+
+    flushSync(() => page.setMode("wait"))
+    await cardDrawn()
+
     // the left hand alone is written to its own item
     for (let step of leftNotes) {
       play([`${step}3`])

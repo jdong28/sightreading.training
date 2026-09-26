@@ -342,17 +342,20 @@ export class PlanGenerator extends MeasureCardGenerator {
   }
 
   // The piece is in study once a card of its programme is played: learning
-  // until each of its measures has been scheduled, then maintaining
+  // until each of its measures has been scheduled, then maintaining, with the
+  // hand it is played with, which mostOverduePiece counts its due items by
   markStudy(time) {
     let store = this.deck.getStore()
     let study = store.study(this.deck.pieceId)
     let status = this.deck.studyStatus()
-    if (study && (study.status == status || study.status == "shelved")) { return }
+    let hand = this.deck.sessionHand
+    if (study && (study.status == "shelved" || (study.status == status && study.hand == hand))) { return }
 
     this.studying = Promise.resolve(this.studying).then(() => store.putStudy({
       ...study,
       pieceId: this.deck.pieceId,
       status,
+      hand,
       startedAt: study ? study.startedAt : time,
     })).catch(err => console.warn("Couldn't save the study", err))
   }
