@@ -177,7 +177,8 @@ export class PlanDeck {
       items: this.items(),
       measures: this.measures,
       hand: this.sessionHand,
-      handMeasures: this.waiting() ? this.handMeasures : null,
+      handMeasures: this.handMeasures,
+      split: this.waiting(),
       lastReviews: this.reviews,
       now: this.now(),
       settings: store.schedulerSettings(),
@@ -274,16 +275,23 @@ export class PlanGenerator extends MeasureCardGenerator {
   }
 
   /**
-   * Plans again when the card showing isn't one to play now: a programme
-   * with no card, which the page asks for at Begin (every bar the piece has
-   * left rested in the sitting before, and the one that is over opens them
-   * again), or a hand alone while the drill scrolls, where a failing bar
-   * returns hands together.
+   * @returns {boolean} whether the card showing isn't one to play now: a
+   * programme with no card, which the page asks for at Begin (every bar the
+   * piece has left rested in the sitting before, and the one that is over
+   * opens them again), or a hand alone while the drill scrolls, where a
+   * failing bar returns hands together
+   */
+  replanning() {
+    let entry = this.deck.entry
+    return !(entry && (this.deck.waiting() || entry.hand == this.deck.sessionHand))
+  }
+
+  /**
+   * Plans again when the card showing isn't one to play now, see replanning
    * @returns {boolean} whether there is a card to play now
    */
   replan() {
-    let entry = this.deck.entry
-    if (entry && (this.deck.waiting() || entry.hand == this.deck.sessionHand)) { return false }
+    if (!this.replanning()) { return false }
 
     this.deck.advance(false)
     this.startCard()

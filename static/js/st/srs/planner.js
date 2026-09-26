@@ -43,7 +43,9 @@
 // with more misses comes first, then the other. A piece without a staff per
 // hand never splits (handMeasures), nor does a session played with one hand,
 // nor a bar only one hand has notes in: taking the other off it would leave
-// the very same card.
+// the very same card. A drill that doesn't wait at each column doesn't split
+// either (split), though the hands' items still tell the rest rule and the
+// sitting how the bar has gone.
 // The scaffold is the planner's alone: it is worked out from the items and
 // the last review of each bar, and writes nothing, so the schedule stays what
 // replay rebuilds.
@@ -172,6 +174,9 @@ export function onScheduleMeasures(card, itemOf, now) {
  * numbers each hand alone can play, for a piece with a staff per hand; a bar
  * is only offered hands apart (the hand scaffold) where both hands have
  * notes in it, in a session played hands together
+ * @property {boolean} [split] whether a bar may be offered hands apart at
+ * all, true by default; the hands' items are read either way, so the rest
+ * rule and the sitting see every card played
  * @property {Map<string, ReviewRecord>} [lastReviews] the last graded review
  * known of an item, by item id, whose staffMisses say which hand a failure's
  * misses fell on
@@ -319,7 +324,7 @@ function handsByMeasure(items) {
 export function planState({
   pieceId, items, measures, hand="both", now, settings=DEFAULT_SCHEDULER_SETTINGS,
   practice=DEFAULT_PRACTICE_SETTINGS, cardMeasures=1, previous=null, handMeasures=null,
-  lastReviews=new Map(),
+  split=true, lastReviews=new Map(),
 }) {
   let order = new Map(measures.map((measure, idx) => [measure, idx]))
   let single = item => item.pieceId == pieceId && item.startMeasure == item.endMeasure &&
@@ -369,7 +374,7 @@ export function planState({
   // graded since, then on the hand's own schedule
   let slotOf = item => {
     let measure = item.startMeasure
-    let scaffold = apart.has(measure) && ON_LADDER.includes(item.state) ?
+    let scaffold = split && apart.has(measure) && ON_LADDER.includes(item.state) ?
       barScaffold(item, {hands: handItems.get(measure), reviews: lastReviews}) : null
 
     if (!scaffold) {
@@ -392,7 +397,7 @@ export function planState({
   // the bars that can split and are failing, the ones resting among them:
   // the hand the scaffold offers is read from each one's last review, the
   // only thing the plan wants from the log (see barScaffold)
-  let failing = new Set(live.filter(item => apart.has(item.startMeasure) &&
+  let failing = new Set(!split ? [] : live.filter(item => apart.has(item.startMeasure) &&
     ON_LADDER.includes(item.state) && failedAt(item) != null).map(item => item.id))
   // the bars in progress, whether or not they rest: what the ladder holds
   let laddered = live.filter(item => ON_LADDER.includes(item.state)).length

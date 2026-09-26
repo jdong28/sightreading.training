@@ -308,7 +308,7 @@ export default class SightReadingPage extends React.Component {
     // scaffold split returns hands together once the drill scrolls, taking
     // the practice of the pass the card it leaves was collecting
     let playing = this.state.notes && this.state.notes.generator
-    if (prevState.mode != this.state.mode && playing && playing.replan) {
+    if (prevState.mode != this.state.mode && playing && playing.replanning && playing.replanning()) {
       this.flushPractice(playing)
       if (playing.replan()) {
         this.refreshNoteList(playing)
@@ -968,8 +968,7 @@ export default class SightReadingPage extends React.Component {
     switch (this.state.currentGenerator.mode) {
       case "notes": {
         // D5(a): a note the app staff's fallback had to drop from an
-        // imported piece's section, or (b) one the staff draws beside the
-        // card's own, is neither required nor a wrong key
+        // imported piece's section is neither required nor a wrong key
         if (this.droppedStaffNote(note)) { return }
         break
       }

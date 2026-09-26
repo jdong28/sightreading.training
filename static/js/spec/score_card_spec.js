@@ -1068,6 +1068,41 @@ describe("score page engine card", function() {
     expect(store.item(`${piece.id}:lower:1-1`)).not.toBe(null)
   })
 
+  it("keeps the grade of a pass the drill leaves and returns to the same mode", async function() {
+    let left = leftNotes.map(step => `${step}3`)
+    let right = rightNotes.map(step => `${step}5`)
+    let bars = [1, 2].map(number => `<measure number="${number}">${number == 1 ? attributes([["G", 2], ["F", 4]], 2) : ""}${notesOn(rightNotes, 5, 1)}<backup><duration>4</duration></backup>${notesOn(leftNotes, 3, 2)}</measure>`)
+    let piece = await drillPiece(scoreOf("<score-part id=\"P1\"><part-name>Piano</part-name></score-part>",
+      `<part id="P1">${bars.join("")}</part>`), {startMeasure: 1, endMeasure: 2, measuresPerCard: "1"})
+    await store.putStudy({pieceId: piece.id, status: "learning", startedAt: Date.now()})
+    renderScorePage()
+    await cardDrawn()
+
+    flushSync(() => page.beginSession())
+    let generator = page.state.notes.generator
+    expect(page.currentCard().card.hand).toBeUndefined()
+
+    // half the bar hands together, then the drill scrolls and waits again:
+    // the card never leaves, so the pass it is collecting doesn't either
+    play([left[0], right[0]])
+    play([left[1], right[1]])
+
+    flushSync(() => page.setMode("scroll"))
+    await cardDrawn()
+    flushSync(() => page.setMode("wait"))
+    await cardDrawn()
+
+    expect(page.currentCard().card.hand).toBeUndefined()
+    play([left[2], right[2]])
+    play([left[3], right[3]])
+    await generator.finishing
+    flushSync(() => page.forceUpdate())
+
+    let graded = (await store.reviews({pieceId: piece.id}))
+      .filter(review => review.itemId == `${piece.id}:both:1-1` && review.grade)
+    expect(graded.length).toEqual(1)
+  })
+
   it("returns a failing bar hands together when the drill scrolls", async function() {
     let {piece, generator} = await scaffoldedPiece()
     expect(page.currentCard().card.hand).toEqual("lower")

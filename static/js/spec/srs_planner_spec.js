@@ -615,6 +615,21 @@ describe("today's programme planner", function() {
       }).state.scaffolds.get(5)).toEqual("lower")
     })
 
+    it("rests a bar its hands' items failed where the drill doesn't split", function() {
+      // bar 3 failed once hands together and twice on its left hand alone
+      let items = [graded(3, [[ago(10), AGAIN]]), graded(3, [[ago(8), AGAIN], [ago(6), AGAIN]], "lower")]
+      let lastReviews = blame(ago(10), 0, 3)
+      expect(planned(items, {lastReviews}).state.resting.has(3)).toBe(true)
+
+      // a drill that can't offer a hand alone still reads the hands' items,
+      // so the bar rests rather than coming back hands together
+      let {entry, state} = planned(items, {lastReviews, split: false})
+      expect(state.scaffolds.get(3)).toBe(undefined)
+      expect([...state.failing]).toEqual([])
+      expect(state.resting.has(3)).toBe(true)
+      expect(entry.measure).not.toEqual(3)
+    })
+
     it("rests a bar failing a third time in a sitting until the next", function() {
       let rows = [
         ["failed together, then twice alone", [[ago(10), AGAIN]], [[ago(8), AGAIN], [ago(6), AGAIN]], true],
@@ -1147,6 +1162,50 @@ describe("today's programme on the staff", function() {
     expect(generator.replan()).toBe(true)
     expect(deck.entry).toEqual(jasmine.objectContaining({measure: 1, hand: "lower"}))
     expect(built).toEqual(["lower:1"])
+  })
+
+  it("rests a bar its hand alone failed once the drill stops splitting", async function() {
+    let measures = pool()
+    let {built, ...hands} = handPools()
+    let at = time - MINUTE
+
+    // bar 1 failed once hands together, blamed on the bass staff, and twice
+    // more on its left hand alone: three failures in this sitting
+    let failed = async (hand, times) => {
+      let id = itemId({pieceId: piece.id, hand, startMeasure: 1, endMeasure: 1})
+      await store.recordAttempt({
+        item: {
+          id, pieceId: piece.id, hand, startMeasure: 1, endMeasure: 1,
+          level: "bar", state: "learning", step: 0, due: at, last: at, s: 1, d: 5,
+          reps: times, lapses: times, streak: 0, lastGrade: AGAIN,
+          hits: 0, misses: 3 * times, attempts: times, lastPracticed: at, elapsedMs: 3000,
+          algo: 1, createdAt: at - 3 * MINUTE,
+          recent: [...Array(times).keys()].map(n => [at - n * MINUTE, 3, 0, AGAIN]),
+        },
+        review: {
+          itemId: id, pieceId: piece.id, at, kind: "attempt", grade: AGAIN, was: "learning",
+          columns: 3, clean: 0, misses: 3, stuck: 0, skipped: 0, hesitations: 0, mode: "wait",
+          algo: 1, staffMisses: {upper: 0, lower: 3},
+        },
+      })
+    }
+    await failed("both", 1)
+    await failed("lower", 2)
+
+    let deck = new PlanDeck(measures, {pieceId: piece.id, cardMeasures: 1, ...hands, store, now: () => time})
+    let generator = new PlanGenerator(deck, {now: () => time})
+    generators.push(generator)
+    await generator.ready
+    expect(planState(deck.planInput()).resting.has(1)).toBe(true)
+
+    // the drill scrolls, so the scaffold isn't offered; the hand's failures
+    // still rest the bar rather than bringing it back hands together
+    generator.setDrill(() => ({mode: "scroll"}))
+    let state = planState(deck.planInput())
+    expect(state.resting.has(1)).toBe(true)
+    expect(state.scaffolds.get(1)).toBe(undefined)
+    expect([...state.failing]).toEqual([])
+    expect(deck.entry && deck.entry.measure).not.toEqual(1)
   })
 
   it("keeps the plan it made when a review is beyond the planner", async function() {
