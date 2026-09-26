@@ -422,14 +422,16 @@ function walkPart(measures, partName) {
   // measure of the note it leads into, so none is kept past the end of one
   let pendingGraces = new Map()
   // The trills whose wavy line is still running, by staff and line number,
-  // each {voice, sides} of the voice it trills and the neighbours it
-  // alternates with. A line the score never stops ends at the first rest of
-  // its voice, at the next note of it writing an ornament of its own, or with
-  // the part
+  // each {staff, voice, sides} of the staff and voice it trills and the
+  // neighbours it alternates with. A line the score never stops ends at the
+  // first rest of that staff and voice, at the next note of them writing an
+  // ornament of its own, or with the part
   let openTrills = new Map()
-  let endTrills = trilled => {
+  let endTrills = (trilledStaff, trilledVoice) => {
     for (let [key, line] of openTrills) {
-      if (line.voice == trilled) { openTrills.delete(key) }
+      if (line.staff == trilledStaff && line.voice == trilledVoice) {
+        openTrills.delete(key)
+      }
     }
   }
 
@@ -514,14 +516,14 @@ function walkPart(measures, partName) {
           let lines = wavyLines(el)
           let stopping = new Set(lines.filter(line => line.type == "stop").map(line => line.number))
           let running = [...openTrills.values()]
-            .filter(line => line.voice == voice)
+            .filter(line => line.staff == staff && line.voice == voice)
             .flatMap(line => line.sides)
           for (let number of stopping) {
             openTrills.delete(`${staff}:${number}`)
           }
 
           if (hasChild(el, "rest")) {
-            endTrills(voice)
+            endTrills(staff, voice)
           }
 
           if (hasChild(el, "grace")) {
@@ -608,7 +610,7 @@ function walkPart(measures, partName) {
           // line follows one melodic line, so the rest of a chord it is
           // written over is not trilled
           if (neighbours.length) {
-            endTrills(voice)
+            endTrills(staff, voice)
           } else if (running.length && !isChord) {
             neighbours = [...new Set(running)].map(side => ({side, alter: null}))
             trill = true
@@ -616,7 +618,7 @@ function walkPart(measures, partName) {
 
           for (let {number, type} of lines) {
             if (type == "start" && trill && !stopping.has(number)) {
-              openTrills.set(`${staff}:${number}`, {voice, sides: neighbours.map(n => n.side)})
+              openTrills.set(`${staff}:${number}`, {staff, voice, sides: neighbours.map(n => n.side)})
             }
           }
 

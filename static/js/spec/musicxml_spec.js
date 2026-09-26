@@ -898,6 +898,38 @@ describe("musicxml ornaments", function() {
     ])
   })
 
+  it("keeps a wavy line to its own staff in a score that writes no voices", function() {
+    let upper = "<staff>1</staff>"
+    let lower = "<staff>2</staff>"
+    let song = parseMusicXML(partwise(`
+<measure number="1">
+  ${attributes({staves: 2, clefs: [[1, "G", 2], [2, "F", 4]]})}
+  ${note("D", 5, 1, ornamented(`<trill-mark/>${wavy("start")}`, upper))}
+  ${note("E", 5, 1, upper)}
+  ${note("F", 5, 1, upper)}
+  ${note("G", 5, 1, upper)}
+  <backup><duration>4</duration></backup>
+  ${note("G", 3, 1, lower)}
+  ${note("A", 3, 1, lower)}
+  ${note("B", 3, 1, lower)}
+  ${rest(1, lower)}
+</measure>
+<measure number="2">
+  ${note("A", 5, 1, ornamented(wavy("stop"), upper))}
+</measure>`))
+
+    // every note is voice 0, so only the staff tells the hands apart: the
+    // left hand's notes are not trilled and its rest doesn't end the line,
+    // which still runs to the A5 the score stops it on
+    expect(ornaments(song)).toEqual([
+      ["D5", 0, {neighbours: ["E5"], trill: true}],
+      ["E5", 1, {neighbours: ["F5"], trill: true}],
+      ["F5", 2, {neighbours: ["G5"], trill: true}],
+      ["G5", 3, {neighbours: ["A5"], trill: true}],
+      ["A5", 4, {neighbours: ["B5"], trill: true}],
+    ])
+  })
+
   it("ends a wavy line the score never stops at the first rest of its voice", function() {
     let song = parseMusicXML(partwise(`
 <measure number="1">
