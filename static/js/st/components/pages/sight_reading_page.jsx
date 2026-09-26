@@ -993,9 +993,6 @@ export default class SightReadingPage extends React.Component {
       this.state.slider.cancel();
     }
 
-    this.matcher.scroll = false
-    this.matcher.onLine(null)
-
     this.setState({
       mode: "wait",
       noteWidth: DEFAULT_NOTE_WIDTH,
@@ -1013,11 +1010,6 @@ export default class SightReadingPage extends React.Component {
       this.state.slider.cancel();
     }
 
-    // the matcher times how long each column stands on the hit line before
-    // it is played (its late), which is recorded and never a miss
-    this.matcher.scroll = true
-    this.matcher.onLine(null)
-
     this.setState({
       mode: "scroll",
       noteWidth: noteWidth,
@@ -1028,8 +1020,10 @@ export default class SightReadingPage extends React.Component {
         // the head column waits on the line, never looping past it
         floor: SCROLL_WAIT,
         onUpdate: value => this.setOffset(value),
+        // the matcher times how long each column stands on the hit line
+        // before it is played (its late), which is recorded and never a miss
         onStart: () => this.matcher.onLine(null),
-        onStop: () => this.matcher.onLine(performance.now()),
+        onStop: () => this.matcher.onLine(this.matcher.now()),
         onLoop: function() {
           let column = this.state.notes.currentColumn()
           // notes scrolling past at rest aren't misses
