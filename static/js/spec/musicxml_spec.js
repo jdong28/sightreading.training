@@ -881,6 +881,23 @@ describe("musicxml ornaments", function() {
     ])
   })
 
+  it("trills only the melody note of a chord a wavy line is written over", function() {
+    let song = parseMusicXML(partwise(`
+<measure number="1">
+  ${attributes({})}
+  ${note("C", 5, 2, ornamented(`<trill-mark/>${wavy("start")}`, treble))}
+  ${note("E", 5, 2, `<chord/>${treble}`)}
+  ${note("D", 5, 2, ornamented(wavy("stop"), treble))}
+</measure>`))
+
+    // the line is written on the C5, so the E5 above it in the same chord is
+    // not trilled; the D5 the line stops on still is
+    expect(ornaments(song)).toEqual([
+      ["C5", 0, {neighbours: ["D5"], trill: true}],
+      ["D5", 2, {neighbours: ["E5"], trill: true}],
+    ])
+  })
+
   it("ends a wavy line the score never stops at the first rest of its voice", function() {
     let song = parseMusicXML(partwise(`
 <measure number="1">

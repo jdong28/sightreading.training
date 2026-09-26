@@ -603,11 +603,13 @@ function walkPart(measures, partName) {
 
           let {neighbours, trill} = ornamentNeighbours(el)
 
-          // a note under a running line is trilled with its own neighbours;
-          // one writing an ornament of its own ends the line instead
+          // A note under a running line is trilled with its own neighbours;
+          // one writing an ornament of its own ends the line instead. A wavy
+          // line follows one melodic line, so the rest of a chord it is
+          // written over is not trilled
           if (neighbours.length) {
             endTrills(voice)
-          } else if (running.length) {
+          } else if (running.length && !isChord) {
             neighbours = [...new Set(running)].map(side => ({side, alter: null}))
             trill = true
           }
