@@ -26,7 +26,7 @@ export const STUCK_MISSES = 3
 export const SLIP_SHARE = 0.25
 // the share of columns hesitated on past which the attempt was hard
 export const HESITATION_SHARE = 0.25
-// a column takes longer than both of these to be a hesitation
+// a column's latency passes both of these to be a hesitation
 export const HESITATION_MIN_MS = 1500
 export const HESITATION_PACE = 2.5
 // the most an easy attempt's pace may be above the item's usual pace
