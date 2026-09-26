@@ -94,11 +94,10 @@ export default class NoteMatcher {
     this.previous = null
 
     // whether one of the head column's own keys has gone down at it, and
-    // when the first and the last of them did, for its spread: null when
-    // that press carried no timeStamp (the on-screen keyboard)
+    // when the first of them did, for its spread: null when that press
+    // carried no timeStamp (the on-screen keyboard)
     this.firstDown = false
     this.firstAt = null
-    this.lastAt = null
 
     // the note list a miss was last counted on (a column counts missed once
     // however many slips it takes), and whether the try in progress has
@@ -142,7 +141,6 @@ export default class NoteMatcher {
     this.previous = null
     this.firstDown = false
     this.firstAt = null
-    this.lastAt = null
   }
 
   // the stats started over, so the column under way may count a miss again
@@ -238,13 +236,12 @@ export default class NoteMatcher {
     let slip = false
     let own = this.inColumn(notes.currentColumn(), note)
     if (own) {
-      // the first of the column's own keys down starts its spread, and the
-      // last so far ends it
+      // the first of the column's own keys down starts its spread, which
+      // the key down that completes the column ends
       if (!this.firstDown) {
         this.firstDown = true
         this.firstAt = timeStamp ?? null
       }
-      this.lastAt = timeStamp ?? null
     } else if (this.repeated(note, timeStamp)) {
       // struck again: neither the head's nor a slip
     } else if (timeStamp != null && this.inColumn(this.columnAt(1), note)) {
@@ -324,7 +321,6 @@ export default class NoteMatcher {
       this.touched[n] = true
       this.firstDown = true
       this.firstAt = this.firstAt == null ? early[n] : Math.min(this.firstAt, early[n])
-      this.lastAt = Math.max(this.lastAt ?? early[n], early[n])
     }
     this.credited = credited
 
@@ -335,7 +331,7 @@ export default class NoteMatcher {
     this.emit(event)
 
     if (credited.length && this.completes()) {
-      this.hit(this.lastAt)
+      this.hit(Math.max(...credited.map(n => early[n])))
     }
   }
 
@@ -357,16 +353,16 @@ export default class NoteMatcher {
   }
 
   // Held credit applied lazily, at a key down that isn't the head's own:
-  // each head its held keys complete is hit in turn, timed by the last of
-  // its keys struck (none when all were held), up to the head the key
-  // belongs to. At most as many as the list holds, as a looping card of one
-  // column its held key sounds through would complete every lap
+  // each head its held keys complete is hit in turn, with none of its own
+  // keys struck to time it, up to the head the key belongs to. At most as
+  // many as the list holds, as a looping card of one column its held key
+  // sounds through would complete every lap
   settleHeld(note) {
     for (let left = this.notes.length; left > 0; left--) {
       let column = this.notes.currentColumn()
       if (!column.length || this.inColumn(column, note)) { return }
       if (!this.heldCredit().length || !this.completes()) { return }
-      this.hit(this.firstDown ? this.lastAt : null)
+      this.hit(null)
     }
   }
 
