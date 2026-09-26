@@ -34,6 +34,11 @@
 // late duplicate, a key bounce) is ignored. Both windows are on the events'
 // timeStamps, so a press with none (the on-screen keyboard) is judged as if
 // outside them.
+//
+// The ornaments the score writes at the head column (T7, rule 2.2) are
+// allowed extras: the key goes down, but nothing about it is judged. The
+// column carries them as its allowed (see extractSectionColumns in
+// st/song_sections).
 
 // W_early: how long a key of the next column may wait for the column under
 // way to complete before it counts as a slip on it (ruling D2(a): about

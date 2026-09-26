@@ -295,8 +295,9 @@ function attachExtras(columns, extras) {
 // the score's notation also carry column.beat, column.notation and
 // column.extras, the rests and tied continuation heads drawn after them, each
 // on the staff it is written on
-// a column the score ornaments carries column.allowed, the ornament notes a
-// player may add at it without a slip (see allowedExtras)
+// whatever opts.notation is, a column the score ornaments carries
+// column.allowed, the ornament notes a player may add at it without a slip
+// (see allowedExtras)
 // returns array of columns, each an ascending array of note names
 export function extractSectionColumns(song, opts={}) {
   let [firstMeasure] = measureNumberRange(song)

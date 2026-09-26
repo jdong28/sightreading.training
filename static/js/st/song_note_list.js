@@ -436,6 +436,9 @@ export class MultiTrackSong extends SongNoteList {
 // duration: how long note is in beats
 // notation: how an imported score writes the note (see st/note_values), set
 // by the MusicXML import; nothing about it is ever played or matched
+// ornaments: the grace notes and trill, turn or mordent neighbours an
+// imported score writes on the note (see addOrnaments in st/musicxml), also
+// set by the import; they are never played, only allowed (st/song_sections)
 export class SongNote {
   constructor(note, start, duration) {
     this.id = Symbol()
