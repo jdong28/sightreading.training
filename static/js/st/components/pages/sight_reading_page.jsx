@@ -594,8 +594,10 @@ export default class SightReadingPage extends React.Component {
   }
 
   // This generates a new set of notes, appropriate for when the generator or
-  // generator parameters have changed in some say
-  refreshNoteList() {
+  // generator parameters have changed in some say. Pass the drill on the
+  // staff to fill it again from that same drill rather than build it afresh,
+  // eg. once today's programme has a card to show
+  refreshNoteList(keepGenerator=null) {
     let generator = this.state.currentGenerator
 
     let generatorSettings = {
@@ -607,7 +609,7 @@ export default class SightReadingPage extends React.Component {
     }
 
     let staff = this.columnStaff()
-    let generatorInstance = generator.create.call(
+    let generatorInstance = keepGenerator || generator.create.call(
       generator,
       staff,
       this.state.keySignature,
@@ -617,16 +619,16 @@ export default class SightReadingPage extends React.Component {
       sectionDroppedPitches(staff, generatorSettings) : new Set()
 
     // the measure cards grade each pass by the drill it is played in
-    if (generatorInstance.setDrill) {
+    if (!keepGenerator && generatorInstance.setDrill) {
       generatorInstance.setDrill(() => ({mode: this.state.mode, speed: this.state.scrollSpeed}))
     }
 
     // today's programme plans its first card only once the piece's reviews
     // are read, so the staff is filled again from the card it then picks
-    if (generatorInstance.ready) {
+    if (!keepGenerator && generatorInstance.ready) {
       generatorInstance.ready.then(() => {
         if (!this.unmounted && this.state.notes?.generator == generatorInstance) {
-          this.refreshNoteList()
+          this.refreshNoteList(generatorInstance)
         }
       })
     }
@@ -715,6 +717,13 @@ export default class SightReadingPage extends React.Component {
   // Begin: a fresh session in new stats, with the elapsed clock running
   beginSession() {
     if (this.state.session) { return }
+
+    // today's programme plans again here, so a piece whose every bar rested
+    // in the sitting before is offered again in this one
+    let playing = this.state.notes && this.state.notes.generator
+    if (playing && playing.replan && playing.replan()) {
+      this.refreshNoteList(playing)
+    }
 
     this.matcher.clear()
     this.restartSession({

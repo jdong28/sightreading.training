@@ -17,6 +17,7 @@ import {
   GENERATORS, SHEET_MUSIC_STORAGE_KEY, BOTH_HANDS, RIGHT_HAND, WHOLE_SECTION, FREE_PRACTICE
 } from "st/data"
 import {PlanGenerator} from "st/plan_cards"
+import {SITTING_GAP_MS} from "st/srs/planner"
 import {AGAIN, GOOD, EASY} from "st/srs/grade"
 import {IN_ORDER, RANDOM_ORDER, MeasureCardGenerator} from "st/measure_cards"
 import {DRILL_STORAGE_KEY, SCORE_DRILL_STORAGE_KEY} from "st/generators"
@@ -1673,20 +1674,40 @@ describe("sight reading page", function() {
   describe("today's programme", function() {
     let piece
 
-    let renderProgramme = async ({study=true, settings={}}={}) => {
+    let renderProgramme = async ({study=true, settings={}, seed=null}={}) => {
       piece = (await importMusicXMLPiece("salon_octet.musicxml", octetXML, store)).piece
       if (study) {
         await store.putStudy({pieceId: piece.id, status: "learning", startedAt: Date.now()})
       }
+      if (seed) { await seed() }
       window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
         piece: piece.id, startMeasure: 3, endMeasure: 4, hand: BOTH_HANDS, measuresPerCard: "2", ...settings,
       }))
       let el = renderScorePage()
-      // today's programme plans its first card once the piece's reviews are read
+      // today's programme plans once the piece's reviews are read
       await waitFor(() => !(page.state.notes?.generator instanceof PlanGenerator) ||
-        page.state.notes.generator.currentCard(), "the programme to plan its first card")
+        page.state.notes.generator.statusLine() != null, "the programme to plan")
       flushSync(() => {})
       return el
+    }
+
+    // the item and review of a bar failed three times in the sitting ending
+    // at `at`, which the planner rests until the next one
+    let restingBar = (measure, at) => {
+      let id = `${piece.id}:both:${measure}-${measure}`
+      return store.recordAttempt({
+        item: {
+          id, pieceId: piece.id, hand: "both", startMeasure: measure, endMeasure: measure,
+          level: "bar", state: "learning", step: 0, due: at, last: at, s: 1, d: 5,
+          reps: 3, lapses: 2, streak: 0, lastGrade: AGAIN, hits: 3, misses: 6, attempts: 3,
+          lastPracticed: at, algo: 1, createdAt: at - 3 * 60000,
+          recent: [2, 1, 0].map(n => [at - n * 60000, 2, 0, AGAIN]),
+        },
+        review: {
+          itemId: id, pieceId: piece.id, at, kind: "attempt", grade: AGAIN, was: "learning",
+          columns: 2, clean: 0, misses: 2, stuck: 0, skipped: 0, hesitations: 0, mode: "wait", algo: 1,
+        },
+      })
     }
 
     let playHead = () => play(page.state.notes.currentColumn())
@@ -1808,6 +1829,34 @@ describe("sight reading page", function() {
       expect(page.currentPieceSection().pieceId).toEqual(other.id)
       expect(page.state.notes.generator instanceof PlanGenerator).toBe(true)
       expect(el.textContent).not.toContain("has the most bars due")
+    })
+
+    it("plans again at Begin once the sitting its bars rested in is over", async function() {
+      jasmine.clock().install()
+      clockInstalled = true
+      jasmine.clock().mockDate(new Date(2026, 8, 14, 20))
+
+      let failedAt = Date.now() - 1000
+      let el = await renderProgramme({seed: async () => {
+        for (let measure = 1; measure <= 8; measure++) { await restingBar(measure, failedAt) }
+      }})
+
+      // every bar rests, so the programme has no card to show
+      expect(page.state.notes.generator instanceof PlanGenerator).toBe(true)
+      expect(page.state.notes.generator.currentCard()).toBe(null)
+      click(buttonNamed(el, "Begin"))
+      expect(plateStatus(el)).toEqual("Programme complete · every bar rests until tomorrow")
+
+      // the next sitting: Begin plans again, without a timer of its own
+      click(buttonNamed(el, "Rest"))
+      jasmine.clock().tick(SITTING_GAP_MS + 60 * 1000)
+      expect(page.state.notes.generator.currentCard()).toBe(null)
+
+      click(buttonNamed(el, "Begin"))
+      expect(plateStatus(el)).toMatch(/^Once more · bar \d+$/)
+      expect(page.state.notes.currentColumn().length).toBeGreaterThan(0)
+      expect(page.state.notes.generator.currentCard().measures)
+        .toContain(page.state.notes.generator.deck.entry.measure)
     })
 
     it("leaves free practice as it was", async function() {

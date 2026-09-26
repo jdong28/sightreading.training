@@ -3,7 +3,7 @@ import MersenneTwister from "mersennetwister"
 import {
   planNext, planState, planSummary, anchoredCard, onScheduleMeasures, mostOverduePiece, inStudy,
   entryStatus, entryCaption, cardCaption, blamedStaves,
-  RETRY, LADDER, REVIEW, NEW, EARLY, RUN_THROUGH, WAIT, LADDER_CAP, IDLE_LADDER_CAP,
+  RETRY, LADDER, REVIEW, NEW, EARLY, RUN_THROUGH, WAIT, LADDER_CAP, IDLE_LADDER_CAP, SITTING_GAP_MS,
 } from "st/srs/planner"
 import {
   applyGrade, replay, DEFAULT_SCHEDULER_SETTINGS, DEFAULT_PRACTICE_SETTINGS,
@@ -11,7 +11,7 @@ import {
 } from "st/srs/schedule"
 import {newItem, itemId, RECENT_ATTEMPTS} from "st/srs/records"
 import {PlanDeck, PlanGenerator} from "st/plan_cards"
-import {MeasureCardGenerator, COLUMN_JOIN_KEYS} from "st/measure_cards"
+import {MeasureCardDeck, MeasureCardGenerator, measureCards, IN_ORDER, COLUMN_JOIN_KEYS} from "st/measure_cards"
 import {
   SHEET_MUSIC_GENERATOR, BOTH_HANDS, RIGHT_HAND, LEFT_HAND, PROGRAMME_PRACTICE, FREE_PRACTICE, WHOLE_SECTION,
   plannedPractice, programmeOffered, drilledRange, PLAN_CARD_MEASURES,
@@ -785,6 +785,50 @@ describe("today's programme on the staff", function() {
     expect(generator.statusLine()).toEqual("Programme complete · every bar rests until tomorrow")
     expect(generator.caption()).toEqual("Bar 2 rests until tomorrow")
     expect(notesOf(notes).every(column => column.length == 0)).toBe(true)
+
+    // Begin plans again, and only the sitting that is over opens them
+    expect(generator.replan()).toBe(false)
+    time += SITTING_GAP_MS + MINUTE
+    expect(generator.replan()).toBe(true)
+    expect(deck.entry).not.toBe(null)
+    expect(generator.currentCard().measures).toEqual([deck.entry.measure])
+    expect(generator.statusLine()).toMatch(/^Once more · bar \d+$/)
+  })
+
+  it("reads the review log afresh for each deck, so a failure outside the programme splits the bar", async function() {
+    let measures = pool()
+    let hands = {upper: pool(RIGHT_HAND), lower: pool(LEFT_HAND)}
+    let planDeck = async () => {
+      let deck = new PlanDeck(measures, {pieceId: piece.id, cardMeasures: 1, hands, store, now: () => time})
+      await deck.ready
+      return deck
+    }
+
+    // the programme is opened, so its deck reads what the log holds now
+    expect((await planDeck()).entry).toEqual(jasmine.objectContaining({measure: 0, hand: "both"}))
+
+    // free practice fails bar 1 on the bass staff: it writes the review
+    // itself, and never tells a plan deck
+    let free = new MeasureCardGenerator(
+      new MeasureCardDeck(measureCards(measures.filter(m => m.number == 1), 1), {
+        pieceId: piece.id, hand: "both", order: IN_ORDER, store, now: () => time,
+      }),
+      {now: () => time})
+    generators.push(free)
+    let freeNotes = new NoteList([], {generator: free})
+    freeNotes.fillBuffer(8)
+    let stats = new NoteStats()
+    stats.missNotes(["G3"])
+    stats.missNotes(["G3"])
+    freeNotes = await playCard({generator: free, notes: freeNotes}, stats)
+
+    let reviews = await store.reviews({pieceId: piece.id})
+    expect(reviews[reviews.length - 1]).toEqual(jasmine.objectContaining({
+      itemId: `${piece.id}:both:1-1`, grade: AGAIN, staffMisses: {upper: 0, lower: 2},
+    }))
+
+    // the programme is opened again: the failure it never saw splits the bar
+    expect((await planDeck()).entry).toEqual(jasmine.objectContaining({measure: 1, hand: "lower"}))
   })
 
   it("never splits a piece played without its hands", async function() {

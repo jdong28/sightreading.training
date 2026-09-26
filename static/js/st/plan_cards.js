@@ -20,9 +20,9 @@ import {
 
 // the last graded review known of each item of a piece, by store then piece
 // id then item id, which the hand scaffold reads the blamed hand from: read
-// from the log the first time a deck of the piece is made (reviews are never
-// cached in the store) and kept up to date by the attempts the decks plan
-// from, so a rebuilt drill plans at once
+// from the log whenever a deck is made (reviews are never cached, and free
+// practice writes them too) and kept up to date by the attempts the deck
+// plans from
 const knownReviews = new WeakMap()
 
 function reviewsKnown(store, pieceId) {
@@ -32,27 +32,12 @@ function reviewsKnown(store, pieceId) {
     knownReviews.set(store, pieces)
   }
 
-  let known = pieces.get(pieceId)
-  if (!known) {
-    known = {reviews: new Map(), read: null, loaded: false}
-    pieces.set(pieceId, known)
+  let reviews = pieces.get(pieceId)
+  if (!reviews) {
+    reviews = new Map()
+    pieces.set(pieceId, reviews)
   }
-  return known
-}
-
-// Reads the piece's reviews into what is known of them, once per store and
-// piece: the promise to wait for before the first card is planned, or null
-// when they are known already
-function readReviews(store, pieceId, known) {
-  if (known.loaded) { return null }
-
-  if (!known.read) {
-    known.read = Promise.resolve(store.reviews ? store.reviews({pieceId}) : [])
-      .then(reviews => learnReviews(known.reviews, reviews))
-      .catch(err => console.warn("Couldn't read the piece's reviews", err))
-      .then(() => { known.loaded = true })
-  }
-  return known.read
+  return reviews
 }
 
 // keeps the later of each item's graded reviews
@@ -110,21 +95,23 @@ export class PlanDeck {
     // reviews are still being read
     this.planned = false
 
-    // the hand scaffold reads the blamed hand from the log, so the first
-    // card of a piece is planned only once its reviews have been read; the
-    // decks after it plan in the constructor
-    let known = reviewsKnown(this.getStore(), pieceId)
-    this.reviews = known.reviews
-    let reading = readReviews(this.getStore(), pieceId, known)
-    if (reading) {
-      this.ready = reading.then(() => this.advance())
-    } else {
-      this.advance()
-    }
+    // the hand scaffold reads the blamed hand from the log, so a card is
+    // planned only once the piece's reviews have been read afresh: anything
+    // else on the page (free practice) writes them too
+    this.reviews = reviewsKnown(this.getStore(), pieceId)
+    this.ready = this.loadReviews().then(() => this.advance())
   }
 
   getStore() {
     return this.store || getAppStore()
+  }
+
+  // reads the piece's reviews from the log into what is known of them
+  loadReviews() {
+    let store = this.getStore()
+    return Promise.resolve(store.reviews ? store.reviews({pieceId: this.pieceId}) : [])
+      .then(reviews => learnReviews(this.reviews, reviews))
+      .catch(err => console.warn("Couldn't read the piece's reviews", err))
   }
 
   /** @returns {string} the hand of the card being shown, the session's or a hand alone */
@@ -240,6 +227,20 @@ export class PlanGenerator extends MeasureCardGenerator {
     // the deck plans its first card once the piece's reviews are read, so
     // the page shows it then (see refreshNoteList)
     this.ready = deck.planned ? null : deck.ready.then(() => this.startCard())
+  }
+
+  /**
+   * Plans again for a programme with no card, which the page asks for at
+   * Begin: every bar the piece has left rested in the sitting before, and
+   * the one that is over opens them again (see the planner's rest rule).
+   * @returns {boolean} whether there is a card to play now
+   */
+  replan() {
+    if (!this.deck.planned || this.deck.card) { return false }
+
+    this.deck.advance()
+    this.startCard()
+    return !!this.deck.card
   }
 
   /** @returns {null} the cards have no order to number */
