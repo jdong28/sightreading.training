@@ -12,7 +12,10 @@
 //   - every staff of a part becomes its own track, so a piano part becomes
 //     two tracks, each with a clef entry from the part's <clef> elements
 //   - repeats, endings, and transposition are ignored
-//   - grace notes are skipped, ties are merged into one note for detection,
+//   - grace notes aren't notes of their own: they are kept, with the
+//     neighbours of a trill, turn or mordent, as the ornaments of the note
+//     they are played with (see addOrnaments)
+//   - ties are merged into one note for detection,
 //     with the notes they are tied to kept as the merged note's notation.ties
 //     so an engine's drawn tied heads join the note (st/score_render)
 //   - every note keeps its notation (see st/note_values): the notated value,
@@ -167,8 +170,9 @@ function normalizeFifths(fifths) {
   return fifths
 }
 
-// pitch element -> app note name like "C#4", or null if it can't be named
-function pitchToNoteName(pitchEl) {
+// pitch element -> {step, octave, alter}, the letter, octave and whole
+// semitones altered, or null if it can't be named
+function pitchParts(pitchEl) {
   let step = childText(pitchEl, "step")
   let octave = childText(pitchEl, "octave")
   let alter = Math.round(+(childText(pitchEl, "alter") || 0))
@@ -177,8 +181,11 @@ function pitchToNoteName(pitchEl) {
     return null
   }
 
-  octave = +octave
+  return {step, octave: +octave, alter}
+}
 
+// a letter, octave and alteration -> app note name like "C#4"
+function spellNote({step, octave, alter}) {
   if (alter == 0) {
     return `${step}${octave}`
   }
@@ -195,6 +202,94 @@ function pitchToNoteName(pitchEl) {
   // nearest enharmonic with the same accidental direction
   let pitch = parseNote(`${step}${octave}`) + alter
   return noteName(pitch, alter > 0)
+}
+
+const STEPS = "CDEFGAB"
+
+// the letters a key signature sharpens, in the order it adds them; a flat key
+// flattens them from the end
+const SHARPS = "FCGDAEB"
+
+// the alteration a key signature of fifths gives a letter
+function keyAlter(fifths, step) {
+  let idx = SHARPS.indexOf(step)
+  if (fifths > 0) {
+    return idx < fifths ? 1 : 0
+  }
+  if (fifths < 0) {
+    return SHARPS.length - 1 - idx < -fifths ? -1 : 0
+  }
+  return 0
+}
+
+// the letter and octave a diatonic step above (by 1) or below (by -1)
+function stepFrom({step, octave}, by) {
+  let idx = STEPS.indexOf(step) + by
+  return {
+    step: STEPS[(idx + STEPS.length) % STEPS.length],
+    octave: octave + Math.floor(idx / STEPS.length),
+  }
+}
+
+// The ornaments that alternate a note with its neighbours, by the neighbours
+// they play: the upper, the lower, or both
+const ORNAMENT_NEIGHBOURS = {
+  "trill-mark": ["upper"],
+  "shake": ["upper"],
+  "inverted-mordent": ["upper"],
+  "mordent": ["lower"],
+  "turn": ["upper", "lower"],
+  "delayed-turn": ["upper", "lower"],
+  "inverted-turn": ["upper", "lower"],
+  "delayed-inverted-turn": ["upper", "lower"],
+  "vertical-turn": ["upper", "lower"],
+  "inverted-vertical-turn": ["upper", "lower"],
+}
+
+// the alteration an <accidental-mark> writes on an ornament's neighbour
+const ACCIDENTAL_MARKS = {
+  "sharp": 1, "natural": 0, "flat": -1, "double-sharp": 2, "sharp-sharp": 2,
+  "flat-flat": -2, "natural-sharp": 1, "natural-flat": -1,
+}
+
+// The neighbours a note's trill, turn or mordent plays, as
+// [{side: "upper" | "lower", alter}], alter being the accidental mark written
+// on that side, or null for the one in force. Empty for a note without one.
+// An <ornaments> element lists each ornament followed by its accidental marks:
+// a mark with placement alters the side it names, one without it the next side
+// still unaltered in written order (a turn's upper then its lower), and a mark
+// with no side left to take alters nothing
+function ornamentNeighbours(noteEl) {
+  let neighbours = []
+
+  for (let notations of childEls(noteEl, "notations")) {
+    for (let ornaments of childEls(notations, "ornaments")) {
+      let last = null
+
+      for (let el of ornaments.children) {
+        let sides = ORNAMENT_NEIGHBOURS[el.localName]
+        if (sides) {
+          last = sides.map(side => ({side, alter: null}))
+          neighbours.push(...last)
+          continue
+        }
+
+        let alter = ACCIDENTAL_MARKS[el.localName == "accidental-mark" ? el.textContent.trim() : null]
+        if (!last || alter == null) { continue }
+
+        let placement = el.getAttribute("placement")
+        let side = placement == "below" ? "lower" : placement == "above" ? "upper" : null
+        let neighbour = side ?
+          last.find(n => n.side == side) :
+          last.find(n => n.alter == null)
+        if (neighbour && neighbour.alter == null) {
+          neighbour.alter = alter
+        }
+      }
+    }
+  }
+
+  return neighbours
 }
 
 function clefSign(clefEl) {
@@ -298,10 +393,21 @@ function walkPart(measures, partName) {
   let beatsPerMeasure = null
   let fifths = null
 
+  // grace notes waiting for the note they lead into, by voice, as {at, names}
+  // of the position they are written at. A grace note is written in the
+  // measure of the note it leads into, so none is kept past the end of one
+  let pendingGraces = new Map()
+
   measures.forEach((measureEl, measureIdx) => {
     let position = 0 // in divisions, relative to measure start
     let maxPosition = 0
     let lastNoteStart = 0
+
+    // the measure's pitched notes in the order written, for the accidentals
+    // in force, and the notes with a trill, turn or mordent to spell the
+    // neighbours of once the whole measure is read
+    let written = []
+    let ornamented = []
 
     for (let el of measureEl.children) {
       switch (el.localName) {
@@ -359,8 +465,25 @@ function walkPart(measures, partName) {
           break
         }
         case "note": {
+          let staff = +(childText(el, "staff") || 1)
+          // the voice a note is written in, which tells two voices' heads on
+          // one pitch apart (see joinCard in st/score_render/card_join). A
+          // rest keeps none
+          let voice = +(childText(el, "voice") || 0)
+
           if (hasChild(el, "grace")) {
-            break // grace notes have no duration, skip them
+            // a grace note has no duration, so it isn't a note of its own: it
+            // is kept with the note it leads into, the next of its voice,
+            // whichever staff either is written on
+            let gracePitch = childEl(el, "pitch")
+            let parts = gracePitch && pitchParts(gracePitch)
+            if (parts) {
+              written.push({staff, ...parts, at: position})
+              let pending = pendingGraces.get(voice)
+              let names = pending && pending.at == position ? pending.names : []
+              pendingGraces.set(voice, {at: position, names: [...names, spellNote(parts)]})
+            }
+            break
           }
 
           let duration = +(childText(el, "duration") || 0)
@@ -375,7 +498,6 @@ function walkPart(measures, partName) {
 
           if (hasChild(el, "rest")) {
             if (duration > 0) {
-              let staff = +(childText(el, "staff") || 1)
               part.staves.add(staff)
               part.rests.push({
                 measureIdx,
@@ -396,35 +518,67 @@ function walkPart(measures, partName) {
             break // unpitched
           }
 
-          let name = pitchToNoteName(pitchEl)
-          if (!name || duration <= 0) {
+          let parts = pitchParts(pitchEl)
+          if (!parts || duration <= 0) {
             break
           }
 
-          let staff = +(childText(el, "staff") || 1)
           part.staves.add(staff)
+          written.push({staff, ...parts, at: start})
 
           let ties = tieTypes(el)
-          // the voice a note is written in, which tells two voices' heads on
-          // one pitch apart (see joinCard in st/score_render/card_join). A
-          // rest keeps none
-          let voice = +(childText(el, "voice") || 0)
 
-          part.events.push({
+          let event = {
             measureIdx,
             offset: start / divisions,
             duration: duration / divisions,
-            name,
+            name: spellNote(parts),
             staff,
             tieStart: ties.has("start"),
             tieStop: ties.has("stop"),
             ...notationOf(el, duration / divisions),
             ...(voice ? {voice} : null),
-          })
+          }
+
+          // only a note the graces lead into takes them: one written after
+          // them, never one an earlier <backup> put before them
+          let graces = pendingGraces.get(voice)
+          if (graces && graces.at <= start) {
+            event.graces = graces.names
+            pendingGraces.delete(voice)
+          }
+
+          let neighbours = ornamentNeighbours(el)
+          if (neighbours.length) {
+            ornamented.push({event, staff, parts, neighbours, at: start, idx: written.length - 1, fifths})
+          }
+
+          part.events.push(event)
           break
         }
       }
     }
+
+    // A neighbour takes the accidental mark written for it, else the
+    // alteration of the last note on its letter and octave written on the
+    // staff before the ornament in the measure (an accidental in force), else
+    // the key signature's
+    for (let {event, staff, parts, neighbours, at, idx, fifths} of ornamented) {
+      event.neighbours = neighbours.map(({side, alter}) => {
+        let neighbour = stepFrom(parts, side == "upper" ? 1 : -1)
+        let inForce = written.filter((note, noteIdx) =>
+          note.staff == staff && note.step == neighbour.step && note.octave == neighbour.octave &&
+          (note.at < at || (note.at == at && noteIdx < idx))
+        ).sort((a, b) => a.at - b.at).pop()
+
+        return spellNote({
+          ...neighbour,
+          alter: alter ?? (inForce ? inForce.alter : keyAlter(fifths, neighbour.step)),
+        })
+      })
+    }
+
+    pendingGraces.clear()
 
     part.measureDurations[measureIdx] = maxPosition / divisions
     part.beatsPerMeasureAt[measureIdx] = beatsPerMeasure
@@ -487,6 +641,34 @@ function scoreTitle(root) {
   }
 
   return childText(root, "movement-title")
+}
+
+// Keeps the ornaments of a note event on the song note it is played as (a
+// tied note gathers those of the notes it is tied to): note.ornaments.graces,
+// the grace notes leading into it, and note.ornaments.neighbours, the notes
+// its trill, turn or mordent alternates it with. Neither is played for the
+// note, so neither is required, but a player playing them as written doesn't
+// slip (see column.allowed in st/song_sections). An ornament written on a
+// tie's continuation, at, sounds from there on rather than over the whole
+// merged note: note.ornaments.at, the beat its neighbours start at, kept only
+// when no segment before it carried an ornament of its own
+function addOrnaments(note, event, at) {
+  let ornamented = !!(note.ornaments && note.ornaments.neighbours)
+
+  for (let field of ["graces", "neighbours"]) {
+    let names = event[field]
+    if (!names || !names.length) { continue }
+
+    note.ornaments = note.ornaments || {}
+    let kept = note.ornaments[field] || []
+    note.ornaments[field] = [...kept, ...names.filter(name => !kept.includes(name))]
+  }
+
+  if (!event.neighbours || !event.neighbours.length) { return }
+
+  if (at > note.start && !ornamented) {
+    note.ornaments.at = at
+  }
 }
 
 // Converts MusicXML text into a MultiTrackSong. Throws MusicXMLError on
@@ -629,6 +811,7 @@ export function parseMusicXML(text) {
           // the note the tie runs to is drawn as its own head, tied to the
           // one before it, though only the merged note is played
           pending.notation.ties.push({start: noteStart, ...notationFor(event)})
+          addOrnaments(pending, event, noteStart)
           if (!event.tieStart) {
             delete pendingTies[key]
           }
@@ -638,6 +821,7 @@ export function parseMusicXML(text) {
 
       let note = new SongNote(event.name, noteStart, event.duration)
       note.notation = {...notationFor(event), ties: []}
+      addOrnaments(note, event, noteStart)
       song.pushWithTrack(note, track)
 
       if (event.tieStart) {

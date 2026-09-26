@@ -175,6 +175,16 @@ export default class NoteList extends Array {
     return column.filter(head => distance(head) == nearest)
   }
 
+  // Whether note is one of the ornament notes the score allows at the head
+  // column (column.allowed, see extractSectionColumns): not one of its notes,
+  // but no wrong key either
+  allowedInHead(note, anyOctave=false) {
+    let column = this.currentColumn()
+    return !!column.allowed &&
+      column.allowed.some(extra => this.sameNote(note, extra, anyOctave)) &&
+      !column.some(head => this.sameNote(note, head, anyOctave))
+  }
+
   sameNote(a, b, anyOctave) {
     return anyOctave ? notesSame(a, b) : parseNote(a) == parseNote(b)
   }

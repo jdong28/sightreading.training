@@ -20,8 +20,8 @@ import {
 
 import {setAppStore} from "st/storage"
 import {
-  openTestStore, pickupScore, noteXML, reverieOpening, keyChangeScore,
-  LITTLE_WALTZ_XML, littleWaltzMXL
+  openTestStore, pickupScore, noteXML, reverieOpening, keyChangeScore, nocturneBars5to6,
+  tiedTrillScore, LITTLE_WALTZ_XML, littleWaltzMXL
 } from "spec/helpers"
 
 let tuples = notes => [...notes]
@@ -54,6 +54,36 @@ describe("sheet music deck", function() {
         expect(extractSectionColumns(restored, {startMeasure: start, endMeasure: end}))
           .toEqual(extractSectionColumns(song, {startMeasure: start, endMeasure: end}))
       }
+    })
+
+    it("round trips the ornaments of a piece's notes, and the columns they allow", function() {
+      let song = parseMusicXML(nocturneBars5to6())
+      let stored = JSON.parse(JSON.stringify(songToJSON(song)))
+
+      expect(stored.format).toEqual(3)
+      // one entry a note of the right hand's track, as its notation
+      expect(stored.tracks[0].ornaments).toEqual([
+        null, {neighbours: ["G#5"]}, {graces: ["E5", "F#5"]}, null,
+      ])
+      expect(stored.tracks[1].ornaments).toBeUndefined()
+
+      let restored = songFromJSON(stored)
+      let allowed = s => extractSectionColumns(s, {startMeasure: 1, endMeasure: 2, notation: true})
+        .map(column => column.allowed || null)
+      expect(allowed(restored)).toEqual(allowed(song))
+      expect(allowed(restored).filter(a => a).length).toEqual(5)
+    })
+
+    it("round trips the beat an ornament on a tie's continuation sounds from", function() {
+      let song = parseMusicXML(tiedTrillScore())
+      let stored = JSON.parse(JSON.stringify(songToJSON(song)))
+
+      expect(stored.tracks[0].ornaments).toEqual([{neighbours: ["D5"], at: 4}])
+
+      let allowed = s => extractSectionColumns(s, {startMeasure: 1, endMeasure: 2, notation: true})
+        .map(column => column.allowed || null)
+      expect(allowed(songFromJSON(stored))).toEqual(allowed(song))
+      expect(allowed(song).filter(a => a).length).toEqual(4)
     })
 
     it("keeps the ratio of a triplet the score writes late in the piece", function() {
@@ -493,6 +523,36 @@ describe("sheet music deck", function() {
       let {piece, updated} = await importMusicXMLPiece("minuet.musicxml", pickupScore(), store)
       expect([piece.id, updated]).toEqual(["old", true])
       expect(await pieceSource("old", store)).toEqual(pickupScore())
+    })
+
+    it("drills a piece stored in the second song format unchanged, with no ornaments allowed until it is imported again", async function() {
+      // notes, notation and rests, written before ornaments were kept
+      let song = songToJSON(parseMusicXML(nocturneBars5to6()))
+      let old = {
+        id: "old", title: "Nocturne in C sharp Minor", importedAt: 1000,
+        song: {...song, format: 2, tracks: song.tracks.map(({ornaments, ...track}) => track)},
+      }
+      await store.putPiece(old)
+
+      let columns = () => {
+        let restored = pieceSong(findPiece("old", store))
+        let settings = sheetMusicPieceSettings({piece: "old", startMeasure: 1, endMeasure: 2}, restored)
+        return pieceSection(grand, settings, restored).columns
+      }
+
+      expect([...pieceSong(findPiece("old", store))].every(note => !note.ornaments)).toBe(true)
+      expect(columns().length).toEqual(16)
+      expect(columns().some(column => column.allowed)).toBe(false)
+      expect(findPiece("old", store).song.format).toEqual(2)
+
+      // imported again it becomes the current format, the same piece, and
+      // allows its ornaments
+      let {piece, updated} = await importMusicXMLPiece("nocturne.musicxml", nocturneBars5to6(), store)
+      expect([piece.id, updated]).toEqual(["old", true])
+      expect(findPiece("old", store).song.format).toEqual(3)
+      expect(columns().length).toEqual(16)
+      expect(columns()[4].allowed).toEqual(["G#5"])
+      expect(columns()[8].allowed).toEqual(["E5", "F#5"])
     })
 
     it("imports a compressed .mxl file, keeping its score as the source", async function() {

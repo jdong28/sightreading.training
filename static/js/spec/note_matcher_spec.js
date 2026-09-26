@@ -50,6 +50,9 @@ let run = (matcher, script) => {
 
 let head = matcher => [...matcher.notes.currentColumn()]
 
+// a column with the score's ornament notes allowed at it (column.allowed)
+let ornamented = (column, allowed) => Object.assign([...column], {allowed})
+
 describe("note matcher", function() {
   // Today's detection rules, one row each:
   // [what, columns, script, what it judged, the head left over, options].
@@ -127,6 +130,27 @@ describe("note matcher", function() {
       [[], ["C4"]],
       [["on", "D4"], ["off", "D4"], ["on", "C4"], ["off", "C4"]],
       [], []],
+
+    // T7: the score's ornaments played as written are allowed extras
+    ["an ornament note allowed at the head is neither required nor a slip",
+      [ornamented(["C4"], ["D4", "B3"]), ["G4"]],
+      [["on", "D4"], ["off", "D4"], ["on", "B3"], ["on", "C4"]],
+      ["hit C4"], ["G4"]],
+
+    ["a column doesn't wait for its ornament notes",
+      [ornamented(["C4", "E4"], ["F4"]), ["G4"]],
+      [["on", "C4"], ["on", "E4"]],
+      ["hit C4+E4"], ["G4"]],
+
+    ["a brushed key that isn't one of the head's ornament notes still slips",
+      [ornamented(["C4"], ["D4"]), ["G4"]],
+      [["on", "E4"], ["on", "C4"]],
+      ["miss C4", "hit C4"], ["G4"]],
+
+    ["the next column's ornament notes are no allowance at the head",
+      [["C4"], ornamented(["G4"], ["A4"])],
+      [["on", "A4"], ["on", "C4"], ["on", "A4"]],
+      ["miss C4", "hit C4"], ["G4"]],
 
     ["anyOctave hits the column from any octave of its notes",
       [["C4"], ["G4"]],
@@ -355,6 +379,14 @@ describe("note matcher", function() {
       expect(run(matcher, [["on", "C4", 20], ["on", "E4", 50]])).toEqual(["miss E4", "hit E4"])
       expect(head(matcher)).toEqual(["G4"])
     })
+  })
+
+  it("holds an allowed ornament key without touching the column with it", function() {
+    let matcher = matcherFor([ornamented(["C4", "E4"], ["D4"]), ["G4"]])
+    run(matcher, [["on", "C4"], ["on", "D4"]])
+
+    expect(matcher.held).toEqual({C4: true, D4: true})
+    expect(matcher.touched).toEqual({C4: true})
   })
 
   it("records the timeStamp of the event it was fed", function() {

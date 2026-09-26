@@ -89,11 +89,12 @@ describe("measure cards", function() {
       ])
     })
 
-    it("copies each column with what an engine's card joins it by and its place in the card", function() {
+    it("copies each column with what an engine's card joins it by, the ornaments it allows and its place in the card", function() {
       let measures = [...pickupMeasures(), {number: 3, columns: []}, {number: 4, columns: [["F5"]]}]
       let notation = [{type: "quarter", voice: 1}]
       measures[4].columns[0].beat = 12
       measures[4].columns[0].notation = notation
+      measures[4].columns[0].allowed = ["G5"]
       let card = sectionCard(measures)
       expect(card.measures).toEqual([0, 1, 2, 3, 4])
 
@@ -101,6 +102,7 @@ describe("measure cards", function() {
       expect(notesOf(columns)).toEqual(notesOf(card.columns))
       expect(columns.map(column => column.cardIndex)).toEqual([0, 1, 2, 3, 4, 5])
       expect([columns[5].beat, columns[5].notation]).toEqual([12, notation])
+      expect(columns[5].allowed).toEqual(["G5"])
       expect(columns[0].beat).toBeUndefined()
     })
 

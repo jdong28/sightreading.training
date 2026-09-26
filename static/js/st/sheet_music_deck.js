@@ -24,7 +24,11 @@ export const MAX_PIECES = 300
 // value, dots, tuplet, voice and tied heads of every note, and the track's
 // rests). Pieces stored as 1 are still read, and drill as they always did,
 // drawn as whole notes until the score is imported again
-const SONG_FORMAT = 2
+// 3: adds the ornaments of each note (its grace notes, and the neighbours of
+// its trill, turn or mordent, see addOrnaments in st/musicxml), which the
+// drill allows as extras. Pieces stored as 1 or 2 are read as they are, with
+// no ornaments allowed until the score is imported again
+const SONG_FORMAT = 3
 
 // metadata copied into a stored piece, see parseMusicXML
 const METADATA_FIELDS = [
@@ -63,9 +67,29 @@ function notationToJSON(notation) {
   return out
 }
 
+// The ornaments of a note as they are stored (and read back), null for a
+// note without any: the note names of each field, if it has any, and the beat
+// the neighbours sound from when that is past the note's own start (see
+// addOrnaments in st/musicxml)
+function ornamentsToJSON(ornaments) {
+  let out = {}
+  for (let field of ["graces", "neighbours"]) {
+    let names = ornaments && Array.isArray(ornaments[field]) ?
+      ornaments[field].filter(name => typeof name == "string") : []
+    if (names.length) {
+      out[field] = names
+    }
+  }
+  if (out.neighbours && typeof ornaments.at == "number" && isFinite(ornaments.at)) {
+    out.at = round(ornaments.at)
+  }
+  return Object.keys(out).length ? out : null
+}
+
 // Song model -> plain JSON object. Each track keeps its name, clefs and its
 // notes as a flat [name, start, duration, name, start, duration, ...] list,
-// with the notation of each note, and the track's rests, alongside.
+// with the notation and ornaments of each note, and the track's rests,
+// alongside.
 export function songToJSON(song) {
   let metadata = {}
   for (let field of METADATA_FIELDS) {
@@ -86,13 +110,19 @@ export function songToJSON(song) {
     }
 
     let notation = []
+    let ornaments = []
     for (let note of track) {
       out.notes.push(note.note, round(note.start), round(note.duration))
       notation.push(notationToJSON(note.notation))
+      ornaments.push(ornamentsToJSON(note.ornaments))
     }
 
     if (notation.some(entry => entry)) {
       out.notation = notation
+    }
+
+    if (ornaments.some(entry => entry)) {
+      out.ornaments = ornaments
     }
 
     if (Array.isArray(track.rests) && track.rests.length) {
@@ -153,6 +183,12 @@ export function songFromJSON(data) {
       let notation = Array.isArray(trackData.notation) && trackData.notation[i / 3]
       if (notation) {
         note.notation = {...notation, ties: notation.ties || []}
+      }
+
+      let ornaments = Array.isArray(trackData.ornaments) &&
+        ornamentsToJSON(trackData.ornaments[i / 3])
+      if (ornaments) {
+        note.ornaments = ornaments
       }
 
       song.pushWithTrack(note, trackIdx)

@@ -64,7 +64,10 @@ export const LIBRARY_FORMAT = "sightreading-library"
 // libraries have none
 // 5: carries items, reviews and studies in place of sectionStats; the section
 // stats of older libraries are imported as tracked items with a legacy review
-export const LIBRARY_VERSION = 5
+// 6: pieces carry the ornaments of their notes (song format 3, see
+// st/sheet_music_deck); version 5 pieces are read as they are, with no
+// ornaments allowed until their score is imported again
+export const LIBRARY_VERSION = 6
 
 // sessions started within this many days are loaded into the cache
 export const RECENT_SESSION_DAYS = 30

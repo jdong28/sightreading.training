@@ -34,6 +34,11 @@
 // late duplicate, a key bounce) is ignored. Both windows are on the events'
 // timeStamps, so a press with none (the on-screen keyboard) is judged as if
 // outside them.
+//
+// The ornaments the score writes at the head column (T7, rule 2.2) are
+// allowed extras: the key goes down, but nothing about it is judged. The
+// column carries them as its allowed (see extractSectionColumns in
+// st/song_sections).
 
 // W_early: how long a key of the next column may wait for the column under
 // way to complete before it counts as a slip on it (ruling D2(a): about
@@ -135,6 +140,15 @@ export default class NoteMatcher {
   // A key went down. Returns the result the page renders
   noteOn(note, timeStamp) {
     this.lastEventAt = timeStamp ?? null
+
+    // an ornament the score writes at the head column (a grace note, or a
+    // note of a trill, turn or mordent) played as written is an allowed
+    // extra (rule 2.2): the key is down, but it isn't required, isn't a slip
+    // and is no part of the try at the column
+    if (this.mode == "notes" && this.notes && this.notes.allowedInHead(note, this.anyOctave)) {
+      this.held = {...this.held, [note]: true}
+      return this.result()
+    }
 
     // a key down with none of the column's touched keys held starts a new
     // try, which may slip again; keys held from earlier columns don't carry
