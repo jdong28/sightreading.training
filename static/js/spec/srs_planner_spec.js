@@ -415,6 +415,13 @@ describe("today's programme planner", function() {
       staffMisses: {upper, lower},
     }]])
 
+    // the review of a hand alone's pass at a bar, and the state it moved on
+    // from, which says whether the pass graduated it
+    const moved = (hand, measure, time, was, grade=GOOD) => [`p:${hand}:${measure}-${measure}`, {
+      itemId: `p:${hand}:${measure}-${measure}`, at: time, pieceId: "p", kind: "attempt",
+      grade, was, misses: 0, staffMisses: {upper: 0, lower: 0},
+    }]
+
     const APART = {upper: MEASURES, lower: MEASURES}
 
     // the other bars in review, played a few minutes ago
@@ -487,7 +494,9 @@ describe("today's programme planner", function() {
         ["not played alone yet", {}, [], "lower"],
         ["good once", {}, [[ago(8), GOOD]], "lower"],
         ["good twice running", {}, [[ago(8), GOOD], [ago(6), GOOD]], undefined],
-        ["graduated by an easy first sight", {}, [[ago(8), EASY]], undefined],
+        ["graduated by an easy first sight",
+          {lastReviews: new Map([...blame(ago(10), 0, 3), moved("lower", 3, ago(8), "new", EASY)])},
+          [[ago(8), EASY]], undefined],
         ["good, then hard", {}, [[ago(8), GOOD], [ago(6), HARD]], "lower"],
         ["again, then good twice running", {}, [[ago(8), AGAIN], [ago(6), GOOD], [ago(4), GOOD]], undefined],
         ["held before the failure only", {}, [[ago(30), GOOD], [ago(20), GOOD]], "lower"],
@@ -572,6 +581,38 @@ describe("today's programme planner", function() {
       expect([...state.resting]).toEqual([])
       expect(state.elapsedMs).toBeGreaterThan(state.targetMs)
       expect([entry.reason, entry.measure]).toEqual([NEW, 1])
+    })
+
+    it("returns the bar hands together when its hand graduates since the failure", function() {
+      // bar 5 failed at first sight, its left hand alone climbed two rungs
+      // and the bar came back; it fails again, and the hand graduates on
+      // the pass after that — a graduation, not an interval extended
+      let bar = graded(5, [[ago(20), AGAIN], [ago(6), AGAIN]])
+      let lower = graded(5, [[ago(16), GOOD], [ago(12), GOOD], [ago(2), EASY]], "lower")
+      expect([lower.state, lower.lastGrade]).toEqual(["review", EASY])
+
+      let reviews = new Map([
+        ["p:both:5-5", {
+          itemId: "p:both:5-5", at: ago(6), pieceId: "p", kind: "attempt", grade: AGAIN,
+          misses: 3, staffMisses: {upper: 0, lower: 3},
+        }],
+        moved("lower", 5, ago(2), "learning", EASY),
+      ])
+      let {entry, state} = planNext({
+        pieceId: "p", items: [...settled([5]), bar, lower], measures: MEASURES, now: NOW,
+        handMeasures: APART, lastReviews: reviews,
+      })
+
+      expect(state.scaffolds.get(5)).toBe(undefined)
+      expect([entry.measure, entry.hand]).toEqual([5, "both"])
+
+      // the same hand, in review before the bar failed and merely extended
+      // by the pass since, still owes the two goods
+      let extended = new Map([...reviews, moved("lower", 5, ago(2), "review", EASY)])
+      expect(planNext({
+        pieceId: "p", items: [...settled([5]), bar, lower], measures: MEASURES, now: NOW,
+        handMeasures: APART, lastReviews: extended,
+      }).state.scaffolds.get(5)).toEqual("lower")
     })
 
     it("rests a bar failing a third time in a sitting until the next", function() {
