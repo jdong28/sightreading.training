@@ -32,15 +32,16 @@
 //
 // Hands apart, only where a bar needs it (the hand scaffold): a bar
 // played hands together that fails (graded again) at first sight, or twice
-// running later, with at least SCAFFOLD_SHARE of the misses of that failure,
+// running later, with at least SCAFFOLD_SHARE of that failure's staff blames,
 // and at least SCAFFOLD_MISSES, on one staff, is next offered as that hand
 // alone, from the hand's own item on its own ladder, in its place in the
 // queue. The blamed hand is read from that failure's review alone, so a bar
 // whose failure has no review read isn't split. The bar returns hands
 // together once the hand holds: its item graded good or better twice running
 // since the failure, or graduated since, which its own last review tells
-// from an interval merely extended. When both staves are blamed, the one
-// with more misses comes first, then the other. A piece without a staff per
+// from an interval merely extended. A miss is blamed on every hand whose
+// notes it left untouched, so a failure spread over both hands blames
+// neither staff enough and the bar stays together. A piece without a staff per
 // hand never splits (handMeasures), nor does a session played with one hand,
 // nor a bar only one hand has notes in: taking the other off it would leave
 // the very same card. A drill that doesn't wait at each column doesn't split
@@ -111,8 +112,8 @@ export const EARLY = "early"
 export const RUN_THROUGH = "run-through"
 export const WAIT = "wait"
 
-// a failure sends a bar's hand alone when that hand's staff was blamed for
-// at least this share of its misses, and at least SCAFFOLD_MISSES of them
+// a failure sends a bar's hand alone when that hand's staff took at least
+// this share of its staff blames, and at least SCAFFOLD_MISSES of them
 export const SCAFFOLD_SHARE = 2 / 3
 export const SCAFFOLD_MISSES = 2
 
@@ -228,20 +229,23 @@ function sittingOf(items, others, now) {
 const gradeOf = ([, , , grade]) => grade
 
 /**
- * The staves a failure's misses fell on enough to send that hand alone: at
- * least SCAFFOLD_SHARE of the review's misses, and SCAFFOLD_MISSES, blamed on
- * the staff, most misses first.
+ * The staff a failure's misses fell on enough to send that hand alone: at
+ * least SCAFFOLD_MISSES of them, and at least SCAFFOLD_SHARE of every blame
+ * the failure laid on a staff. A miss with both hands' notes untouched is
+ * blamed on both staves, so the share is measured against those blames and
+ * not the review's miss count: a failure spread over both hands blames
+ * neither staff enough, and at most one staff is ever blamed.
  * @param {ReviewRecord} review
- * @returns {string[]|null} of STAVES, null for a review whose misses aren't
- * split by staff
+ * @returns {string[]|null} of STAVES, at most one, null for a review whose
+ * misses aren't split by staff
  */
 export function blamedStaves(review) {
   let misses = review && review.staffMisses
   if (!misses) { return null }
 
-  return STAVES
-    .filter(staff => misses[staff] >= SCAFFOLD_MISSES && misses[staff] >= SCAFFOLD_SHARE * review.misses)
-    .sort((a, b) => misses[b] - misses[a])
+  let blamed = STAVES.reduce((sum, staff) => sum + misses[staff], 0)
+  return STAVES.filter(staff =>
+    misses[staff] >= SCAFFOLD_MISSES && misses[staff] >= SCAFFOLD_SHARE * blamed)
 }
 
 // when a bar's last attempt failed, at first sight or after a failure, else
@@ -272,15 +276,15 @@ function held(item, since, review) {
 
 /**
  * The hand scaffold of a bar played hands together: the hand it is offered
- * alone as, while the bar is in trouble and until each hand blamed holds.
- * The hands blamed come from that failure's review alone, so a bar whose
+ * alone as, while the bar is in trouble and until the hand blamed holds.
+ * The hand blamed comes from that failure's review alone, so a bar whose
  * failure has no review read isn't split.
  * @param {ItemRecord} bar the bar's hands together item
  * @param {Object} opts
  * @param {Object<string, ItemRecord>} [opts.hands] the bar's items of each hand
  * alone, by hand
  * @param {Map<string, ReviewRecord>} [opts.reviews] the last graded review
- * known of each item, by item id: the bar's says which hands its failure
+ * known of each item, by item id: the bar's says which hand its failure
  * blamed, a hand's whether it graduated since
  * @returns {{hand: string, item: ItemRecord|null, since: number}|null} the
  * hand, its item, and when the bar failed; null when the bar holds hands

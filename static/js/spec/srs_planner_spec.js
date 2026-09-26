@@ -443,9 +443,13 @@ describe("today's programme planner", function() {
         ["the left hand's misses at first sight", firstSight, blame(ago(1), 0, 3), {}, [LADDER, 3, "lower"]],
         ["the right hand's", firstSight, blame(ago(1), 2, 0), {}, [LADDER, 3, "upper"]],
         ["two thirds of them on one staff", firstSight, blame(ago(1), 0, 2, 3), {}, [LADDER, 3, "lower"]],
-        ["both staves blamed, the one with more misses first", firstSight, blame(ago(1), 2, 3), {}, [LADDER, 3, "lower"]],
         ["one miss", firstSight, blame(ago(1), 0, 1), {}, [RETRY, 3, "both"]],
         ["misses under two thirds on either staff", firstSight, blame(ago(1), 2, 2, 4), {}, [RETRY, 3, "both"]],
+        ["misses spread over both staves", firstSight, blame(ago(1), 2, 3), {}, [RETRY, 3, "both"]],
+        // a miss with both hands' notes untouched is blamed on both staves,
+        // so the blames outnumber the misses and neither hand takes enough
+        // of them to be sent alone
+        ["every miss blamed on both staves", firstSight, blame(ago(1), 3, 3, 3), {}, [RETRY, 3, "both"]],
         ["twice running later", twice, blame(ago(1), 0, 3), {}, [LADDER, 3, "lower"]],
         ["a first failure after a good pass", once, blame(ago(1), 0, 3), {}, [RETRY, 3, "both"]],
         ["the review of an earlier attempt", firstSight, blame(ago(2), 0, 3), {}, [RETRY, 3, "both"]],
@@ -519,11 +523,9 @@ describe("today's programme planner", function() {
       let held = left([[ago(8), GOOD], [ago(6), GOOD]])
       expect(entryIn([failed, ...held], {lastReviews: blame(ago(10), 0, 3)})).toEqual([RETRY, 3, "both"])
 
-      // both staves blamed: the other hand next, then together
-      let right = graded(3, [[ago(8), GOOD], [ago(6), GOOD]], "upper")
+      // a failure blamed on both staves scaffolds neither hand
       let both = blame(ago(10), 3, 3)
-      expect(planned([failed, right], {lastReviews: both}).state.scaffolds.get(3)).toEqual("lower")
-      expect(planned([failed, right, ...held], {lastReviews: both}).state.scaffolds.get(3)).toBe(undefined)
+      expect(planned([failed], {lastReviews: both}).state.scaffolds.get(3)).toBe(undefined)
 
       // failing together again sends it back to the hand
       let again = graded(3, [[ago(10), AGAIN], [ago(2), AGAIN]])
@@ -688,9 +690,14 @@ describe("today's programme planner", function() {
     it("reads the hands a failure's misses fall on", function() {
       let review = (upper, lower, misses) => ({misses, staffMisses: {upper, lower}})
       expect(blamedStaves(review(0, 3, 3))).toEqual(["lower"])
-      expect(blamedStaves(review(4, 5, 6))).toEqual(["lower", "upper"])
+      expect(blamedStaves(review(1, 3, 3))).toEqual(["lower"])
       expect(blamedStaves(review(2, 1, 3))).toEqual(["upper"])
       expect(blamedStaves(review(1, 1, 1))).toEqual([])
+      expect(blamedStaves(review(4, 5, 6))).toEqual([])
+      // a miss blamed on both hands is counted on both staves, so the
+      // blames can outnumber the review's misses and neither hand has the
+      // share of them a split needs
+      expect(blamedStaves(review(3, 3, 3))).toEqual([])
       expect(blamedStaves({misses: 3})).toBe(null)
     })
   })
