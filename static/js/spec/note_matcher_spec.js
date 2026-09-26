@@ -41,7 +41,7 @@ let run = (matcher, script) => {
         return `${event.counted || "uncounted"} ${sorted(event.blamed)}`
       case "hit":
         return `hit ${sorted(event.hitNotes)}` +
-          (event.early.length ? ` (early ${sorted(event.early)})` : "")
+          (event.credited.length ? ` (early ${sorted(event.credited)})` : "")
       default:
         return event.type
     }
@@ -356,7 +356,7 @@ describe("note matcher", function() {
       run(matcher, [["on", "E4", 0], ["on", "C4", 100], ["on", "G4", 300]])
 
       let hits = matcher.judged.filter(event => event.type == "hit")
-      expect(hits.map(event => [event.spread, event.early])).toEqual([[0, []], [300, ["E4"]]])
+      expect(hits.map(event => [event.spread, event.credited])).toEqual([[0, []], [300, ["E4"]]])
     })
 
     it("shows the keys credited early as touched at the column they complete", function() {
@@ -387,6 +387,102 @@ describe("note matcher", function() {
 
     expect(matcher.held).toEqual({C4: true, D4: true})
     expect(matcher.touched).toEqual({C4: true})
+  })
+
+  // What each hit measures for the grade besides its spread (rule 8): the
+  // latency, from the column becoming the head to its first own key struck at
+  // it, is what a hesitation is read from; early counts the keys credited
+  // early (T5) and heldCredit stays 0 until score-sustained credit lands;
+  // late is scroll mode's
+  describe("the measurements of a column", function() {
+    let clock
+    let measure = (columns, script, opts={}) => {
+      clock = opts.clock ?? 0
+      let matcher = matcherFor(columns, {now: () => clock, ...opts})
+      if (opts.setUp) { opts.setUp(matcher) }
+      run(matcher, script)
+      return matcher.judged.filter(event => event.type == "hit")
+        .map(({latency, early, heldCredit, late}) => ({latency, early, heldCredit, late}))
+    }
+
+    it("times each column's latency from when it became the head to its first own key", function() {
+      let hits = measure([["C4"], ["E4", "G4"], ["A4"]], [
+        ["on", "C4", 1200],
+        ["on", "E4", 1700], ["on", "G4", 1750],
+        ["on", "A4", 2950],
+      ], {clock: 1000})
+      // the first column became the head when the matcher took the list on,
+      // each after it with the key that completed the one before
+      expect(hits.map(hit => hit.latency)).toEqual([200, 500, 1200])
+      expect(hits.every(hit => hit.early === 0 && hit.heldCredit === 0 && hit.late === null)).toBe(true)
+    })
+
+    // the key held instead of struck again completes the column late, which
+    // only its spread says: its latency is the time to its first key
+    it("doesn't count the wait for a column's last key in its latency", function() {
+      let matcher = matcherFor([["C4"], ["E4", "G4"], ["A4"]], {now: () => 0})
+      run(matcher, [
+        ["on", "C4", 1000],
+        ["on", "E4", 1400],
+        ["on", "G4", 6000],
+      ])
+      let hit = matcher.judged.filter(event => event.type == "hit")[1]
+      expect([hit.latency, hit.spread]).toEqual([400, 4600])
+    })
+
+    it("ends the latency at a column's own key, not a wrong one before it", function() {
+      let hits = measure([["C4"], ["E4"]], [
+        ["on", "C4", 1000],
+        ["on", "D4", 1100], ["off", "D4", 1150],
+        ["on", "E4", 3000],
+      ])
+      expect(hits.map(hit => hit.latency)).toEqual([1000, 2000])
+    })
+
+    it("times a column taken on afresh (a new list, a skip, Begin) from then, on the matcher's clock", function() {
+      let hits = measure([["C4"], ["E4"]], [["on", "C4", 5000]], {
+        setUp: matcher => { clock = 4000; matcher.clearTouched() },
+      })
+      expect(hits.map(hit => hit.latency)).toEqual([1000])
+    })
+
+    it("times a press with no timeStamp on the matcher's clock", function() {
+      let hits = measure([["C4"], ["E4"]], [["on", "C4"]], {
+        setUp: matcher => { clock = 700 },
+      })
+      expect(hits.map(hit => hit.latency)).toEqual([700])
+    })
+
+    // the key struck before the column was the head neither ends its latency
+    // (it has none of its own to measure) nor is left uncounted
+    it("counts the keys credited early to a column, which don't time its latency", function() {
+      let hits = measure([["C4"], ["E4", "G4"], ["A4"]], [
+        ["on", "E4", 1000], ["on", "C4", 1100], ["on", "G4", 4000],
+      ])
+      expect(hits.map(hit => [hit.early, hit.latency])).toEqual([[0, 1100], [1, 2900]])
+    })
+
+    it("records in scroll mode how long a column stood on the hit line before it completed, never as a miss", function() {
+      let matcher = matcherFor([["C4"], ["E4"], ["G4"], ["A4"], ["B4"]], {now: () => 0, scroll: true})
+
+      // C4, the head from 0, reaches the line at 500 and waits there
+      matcher.onLine(500)
+      matcher.noteOn("C4", 2000)
+      // the staff moves on; E4 completes on its way to the line
+      matcher.onLine(null)
+      matcher.noteOn("E4", 2400)
+      // G4 reaches the line at 3000 and waits there
+      matcher.onLine(3000)
+      matcher.noteOn("G4", 4500)
+      // the staff stays on the line (the next column drawn at the same
+      // place): A4 is late from becoming the head
+      matcher.noteOn("A4", 5000)
+
+      let judged = matcher.judged
+      expect(judged.map(event => event.type)).toEqual(["hit", "hit", "hit", "hit"])
+      expect(judged.map(event => event.late)).toEqual([1500, 0, 1500, 500])
+      expect(head(matcher)).toEqual(["B4"])
+    })
   })
 
   it("records the timeStamp of the event it was fed", function() {

@@ -19,10 +19,10 @@ export function settingsSummary(settings) {
 // told about every hit and miss counted by any stats, see addNoteListener
 const noteListeners = new Set()
 
-// Calls fn({type, time, notes, blamed, stats}) after every hit and miss
-// counted by any NoteStats (type "hit" or "miss", with the notes played or
-// missed, for a miss the notes it is put down to, and the stats counting
-// them), eg. so the measure flashcards (st/measure_cards)
+// Calls fn({type, time, notes, blamed, measured, stats}) after every hit and
+// miss counted by any NoteStats (type "hit" or "miss", with the notes played
+// or missed, for a miss the notes it is put down to, for a hit the column's
+// measurements, and the stats counting them), eg. so the measure flashcards (st/measure_cards)
 // can tell which measure the player got wrong, and for each further slip on
 // a column already counted missed (type "slip", counting nothing). Returns a
 // function that removes it
@@ -128,7 +128,10 @@ export default class NoteStats {
   }
 
 
-  hitNotes(notes) {
+  // measured are the column's measurements from the matcher (latency,
+  // spread, early, heldCredit, late: see NoteMatcher#measured), passed on to
+  // the listeners for the grade
+  hitNotes(notes, measured) {
     let now = +new Date;
     this.endSessionAfterPause(now)
 
@@ -158,7 +161,7 @@ export default class NoteStats {
     this.hits += 1;
     this.buffer.hits += 1;
     this.flushLater()
-    notifyNoteListeners({type: "hit", time: now, notes, stats: this})
+    notifyNoteListeners({type: "hit", time: now, notes, measured, stats: this})
   }
 
   // blamed are the notes the miss is put down to, eg. for the score staff it

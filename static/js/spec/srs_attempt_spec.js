@@ -20,11 +20,14 @@ const twoBars = () => sectionCard([
 
 const noItems = () => null
 
-// plays the pass's head column after ms, with the given slips first
-const play = (pass, time, {misses=[], counted=true, hit=true}={}) => {
+// plays the pass's head column, done at time, with the given slips first
+// and what the matcher measured on its hit: by default the column started
+// the moment it became the head's time away and all its keys down together
+const play = (pass, time, {misses=[], counted=true, hit=true, measured}={}) => {
+  let latency = pass.columnStartedAt == null ? null : time - pass.columnStartedAt
   misses.forEach((notes, idx) => pass.miss(notes, {counted: counted && idx == 0, time}))
   let index = pass.done(time)
-  if (hit) { pass.hit(index) }
+  if (hit) { pass.hit(index, measured || {latency, spread: 0, early: 0, heldCredit: 0, late: null}) }
 }
 
 describe("srs attempt", function() {
@@ -70,6 +73,8 @@ describe("srs attempt", function() {
       leadMs: 2000,
       bars: [[1, 3, 3, 0, 3000], [2, 1, 1, 0, 500]],
       staffMisses: {upper: 0, lower: 0},
+      // [slips, stalled, latency, spread, early, heldCredit, late] a column
+      perColumn: [[0, 0, 2000, 0, 0, 0, null], [0, 0, 500, 0, 0, 0, null], [0, 0, 500, 0, 0, 0, null], [0, 0, 500, 0, 0, 0, null]],
     })
 
     expect(card.item).toEqual(jasmine.objectContaining({
@@ -84,6 +89,7 @@ describe("srs attempt", function() {
     expect([bar1.review.columns, bar1.review.grade]).toEqual([3, EASY])
     expect(bar2.review.leadMs).toBeUndefined()
     expect([bar2.review.columns, bar2.review.grade, bar2.review.elapsedMs]).toEqual([1, EASY, 500])
+    expect(bar2.review.perColumn).toEqual([[0, 0, 500, 0, 0, 0, null]])
     expect([bar2.item.hits, bar2.item.elapsedMs]).toEqual([1, 500])
   })
 
@@ -137,6 +143,51 @@ describe("srs attempt", function() {
     expect([card.review.grade, bar1.review.grade, bar2.review.grade]).toEqual([GOOD, EASY, HARD])
   })
 
+  // a column completed late because a key was held instead of struck
+  // again: its first key went down on time, so the wait on it is its spread,
+  // not a hesitation
+  it("reads a hesitation from a column's latency, never from the time it took to complete", function() {
+    play(pass, 3000)
+    play(pass, 3500)
+    play(pass, 9000, {measured: {latency: 400, spread: 5100, early: 0, heldCredit: 0, late: null}})
+    play(pass, 9500)
+
+    let [card, bar1] = attemptsOf(pass)
+    expect([card.review.hesitations, card.review.grade, bar1.review.grade]).toEqual([0, EASY, EASY])
+    expect(card.review.perColumn[2]).toEqual([0, 0, 400, 5100, 0, 0, null])
+    // the time on it is still the column's, for the elapsed time
+    expect(bar1.review.elapsedMs).toEqual(8000)
+
+    // a long wait before the first key is one, however quickly it completes
+    let slow = new AttemptPass(twoBars(), {startedAt: 1000})
+    slow.drill = {mode: "wait"}
+    play(slow, 3000)
+    play(slow, 3500)
+    play(slow, 6000, {measured: {latency: 2400, spread: 100, early: 0, heldCredit: 0, late: null}})
+    play(slow, 6500)
+    let [slowCard] = attemptsOf(slow)
+    expect([slowCard.review.hesitations, slowCard.review.grade]).toEqual([1, GOOD])
+  })
+
+  it("records how late each column stood on the line in scroll mode, never as a miss", function() {
+    pass.drill = {mode: "scroll", speed: 30}
+    let measured = late => ({latency: 300, spread: 0, early: 0, heldCredit: 0, late})
+    play(pass, 3000, {measured: measured(0)})
+    play(pass, 3500, {measured: measured(0)})
+    play(pass, 9000, {measured: measured(4800)})
+    play(pass, 9500, {measured: measured(120.4)})
+
+    let [card, bar1] = attemptsOf(pass)
+    expect(card.review.perColumn.map(column => column[6])).toEqual([0, 0, 4800, 120])
+    expect(card.review).toEqual(jasmine.objectContaining({
+      misses: 0, clean: 4, skipped: 0, hesitations: 0, grade: GOOD, mode: "scroll",
+    }))
+    expect(card.review.trouble).toBeUndefined()
+    expect([bar1.review.misses, bar1.review.grade]).toEqual([0, GOOD])
+    expect([card.item.hits, card.item.misses]).toEqual([4, 0])
+    expect(validReview(card.review)).toBe(true)
+  })
+
   it("counts a column left unplayed as skipped in wait mode, a miss scrolled past in scroll mode", function() {
     play(pass, 3000)
     play(pass, 3500, {hit: false})
@@ -145,6 +196,8 @@ describe("srs attempt", function() {
 
     let [card] = attemptsOf(pass)
     expect([card.review.skipped, card.review.clean, card.review.grade]).toEqual([2, 2, AGAIN])
+    // a column skipped is stalled, and has nothing measured
+    expect(card.review.perColumn.slice(1, 3)).toEqual([[0, 1, null, null, null, null, null], [1, 1, null, null, null, null, null]])
     expect([card.item.hits, card.item.misses]).toEqual([2, 1])
 
     pass.drill = {mode: "scroll", speed: 30}

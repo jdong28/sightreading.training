@@ -1423,6 +1423,74 @@ describe("sight reading page", function() {
       expect(store.recentSessions()[0].clefs).toEqual({g: {hits: 2, misses: 0}, f: {hits: 2, misses: 0}})
     })
 
+    // T8 of the note detection report: each column's measurements go from
+    // the matcher to the review, and a hesitation is read from the latency
+    describe("the measurements of each column", function() {
+      let midi = (on, note, timeStamp) => page.onMidiMessage({
+        data: new Uint8Array([on ? 0x90 : 0x80, parseNote(note), on ? 100 : 0]), timeStamp,
+      })
+      // plays the head column's keys at the given times from t0, each let
+      // up at once, the last of them after all the others
+      let playAt = (t0, ...times) => {
+        let column = [...page.state.notes.currentColumn()]
+        column.forEach((note, idx) => {
+          let at = t0 + times[Math.min(idx, times.length - 1)]
+          flushSync(() => midi(true, note, at))
+          flushSync(() => midi(false, note, at + 10))
+        })
+      }
+      let card = async () => (await reviews()).find(r => r.itemId == `${piece.id}:both:1-4`)
+
+      it("reads hesitations from latency, so a column completed late by a held key isn't one", async function() {
+        await renderSection({measuresPerCard: "4"})
+        expect(page.state.notes.currentColumn().length).toBeGreaterThan(1)
+
+        let t0 = performance.now()
+        playAt(t0, 100)
+        // started at once, then its last key 5.6 s later: the key held
+        // instead of struck again
+        playAt(t0, 400, 6000)
+        // a long wait before the first key, then played at once
+        playAt(t0, 8500)
+        playAt(t0, 8900)
+        await finished()
+
+        let review = await card()
+        expect(review.algo).toEqual(2)
+        expect(review.perColumn.slice(1).map(([slips, stalled, latency, spread, early, heldCredit, late]) =>
+          [slips, stalled, latency, spread, early, heldCredit, late])).toEqual([
+          [0, 0, 300, 5600, 0, 0, null],
+          [0, 0, 2500, 0, 0, 0, null],
+          [0, 0, 400, 0, 0, 0, null],
+        ])
+        expect([review.hesitations, review.grade]).toEqual([1, GOOD])
+      })
+
+      it("records scroll mode's lateness on the hit line, never as a miss", async function() {
+        await renderSection({measuresPerCard: "4"}, {mode: "scroll"})
+        expect(page.state.mode).toEqual("scroll")
+
+        // the staff comes to rest with the head column on the line
+        page.state.slider.onStop()
+        let t0 = performance.now()
+        playAt(t0, 1200)
+        playAt(t0, 1500)
+        playAt(t0, 1800)
+        playAt(t0, 2100)
+        await finished()
+
+        expect([page.state.stats.hits, page.state.stats.misses]).toEqual([4, 0])
+        let review = await card()
+        let late = review.perColumn[0][6]
+        expect(late).toBeGreaterThanOrEqual(1200)
+        expect(late).toBeLessThan(1300)
+        expect(review.perColumn.every(column => column[6] != null)).toBe(true)
+        expect(review).toEqual(jasmine.objectContaining({
+          mode: "scroll", misses: 0, clean: 4, skipped: 0, hesitations: 0, grade: GOOD,
+        }))
+      })
+    })
+
     it("writes one hand's card under its hand", async function() {
       await renderSection({measuresPerCard: "1", hand: RIGHT_HAND})
       play([WRONG_NOTE])
@@ -2308,7 +2376,7 @@ describe("sight reading page", function() {
         expect(counts()).toEqual([8, 0])
         expect(page.state.noteShaking).toBe(false)
         // G#3 completed its column as the G#5 landed, recorded as early
-        expect(hit.map(event => event.early)).toEqual([[], ["G#3"], [], [], [], [], [], []])
+        expect(hit.map(event => event.credited)).toEqual([[], ["G#3"], [], [], [], [], [], []])
         expect(sorted(head())).toEqual(["C#3", "G#5"])
       })
 

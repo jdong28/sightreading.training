@@ -2,14 +2,18 @@
 // each of its columns, never asked of the player: again, hard, good or easy.
 //
 // Only the notes are judged. The score's rhythm enters in one place, and only
-// to excuse: the time on a column is compared with the player's own pace in
-// the attempt scaled by the notated gap before it, so a column after a long
-// note is never taken for a hesitation. The thresholds are a first guess;
-// reviews keep the raw measurements and GRADE_ALGO, so history can be graded
-// again by a revised function.
+// to excuse: a column's latency (from it becoming the head to the first of its
+// own keys down, see NoteMatcher#measured) is compared with the player's own
+// pace in the attempt scaled by the notated gap before it, so a column after
+// a long note is never taken for a hesitation. The latency, not the time on
+// the column, is what hesitates: a column completed late because a key was
+// held instead of struck again, or rolled slowly, was started on time. The
+// thresholds are a first guess; reviews keep the raw measurements and
+// GRADE_ALGO, so history can be graded again by a revised function.
 
-// the version of this grading, stored on each review as algo
-export const GRADE_ALGO = 1
+// the version of this grading, stored on each review as algo: 1 read
+// hesitations from the time on each column, 2 from its latency
+export const GRADE_ALGO = 2
 
 export const AGAIN = 1
 export const HARD = 2
@@ -35,7 +39,10 @@ export const EASY_PACE = 1.15
  * pressed
  * @property {boolean} [skipped] passed over without being played
  * @property {number|null} [ms] time on the column: from the column before
- * it done to it done
+ * it done to it done, which the pace is worked out from
+ * @property {number|null} [latency] from the column becoming the head to the
+ * first of its own keys down, which a hesitation is read from; null (or
+ * absent) when not measured, never a hesitation
  * @property {number|null} [gap] notated beats from the column before it,
  * null when the column carries no score rhythm
  */
@@ -125,8 +132,8 @@ export function hesitations(columns, {lead=true, pace}) {
 }
 
 function hesitated(column, pace) {
-  if (column.skipped || column.ms == null || pace == null) { return false }
-  return column.ms > Math.max(HESITATION_MIN_MS, HESITATION_PACE * pace * beatsOf(column))
+  if (column.skipped || column.latency == null || pace == null) { return false }
+  return column.latency > Math.max(HESITATION_MIN_MS, HESITATION_PACE * pace * beatsOf(column))
 }
 
 /**

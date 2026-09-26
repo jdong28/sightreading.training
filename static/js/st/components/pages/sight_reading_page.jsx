@@ -368,6 +368,7 @@ export default class SightReadingPage extends React.Component {
     }
     this.matcher.mode = currentGenerator ? currentGenerator.mode : "notes"
     this.matcher.anyOctave = anyOctave
+    this.matcher.scroll = this.state.mode == "scroll"
   }
 
   // the generator of notes and the index in its card of their head column
@@ -802,7 +803,15 @@ export default class SightReadingPage extends React.Component {
 
       case "hit":
         gaEvent("sight_reading", "note", "hit")
-        this.state.stats.hitNotes(event.hitNotes)
+        // the column's measurements go with the hit to the measure cards'
+        // attempt, for the grade
+        this.state.stats.hitNotes(event.hitNotes, {
+          latency: event.latency,
+          spread: event.spread,
+          early: event.early,
+          heldCredit: event.heldCredit,
+          late: event.late,
+        })
         update.notes = this.matcher.notes
         // one column at a time: a hit may complete the next column too, from
         // its keys played early
@@ -990,6 +999,9 @@ export default class SightReadingPage extends React.Component {
       this.state.slider.cancel();
     }
 
+    this.matcher.scroll = false
+    this.matcher.onLine(null)
+
     this.setState({
       mode: "wait",
       noteWidth: DEFAULT_NOTE_WIDTH,
@@ -1007,6 +1019,11 @@ export default class SightReadingPage extends React.Component {
       this.state.slider.cancel();
     }
 
+    // the matcher times how long each column stands on the hit line before
+    // it is played (its late), which is recorded and never a miss
+    this.matcher.scroll = true
+    this.matcher.onLine(null)
+
     this.setState({
       mode: "scroll",
       noteWidth: noteWidth,
@@ -1017,6 +1034,8 @@ export default class SightReadingPage extends React.Component {
         // the head column waits on the line, never looping past it
         floor: SCROLL_WAIT,
         onUpdate: value => this.setOffset(value),
+        onStart: () => this.matcher.onLine(null),
+        onStop: () => this.matcher.onLine(performance.now()),
         onLoop: function() {
           let column = this.state.notes.currentColumn()
           // notes scrolling past at rest aren't misses

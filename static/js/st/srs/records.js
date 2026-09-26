@@ -110,6 +110,12 @@ export const RECENT_ATTEMPTS = 5
  * @property {number[]} [trouble] the indices among the item's columns of those
  * with a miss
  * @property {{upper: number, lower: number}} [staffMisses]
+ * @property {Array[]} [perColumn] an attempt's columns in order, as [slips,
+ * stalled, latency, spread, early, heldCredit, late]: slips the tries gone
+ * wrong on it, stalled 1 when it was skipped, then what the note matcher
+ * measured on its hit (see NoteMatcher#measured), ms or a count of keys,
+ * each null when not measured (late is null in wait mode). Absent on reviews
+ * graded before GRADE_ALGO 2
  * @property {number} [r] the recall the scheduler predicted
  * @property {number} [algo] the grading version
  * @property {number} [hits] legacy only
@@ -173,6 +179,12 @@ export function validItem(item) {
     isCount(item.algo) && isTime(item.createdAt)
 }
 
+const PER_COLUMN_FIELDS = 7
+const validPerColumn = columns => Array.isArray(columns) && columns.every(column =>
+  Array.isArray(column) && column.length == PER_COLUMN_FIELDS &&
+  isCount(column[0]) && [0, 1].includes(column[1]) &&
+  column.slice(2).every(value => value === null || isCount(value)))
+
 const validStaffMisses = misses => !!misses && typeof misses == "object" &&
   Object.keys(misses).length == STAVES.length && STAVES.every(staff => isCount(misses[staff]))
 
@@ -204,6 +216,7 @@ export function validReview(review) {
       bars.every(bar => Array.isArray(bar) && bar.length == 5)) &&
     optional(review.trouble, trouble => Array.isArray(trouble) && trouble.every(isCount)) &&
     optional(review.staffMisses, validStaffMisses) &&
+    optional(review.perColumn, validPerColumn) &&
     optional(review.r, isTime) && isCount(review.algo) &&
     review.hits === undefined && review.attempts === undefined
 }

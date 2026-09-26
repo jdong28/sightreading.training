@@ -433,7 +433,7 @@ export class MeasureCardGenerator {
     }
   }
 
-  notePlayed({type, notes=[], blamed=notes, stats}) {
+  notePlayed({type, notes=[], blamed=notes, measured, stats}) {
     if (!this.deck.card) { return }
 
     if (stats) {
@@ -444,7 +444,7 @@ export class MeasureCardGenerator {
       // a hit is counted right after its column is done
       let done = this.lastDone
       if (done) {
-        done.pass.hit(done.index)
+        done.pass.hit(done.index, measured)
         let column = done.pass.card.columns[done.index]
         if (stats) { stats.countClefs(columnClefs(column), "hit") }
         this.lastDone = null
