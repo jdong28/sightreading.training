@@ -1043,6 +1043,37 @@ describe("score page engine card", function() {
     expect(page.staff.cardJoin).toBe(join)
   })
 
+  it("offers the hand alone on a piece with no stored source", async function() {
+    await scaffoldedPiece()
+    expect(page.currentCard().card.hand).toEqual("lower")
+
+    // the page is opened again on the piece, whose source is no longer
+    // stored; its reviews land while that read is still outstanding
+    flushSync(() => root.unmount())
+    container.remove()
+    let settle
+    renderScorePage({readSource: () => new Promise(resolve => { settle = () => resolve(null) })})
+
+    let loading = await waitFor(() => page.state.notes && page.state.notes.generator,
+      {message: "today's programme"})
+    await loading.ready
+    flushSync(() => {})
+    expect(page.state.engineSource.status).toEqual("loading")
+    expect(page.currentCard().card.hand).toBeUndefined()
+
+    // the app's staff draws the piece, and it can draw one hand by itself,
+    // so the failing bar comes back as the hand its misses were blamed on
+    settle()
+    await waitFor(() => page.currentCard() && page.currentCard().card.hand,
+      {message: "the bar offered as one hand alone"})
+
+    expect(page.state.engineSource.status).toEqual("missing")
+    expect(page.engineCard()).toBe(null)
+    expect(page.currentCard().card.hand).toEqual("lower")
+    expect([...page.state.notes.currentColumn()]).toEqual(["C3"])
+    expect(page.state.notes.generator.statusLine()).toEqual("Once more · bar 1 · left hand")
+  })
+
   it("offers no hand alone before the piece's source has settled", async function() {
     let {piece} = await scaffoldedPiece()
     expect(page.currentCard().card.hand).toEqual("lower")

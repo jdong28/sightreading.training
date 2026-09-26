@@ -344,8 +344,13 @@ export default class SightReadingPage extends React.Component {
     }
 
     // whole-keyboard detection (T1) depends on whether the engine actually
-    // draws the piece; rebuild the columns when that changes
-    if (drewBefore != this.engineCards()) {
+    // draws the piece, and today's programme offers a hand alone only once
+    // the staff that draws it is known (see handsApart): rebuild the drill
+    // when the source settles, whatever it settles to, and whenever the
+    // engine takes the piece over or hands it back
+    let settled = prevState.engineSource?.status == "loading" &&
+      this.state.engineSource?.status != "loading"
+    if (settled || drewBefore != this.engineCards()) {
       this.refreshNoteList()
     }
   }
