@@ -434,6 +434,13 @@ describe("note matcher", function() {
         [["on", "Bb3", 0], ["on", "C4", 500], ["on", "D5", 1000]],
         ["hit Bb3", "hit C4", "hit Bb3+D5 (held Bb3)"], ["G4"]],
 
+      // the key held is the column's already, so a slip alongside it is
+      // never blamed on it (its hand isn't the one that missed)
+      ["blames a slip on the column's other keys, not the one it credits held",
+        [["Bb3"], ["C4"], sustain(["Bb3", "D5"], "Bb3"), ["G4"]],
+        [["on", "Bb3", 0], ["on", "C4", 500], ["on", "F4", 1000]],
+        ["hit Bb3", "hit C4", "miss D5"], ["Bb3", "D5"]],
+
       ["credits nothing for a sustained key let up before the next key down",
         reverie(),
         [["on", "Bb3", 0], ["on", "C4", 500], ["off", "Bb3", 900], ["on", "D4", 1500]],
@@ -456,6 +463,13 @@ describe("note matcher", function() {
         [["Bb3"], ["C4"], sustain(["Bb3", "E4"], "Bb3"), ["G4"]],
         [["on", "Bb3", 0], ["on", "E4", 400], ["on", "C4", 500]],
         ["hit Bb3", "hit C4", "hit Bb3+E4 (early E4) (held Bb3)"], ["G4"]],
+
+      // the last column of the card has no key down after it to settle it,
+      // so it is credited as the head reaches it, else the card never ends
+      ["completes the card's last column, every key of it held, as the head reaches it",
+        [["Bb3"], ["C4"], sustain(["Bb3"], "Bb3")],
+        [["on", "Bb3", 0], ["on", "C4", 500]],
+        ["hit Bb3", "hit C4", "hit Bb3 (held Bb3)"], []],
 
       ["settles no held column on a key of the column just completed struck again",
         reverie(),

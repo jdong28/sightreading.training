@@ -2389,7 +2389,9 @@ describe("sight reading page", function() {
       // beat every 500 ms: each key but Bb3 let up just before the next
       let ostinato = [[2.5, "C4"], [3, "D4"], [3.5, "G4"], [4.5, "D4"], [5, "C4"],
         [6.5, "C4"], [7, "D4"], [7.5, "G4"], [8.5, "D4"], [9, "C4"], [10, "G5"], [10.5, "C4"]]
-      let played = ostinato.flatMap(([beat, note]) => [[beat * 500, "on", note], [beat * 500 + 240, "off", note]])
+      let keys = beats => beats.flatMap(([beat, note]) =>
+        [[beat * 500, "on", note], [beat * 500 + 240, "off", note]])
+      let played = keys(ostinato)
       let bb3 = parseNote("Bb3")
 
       // C1: the Bb3 struck at beat 2 is held on through the whole bars, as
@@ -2425,6 +2427,36 @@ describe("sight reading page", function() {
         expect(page.state.noteShaking).toBe(false)
         expect(credits.every(credit => !credit.length)).toBe(true)
         expect(head().map(parseNote)).toEqual([parseNote("D4")])
+      })
+
+      // The card's last column (beat 9.5) is the shared Bb3 alone, held on:
+      // nothing is played after it, so no later key down can settle it. It
+      // completes as the head reaches it, finishing the pass and looping the
+      // card, rather than stalling until the Bb3 is struck again
+      it("completes the card's last column, the shared Bb3 held, and finishes the pass", async function() {
+        let piece = await renderPiece(reverieOpening(), {startMeasure: 2, endMeasure: 3})
+        let generator = page.state.notes.generator
+        expect(generator.lastPass).toBeFalsy()
+        let credits = heldCredits()
+
+        // the bars' own notes only: the pass ends on the last column
+        perform([[1000, "on", "Bb3"], ...keys(ostinato.filter(([beat]) => beat < 10))])
+
+        expect(counts()).toEqual([14, 0])
+        expect(page.state.noteShaking).toBe(false)
+        expect(credits.map((credit, idx) => credit.length ? idx : null).filter(idx => idx != null))
+          .toEqual([6, 7, 13])
+        // the card looped: its first column, the Bb3 struck afresh
+        expect(head().map(parseNote)).toEqual([bb3])
+
+        // the pass the last column ended is graded and written, which a
+        // stalled card never reaches
+        expect(generator.lastPass.complete).toBe(true)
+        await generator.finishing
+        let measureStats = measure => store.sectionStats(piece.id)
+          .find(stat => stat.startMeasure == measure && stat.endMeasure == measure)
+        expect([measureStats(2).hits, measureStats(2).misses]).toEqual([7, 0])
+        expect([measureStats(3).hits, measureStats(3).misses]).toEqual([7, 0])
       })
 
       // A-hold: the Nocturne's C#4 struck at beat 9.5 and held through its

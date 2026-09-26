@@ -41,10 +41,12 @@
 // rather than struck again (T6, rule 1; ruling D3(a)). That held credit is
 // applied lazily: when a key that isn't the head's own goes down (the player
 // has moved on), or when it would complete the head with the keys struck at
-// it, never before the column is the head, nor as it becomes the head.
-// Striking the key again is its own key down at the column, as before. A key
-// held through a note the score strikes again (the earlier one ends at the
-// onset) isn't sustained, so the column still waits for it.
+// it, never before the column is the head. Striking the key again is its own
+// key down at the column, as before. A key held through a note the score
+// strikes again (the earlier one ends at the onset) isn't sustained, so the
+// column still waits for it. The one column credited as it becomes the head
+// is the last of the card (lastOfCard): nothing is played after it, so no
+// later key down would ever settle it and the card would never finish.
 //
 // The ornaments the score writes at the head column (T7, rule 2.2) are
 // allowed extras: the key goes down, but nothing about it is judged. The
@@ -274,8 +276,10 @@ export default class NoteMatcher {
   // The head column is complete, its last required key down at completedAt
   // (null when every key of it was held): it moves on, and the keys held
   // early for the next column are credited to it, completing it too if they
-  // are all of it with its keys held (rule 3)
-  hit(completedAt) {
+  // are all of it with its keys held (rule 3). settleLast is false on the
+  // column reached by settling the card's last column, so one key down
+  // settles one of those at most, however the card loops
+  hit(completedAt, settleLast=true) {
     let notes = this.notes
     let column = notes.currentColumn()
     let touched = Object.keys(this.touched)
@@ -335,8 +339,23 @@ export default class NoteMatcher {
     this.emit(event)
 
     if (credited.length && this.completes()) {
-      this.hit(this.lastAt)
+      this.hit(this.lastAt, settleLast)
+    } else if (settleLast && this.lastOfCard() && this.heldCredit().length && this.completes()) {
+      this.hit(this.firstDown ? this.lastAt : null, false)
     }
+  }
+
+  // Whether the head is the last column of what the list is playing, so no
+  // key down at a column after it will ever settle its held credit: the
+  // column after it is empty (the gap after a card, the end of the run) or
+  // starts a new lap or card, its cardIndex no greater than the head's
+  lastOfCard() {
+    let next = this.columnAt(1)
+    if (!next.length) { return true }
+
+    let column = this.notes.currentColumn()
+    return column.cardIndex != null && next.cardIndex != null &&
+      next.cardIndex <= column.cardIndex
   }
 
   // The head column's keys the score still sounds at its onset from an
@@ -398,12 +417,15 @@ export default class NoteMatcher {
   }
 
   // counts a slip on the head column, blamed on its notes from the keys
-  // struck at it that are its own or slipped
+  // struck at it that are its own or slipped, and the keys it credits held:
+  // a note the column already has is never one the miss is put down to
   emitMiss() {
     let notes = this.notes
     let column = notes.currentColumn()
-    let struck = Object.keys(this.touched).filter(n =>
-      this.strays[n] || this.inColumn(column, n))
+    let struck = [
+      ...Object.keys(this.touched).filter(n => this.strays[n] || this.inColumn(column, n)),
+      ...this.heldCredit(),
+    ]
     this.emit(this.missColumn(column, notes.blamedNotes(struck, this.anyOctave)))
   }
 
