@@ -476,6 +476,24 @@ describe("today's programme planner", function() {
       expect(entry.measure).not.toEqual(3)
     })
 
+    it("waits on the hand's own schedule when a same-day pass left its due date where it was", function() {
+      // the left hand alone is in review from an earlier day, graded good
+      // earlier today, then hard again since the bar failed: the scheduler's
+      // same-day rule leaves its due date and last grade where they were
+      let hand = graded(3, [[NOW - 3 * DAY, EASY], [ago(45), GOOD], [ago(2), HARD]], "lower")
+      expect([hand.state, hand.lastGrade, hand.last]).toEqual(["review", GOOD, ago(45)])
+      expect(hand.due).toBeGreaterThan(NOW)
+
+      let failed = graded(3, [[ago(40), AGAIN], [ago(10), AGAIN]])
+      let {entry, state} = planned([failed, hand], {lastReviews: blame(ago(10), 0, 3)})
+
+      // it still holds the bar, but the pass since the failure counts, so it
+      // comes back when its own schedule says rather than every other card
+      expect(state.scaffolds.get(3)).toEqual("lower")
+      expect(state.ladder.find(slot => slot.measure == 3).due).toEqual(hand.due)
+      expect(entry.measure).not.toEqual(3)
+    })
+
     it("rests a bar failing a third time in a sitting until the next", function() {
       let rows = [
         ["failed together, then twice alone", [[ago(10), AGAIN]], [[ago(8), AGAIN], [ago(6), AGAIN]], true],
@@ -664,6 +682,22 @@ describe("today's programme on the staff", function() {
     return {deck, generator, notes}
   }
 
+  // the bars each hand has notes in and the lazy one-bar accessor a deck
+  // builds its hand cards through, recording every bar it asks for
+  let handPools = () => {
+    let pools = {upper: pool(RIGHT_HAND), lower: pool(LEFT_HAND)}
+    let built = []
+    return {
+      built,
+      handMeasures: Object.fromEntries(Object.entries(pools).map(([staff, list]) =>
+        [staff, list.filter(measure => measure.columns.length).map(measure => measure.number)])),
+      handCard: (staff, number) => {
+        built.push(`${staff}:${number}`)
+        return pools[staff].find(measure => measure.number == number)
+      },
+    }
+  }
+
   // plays the card on the staff through, a second apart
   let playCard = async ({generator, notes}, stats) => {
     let count = generator.currentCard().columns.length
@@ -769,13 +803,14 @@ describe("today's programme on the staff", function() {
   it("offers a bar failing on the left hand's notes as the left hand alone, then together", async function() {
     // the pools first: making one stops the generator playing
     let measures = pool()
-    let hands = {upper: pool(RIGHT_HAND), lower: pool(LEFT_HAND)}
-    let {deck, generator, notes} = await generatorFor(1, {hands})
+    let {built, ...hands} = handPools()
+    let {deck, generator, notes} = await generatorFor(1, hands)
     let stats = new NoteStats()
     notes = await playCard({generator, notes}, stats)
 
     // measure 1 at first sight, its bass G3 missed twice
     expect(deck.entry).toEqual(jasmine.objectContaining({reason: NEW, measure: 1, hand: "both"}))
+    expect(built).toEqual([])
     stats.missNotes(["G3"])
     stats.missNotes(["G3"])
     notes = await playCard({generator, notes}, stats)
@@ -787,11 +822,14 @@ describe("today's programme on the staff", function() {
     expect(generator.currentCard()).toEqual(jasmine.objectContaining({measures: [1], hand: "lower"}))
     expect(notesOf(notes).slice(0, 2)).toEqual([["G3"], []])
 
+    // only the bar offered is drawn from the score hands apart, once
+    expect(built).toEqual(["lower:1"])
+
     // a reload, with nothing known of the piece's reviews, reads them from
     // the log before it plans, so the same hand alone is offered again
     let reopened = await openTestStore({keep: true})
     let reloaded = new PlanDeck(measures, {
-      pieceId: piece.id, cardMeasures: 1, hands, store: reopened, now: () => time,
+      pieceId: piece.id, cardMeasures: 1, ...hands, store: reopened, now: () => time,
     })
     expect([reloaded.playable, reloaded.entry]).toEqual([true, null])
     await reloaded.ready
@@ -806,6 +844,7 @@ describe("today's programme on the staff", function() {
     expect(generator.caption()).toEqual("hands together next")
     expect(deck.entry).toEqual(jasmine.objectContaining({reason: RETRY, measure: 1, hand: "both"}))
     expect(notesOf(notes).slice(0, 4)).toEqual([["G3", "G4"], ["A4"], ["B4"], []])
+    expect(built).toEqual(["lower:1"])
   })
 
   it("leaves the programme with no card once every bar it has left rests", async function() {
@@ -838,15 +877,16 @@ describe("today's programme on the staff", function() {
 
   it("reads the review log afresh for each deck, so a failure outside the programme splits the bar", async function() {
     let measures = pool()
-    let hands = {upper: pool(RIGHT_HAND), lower: pool(LEFT_HAND)}
+    let {built, ...hands} = handPools()
     let planDeck = async () => {
-      let deck = new PlanDeck(measures, {pieceId: piece.id, cardMeasures: 1, hands, store, now: () => time})
+      let deck = new PlanDeck(measures, {pieceId: piece.id, cardMeasures: 1, ...hands, store, now: () => time})
       await deck.ready
       return deck
     }
 
     // the programme is opened, so its deck reads what the log holds now
     expect((await planDeck()).entry).toEqual(jasmine.objectContaining({measure: 0, hand: "both"}))
+    expect(built).toEqual([])
 
     // free practice fails bar 1 on the bass staff: it writes the review
     // itself, and never tells a plan deck

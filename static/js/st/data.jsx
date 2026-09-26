@@ -164,10 +164,28 @@ export function drilledRange(settings) {
   return {startMeasure: settings.startMeasure, endMeasure: settings.endMeasure}
 }
 
+// The bars of the drilled measures each hand alone has notes in, read from
+// the columns' own staves (what a miss is blamed on), so the hand scaffold
+// only ever splits a bar the drill could blame that hand for
+function handMeasuresOf(measures) {
+  let bars = {upper: [], lower: []}
+
+  for (let {number, columns} of measures) {
+    for (let staff of Object.keys(bars)) {
+      if (columns.some(column => column.staves && column.staves.includes(staff))) {
+        bars[staff].push(number)
+      }
+    }
+  }
+
+  return bars
+}
+
 // The programme's generator for the settings: the piece's measures as
 // planned cards (st/plan_cards), or null for a piece without notes on the
-// staff. Played hands together on a piece with a staff per hand, each hand's
-// notes alone are there for the hand scaffold (see st/srs/planner)
+// staff. Played hands together on a piece with a staff per hand, the deck can
+// ask for one bar of one hand's notes alone for the hand scaffold (see
+// st/srs/planner), which is drawn from the score only when a bar is offered
 export function planGenerator(staff, settings) {
   let piece = sheetMusicPiece(settings)
   let song = piece && pieceSong(piece)
@@ -178,13 +196,19 @@ export function planGenerator(staff, settings) {
   let measures = pieceSectionMeasures(staff, whole, song)
   let hand = itemHand(settings.hand)
   let staves = staffTracks(song)
-  let hands = hand == "both" && staves.treble.length && staves.bass.length ? {
-    upper: pieceSectionMeasures(staff, {...whole, hand: RIGHT_HAND}, song),
-    lower: pieceSectionMeasures(staff, {...whole, hand: LEFT_HAND}, song),
-  } : null
+  let apart = hand == "both" && staves.treble.length && staves.bass.length
+
+  let handCard = (side, number) => pieceSectionMeasures(staff, {
+    ...whole, startMeasure: number, endMeasure: number,
+    hand: side == "upper" ? RIGHT_HAND : LEFT_HAND,
+  }, song)[0]
 
   let deck = new PlanDeck(measures, {
-    pieceId: piece.id, hand, hands, cardMeasures: planCardMeasures(settings),
+    pieceId: piece.id,
+    hand,
+    handMeasures: apart ? handMeasuresOf(measures) : null,
+    handCard: apart ? handCard : null,
+    cardMeasures: planCardMeasures(settings),
   })
 
   return deck.playable ? new PlanGenerator(deck) : null

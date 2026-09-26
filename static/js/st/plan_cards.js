@@ -9,8 +9,6 @@
 
 import {getAppStore} from "st/storage"
 import {MeasureCardGenerator, sectionCard} from "st/measure_cards"
-import {passAttempts} from "st/srs/attempt"
-import {AGAIN} from "st/srs/grade"
 import {itemId, newItem, itemWithPractice} from "st/srs/records"
 import {scheduledAttempt} from "st/srs/schedule"
 import {
@@ -38,13 +36,17 @@ export class PlanDeck {
    * @param {Object} opts
    * @param {string} opts.pieceId
    * @param {string} [opts.hand] one of HANDS (st/srs/records), the session's
-   * @param {{upper: PoolMeasure[], lower: PoolMeasure[]}} [opts.hands] every
-   * measure of the piece with each hand's notes alone, for the hand scaffold
+   * @param {{upper: number[], lower: number[]}} [opts.handMeasures] the bars
+   * each hand alone has notes in, for the hand scaffold
+   * @param {function(string, number): PoolMeasure} [opts.handCard] one bar of
+   * the piece with one hand's notes alone, called only for a bar the scaffold
+   * offers, never for the whole piece
    * @param {number} [opts.cardMeasures] measures per card
    * @param {function(): number} [opts.now]
    * @param {LocalStore} [opts.store] the app's store by default
    */
-  constructor(measures, {pieceId, hand="both", hands=null, cardMeasures=1, now=Date.now, store}) {
+  constructor(measures, {pieceId, hand="both", handMeasures=null, handCard=null,
+      cardMeasures=1, now=Date.now, store}) {
     this.pieceId = pieceId
     this.sessionHand = hand
     this.cardMeasures = cardMeasures
@@ -57,12 +59,13 @@ export class PlanDeck {
     this.cards = this.measures.map(measure =>
       sectionCard(anchoredCard(numbers, measure, cardMeasures).map(n => byNumber.get(n))))
 
-    // each hand's cards of a measure alone, by hand then measure
-    this.handCards = new Map(hand == "both" && hands ? Object.entries(hands).map(([staff, pool]) =>
-      [staff, new Map(pool.filter(measure => measure.columns.length)
-        .map(measure => [measure.number, {...sectionCard([measure]), hand: staff}]))]) : [])
-    this.handMeasures = this.handCards.size ? Object.fromEntries([...this.handCards]
-      .map(([staff, cards]) => [staff, [...cards.keys()]])) : null
+    // the bars each hand alone can play, and the one-bar cards of them the
+    // scaffold has asked for, by hand and measure
+    let apart = hand == "both" && handMeasures && handCard &&
+      Object.values(handMeasures).some(bars => bars.length)
+    this.handMeasures = apart ? handMeasures : null
+    this.buildHandCard = apart ? handCard : null
+    this.handCards = new Map()
 
     // items as the attempts not yet stored leave them, by id
     this.pending = new Map()
@@ -112,8 +115,23 @@ export class PlanDeck {
   get card() {
     if (this.index == null) { return null }
 
-    let apart = this.entry.hand != this.sessionHand && this.handCards.get(this.entry.hand)
-    return apart ? apart.get(this.entry.measure) : this.cards[this.index]
+    let {hand, measure} = this.entry
+    return hand == this.sessionHand ? this.cards[this.index] : this.handCard(hand, measure)
+  }
+
+  /**
+   * The one-bar card of a hand alone the scaffold offers, built the first
+   * time that bar is offered to that hand
+   * @param {string} staff one of STAVES
+   * @param {number} measure
+   * @returns {MeasureCard}
+   */
+  handCard(staff, measure) {
+    let key = `${staff}:${measure}`
+    if (!this.handCards.has(key)) {
+      this.handCards.set(key, {...sectionCard([this.buildHandCard(staff, measure)]), hand: staff})
+    }
+    return this.handCards.get(key)
   }
 
   /**
@@ -301,23 +319,18 @@ export class PlanGenerator extends MeasureCardGenerator {
 
   /**
    * As MeasureCardGenerator#practiceOnly, save that a hand alone the scaffold
-   * offers climbs its own ladder from the bar's failure, so its bar is on
-   * schedule unless it was offered while waiting
+   * offers climbs its own ladder from the bar's failure, so it is on schedule
+   * unless it was played waiting, where the rule for any other card applies
    * @param {AttemptPass} pass complete
    * @param {Object} opts as for passAttempts
    * @returns {string[]}
    */
   practiceOnly(pass, opts) {
     let entry = this.deck.entry
-    if (!entry || entry.hand == this.deck.sessionHand) { return super.practiceOnly(pass, opts) }
+    let apart = entry && entry.hand != this.deck.sessionHand
+    if (apart && entry.reason != WAIT) { return [] }
 
-    if (!pass.practiceOnly) {
-      pass.practiceOnly = entry.reason != WAIT ? [] : passAttempts(pass, opts)
-        .filter(({id, build}) => build(this.deck.item(id)).review.grade > AGAIN)
-        .map(({id}) => id)
-    }
-
-    return pass.practiceOnly
+    return super.practiceOnly(pass, opts)
   }
 
   // The piece is in study once a card of its programme is played: learning

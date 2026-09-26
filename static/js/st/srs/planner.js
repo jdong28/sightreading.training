@@ -347,7 +347,7 @@ export function planState({
 
   // an item's place in the queue, or its hand alone's while the hand
   // scaffold holds the bar: due when the bar failed until the hand has been
-  // played since, then on the hand's own schedule
+  // graded since, then on the hand's own schedule
   let slotOf = item => {
     let measure = item.startMeasure
     let scaffold = apart.size && ON_LADDER.includes(item.state) ? barScaffold(item, {
@@ -361,7 +361,7 @@ export function planState({
     }
 
     let own = scaffold.item
-    let climbing = !!own && own.last > scaffold.since
+    let climbing = !!own && own.recent.some(([at]) => at > scaffold.since)
     return {
       id: own ? own.id : itemId({pieceId, hand: scaffold.hand, startMeasure: measure, endMeasure: measure}),
       measure,
