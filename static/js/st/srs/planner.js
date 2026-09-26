@@ -38,7 +38,8 @@
 // queue. The blamed hand is read from that failure's review alone, so a bar
 // whose failure has no review read isn't split. The bar returns hands
 // together once the hand holds: its item graded good or better twice running
-// since the failure, or graduated since. When both staves are blamed, the one
+// since the failure, or graduated since, which a hand already graded before
+// the failure can't do. When both staves are blamed, the one
 // with more misses comes first, then the other. A piece without a staff per
 // hand never splits (handMeasures), nor does a session played with one hand,
 // nor a bar only one hand has notes in: taking the other off it would leave
@@ -249,14 +250,17 @@ function failedAt(item) {
 }
 
 // whether a hand alone holds since a time: graded good or better twice
-// running since, or graduated (in review, moved on by a good grade since)
+// running since, or graduated since — a hand already graded before the bar
+// failed needs the two, since extending an interval is no graduation
 function held(item, since) {
   if (!item) { return false }
 
   let after = item.recent.filter(([at]) => at > since).map(gradeOf)
   let n = after.length
-  return (n >= 2 && after[n - 1] >= GOOD && after[n - 2] >= GOOD) ||
-    (item.state == "review" && item.last > since && item.lastGrade >= GOOD)
+  if (n >= 2 && after[n - 1] >= GOOD && after[n - 2] >= GOOD) { return true }
+
+  return item.recent.length == n && item.state == "review" &&
+    item.last > since && item.lastGrade >= GOOD
 }
 
 /**
@@ -269,20 +273,18 @@ function held(item, since) {
  * @param {Object<string, ItemRecord>} [opts.hands] the bar's items of each hand
  * alone, by hand
  * @param {ReviewRecord} [opts.review] the bar's last graded review, if known
- * @param {function(string): boolean} [opts.playable] whether the hand alone
- * can play the bar
  * @returns {{hand: string, item: ItemRecord|null, since: number}|null} the
  * hand, its item, and when the bar failed; null when the bar holds hands
  * together, or its failure has no review
  */
-export function barScaffold(bar, {hands={}, review=null, playable=() => true}={}) {
+export function barScaffold(bar, {hands={}, review=null}={}) {
   let since = failedAt(bar)
   if (since == null) { return null }
 
   let blamed = review && review.at == since ? blamedStaves(review) : null
   if (!blamed) { return null }
 
-  let hand = blamed.filter(playable).find(staff => !held(hands[staff], since))
+  let hand = blamed.find(staff => !held(hands[staff], since))
   return hand ? {hand, item: hands[hand] || null, since} : null
 }
 
@@ -359,10 +361,9 @@ export function planState({
   // graded since, then on the hand's own schedule
   let slotOf = item => {
     let measure = item.startMeasure
-    let scaffold = apart.size && ON_LADDER.includes(item.state) ? barScaffold(item, {
+    let scaffold = apart.has(measure) && ON_LADDER.includes(item.state) ? barScaffold(item, {
       hands: handItems.get(measure),
       review: lastReviews.get(item.id),
-      playable: () => apart.has(measure),
     }) : null
 
     if (!scaffold) {

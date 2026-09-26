@@ -491,6 +491,13 @@ describe("today's programme planner", function() {
         ["good, then hard", {}, [[ago(8), GOOD], [ago(6), HARD]], "lower"],
         ["again, then good twice running", {}, [[ago(8), AGAIN], [ago(6), GOOD], [ago(4), GOOD]], undefined],
         ["held before the failure only", {}, [[ago(30), GOOD], [ago(20), GOOD]], "lower"],
+        // a hand scaffolded before, graduated and in review when the bar
+        // failed again: extending its interval is no graduation, so the two
+        // goods running are what returns the bar
+        ["in review before the failure, good once since", {},
+          [[NOW - 30 * DAY, EASY], [ago(2), GOOD]], "lower"],
+        ["in review before the failure, good twice since", {},
+          [[NOW - 30 * DAY, EASY], [ago(4), GOOD], [ago(2), GOOD]], undefined],
         ["played alone, its failure's review not read yet", {lastReviews: new Map()}, [[ago(8), GOOD]], undefined],
       ]
 
