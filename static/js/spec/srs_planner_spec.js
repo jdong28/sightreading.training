@@ -438,6 +438,12 @@ describe("today's programme planner", function() {
         ["a piece of one staff", firstSight, blame(ago(1), 3, 0), {handMeasures: null}, [RETRY, 3, "both"]],
         ["a bar the left hand has no notes in", firstSight, blame(ago(1), 0, 3),
           {handMeasures: {upper: MEASURES, lower: [1, 2]}}, [RETRY, 3, "both"]],
+        // the blamed hand is the only one that plays the bar, so taking the
+        // other off it would leave the very same card
+        ["a bar the right hand has no notes in", firstSight, blame(ago(1), 0, 3),
+          {handMeasures: {upper: [1, 2], lower: MEASURES}}, [RETRY, 3, "both"]],
+        ["a staff that plays no bar at all", firstSight, blame(ago(1), 3, 0),
+          {handMeasures: {upper: MEASURES, lower: []}}, [RETRY, 3, "both"]],
       ]
 
       for (let [name, item, lastReviews, extra, expected] of rows) {

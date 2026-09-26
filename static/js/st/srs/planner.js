@@ -39,7 +39,9 @@
 // together once the hand holds: its item graded good or better twice running
 // since the failure, or graduated since. When both staves are blamed, the one
 // with more misses comes first, then the other. A piece without a staff per
-// hand never splits (handMeasures), nor does a session played with one hand.
+// hand never splits (handMeasures), nor does a session played with one hand,
+// nor a bar only one hand has notes in: taking the other off it would leave
+// the very same card.
 // The scaffold is the planner's alone: it is worked out from the items and
 // the last review of each bar, and writes nothing, so the schedule stays what
 // replay rebuilds.
@@ -166,8 +168,8 @@ export function onScheduleMeasures(card, itemOf, now) {
  * of the measures of the last card the items record
  * @property {{upper: number[], lower: number[]}} [handMeasures] the bar
  * numbers each hand alone can play, for a piece with a staff per hand; a bar
- * is only offered hands apart (the hand scaffold) with them, in a session
- * played hands together
+ * is only offered hands apart (the hand scaffold) where both hands have
+ * notes in it, in a session played hands together
  * @property {Map<string, ReviewRecord>} [lastReviews] the last graded review
  * known of an item, by item id, whose staffMisses say which hand a failure's
  * misses fell on
@@ -314,11 +316,13 @@ export function planState({
   let bars = items.filter(item => single(item) && item.hand == hand)
   let byMeasure = new Map(bars.map(item => [item.startMeasure, item]))
 
-  // the hands a bar played hands together can be offered alone as
-  let apart = new Map(hand == "both" && handMeasures ? STAVES
-    .filter(staff => handMeasures[staff] && handMeasures[staff].length)
-    .map(staff => [staff, new Set(handMeasures[staff])]) : [])
-  let handBars = items.filter(item => single(item) && apart.has(item.hand))
+  // the bars a session played hands together can offer one hand alone: only
+  // those both hands have notes in
+  let staffBars = hand == "both" && handMeasures ?
+    STAVES.map(staff => new Set(handMeasures[staff] || [])) : []
+  let apart = new Set(staffBars.length == STAVES.length ?
+    [...staffBars[0]].filter(measure => staffBars.every(bars => bars.has(measure))) : [])
+  let handBars = apart.size ? items.filter(item => single(item) && STAVES.includes(item.hand)) : []
   let handItems = handsByMeasure(handBars)
 
   let live = bars.filter(item => scheduled(item))
@@ -357,7 +361,7 @@ export function planState({
     let scaffold = apart.size && ON_LADDER.includes(item.state) ? barScaffold(item, {
       hands: handItems.get(measure),
       review: lastReviews.get(item.id),
-      playable: staff => apart.has(staff) && apart.get(staff).has(measure),
+      playable: () => apart.has(measure),
     }) : null
 
     if (!scaffold) {
