@@ -382,10 +382,10 @@ export function planState({
   }
 
   let awake = live.filter(item => !resting.has(item.startMeasure))
-  // the bars that can split and are failing: the hand the scaffold offers is
-  // read from each one's last review, the only thing the plan wants from the
-  // log (see barScaffold)
-  let failing = new Set(awake.filter(item => apart.has(item.startMeasure) &&
+  // the bars that can split and are failing, the ones resting among them:
+  // the hand the scaffold offers is read from each one's last review, the
+  // only thing the plan wants from the log (see barScaffold)
+  let failing = new Set(live.filter(item => apart.has(item.startMeasure) &&
     ON_LADDER.includes(item.state) && failedAt(item) != null).map(item => item.id))
   // the bars in progress, whether or not they rest: what the ladder holds
   let laddered = live.filter(item => ON_LADDER.includes(item.state)).length

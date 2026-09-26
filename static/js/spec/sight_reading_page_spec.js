@@ -1684,9 +1684,8 @@ describe("sight reading page", function() {
         piece: piece.id, startMeasure: 3, endMeasure: 4, hand: BOTH_HANDS, measuresPerCard: "2", ...settings,
       }))
       let el = renderScorePage()
-      // today's programme plans once the piece's reviews are read
-      await waitFor(() => !(page.state.notes?.generator instanceof PlanGenerator) ||
-        page.state.notes.generator.statusLine() != null, "the programme to plan")
+      // today's programme reads the log when a bar that can split is failing
+      await page.state.notes?.generator?.ready
       flushSync(() => {})
       return el
     }

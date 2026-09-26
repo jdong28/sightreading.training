@@ -1057,6 +1057,50 @@ describe("today's programme on the staff", function() {
     expect(deck.advance().scaffolds.get(1)).toEqual("lower")
   })
 
+  it("reads the log for a bar that rests, so the scaffold holds when it wakes", async function() {
+    let measures = pool()
+    let {built, ...hands} = handPools()
+    let at = time - MINUTE
+
+    // every bar failed three times in this sitting, so all of them rest;
+    // bar 1's misses fell on the bass staff, and it comes back first
+    for (let measure of [0, 1, 2]) {
+      let id = itemId({pieceId: piece.id, hand: "both", startMeasure: measure, endMeasure: measure})
+      await store.recordAttempt({
+        item: {
+          id, pieceId: piece.id, hand: "both", startMeasure: measure, endMeasure: measure,
+          level: "bar", state: "learning", step: 0, due: measure == 1 ? at : at + 30 * 1000,
+          last: at, s: 1, d: 5, reps: 3, lapses: 2, streak: 0, lastGrade: AGAIN,
+          hits: 0, misses: 9, attempts: 3, lastPracticed: at, elapsedMs: 3000,
+          algo: 1, createdAt: at - 3 * MINUTE,
+          recent: [2, 1, 0].map(n => [at - n * MINUTE, 3, 0, AGAIN]),
+        },
+        review: {
+          itemId: id, pieceId: piece.id, at, kind: "attempt", grade: AGAIN, was: "learning",
+          columns: 3, clean: 0, misses: 3, stuck: 0, skipped: 0, hesitations: 0, mode: "wait",
+          algo: 1, staffMisses: measure == 1 ? {upper: 0, lower: 3} : {upper: 3, lower: 0},
+        },
+      })
+    }
+
+    // the drill is rebuilt while they rest, so there is no card to show
+    let deck = new PlanDeck(measures, {pieceId: piece.id, cardMeasures: 1, ...hands, store, now: () => time})
+    let generator = new PlanGenerator(deck, {now: () => time})
+    generators.push(generator)
+    expect([...planState(deck.planInput()).resting].sort()).toEqual([0, 1, 2])
+    expect(deck.entry).toBe(null)
+
+    // the log is still read, so when the next sitting wakes bar 1 the hand
+    // its failure blamed is the one offered
+    await generator.ready
+    expect(deck.reviews.size).toEqual(3)
+
+    time += SITTING_GAP_MS + MINUTE
+    expect(generator.replan()).toBe(true)
+    expect(deck.entry).toEqual(jasmine.objectContaining({measure: 1, hand: "lower"}))
+    expect(built).toEqual(["lower:1"])
+  })
+
   it("keeps the plan it made when a review is beyond the planner", async function() {
     let measures = pool()
     let {built, ...hands} = handPools()
@@ -1088,7 +1132,6 @@ describe("today's programme on the staff", function() {
     // the plan the deck made from the items stands, so the staff keeps its
     // card rather than going blank
     expect(await generator.ready).toBe(false)
-    expect(deck.planned).toBe(true)
     expect(deck.entry).toEqual(entry)
     expect(generator.currentCard().measures).toEqual([1])
     expect(console.warn).toHaveBeenCalled()

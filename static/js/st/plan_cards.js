@@ -74,8 +74,6 @@ export class PlanDeck {
 
     this.index = null
     this.entry = null
-    // whether a card has been planned yet
-    this.planned = false
 
     // the last graded review known of each of the piece's items, by item id,
     // which the hand scaffold reads the blamed hand from. The deck plans at
@@ -195,7 +193,6 @@ export class PlanDeck {
     let {entry, state} = planNext({...this.planInput(), previous})
     this.entry = entry
     this.index = entry ? this.measures.indexOf(entry.measure) : null
-    this.planned = true
     return state
   }
 
@@ -267,7 +264,7 @@ export class PlanGenerator extends MeasureCardGenerator {
    * @returns {boolean} whether there is a card to play now
    */
   replan() {
-    if (!this.deck.planned || this.deck.card) { return false }
+    if (this.deck.card) { return false }
 
     this.deck.advance()
     this.startCard()
@@ -292,11 +289,10 @@ export class PlanGenerator extends MeasureCardGenerator {
       `measures ${card.startMeasure}–${card.endMeasure}`
   }
 
-  /** @returns {string|null} the status line of the card being played */
+  /** @returns {string} the status line of the card being played */
   statusLine() {
     let entry = this.deck.entry
     if (entry) { return entryStatus(entry, {now: this.now(), complete: this.deck.complete}) }
-    if (!this.deck.planned) { return null }
 
     // the deck has no card: the bars in trouble rest until the next sitting,
     // and the programme is complete only when nothing else is left either
