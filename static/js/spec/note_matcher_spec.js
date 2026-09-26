@@ -1,5 +1,5 @@
 import NoteList from "st/note_list"
-import NoteMatcher from "st/note_matcher"
+import NoteMatcher, {EARLY_KEY_WINDOW, LATE_REPEAT_WINDOW} from "st/note_matcher"
 
 // A matcher over an explicit run of columns: the generator hands out the
 // columns still to come, and empty ones once they run out. Every judgement
@@ -40,7 +40,8 @@ let run = (matcher, script) => {
       case "miss":
         return `${event.counted || "uncounted"} ${sorted(event.blamed)}`
       case "hit":
-        return `hit ${sorted(event.hitNotes)}`
+        return `hit ${sorted(event.hitNotes)}` +
+          (event.early.length ? ` (early ${sorted(event.early)})` : "")
       default:
         return event.type
     }
@@ -244,6 +245,115 @@ describe("note matcher", function() {
     it("is null when either end of the column came with no timeStamp", function() {
       expect(spreads([["C4", "E4"], ["A4"]], [["on", "C4"], ["on", "E4", 5000]])).toEqual([null])
       expect(spreads([["C4", "E4"], ["A4"]], [["on", "C4", 1000], ["on", "E4"]])).toEqual([null])
+    })
+  })
+
+  // T5 of the note detection report: lookahead (rules 2.4 and 3) and
+  // lookbehind (rule 2.3), each over a window of the events' timeStamps. A
+  // press with no timeStamp (the on-screen keyboard) can't be shown to fall
+  // inside either window, so it is judged as before them
+  describe("lookahead and lookbehind (T5)", function() {
+    let rules = [
+      ["credits a key of the next column struck while the column is under way to that column",
+        [["C4", "E4"], ["G4", "B4"], ["D5"]],
+        [["on", "C4", 0], ["on", "G4", 100], ["on", "E4", 200], ["on", "B4", 300]],
+        ["hit C4+E4", "hit B4+G4 (early G4)"], ["D5"]],
+
+      ["completes the next column at once when the keys credited early are all of it",
+        [["C4", "E4"], ["G4"], ["A4"]],
+        [["on", "C4", 0], ["on", "G4", 100], ["on", "E4", 200]],
+        ["hit C4+E4", "hit G4 (early G4)"], ["A4"]],
+
+      ["credits a key struck exactly the early window before the column completes",
+        [["C4"], ["E4"], ["G4"]],
+        [["on", "E4", 1000], ["on", "C4", 1000 + EARLY_KEY_WINDOW]],
+        ["hit C4", "hit E4 (early E4)"], ["G4"]],
+
+      // the player wasn't early, they were wrong: the key counts against the
+      // column under way, and its own column still needs it struck
+      ["counts a next column's key as a slip on the column that doesn't complete within the window",
+        [["C4"], ["E4"], ["G4"]],
+        [["on", "E4", 1000], ["on", "C4", 1001 + EARLY_KEY_WINDOW]],
+        ["miss C4", "hit C4"], ["E4"]],
+
+      ["counts one slip however many keys of the next column turn out wrong",
+        [["C4"], ["E4", "G4"], ["A4"]],
+        [["on", "E4", 0], ["on", "G4", 10], ["on", "C4", 1000], ["on", "E4", 1100], ["on", "G4", 1110]],
+        ["miss C4", "hit C4", "hit E4+G4"], ["A4"]],
+
+      ["judges a key of the next column gone stale at the next key down, before that key",
+        [["C4"], ["E4"], ["G4"]],
+        [["on", "E4", 0], ["on", "D4", 600], ["on", "C4", 700]],
+        ["miss C4", "uncounted C4", "hit C4"], ["E4"]],
+
+      ["counts no slip for the just completed column's key struck again shortly after",
+        [["C4"], ["E4"]],
+        [["on", "C4", 0], ["off", "C4", 30], ["on", "C4", 80]],
+        ["hit C4"], ["E4"]],
+
+      ["counts no slip for a key bounce in a chord just completed",
+        [["C4", "E4"], ["G4"]],
+        [["on", "C4", 0], ["on", "E4", 10], ["off", "E4", 40], ["on", "E4", 70], ["on", "G4", 500]],
+        ["hit C4+E4", "hit G4"], []],
+
+      ["counts the just completed column's key struck again after the window as a slip",
+        [["C4"], ["E4"]],
+        [["on", "C4", 0], ["off", "C4", 30], ["on", "C4", 1 + LATE_REPEAT_WINDOW]],
+        ["hit C4", "miss E4"], ["E4"]],
+
+      ["looks back only to the column just completed",
+        [["C4"], ["E4"], ["G4"]],
+        [["on", "C4", 0], ["on", "E4", 50], ["on", "C4", 100]],
+        ["hit C4", "hit E4", "miss G4"], ["G4"]],
+
+      // the key could be either: rule 2.3 comes first, so the next column
+      // still needs it struck
+      ["takes a key of both the column just completed and the next as struck again",
+        [["C4"], ["E4"], ["C4"]],
+        [["on", "C4", 0], ["on", "C4", 100], ["on", "E4", 150]],
+        ["hit C4", "hit E4"], ["C4"]],
+
+      ["credits nothing early and excuses nothing without timeStamps",
+        [["C4"], ["E4"], ["G4"]],
+        [["on", "E4"], ["on", "C4"], ["on", "C4"]],
+        ["miss C4", "hit C4", "miss E4"], ["E4"]],
+    ]
+
+    for (let [what, columns, script, judged, left, opts] of rules) {
+      it(what, function() {
+        let matcher = matcherFor(columns, opts)
+        expect(run(matcher, script)).toEqual(judged)
+        expect(head(matcher)).toEqual(left)
+      })
+    }
+
+    it("starts the spread of a column at its key credited early", function() {
+      let matcher = matcherFor([["C4"], ["E4", "G4"], ["A4"]])
+      run(matcher, [["on", "E4", 0], ["on", "C4", 100], ["on", "G4", 300]])
+
+      let hits = matcher.judged.filter(event => event.type == "hit")
+      expect(hits.map(event => [event.spread, event.early])).toEqual([[0, []], [300, ["E4"]]])
+    })
+
+    it("shows the keys credited early as touched at the column they complete", function() {
+      let matcher = matcherFor([["C4"], ["E4", "G4"], ["A4"]])
+      run(matcher, [["on", "E4", 0], ["on", "C4", 100]])
+
+      expect(matcher.touched).toEqual({E4: true})
+      expect(matcher.held).toEqual({E4: true, C4: true})
+    })
+
+    it("drops the keys held early and the column looked back to when it adopts another list", function() {
+      let matcher = matcherFor([["C4"], ["E4"], ["G4"]])
+      run(matcher, [["on", "C4", 0], ["on", "G4", 10]])
+
+      let rebuilt = new NoteList([["E4"], ["G4"]], {generator: {nextNote: () => []}})
+      matcher.setNotes(rebuilt)
+
+      // C4 is no longer the column just completed, and the G4 held early
+      // isn't credited to the new list's G4
+      expect(run(matcher, [["on", "C4", 20], ["on", "E4", 50]])).toEqual(["miss E4", "hit E4"])
+      expect(head(matcher)).toEqual(["G4"])
     })
   })
 

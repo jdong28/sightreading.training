@@ -149,6 +149,59 @@ let pedalChordXML = `<?xml version="1.0" encoding="UTF-8"?>
   </part>
 </score-partwise>`
 
+// the Nocturne's bar 5 (the report's bars 5-8, see sr-note-detection-l3):
+// the right hand's G#5 and F#5 halves over the left hand's eighths C#3 G#3
+// E4 C#4 C#3 A3 D#4 C#4, so its columns are [C#3, G#5] [G#3] [E4] [C#4]
+// [C#3, F#5] [A3] [D#4] [C#4]
+let nocturneBarXML = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <work><work-title>Nocturne Bar</work-title></work>
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes>
+        <divisions>2</divisions>
+        <key><fifths>4</fifths></key>
+        <time><beats>4</beats><beat-type>4</beat-type></time>
+        <staves>2</staves>
+        <clef number="1"><sign>G</sign><line>2</line></clef>
+        <clef number="2"><sign>F</sign><line>4</line></clef>
+      </attributes>
+      ${[["G", 1, 5], ["F", 1, 5]].map(([step, alter, octave]) =>
+        `<note><pitch><step>${step}</step><alter>${alter}</alter><octave>${octave}</octave></pitch><duration>4</duration><voice>1</voice><type>half</type><staff>1</staff></note>`).join("")}
+      <backup><duration>8</duration></backup>
+      ${[["C", 1, 3], ["G", 1, 3], ["E", 0, 4], ["C", 1, 4], ["C", 1, 3], ["A", 0, 3], ["D", 1, 4], ["C", 1, 4]].map(([step, alter, octave]) =>
+        `<note><pitch><step>${step}</step>${alter ? `<alter>${alter}</alter>` : ""}<octave>${octave}</octave></pitch><duration>1</duration><voice>2</voice><type>eighth</type><staff>2</staff></note>`).join("")}
+    </measure>
+  </part>
+</score-partwise>`
+
+// a two staff 4/4 bar whose right hand plays a sixteenth just before each of
+// the left hand's first three beats (as the Nocturne's B5 just before the
+// left hand's E#4 in bar 7): columns [C#3, E4] [B4] [F3, C#5] [B4]
+// [C#3, A4] [G#3]
+let leadingHandXML = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <work><work-title>Leading Hand</work-title></work>
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes>
+        <divisions>4</divisions>
+        <time><beats>4</beats><beat-type>4</beat-type></time>
+        <staves>2</staves>
+        <clef number="1"><sign>G</sign><line>2</line></clef>
+        <clef number="2"><sign>F</sign><line>4</line></clef>
+      </attributes>
+      ${[["E", 0, 4, 3], ["B", 0, 4, 1], ["C", 1, 5, 3], ["B", 0, 4, 1], ["A", 0, 4, 8]].map(([step, alter, octave, duration]) =>
+        `<note><pitch><step>${step}</step>${alter ? `<alter>${alter}</alter>` : ""}<octave>${octave}</octave></pitch><duration>${duration}</duration><voice>1</voice><staff>1</staff></note>`).join("")}
+      <backup><duration>16</duration></backup>
+      ${[["C", 1, 3], ["F", 0, 3], ["C", 1, 3], ["G", 1, 3]].map(([step, alter, octave]) =>
+        `<note><pitch><step>${step}</step>${alter ? `<alter>${alter}</alter>` : ""}<octave>${octave}</octave></pitch><duration>4</duration><voice>2</voice><type>quarter</type><staff>2</staff></note>`).join("")}
+    </measure>
+  </part>
+</score-partwise>`
+
 // a two staff piece, one measure, whose column is [C#3, C#6]: C#6 is outside
 // the grand staff's usual C2-C6 range (as in the Nocturne's bar 7, see
 // sr-note-detection-l3), C#3 within it
@@ -1693,6 +1746,15 @@ describe("sight reading page", function() {
     // it: several in one flushSync are one MIDI packet, delivered in one task
     let midiOn = (note, timeStamp=0) =>
       page.onMidiMessage({data: new Uint8Array([0x90, parseNote(note), 100]), timeStamp})
+    let midiOff = (note, timeStamp) =>
+      page.onMidiMessage({data: new Uint8Array([0x80, parseNote(note), 0]), timeStamp})
+    // a timeline of [timeStamp, "on"|"off", note], each its own MIDI packet
+    let perform = events => {
+      for (let [at, what, note] of [...events].sort((a, b) => a[0] - b[0])) {
+        flushSync(() => what == "on" ? midiOn(note, at) : midiOff(note, at))
+      }
+    }
+    let sorted = column => [...column].sort()
     let counts = () => [page.state.stats.hits, page.state.stats.misses]
     let head = () => [...page.state.notes.currentColumn()]
 
@@ -2010,15 +2072,6 @@ describe("sight reading page", function() {
     // while the player played on. With the pedal down pianists let keys up
     // early, which is what "pedalling throws off the detection" was
     describe("releases never judge (T4)", function() {
-      let midiOff = (note, timeStamp) =>
-        page.onMidiMessage({data: new Uint8Array([0x80, parseNote(note), 0]), timeStamp})
-      // a timeline of [timeStamp, "on"|"off", note], each its own MIDI packet
-      let perform = events => {
-        for (let [at, what, note] of [...events].sort((a, b) => a[0] - b[0])) {
-          flushSync(() => what == "on" ? midiOn(note, at) : midiOff(note, at))
-        }
-      }
-      let sorted = column => [...column].sort()
       let chord = ["C#5", "E4", "G#4"]
       let bass = ["C#2", "G#2", "C#3", "G#2"]
 
@@ -2128,6 +2181,106 @@ describe("sight reading page", function() {
         ])
 
         expect(spreads).toEqual([117, 380])
+      })
+    })
+
+    // T5 of the note detection report: a key of the next column played a
+    // little early, as when one hand leads the other, used to be a slip on
+    // the column still under way, and the hit then forgot it, so the column
+    // it belonged to waited for it again while the player played on. It is
+    // buffered and credited to that column now; and striking the column just
+    // completed again shortly after (a late duplicate, a key bounce) is no
+    // slip either
+    describe("lookahead and lookbehind (T5)", function() {
+      // the hit events the page rendered, as the matcher made them
+      let hits = () => {
+        let events = []
+        let applyEvent = page.applyEvent.bind(page)
+        spyOn(page, "applyEvent").and.callFake(event => {
+          if (event.type == "hit") { events.push(event) }
+          return applyEvent(event)
+        })
+        return events
+      }
+
+      // M2: the left hand plays column 1's G#3 at 150 ms, before the right
+      // hand's G#5 completes column 0 at 200
+      it("credits the next column's key played before the other hand completes the column (M2)", async function() {
+        await renderPiece(nocturneBarXML, {endMeasure: 1})
+        expect(sorted(head())).toEqual(["C#3", "G#5"])
+        let hit = hits()
+
+        perform([
+          [0, "on", "C#3"], [180, "off", "C#3"],
+          [150, "on", "G#3"], [550, "off", "G#3"],
+          [200, "on", "G#5"],
+          [1000, "on", "E4"], [1250, "off", "E4"],
+          [1500, "on", "C#4"], [1750, "off", "C#4"],
+          [2000, "on", "C#3"], [2250, "off", "C#3"],
+          [2000, "off", "G#5"], [2000, "on", "F#5"],
+          [2500, "on", "A3"], [3000, "on", "D#4"], [3500, "on", "C#4"],
+        ])
+
+        expect(counts()).toEqual([8, 0])
+        expect(page.state.noteShaking).toBe(false)
+        // G#3 completed its column as the G#5 landed, recorded as early
+        expect(hit.map(event => event.early)).toEqual([[], ["G#3"], [], [], [], [], [], []])
+        expect(sorted(head())).toEqual(["C#3", "G#5"])
+      })
+
+      // B4: the left hand 300 ms ahead of the right throughout, so each of its
+      // beats lands just before the right hand's sixteenth ahead of it
+      it("follows a bar played with one hand leading the other (B4)", async function() {
+        await renderPiece(leadingHandXML, {endMeasure: 1})
+        expect(sorted(head())).toEqual(["C#3", "E4"])
+
+        let lead = 300
+        let left = [["C#3", 1000], ["F3", 2000], ["C#3", 3000], ["G#3", 4000]]
+        let right = [["E4", 1000, 750], ["B4", 1750, 250], ["C#5", 2000, 750], ["B4", 2750, 250], ["A4", 3000, 2000]]
+        perform([
+          ...left.flatMap(([note, at]) => [[at - lead, "on", note], [at - lead + 950, "off", note]]),
+          ...right.flatMap(([note, at, length]) => [[at, "on", note], [at + length - 10, "off", note]]),
+        ])
+
+        expect(counts()).toEqual([6, 0])
+        expect(page.state.noteShaking).toBe(false)
+        expect(sorted(head())).toEqual(["C#3", "E4"])
+      })
+
+      it("counts one slip on the column for a next column's key that turns out wrong", async function() {
+        await renderPiece(nocturneBarXML, {endMeasure: 1})
+        let slipNotes = spyOn(page.state.stats, "slipNotes").and.callThrough()
+
+        // G#3 goes down, but the column isn't complete until 600 ms later:
+        // the player wasn't early, they were wrong
+        perform([[0, "on", "G#3"], [100, "off", "G#3"], [500, "on", "C#3"], [600, "on", "G#5"]])
+        expect(counts()).toEqual([1, 1])
+        expect(slipNotes).not.toHaveBeenCalled()
+
+        // so its own column still needs it
+        expect(head()).toEqual(["G#3"])
+        perform([[1000, "on", "G#3"]])
+        expect(counts()).toEqual([2, 1])
+        expect(head()).toEqual(["E4"])
+      })
+
+      it("counts no slip for the column's key struck twice quickly", async function() {
+        await renderPiece(nocturneBarXML, {endMeasure: 1})
+
+        // a late duplicate of the right hand's G#5, then the left hand's
+        // G#3 bouncing, each just after its column completed
+        perform([
+          [0, "on", "C#3"], [0, "on", "G#5"], [40, "off", "G#5"], [90, "on", "G#5"],
+          [500, "on", "G#3"], [540, "off", "G#3"], [600, "on", "G#3"], [640, "off", "G#3"],
+        ])
+        expect(counts()).toEqual([2, 0])
+        expect(page.state.noteShaking).toBe(false)
+        expect(head()).toEqual(["E4"])
+
+        // struck again any later, it is a wrong key as before
+        perform([[1000, "on", "G#3"]])
+        expect(counts()).toEqual([2, 1])
+        expect(head()).toEqual(["E4"])
       })
     })
 
