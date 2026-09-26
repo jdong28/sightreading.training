@@ -834,6 +834,24 @@ describe("musicxml ornaments", function() {
     ])
   })
 
+  it("gives an accidental mark with no placement the next side of its ornament", function() {
+    let mark = (alter, placement="") =>
+      `<accidental-mark${placement ? ` placement="${placement}"` : ""}>${alter}</accidental-mark>`
+    let song = parseMusicXML(partwise(`
+<measure number="1">
+  ${attributes({})}
+  ${note("A", 4, 1, ornamented(`<turn/>${mark("flat")}${mark("sharp")}`))}
+  ${note("E", 5, 1, ornamented(`<mordent/>${mark("flat")}${mark("natural")}`))}
+</measure>`))
+
+    expect(ornaments(song)).toEqual([
+      // the turn's two sides in the order the marks are written
+      ["A4", 0, {neighbours: ["Bb4", "G#4"]}],
+      // the mordent has only a lower side, so its second mark alters nothing
+      ["E5", 1, {neighbours: ["Db5"]}],
+    ])
+  })
+
   it("trills every note under a wavy line, across the bar, in its own voice only", function() {
     let song = parseMusicXML(partwise(`
 <measure number="1">

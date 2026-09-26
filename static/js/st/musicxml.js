@@ -261,8 +261,10 @@ const ACCIDENTAL_MARKS = {
 // [{side: "upper" | "lower", alter}], alter being the accidental mark written
 // on that side, or null for the one in force, and whether any of them is a
 // trill (see TRILLS). Empty for a note without one. An <ornaments> element
-// lists each ornament followed by its accidental marks; a turn's marks say
-// which side they are on with placement
+// lists each ornament followed by its accidental marks: a mark with placement
+// alters the side it names, one without it the next side still unaltered in
+// written order (a turn's upper then its lower), and a mark with no side left
+// to take alters nothing
 function ornamentNeighbours(noteEl) {
   let neighbours = []
   let trill = false
@@ -284,9 +286,11 @@ function ornamentNeighbours(noteEl) {
         if (!last || alter == null) { continue }
 
         let placement = el.getAttribute("placement")
-        let side = placement == "below" ? "lower" : placement == "above" ? "upper" : last[0].side
-        let neighbour = last.find(n => n.side == side)
-        if (neighbour) {
+        let side = placement == "below" ? "lower" : placement == "above" ? "upper" : null
+        let neighbour = side ?
+          last.find(n => n.side == side) :
+          last.find(n => n.alter == null)
+        if (neighbour && neighbour.alter == null) {
           neighbour.alter = alter
         }
       }
