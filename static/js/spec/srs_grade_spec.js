@@ -3,10 +3,11 @@ import {
   AGAIN, HARD, GOOD, EASY, HESITATION_MIN_MS,
 } from "st/srs/grade"
 
-// columns played at an even 500 ms a beat, one beat apart, with the misses
-// of each (a number a column, or an object for anything more)
+// columns played at an even 500 ms a beat, one beat apart, each started
+// 400 ms after it became the head, with the misses of each (a number a
+// column, or an object for anything more)
 const played = (...columns) => columns.map(column => ({
-  misses: 0, ms: 500, gap: 1, ...(typeof column == "number" ? {misses: column} : column),
+  misses: 0, ms: 500, latency: 400, gap: 1, ...(typeof column == "number" ? {misses: column} : column),
 }))
 
 const clean = n => played(...Array(n).fill(0))
@@ -25,17 +26,25 @@ describe("srs grade", function() {
       ["a skipped column is again", played(0, 0, {skipped: true}, 0), {mode: "wait"}, AGAIN],
       ["a column scrolled past among 8 is hard", played(0, 0, 0, 1, 0, 0, 0, 0), {mode: "scroll"}, HARD],
       ["one hesitation among 4 is good, never easy",
-        played(0, 0, {ms: 2000}, 0), {mode: "wait"}, GOOD],
+        played(0, 0, {ms: 2000, latency: 2000}, 0), {mode: "wait"}, GOOD],
       ["hesitations on over a quarter of the columns is hard",
-        played(0, 0, {ms: 2000}, {ms: 2000}, 0, 0, 0), {mode: "wait"}, HARD],
-      ["a long gap excuses the time after a long note",
-        played(0, 0, {ms: 2000, gap: 4}, 0), {mode: "wait"}, EASY],
+        played(0, 0, {ms: 2000, latency: 2000}, {ms: 2000, latency: 2000}, 0, 0, 0), {mode: "wait"}, HARD],
+      ["a long gap excuses the wait after a long note",
+        played(0, 0, {ms: 2000, latency: 2000, gap: 4}, 0), {mode: "wait"}, EASY],
       ["a pause on the first column is reading, never a hesitation",
-        played({ms: 20000}, 0, 0, 0), {mode: "wait"}, EASY],
+        played({ms: 20000, latency: 20000}, 0, 0, 0), {mode: "wait"}, EASY],
       ["a pause on a bar's first column inside a card is a hesitation",
-        played({ms: 2000}, 0, 0, 0), {mode: "wait", lead: false}, GOOD],
+        played({ms: 2000, latency: 2000}, 0, 0, 0), {mode: "wait", lead: false}, GOOD],
       ["under the threshold's floor is never a hesitation",
-        played(0, 0, {ms: HESITATION_MIN_MS}, 0), {mode: "wait"}, EASY],
+        played(0, 0, {ms: HESITATION_MIN_MS, latency: HESITATION_MIN_MS}, 0), {mode: "wait"}, EASY],
+      // a key held instead of struck again, or a slow roll: the column was
+      // started on time and only completed late, which its spread records
+      ["a column started on time but completed late is no hesitation",
+        played(0, 0, {ms: 6000, latency: 300}, 0), {mode: "wait"}, EASY],
+      ["a column without a latency is never a hesitation",
+        played(0, 0, {ms: 6000, latency: null}, 0), {mode: "wait"}, EASY],
+      ["a long wait before a column's first key is a hesitation, however quickly it completes",
+        played(0, 0, {ms: 2100, latency: 2000}, 0, 0, 0, 0, 0), {mode: "wait"}, GOOD],
       ["a clean attempt slower than the usual pace is good",
         clean(4), {mode: "wait", usualPace: 400}, GOOD],
       ["a clean attempt near the usual pace is easy",
@@ -43,7 +52,7 @@ describe("srs grade", function() {
       ["a clean attempt at first sight is easy whatever the usual pace",
         clean(4), {mode: "wait", usualPace: 100, firstSight: true}, EASY],
       ["scroll mode ignores the time on a column",
-        played(0, {ms: 20000}, 0, 0), {mode: "scroll"}, GOOD],
+        played(0, {ms: 20000, latency: 20000}, 0, 0), {mode: "scroll"}, GOOD],
     ]
 
     for (let [what, columns, opts, grade] of cases) {
@@ -55,7 +64,8 @@ describe("srs grade", function() {
 
   it("counts what the grade reads", function() {
     let columns = played(
-      {ms: 9000}, 0, 1, {skipped: true, ms: 50}, 3, {ms: 2600}, {ms: 1400, gap: 2}, 0)
+      {ms: 9000, latency: 9000}, 0, 1, {skipped: true, ms: 50, latency: null}, 3,
+      {ms: 2600, latency: 2500}, {ms: 1400, latency: 1300, gap: 2}, {ms: 3000, latency: 200})
 
     expect(gradeAttempt(columns, {mode: "wait"})).toEqual({
       columns: 8,
@@ -65,7 +75,7 @@ describe("srs grade", function() {
       stuck: 1,
       skipped: 1,
       hesitations: 1,
-      pace: 500,
+      pace: 600,
       grade: AGAIN,
     })
   })
@@ -88,7 +98,7 @@ describe("srs grade", function() {
     })
 
     it("judges hesitations by a pace given, eg. a whole card's", function() {
-      let columns = played(0, {ms: 1600}, {ms: 1600})
+      let columns = played(0, {ms: 1600, latency: 1600}, {ms: 1600, latency: 1600})
       expect(attemptCounts(columns, {mode: "wait"}).hesitations).toEqual(0)
       expect(attemptCounts(columns, {mode: "wait", pace: 500}).hesitations).toEqual(2)
     })

@@ -368,6 +368,7 @@ export default class SightReadingPage extends React.Component {
     }
     this.matcher.mode = currentGenerator ? currentGenerator.mode : "notes"
     this.matcher.anyOctave = anyOctave
+    this.matcher.scroll = this.state.mode == "scroll"
   }
 
   // the generator of notes and the index in its card of their head column
@@ -802,6 +803,8 @@ export default class SightReadingPage extends React.Component {
 
       case "hit":
         gaEvent("sight_reading", "note", "hit")
+        // the column's measurements reached the measure cards' attempt with
+        // the column as the matcher removed it (see NoteList#shift)
         this.state.stats.hitNotes(event.hitNotes)
         update.notes = this.matcher.notes
         // one column at a time: a hit may complete the next column too, from
@@ -1017,6 +1020,10 @@ export default class SightReadingPage extends React.Component {
         // the head column waits on the line, never looping past it
         floor: SCROLL_WAIT,
         onUpdate: value => this.setOffset(value),
+        // the matcher times how long each column stands on the hit line
+        // before it is played (its late), which is recorded and never a miss
+        onStart: () => this.matcher.onLine(null),
+        onStop: () => this.matcher.onLine(this.matcher.now()),
         onLoop: function() {
           let column = this.state.notes.currentColumn()
           // notes scrolling past at rest aren't misses

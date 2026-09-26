@@ -111,11 +111,13 @@ export default class NoteList extends Array {
   // Removes the head column once the player is done with it (played,
   // skipped or scrolled past). A generator with a columnDone method is told,
   // along with this list so it may replace the columns still to come, eg. the
-  // measure flashcards (st/measure_cards) swapping in the next card
-  shift() {
+  // measure flashcards (st/measure_cards) swapping in the next card, and what
+  // the matcher measured on the column when it was played (see
+  // NoteMatcher#measured): nothing for a column skipped or scrolled past
+  shift(measured) {
     let column = super.shift()
     if (this.generator && this.generator.columnDone) {
-      this.generator.columnDone(column, this)
+      this.generator.columnDone(column, this, measured)
     }
     return column
   }

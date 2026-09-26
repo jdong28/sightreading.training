@@ -39,6 +39,16 @@
 // allowed extras: the key goes down, but nothing about it is judged. The
 // column carries them as its allowed (see extractSectionColumns in
 // st/song_sections).
+//
+// Each hit also measures the column for the grade (rule 8 of the report):
+// its latency, from the moment it became the head to the first of its own
+// keys struck at it, which is what a hesitation is read from (so a column
+// completed late by a key held instead of struck again, or by a slow roll,
+// isn't one); how many of its keys were credited early (above) and held over
+// (heldCredit, 0 until score-sustained credit lands); and, in scroll mode,
+// how long it stood on the hit line before it completed (late), which is
+// recorded but never a miss: scroll mode scrolls to the line and waits
+// (ruling D4(a)). See measured.
 
 // W_early: how long a key of the next column may wait for the column under
 // way to complete before it counts as a slip on it (ruling D2(a): about
@@ -52,12 +62,22 @@ export const LATE_REPEAT_WINDOW = 250
 export default class NoteMatcher {
   // notes is the NoteList the drill is playing (the matcher advances it);
   // opts are the options detection reads: the generator's mode ("notes" or
-  // "chords") and anyOctave, and onEvent, told each judgement as it is made
+  // "chords") and anyOctave, whether the staff scrolls (scroll mode), onEvent,
+  // told each judgement as it is made, and now, the clock of the moments no
+  // event times (a column becoming the head through a new list, Begin, a
+  // press with no timeStamp, the staff coming to rest on the hit line):
+  // performance.now by default, the clock MIDI events are stamped by
   constructor(notes, opts={}) {
     this.notes = notes || null
     this.mode = opts.mode || "notes"
     this.anyOctave = !!opts.anyOctave
+    this.scroll = !!opts.scroll
     this.onEvent = opts.onEvent || null
+    this.now = opts.now || (() => performance.now())
+
+    // in scroll mode, since when the staff has stood with the head column on
+    // the hit line, null while it moves (see onLine)
+    this.onLineSince = null
 
     // the keys physically down, from each note on to its note off. It
     // survives a hit, so a wrong key still down as a column completes is
@@ -88,14 +108,19 @@ export default class NoteMatcher {
     this.firstDown = false
     this.firstAt = null
 
+    // when the head column became the head, and when the first of its own
+    // keys went down (on the matcher's clock when the press had no
+    // timeStamp), for its latency
+    this.headAt = this.now()
+    this.firstKeyAt = null
+
     // the note list a miss was last counted on (a column counts missed once
     // however many slips it takes), and whether the try in progress has
     // already counted a slip
     this.missedNotes = null
     this.slipped = false
 
-    // the timeStamp of the last event fed in, recorded for the later tasks
-    // that measure a column's timing. Nothing computes lateness from it yet
+    // the timeStamp of the last event fed in
     this.lastEventAt = null
   }
 
@@ -120,9 +145,15 @@ export default class NoteMatcher {
   }
 
   // the head column is played afresh from the next key down, with the keys
-  // still down left held (a skipped column): no key is held early for the
-  // column after it, and no column just completed is looked back to
+  // still down left held (a skipped column), and timed from now: no key is
+  // held early for the column after it, and no column just completed is
+  // looked back to
   clearTouched() {
+    this.startHead(this.now())
+  }
+
+  // a column became the head at time: nothing is struck at it yet
+  startHead(time) {
     this.touched = {}
     this.strays = {}
     this.early = {}
@@ -130,6 +161,16 @@ export default class NoteMatcher {
     this.previous = null
     this.firstDown = false
     this.firstAt = null
+    this.firstKeyAt = null
+    this.headAt = time
+  }
+
+  // In scroll mode the staff came to rest with the head column on the hit
+  // line at time (the slider reached its floor), or moves again (null). A
+  // column completed while the staff stands there was late by the time it
+  // stood there as the head
+  onLine(time) {
+    this.onLineSince = time ?? null
   }
 
   // the stats started over, so the column under way may count a miss again
@@ -210,10 +251,15 @@ export default class NoteMatcher {
     // again, a key of the next column played early, or else a slip
     let slip = false
     if (this.inColumn(notes.currentColumn(), note)) {
-      // the first of the column's own keys down starts its spread
+      // the first of the column's own keys down starts its spread, and the
+      // first struck at it (a key credited early was struck before it was
+      // the head) ends its latency
       if (!this.firstDown) {
         this.firstDown = true
         this.firstAt = timeStamp ?? null
+      }
+      if (this.firstKeyAt == null) {
+        this.firstKeyAt = timeStamp ?? this.now()
       }
     } else if (this.repeated(note, timeStamp)) {
       // struck again: neither the head's nor a slip
@@ -247,12 +293,18 @@ export default class NoteMatcher {
     let column = notes.currentColumn()
     let touched = Object.keys(this.touched)
 
+    // the moment the column completed, on the clock the measurements share:
+    // the key that completed it carried no timeStamp (the on-screen
+    // keyboard) when completedAt is null
+    let at = completedAt ?? this.now()
+
     // from the first of the column's keys down to the last, which completed
     // it: null when either press came with no timeStamp (the on-screen
     // keyboard), as their distance apart isn't known
     let spread = this.firstAt != null && completedAt != null
       ? completedAt - this.firstAt
       : null
+    let measured = {spread, ...this.measured(at)}
 
     let event = {
       type: "hit",
@@ -262,22 +314,27 @@ export default class NoteMatcher {
       from: notes,
       // a slip's shake plays out over the next column
       stray: Object.keys(this.strays).length > 0,
-      spread,
-      // the column's keys that were struck before it was the head
-      early: this.credited,
+      // the column's keys that were struck before it was the head, which
+      // measured counts as its early
+      credited: this.credited,
+      // what the grade reads on the column, as it went with it (see measured)
+      ...measured,
     }
 
     let early = this.early
     this.slipped = false
     let advanced = notes.clone()
-    advanced.shift()
+    // the measurements go with the column as it is removed, so the generator
+    // has them the moment it is told the column is done, before it grades
+    // the pass they finish (see NoteList#shift)
+    advanced.shift(measured)
     advanced.pushRandom()
     this.notes = advanced
 
     // the next column is played afresh, but for its keys struck early: the
     // keys still down stay held, and none of them is otherwise credited to
     // it (score-sustained credit is a later step)
-    this.clearTouched()
+    this.startHead(at)
     this.previous = {column, at: completedAt}
 
     let next = advanced.currentColumn()
@@ -345,6 +402,28 @@ export default class NoteMatcher {
 
   inColumn(column, note) {
     return column.some(n => this.notes.sameNote(note, n, this.anyOctave))
+  }
+
+  // The head column's measurements for the grade, as the key down at time
+  // completes it:
+  // - latency, from the column becoming the head to the first of its own
+  //   keys down (a wrong key first doesn't end it)
+  // - early, how many of its keys were credited from presses made before it
+  //   was the head (see hit), and heldCredit, how many were keys held over
+  //   that the score still sounds: 0 until score-sustained credit lands
+  // - late, in scroll mode, how long it stood on the hit line as the head
+  //   before it completed (0 when it completed on its way there), null in
+  //   wait mode. Never a miss (D4(a))
+  measured(time) {
+    let latency = this.firstKeyAt != null ? Math.max(0, this.firstKeyAt - this.headAt) : null
+
+    let late = null
+    if (this.scroll) {
+      late = this.onLineSince == null ? 0 :
+        Math.max(0, time - Math.max(this.onLineSince, this.headAt))
+    }
+
+    return {latency, early: this.credited.length, heldCredit: 0, late}
   }
 
   // the chord drill, when the keys down reach 0: the chord is checked on

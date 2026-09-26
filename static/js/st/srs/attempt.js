@@ -10,6 +10,12 @@
 // rest of the card played after it: a pass is only graded when it was played
 // from its first column to its last in one go. Items are per hand setting,
 // and the misses are also split by the score staff of the notes blamed.
+//
+// Each column also keeps what the note matcher (st/note_matcher) measured
+// on its hit: its latency, which the grade reads hesitations from, its
+// spread, the keys credited early and held over, and in scroll mode how late
+// it was on the hit line. A graded review stores them a column (perColumn),
+// so a revised grade can be worked out again from the log.
 
 import {itemId, newItem, itemWithPractice, RECENT_ATTEMPTS, STAVES} from "st/srs/records"
 import {gradeAttempt, attemptPace, hesitations, GRADE_ALGO} from "st/srs/grade"
@@ -19,6 +25,10 @@ export const PAUSE_MS = 30 * 1000
 
 // how far an item's usual pace moves toward the pace of a clean attempt
 export const PACE_WEIGHT = 0.25
+
+// what the matcher measures on a column when it is played, see AttemptPass#done
+const MEASURES = ["latency", "spread", "early", "heldCredit", "late"]
+const UNMEASURED = Object.fromEntries(MEASURES.map(key => [key, null]))
 
 /**
  * One pass through a card's columns (a MeasureCard of st/measure_cards,
@@ -45,6 +55,7 @@ export class AttemptPass {
     this.drill = null
     this.columns = card.columns.map(() => ({
       misses: 0, counted: 0, hit: false, done: false, ms: null, staffMisses: {upper: 0, lower: 0},
+      ...UNMEASURED,
     }))
   }
 
@@ -101,14 +112,21 @@ export class AttemptPass {
   /**
    * The head column is done with (played, skipped or scrolled past)
    * @param {number} time
+   * @param {Object} [measured] what the matcher measured on the column when
+   * it was played (see NoteMatcher#measured): latency, spread, early,
+   * heldCredit and late, each null when not measured. A column skipped or
+   * scrolled past has none, so the grade reads no hesitation on it
    * @returns {number} its index in the card
    */
-  done(time) {
+  done(time, measured={}) {
     let index = this.head
     let column = this.columns[index]
     column.done = true
     if (this.columnStartedAt != null) {
       column.ms = Math.max(0, time - this.columnStartedAt)
+    }
+    for (let key of MEASURES) {
+      column[key] = measured[key] ?? null
     }
 
     this.columnStartedAt = time
@@ -218,8 +236,25 @@ function gradedColumn(pass, idx, mode) {
     // a column scrolled past was missed, not skipped
     skipped: column.done && !column.hit && !(mode == "scroll" && column.misses > 0),
     ms: column.ms,
+    latency: column.latency,
     gap,
   }
+}
+
+const roundOrNull = n => n == null ? null : Math.round(n)
+
+// A review's record of one of its columns, see ReviewRecord#perColumn in
+// st/srs/records: [slips, stalled, latency, spread, early, heldCredit, late]
+function columnRecord(column, graded) {
+  return [
+    graded.misses,
+    graded.skipped ? 1 : 0,
+    roundOrNull(column.latency),
+    roundOrNull(column.spread),
+    column.early,
+    column.heldCredit,
+    roundOrNull(column.late),
+  ]
 }
 
 /**
@@ -338,6 +373,8 @@ export function passAttempts(pass, {pieceId, hand, at=pass.lastAt, sessionId}) {
           ]
         })
       }
+
+      review.perColumn = indices.map(idx => columnRecord(pass.columns[idx], cardColumns[idx]))
 
       let trouble = columns.flatMap((column, idx) => column.misses ? [idx] : [])
       if (trouble.length) {

@@ -117,6 +117,22 @@ describe("spaced repetition records", function() {
       expect(validReview(attempt("p", 1, 1, 5, {staffMisses: {upper: -1, lower: 0}}))).toBe(false)
     })
 
+    // an attempt graded before GRADE_ALGO 2 has no per-column record, and
+    // is read as it was stored
+    it("keeps a review's per-column measurements, which reviews graded before them lack", function() {
+      let old = attempt("p", 1, 1, 5)
+      expect(old.perColumn).toBeUndefined()
+      expect(validReview(old)).toBe(true)
+
+      let perColumn = [[0, 0, 400, 12, 0, 0, null], [2, 0, 1800, 0, 0, 0, null], [0, 1, null, null, null, null, null]]
+      expect(validReview(attempt("p", 1, 1, 5, {perColumn, algo: 2}))).toBe(true)
+      expect(validReview(attempt("p", 1, 1, 5, {perColumn: [[0, 0, 400, 0, 0, 0, 900]], mode: "scroll", algo: 2}))).toBe(true)
+      expect(validReview(attempt("p", 1, 1, 5, {perColumn: [[0, 0, 400, 0, 0, 0]]}))).toBe(false)
+      expect(validReview(attempt("p", 1, 1, 5, {perColumn: [[0, 2, 400, 0, 0, 0, null]]}))).toBe(false)
+      expect(validReview(attempt("p", 1, 1, 5, {perColumn: [[0, 0, -1, 0, 0, 0, null]]}))).toBe(false)
+      expect(validReview(attempt("p", 1, 1, 5, {perColumn: {}}))).toBe(false)
+    })
+
     it("tells stored items and reviews from other data", function() {
       let item = newItem({pieceId: "p", startMeasure: 2, endMeasure: 4}, 10)
       expect(item.level).toEqual("span")
@@ -303,6 +319,30 @@ describe("spaced repetition records", function() {
           expect(reopened.item("a:both:1-2").state).toEqual("split")
           expect(reopened.recentSessions().map(s => s.id)).toEqual(["s1"])
           expect(await reopened.reviews({sessionId: "s1"})).toEqual([review])
+        }
+      })
+
+      it("reads an attempt graded before per-column measurements beside one with them, each schedule from its stored grade", async function() {
+        let old = attempt("a", 1, 1, 1000, {grade: 2})
+        let item = applyGrade(practicedItem("a", 1, 1, 1000), old.grade, old.at)
+        await store.recordAttempt({item: practicedItem("a", 1, 1, 1000), review: old})
+
+        let measured = attempt("a", 1, 1, 2000, {
+          grade: 4, algo: 2, perColumn: [[0, 0, 400, 0, 0, 0, null], [0, 0, 350, 20, 0, 0, null]],
+        })
+        await store.recordAttempt(stored => ({item: stored.item("a:both:1-1"), review: measured}))
+        item = applyGrade(item, measured.grade, measured.at)
+
+        // the second is scheduled from the first, so it carries the recall predicted
+        measured = {...measured, r: jasmine.any(Number)}
+        expect(await store.reviews({pieceId: "a"})).toEqual([old, measured])
+        expect(store.item("a:both:1-1")).toEqual(jasmine.objectContaining({
+          state: item.state, due: item.due, s: item.s, lastGrade: 4,
+        }))
+
+        if (persist) {
+          let reopened = await open({keep: true})
+          expect(await reopened.reviews({pieceId: "a"})).toEqual([old, measured])
         }
       })
 
