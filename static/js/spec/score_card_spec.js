@@ -1101,6 +1101,60 @@ describe("score page engine card", function() {
     expect(page.state.stats.misses).toEqual(counted)
   })
 
+  it("counts no miss for the other hand sounding between the judged hand's onsets", async function() {
+    // bar 1 in quarters over the left hand's two half notes, so the right
+    // hand sounds where the left has no onset of its own
+    let rest = "<note><rest/><duration>1</duration><staff>1</staff></note>"
+    let bars = [1, 2].map(number => `<measure number="${number}">${number == 1 ? attributes([["G", 2], ["F", 4]], 2) : ""}${noteXML("E", 5, 1, 1)}${noteXML("G", 5, 1, 1)}${noteXML("C", 5, 1, 1)}${rest}<backup><duration>4</duration></backup>${noteXML("C", 3, 2, 2)}${noteXML("G", 3, 2, 2)}</measure>`)
+    let piece = await drillPiece(scoreOf("<score-part id=\"P1\"><part-name>Piano</part-name></score-part>",
+      `<part id="P1">${bars.join("")}</part>`), {startMeasure: 1, endMeasure: 2, measuresPerCard: "1"})
+    await store.putStudy({pieceId: piece.id, status: "learning", startedAt: Date.now()})
+    renderScorePage()
+    await cardDrawn()
+
+    flushSync(() => page.beginSession())
+    let generator = page.state.notes.generator
+    expect([...page.state.notes.currentColumn()]).toEqual(["C3", "E5"])
+
+    // a wrong key under the right hand's note on each column the left hand
+    // shares, so the left hand's notes are blamed and the bar fails
+    for (let [left, right] of [["C3", "E5"], ["G3", "C5"]]) {
+      if (left == "G3") { play(["G5"]) }
+      flushSync(() => page.pressNote(right))
+      flushSync(() => page.pressNote("A#2"))
+      flushSync(() => page.releaseNote("A#2"))
+      flushSync(() => page.pressNote(left))
+      flushSync(() => page.releaseNote(left))
+      flushSync(() => page.releaseNote(right))
+    }
+    await generator.finishing
+    flushSync(() => page.forceUpdate())
+
+    let failed = (await store.reviews({pieceId: piece.id})).find(review => review.itemId == `${piece.id}:both:1-1`)
+    expect([failed.grade, failed.staffMisses]).toEqual([1, {upper: 0, lower: 2}])
+    expect(page.currentCard().card.hand).toEqual("lower")
+
+    flushSync(() => page.setMode("scroll"))
+    await cardDrawn()
+    expect([...page.state.notes.currentColumn()]).toEqual(["C3"])
+
+    // played as engraved: the right hand's notes between the left hand's
+    // onsets fall after the onset judged before the head, so none of them
+    // is a wrong key
+    let misses = page.state.stats.misses
+    play(["E5", "C3"])
+    play(["G5"])
+    play(["C5"])
+    play(["G3"])
+    await generator.finishing
+    flushSync(() => page.forceUpdate())
+
+    expect(page.state.stats.misses).toEqual(misses)
+    let alone = (await store.reviews({pieceId: piece.id}))
+      .find(review => review.itemId === `${piece.id}:lower:1-1`)
+    expect([alone.misses, alone.clean]).toEqual([0, 2])
+  })
+
   it("judges a shared pitch pressed in the same render as the hit before it", async function() {
     // the right hand of the bar plays E3, which the left hand alone also
     // plays on its third column

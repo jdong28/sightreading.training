@@ -614,11 +614,11 @@ export default class SightReadingPage extends React.Component {
   // own. A bar today's programme offers as one hand alone is still drawn
   // with the other hand's notes wherever the staves drawn aren't narrowed to
   // it — the one system of scroll mode, or a hand the score can't tell apart
-  // — and the other hand's note at the head's own onset is then neither
-  // required nor a wrong key, unless the head asks for that pitch itself.
-  // The head comes from the matcher's own list, which it advances as it
-  // judges, so presses batched into one render each see the head they
-  // landed on
+  // — and the other hand's notes from the onset judged before the head
+  // through the head's own are then neither required nor a wrong key, so a
+  // hand playing between the judged hand's onsets reads as engraved. The
+  // head comes from the matcher's own list, which it advances as it judges,
+  // so presses batched into one render each see the head they landed on
   besideStaffNote(note) {
     if (!this.engineCards()) { return false }
 
@@ -636,8 +636,9 @@ export default class SightReadingPage extends React.Component {
     let head = (this.matcher.notes || this.state.notes).currentColumn()
     if (head.some(required => parseNote(required) == pitch)) { return false }
 
-    return this.beside.onsets.some(onset =>
-      Math.abs(onset.beat - head.beat) < ONSET_EPSILON && onset.pitches.has(pitch))
+    let judged = head.cardIndex > 0 ? current.card.columns[head.cardIndex - 1].beat : -Infinity
+    return this.beside.onsets.some(onset => onset.beat > judged - ONSET_EPSILON &&
+      onset.beat < head.beat + ONSET_EPSILON && onset.pitches.has(pitch))
   }
 
   // This generates a new set of notes, appropriate for when the generator or
