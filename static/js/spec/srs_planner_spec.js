@@ -315,8 +315,13 @@ describe("today's programme planner", function() {
         onLadder(3, {due: NOW + 5 * MINUTE}),
       ]
       expect(planSummary({pieceId: "p", items, measures: MEASURES, now: NOW})).toEqual({
-        due: 2, dueMinutes: 1, newMeasures: 5, targetMinutes: 20, learned: 2, measures: 8,
+        due: 2, dueMinutes: 1, newMeasures: 5, targetMinutes: 20, learned: 2, measures: 8, hand: "both",
       })
+
+      // the hand the programme is played with, which the plate counts the
+      // due items of in other pieces (mostOverduePiece)
+      expect(planSummary({pieceId: "p", items, measures: MEASURES, now: NOW, hand: "lower"}).hand)
+        .toEqual("lower")
     })
   })
 
@@ -399,6 +404,11 @@ describe("today's programme planner", function() {
         expect(entryIn([item], {lastReviews, ...extra})).withContext(name).toEqual(expected)
       }
 
+      // without the failure's review the bar isn't split, whatever has been
+      // played alone since it failed
+      let leftAlone = graded(3, [[ago(0.5), GOOD]], "lower")
+      expect(entryIn([firstSight, leftAlone], {lastReviews: new Map()})).toEqual([RETRY, 3, "both"])
+
       // the hand alone's item, by the id it will be written under
       let {entry} = planned([firstSight], {lastReviews: blame(ago(1), 0, 3)})
       expect([entry.itemId, entry.item]).toEqual(["p:lower:3-3", null])
@@ -427,7 +437,7 @@ describe("today's programme planner", function() {
         ["good, then hard", {}, [[ago(8), GOOD], [ago(6), HARD]], "lower"],
         ["again, then good twice running", {}, [[ago(8), AGAIN], [ago(6), GOOD], [ago(4), GOOD]], undefined],
         ["held before the failure only", {}, [[ago(30), GOOD], [ago(20), GOOD]], "lower"],
-        ["played alone, its review not read yet", {lastReviews: new Map()}, [[ago(8), GOOD]], "lower"],
+        ["played alone, its failure's review not read yet", {lastReviews: new Map()}, [[ago(8), GOOD]], undefined],
       ]
 
       for (let [name, extra, attempts, hand] of rows) {
@@ -475,13 +485,13 @@ describe("today's programme planner", function() {
       let later = {lastReviews: blame(ago(10), 0, 3), now: NOW + 2 * 3600 * 1000}
       expect(entryIn(items, later)).toEqual([LADDER, 3, "lower"])
 
-      // a bar resting is no work left in the programme, but a piece whose
-      // every bar rests plays one all the same
+      // a bar resting is no work left in the programme, and a piece whose
+      // every bar rests has nothing to play until the next sitting
       let alone = planNext({
         pieceId: "p", items, measures: [3], now: NOW, handMeasures: APART, lastReviews: blame(ago(10), 0, 3),
       })
       expect(alone.complete).toBe(true)
-      expect([alone.entry.measure, alone.entry.hand]).toEqual([3, "lower"])
+      expect(alone.entry).toBe(null)
     })
 
     it("words the card after a failure", function() {
@@ -546,6 +556,11 @@ describe("today's programme planner", function() {
         expect(mostOverduePiece({studies, items: [other, left, ...together], now: NOW}))
           .withContext(name).toEqual(expected)
       }
+
+      // played with the left hand, those are the programme's own items: due
+      // however its bar stands hands together
+      let retired = [other, left, item(inReview(3, {due: NOW + 5 * DAY}))]
+      expect(mostOverduePiece({studies, items: retired, now: NOW, hand: "lower"})).toEqual("p")
     })
 
     it("makes the programme the default in study", function() {
@@ -597,8 +612,10 @@ describe("today's programme on the staff", function() {
     return generator.cards.map(card => ({number: card.startMeasure, columns: card.columns}))
   }
 
-  let generatorFor = (cardMeasures=2, opts={}) => {
+  // the deck plans its first card once the piece's reviews are read
+  let generatorFor = async (cardMeasures=2, opts={}) => {
     let deck = new PlanDeck(pool(), {pieceId: piece.id, cardMeasures, store, now: () => time, ...opts})
+    await deck.ready
     let generator = new PlanGenerator(deck, {now: () => time})
     generators.push(generator)
     let notes = new NoteList([], {generator})
@@ -618,8 +635,8 @@ describe("today's programme on the staff", function() {
     return notes
   }
 
-  it("keeps the generator contract the staff and ScoreCard rely on", function() {
-    let {deck, generator, notes} = generatorFor()
+  it("keeps the generator contract the staff and ScoreCard rely on", async function() {
+    let {deck, generator, notes} = await generatorFor()
     expect(generator instanceof MeasureCardGenerator).toBe(true)
 
     // the first new measure, the pickup, with the one after it
@@ -642,7 +659,7 @@ describe("today's programme on the staff", function() {
   })
 
   it("plans the next card from the attempt just played, and says when it returns", async function() {
-    let {deck, generator, notes} = generatorFor()
+    let {deck, generator, notes} = await generatorFor()
     let stats = new NoteStats()
 
     notes = await playCard({generator, notes}, stats)
@@ -695,7 +712,7 @@ describe("today's programme on the staff", function() {
   })
 
   it("brings a failed measure back at once", async function() {
-    let {deck, generator, notes} = generatorFor(1)
+    let {deck, generator, notes} = await generatorFor(1)
     let stats = new NoteStats()
 
     // a slip on the pickup's only column, then the hit
@@ -712,7 +729,7 @@ describe("today's programme on the staff", function() {
     // the pools first: making one stops the generator playing
     let measures = pool()
     let hands = {upper: pool(RIGHT_HAND), lower: pool(LEFT_HAND)}
-    let {deck, generator, notes} = generatorFor(1, {hands})
+    let {deck, generator, notes} = await generatorFor(1, {hands})
     let stats = new NoteStats()
     notes = await playCard({generator, notes}, stats)
 
@@ -729,9 +746,16 @@ describe("today's programme on the staff", function() {
     expect(generator.currentCard()).toEqual(jasmine.objectContaining({measures: [1], hand: "lower"}))
     expect(notesOf(notes).slice(0, 2)).toEqual([["G3"], []])
 
-    // a reload plans the same hand alone
-    let reloaded = new PlanDeck(measures, {pieceId: piece.id, cardMeasures: 1, hands, store, now: () => time})
+    // a reload, with nothing known of the piece's reviews, reads them from
+    // the log before it plans, so the same hand alone is offered again
+    let reopened = await openTestStore({keep: true})
+    let reloaded = new PlanDeck(measures, {
+      pieceId: piece.id, cardMeasures: 1, hands, store: reopened, now: () => time,
+    })
+    expect([reloaded.playable, reloaded.entry]).toEqual([true, null])
+    await reloaded.ready
     expect(reloaded.entry).toEqual(deck.entry)
+    await reopened.close()
 
     // the left hand alone is written to its own item, and holds at once
     notes = await playCard({generator, notes}, stats)
@@ -743,8 +767,28 @@ describe("today's programme on the staff", function() {
     expect(notesOf(notes).slice(0, 4)).toEqual([["G3", "G4"], ["A4"], ["B4"], []])
   })
 
+  it("leaves the programme with no card once every bar it has left rests", async function() {
+    let {deck, generator, notes} = await generatorFor(1)
+    let stats = new NoteStats()
+    // a note of each bar's first column, missed once, fails the bar
+    let missed = {0: "D5", 1: "G3", 2: "C3"}
+
+    for (let i = 0; i < 12 && deck.entry; i++) {
+      stats.missNotes([missed[deck.entry.measure]])
+      notes = await playCard({generator, notes}, stats)
+    }
+
+    expect([...deck.measures].sort()).toEqual([0, 1, 2])
+    expect([...planState(deck.planInput()).resting].sort()).toEqual([0, 1, 2])
+    expect(deck.entry).toBe(null)
+    expect(generator.currentCard()).toBe(null)
+    expect(generator.statusLine()).toEqual("Programme complete · every bar rests until tomorrow")
+    expect(generator.caption()).toEqual("Bar 2 rests until tomorrow")
+    expect(notesOf(notes).every(column => column.length == 0)).toBe(true)
+  })
+
   it("never splits a piece played without its hands", async function() {
-    let {deck, generator, notes} = generatorFor(1)
+    let {deck, generator, notes} = await generatorFor(1)
     let stats = new NoteStats()
     notes = await playCard({generator, notes}, stats)
     stats.missNotes(["G3"])
@@ -754,7 +798,7 @@ describe("today's programme on the staff", function() {
   })
 
   it("grades a measure played before its rung only when it fails, a neighbour never seen at first sight", async function() {
-    let {deck, generator, notes} = generatorFor(2)
+    let {deck, generator, notes} = await generatorFor(2)
     generator.setDrill(() => ({mode: "scroll"}))
     let stats = new NoteStats()
     let bar = measure => store.item(`${piece.id}:both:${measure}-${measure}`)
@@ -796,19 +840,19 @@ describe("today's programme on the staff", function() {
   })
 
   it("resumes the same queue from the store after a reload", async function() {
-    let first = generatorFor(1)
+    let first = await generatorFor(1)
     let stats = new NoteStats()
     for (let i = 0; i < 3; i++) {
       first.notes = await playCard(first, stats)
     }
 
     let entry = first.deck.entry
-    let reloaded = generatorFor(1)
+    let reloaded = await generatorFor(1)
     expect(reloaded.deck.entry).toEqual(entry)
   })
 
   it("marks the piece maintaining once every measure is scheduled", async function() {
-    let {generator, notes} = generatorFor(3)
+    let {generator, notes} = await generatorFor(3)
     notes = await playCard({generator, notes}, new NoteStats())
     expect(store.study(piece.id).status).toEqual("maintaining")
   })
@@ -830,6 +874,7 @@ describe("today's programme on the staff", function() {
       let generator = SHEET_MUSIC_GENERATOR.create(grand, null, settingsFor({practice: PROGRAMME_PRACTICE}))
       generators.push(generator)
       expect(generator instanceof PlanGenerator).toBe(true)
+      await generator.ready
       expect(generator.statusLine()).toEqual("New · bar 0")
 
       let notes = new NoteList([], {generator})
@@ -881,6 +926,7 @@ describe("today's programme on the staff", function() {
       let planned = SHEET_MUSIC_GENERATOR.create(grand, null, settingsFor())
       generators.push(planned)
       expect(planned instanceof PlanGenerator).toBe(true)
+      await planned.ready
       expect(planned.deck.cardMeasures).toEqual(PLAN_CARD_MEASURES)
       expect(drilledRange(settingsFor())).toEqual({startMeasure: 0, endMeasure: 2})
       expect(input("startMeasure").visible(settingsFor())).toBe(false)

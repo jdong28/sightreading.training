@@ -47,9 +47,11 @@ export class ProgrammePlate extends React.Component {
   }
 
   // the piece in study most overdue, when it isn't the one played
-  suggestion() {
+  suggestion(hand) {
     let store = this.getStore()
-    let id = mostOverduePiece({studies: store.studies(), items: store.items(), now: this.props.now()})
+    let id = mostOverduePiece({
+      studies: store.studies(), items: store.items(), now: this.props.now(), hand,
+    })
     return id && id != this.props.settings.piece ? store.piece(id) : null
   }
 
@@ -59,7 +61,7 @@ export class ProgrammePlate extends React.Component {
 
     let summary = generator.summary()
     let learned = summary.measures ? summary.learned / summary.measures : 0
-    let other = this.props.pickPiece && this.suggestion()
+    let other = this.props.pickPiece && this.suggestion(summary.hand)
 
     return <Plate className={styles.plate} header="Tonight's programme">
       <dl className={styles.figures}>

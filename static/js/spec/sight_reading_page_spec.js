@@ -1681,7 +1681,12 @@ describe("sight reading page", function() {
       window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
         piece: piece.id, startMeasure: 3, endMeasure: 4, hand: BOTH_HANDS, measuresPerCard: "2", ...settings,
       }))
-      return renderScorePage()
+      let el = renderScorePage()
+      // today's programme plans its first card once the piece's reviews are read
+      await waitFor(() => !(page.state.notes?.generator instanceof PlanGenerator) ||
+        page.state.notes.generator.currentCard(), "the programme to plan its first card")
+      flushSync(() => {})
+      return el
     }
 
     let playHead = () => play(page.state.notes.currentColumn())

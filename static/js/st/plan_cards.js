@@ -20,8 +20,9 @@ import {
 
 // the last graded review known of each item of a piece, by store then piece
 // id then item id, which the hand scaffold reads the blamed hand from: read
-// from the log when a deck is made (reviews are never cached) and kept up to
-// date by the attempts a deck plans from, so a rebuilt drill keeps them
+// from the log the first time a deck of the piece is made (reviews are never
+// cached in the store) and kept up to date by the attempts the decks plan
+// from, so a rebuilt drill plans at once
 const knownReviews = new WeakMap()
 
 function reviewsKnown(store, pieceId) {
@@ -31,12 +32,27 @@ function reviewsKnown(store, pieceId) {
     knownReviews.set(store, pieces)
   }
 
-  let reviews = pieces.get(pieceId)
-  if (!reviews) {
-    reviews = new Map()
-    pieces.set(pieceId, reviews)
+  let known = pieces.get(pieceId)
+  if (!known) {
+    known = {reviews: new Map(), read: null, loaded: false}
+    pieces.set(pieceId, known)
   }
-  return reviews
+  return known
+}
+
+// Reads the piece's reviews into what is known of them, once per store and
+// piece: the promise to wait for before the first card is planned, or null
+// when they are known already
+function readReviews(store, pieceId, known) {
+  if (known.loaded) { return null }
+
+  if (!known.read) {
+    known.read = Promise.resolve(store.reviews ? store.reviews({pieceId}) : [])
+      .then(reviews => learnReviews(known.reviews, reviews))
+      .catch(err => console.warn("Couldn't read the piece's reviews", err))
+      .then(() => { known.loaded = true })
+  }
+  return known.read
 }
 
 // keeps the later of each item's graded reviews
@@ -88,26 +104,27 @@ export class PlanDeck {
     // items as the attempts not yet stored leave them, by id
     this.pending = new Map()
 
-    this.reviews = reviewsKnown(this.getStore(), pieceId)
-    this.loadReviews()
-
     this.index = null
     this.entry = null
-    this.advance()
+    // whether a card has been planned yet, false only while the piece's
+    // reviews are still being read
+    this.planned = false
+
+    // the hand scaffold reads the blamed hand from the log, so the first
+    // card of a piece is planned only once its reviews have been read; the
+    // decks after it plan in the constructor
+    let known = reviewsKnown(this.getStore(), pieceId)
+    this.reviews = known.reviews
+    let reading = readReviews(this.getStore(), pieceId, known)
+    if (reading) {
+      this.ready = reading.then(() => this.advance())
+    } else {
+      this.advance()
+    }
   }
 
   getStore() {
     return this.store || getAppStore()
-  }
-
-  // reads the piece's reviews from the log, for the next cards planned
-  loadReviews() {
-    let store = this.getStore()
-    if (!store.reviews) { return }
-
-    this.reviewsRead = store.reviews({pieceId: this.pieceId})
-      .then(reviews => learnReviews(this.reviews, reviews))
-      .catch(err => console.warn("Couldn't read the piece's reviews", err))
   }
 
   /** @returns {string} the hand of the card being shown, the session's or a hand alone */
@@ -117,7 +134,7 @@ export class PlanDeck {
 
   /** @returns {boolean} whether the piece has a measure to play */
   get playable() {
-    return this.index != null
+    return this.cards.length > 0
   }
 
   /** @returns {number} */
@@ -177,6 +194,7 @@ export class PlanDeck {
     let {entry} = planNext({...this.planInput(), previous: this.entry && this.entry.itemId})
     this.entry = entry
     this.index = entry ? this.measures.indexOf(entry.measure) : null
+    this.planned = true
   }
 
   /**
@@ -219,6 +237,9 @@ export class PlanGenerator extends MeasureCardGenerator {
   constructor(deck, opts) {
     super(deck, opts)
     this.lastCaption = null
+    // the deck plans its first card once the piece's reviews are read, so
+    // the page shows it then (see refreshNoteList)
+    this.ready = deck.planned ? null : deck.ready.then(() => this.startCard())
   }
 
   /** @returns {null} the cards have no order to number */
@@ -239,10 +260,13 @@ export class PlanGenerator extends MeasureCardGenerator {
       `measures ${card.startMeasure}–${card.endMeasure}`
   }
 
-  /** @returns {string} the status line of the card being played */
+  /** @returns {string|null} the status line of the card being played */
   statusLine() {
     let entry = this.deck.entry
-    return entry ? entryStatus(entry, {now: this.now(), complete: this.deck.complete}) : null
+    if (entry) { return entryStatus(entry, {now: this.now(), complete: this.deck.complete}) }
+    // the deck has no card: every bar the piece has left rests until the
+    // next sitting, unless it has yet to plan its first one
+    return this.deck.planned ? "Programme complete · every bar rests until tomorrow" : null
   }
 
   /** @returns {string|null} the pace of the last card played and when it comes back */

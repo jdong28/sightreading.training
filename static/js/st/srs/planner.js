@@ -33,17 +33,20 @@
 // running later, with at least SCAFFOLD_SHARE of the misses of that failure,
 // and at least SCAFFOLD_MISSES, on one staff, is next offered as that hand
 // alone, from the hand's own item on its own ladder, in its place in the
-// queue. The bar returns hands together once the hand holds: its item graded
-// good or better twice running since the failure, or graduated since. When
-// both staves are blamed, the one with more misses comes first, then the
-// other. A piece without a staff per hand never splits (handMeasures), nor
-// does a session played with one hand. The scaffold is the planner's alone:
-// it is worked out from the items and the last review of each bar, and
-// writes nothing, so the schedule stays what replay rebuilds.
+// queue. The blamed hand is read from that failure's review alone, so a bar
+// whose failure has no review read isn't split. The bar returns hands
+// together once the hand holds: its item graded good or better twice running
+// since the failure, or graduated since. When both staves are blamed, the one
+// with more misses comes first, then the other. A piece without a staff per
+// hand never splits (handMeasures), nor does a session played with one hand.
+// The scaffold is the planner's alone: it is worked out from the items and
+// the last review of each bar, and writes nothing, so the schedule stays what
+// replay rebuilds.
 //
 // Rest it until tomorrow: a bar failing a third time in a sitting, whichever
 // hand it was played with, is not offered again in the sitting. Its due date
-// is left as it is, so it opens the next sitting.
+// is left as it is, so it opens the next sitting. With every bar left resting
+// the programme has no entry at all until then.
 //
 // Off schedule: a measure on the ladder played before its rung comes due (the
 // last entry, or a neighbour in a card) is graded only when it fails, else
@@ -254,9 +257,8 @@ function held(item, since) {
 /**
  * The hand scaffold of a bar played hands together: the hand it is offered
  * alone as, while the bar is in trouble and until each hand blamed holds.
- * The hands blamed come from the failure's review; without it (a review not
- * read yet) they are the hands played alone since the failure, in the order
- * first played.
+ * The hands blamed come from that failure's review alone, so a bar whose
+ * failure has no review read isn't split.
  * @param {ItemRecord} bar the bar's hands together item
  * @param {Object} opts
  * @param {Object<string, ItemRecord>} [opts.hands] the bar's items of each hand
@@ -266,20 +268,14 @@ function held(item, since) {
  * can play the bar
  * @returns {{hand: string, item: ItemRecord|null, since: number}|null} the
  * hand, its item, and when the bar failed; null when the bar holds hands
- * together
+ * together, or its failure has no review
  */
 export function barScaffold(bar, {hands={}, review=null, playable=() => true}={}) {
   let since = failedAt(bar)
   if (since == null) { return null }
 
   let blamed = review && review.at == since ? blamedStaves(review) : null
-  if (!blamed) {
-    let firstAt = staff => {
-      let attempt = hands[staff] && hands[staff].recent.find(([at]) => at > since)
-      return attempt ? attempt[0] : null
-    }
-    blamed = STAVES.filter(staff => firstAt(staff) != null).sort((a, b) => firstAt(a) - firstAt(b))
-  }
+  if (!blamed) { return null }
 
   let hand = blamed.filter(playable).find(staff => !held(hands[staff], since))
   return hand ? {hand, item: hands[hand] || null, since} : null
@@ -380,7 +376,6 @@ export function planState({
   let review = awake.filter(item => item.state == "review").map(slotOf)
   let dueReviews = review.filter(slot => slot.item.due < endOfToday)
   let unseen = measures.filter(measure => !liveMeasures.has(measure) && !setAside.has(measure))
-  let rested = live.filter(item => resting.has(item.startMeasure)).map(slotOf)
   let scaffolds = new Map(ladder.filter(slot => slot.hand != hand).map(slot => [slot.measure, slot.hand]))
 
   let timed = live.filter(item => item.attempts > 0 && item.elapsedMs > 0)
@@ -394,7 +389,7 @@ export function planState({
 
   return {
     pieceId, hand, now, settings, order, byMeasure, recent, today, endOfToday,
-    live, ladder, review, dueReviews, unseen, resting, rested, scaffolds, sitting,
+    live, ladder, review, dueReviews, unseen, resting, scaffolds, sitting,
     cardMs, targetMs, elapsedMs,
     complete: elapsedMs >= targetMs || (!ladder.length && !dueReviews.length && !unseen.length),
   }
@@ -462,7 +457,8 @@ const newSlot = ({pieceId, hand}, measure) => ({
  * The next entry of the queue.
  * @param {PlanInput} input
  * @returns {{entry: PlanEntry|null, complete: boolean, state: Object}} a
- * null entry only when the piece has no measure to play
+ * null entry when the piece has nothing to play now: it has no measure, or
+ * every bar it has left rests until the next sitting
  */
 export function planNext(input) {
   let state = planState(input)
@@ -476,12 +472,6 @@ export function planNext(input) {
   // a piece whose every measure waits past the target: its first new one
   if (!next && state.unseen.length) {
     next = {reason: NEW, slot: newSlot(state, state.unseen[0])}
-  }
-
-  // a piece whose every bar rests: the one due first all the same
-  if (!next && state.rested.length) {
-    let [slot] = [...state.rested].sort((a, b) => a.due - b.due)
-    next = {reason: slot.retry ? RETRY : LADDER, slot}
   }
 
   if (!next) {
@@ -505,13 +495,14 @@ export function planNext(input) {
  * and about how long they take, the new measures on offer, the target, and
  * the measures learned (in review) out of all.
  * @param {PlanInput} input
- * @returns {{due: number, dueMinutes: number, newMeasures: number, targetMinutes: number, learned: number, measures: number}}
+ * @returns {{due: number, dueMinutes: number, newMeasures: number, targetMinutes: number, learned: number, measures: number, hand: string}}
  */
 export function planSummary(input) {
   let state = planState(input)
   let due = state.dueReviews.length + state.ladder.filter(slot => slot.due < state.endOfToday).length
   return {
     due,
+    hand: state.hand,
     dueMinutes: due ? Math.max(1, Math.round(due * state.cardMs / MINUTE)) : 0,
     newMeasures: state.unseen.length,
     targetMinutes: (input.practice || DEFAULT_PRACTICE_SETTINGS).sessionMinutes,
@@ -532,17 +523,20 @@ export function studyStatus(input) {
 
 /**
  * Which piece in study most needs practice: the one with the most single
- * measures due by the end of today (any hand), the earliest due first on a
- * tie; null when nothing is due. A bar's hand alone counts only while the
- * hand scaffold offers it (see barScaffold) or when the bar has no schedule
- * hands together, so a retired scaffold never flags its piece.
+ * measures due by the end of today, the earliest due first on a tie; null
+ * when nothing is due. The items counted are the programme's own, hands
+ * together and the hand it is played with, plus a bar's other hand alone
+ * while its bar is in trouble hands together: a hand alone left over from a
+ * scaffold the bar has since held is retired, and never flags its piece.
  * @param {Object} opts
  * @param {StudyRecord[]} opts.studies
  * @param {ItemRecord[]} opts.items every piece's
  * @param {number} opts.now
+ * @param {string} [opts.hand] the hand the programme is played with, one of
+ * HANDS
  * @returns {string|null} a piece id
  */
-export function mostOverduePiece({studies, items, now}) {
+export function mostOverduePiece({studies, items, now, hand="both"}) {
   let endOfToday = dayStart(localDay(now) + 1)
   let studied = new Set(studies.filter(study => STUDYING.includes(study.status)).map(s => s.pieceId))
 
@@ -551,13 +545,12 @@ export function mostOverduePiece({studies, items, now}) {
     let bars = items.filter(item => item.pieceId == pieceId && item.startMeasure == item.endMeasure &&
       !item.beats)
     let together = new Map(bars.filter(item => item.hand == "both").map(item => [item.startMeasure, item]))
-    let hands = handsByMeasure(bars.filter(item => STAVES.includes(item.hand)))
 
     let offered = item => {
+      if (item.hand == "both" || item.hand == hand) { return true }
       let bar = together.get(item.startMeasure)
-      if (item.hand == "both" || !bar || !scheduled(bar)) { return true }
-      let scaffold = ON_LADDER.includes(bar.state) && barScaffold(bar, {hands: hands.get(item.startMeasure)})
-      return !!scaffold && scaffold.hand == item.hand
+      if (!bar || !scheduled(bar)) { return true }
+      return ON_LADDER.includes(bar.state) && failedAt(bar) != null
     }
 
     let due = bars.filter(item => scheduled(item) && item.due < endOfToday && offered(item))
