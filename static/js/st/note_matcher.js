@@ -325,12 +325,11 @@ export default class NoteMatcher {
     this.credited = credited
 
     // the list as it now stands, before any column the keys credited early
-    // complete in turn, with the keys held it still sounds: keys of it have
-    // gone down, so its held credit applies
+    // complete in turn
     event.to = advanced
     this.emit(event)
 
-    if (credited.length && this.completes()) {
+    if (credited.length && advanced.matchesHead(credited, this.anyOctave)) {
       this.hit(Math.max(...credited.map(n => early[n])))
     }
   }

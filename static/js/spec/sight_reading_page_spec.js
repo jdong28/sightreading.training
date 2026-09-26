@@ -1617,6 +1617,23 @@ describe("sight reading page", function() {
     }
 
     let playHead = () => play(page.state.notes.currentColumn())
+
+    // The pace caption needs the card's columns spaced in time, which plays
+    // in the same millisecond don't give, so the generator's clock is driven
+    // here: driveClock from Begin, then a beat between each playPaced
+    let clock = 0
+    let driveClock = () => {
+      let generator = page.state.notes.generator
+      clock = generator.pass.columnStartedAt ?? Date.now()
+      let now = () => clock
+      generator.now = now
+      generator.deck.now = now
+    }
+    let playPaced = () => {
+      clock += 1000
+      playHead()
+    }
+
     let finished = async () => {
       await page.state.notes.generator.finishing
       await page.state.notes.generator.studying
@@ -1649,27 +1666,26 @@ describe("sight reading page", function() {
     it("names each card and says when its measure comes back", async function() {
       let el = await renderProgramme()
       click(buttonNamed(el, "Begin"))
+      driveClock()
       expect(caption(el)).toBe(null)
 
       // a clean first sight of measures 1 and 2
-      playHead()
-      playHead()
+      playPaced()
+      playPaced()
       await finished()
 
       let anchor = store.item(`${piece.id}:both:1-1`)
       expect(anchor.state).not.toEqual("tracked")
-      // the pace caption needs a pace, which two plays in one millisecond
-      // don't give, so it may be missing
-      expect(caption(el).textContent).toMatch(/^(♩ ≈ \d+ · no stops · )?(again in a moment|returns (tomorrow|in \d+ days))$/)
+      expect(caption(el).textContent).toMatch(/^♩ ≈ \d+ · no stops · (again in a moment|returns (tomorrow|in \d+ days))$/)
       expect(plateStatus(el)).toEqual("New · bar 3")
 
       // measure 3 slips: it comes straight back
       play([WRONG_NOTE])
-      playHead()
-      playHead()
+      playPaced()
+      playPaced()
       await finished()
 
-      expect(caption(el).textContent).toMatch(/^(♩ ≈ \d+ · no stops · )?again in a moment$/)
+      expect(caption(el).textContent).toMatch(/^♩ ≈ \d+ · no stops · again in a moment$/)
       expect(plateStatus(el)).toEqual("Once more · bar 3")
       expect(el.textContent).toContain("measures 3–4")
     })

@@ -463,10 +463,19 @@ describe("note matcher", function() {
         [["on", "Bb3", 0], ["on", "C4", 500], ["on", "F4", 1500]],
         ["hit Bb3", "hit C4", "hit Bb3 (held Bb3)", "hit Bb3 (held Bb3)", "miss C4"], ["C4"]],
 
-      ["completes the next column from keys credited early and keys held",
+      // a key struck early doesn't let held credit finish the column as it
+      // becomes the head: the shared key may still be struck again at its
+      // own onset (D3(a)), which completes the column with no slip
+      ["waits at a column of a key struck early for the shared key struck again",
         [["Bb3"], ["C4"], sustain(["Bb3", "E4"], "Bb3"), ["G4"]],
-        [["on", "Bb3", 0], ["on", "E4", 400], ["on", "C4", 500]],
-        ["hit Bb3", "hit C4", "hit Bb3+E4 (early E4) (held Bb3)"], ["G4"]],
+        [["on", "Bb3", 0], ["on", "E4", 400], ["on", "C4", 500],
+          ["off", "Bb3", 780], ["on", "Bb3", 800]],
+        ["hit Bb3", "hit C4", "hit Bb3+E4 (early E4)"], ["G4"]],
+
+      ["completes the column of a key struck early and a key held, once the next key goes down",
+        [["Bb3"], ["C4"], sustain(["Bb3", "E4"], "Bb3"), ["G4"]],
+        [["on", "Bb3", 0], ["on", "E4", 400], ["on", "C4", 500], ["on", "G4", 1500]],
+        ["hit Bb3", "hit C4", "hit Bb3+E4 (early E4) (held Bb3)", "hit G4"], []],
 
       ["settles no held column on a key of the column just completed struck again",
         reverie(),
