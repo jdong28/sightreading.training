@@ -652,8 +652,8 @@ export default class SightReadingPage extends React.Component {
       generatorInstance.setDrill(() => ({mode: this.state.mode, speed: this.state.scrollSpeed}))
     }
 
-    // today's programme plans its first card only once the piece's reviews
-    // are read, so the staff is filled again from the card it then picks
+    // today's programme reads the log when a bar that can split is failing,
+    // so the staff is filled again from the card it then picks
     if (!keepGenerator && generatorInstance.ready) {
       generatorInstance.ready.then(() => {
         if (!this.unmounted && this.state.notes?.generator == generatorInstance) {

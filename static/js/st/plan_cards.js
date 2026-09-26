@@ -60,9 +60,11 @@ export class PlanDeck {
       sectionCard(anchoredCard(numbers, measure, cardMeasures).map(n => byNumber.get(n))))
 
     // the bars each hand alone can play, and the one-bar cards of them the
-    // scaffold has asked for, by hand and measure
-    let apart = hand == "both" && handMeasures && handCard &&
-      Object.values(handMeasures).some(bars => bars.length)
+    // scaffold has asked for, by hand and measure: the planner splits only a
+    // bar both hands have notes in, so only those make a deck splittable
+    let hands = hand == "both" && handMeasures && handCard ? handMeasures : null
+    let lower = new Set(hands ? hands.lower || [] : [])
+    let apart = !!hands && (hands.upper || []).some(bar => lower.has(bar))
     this.handMeasures = apart ? handMeasures : null
     this.buildHandCard = apart ? handCard : null
     this.handCards = new Map()
@@ -72,20 +74,18 @@ export class PlanDeck {
 
     this.index = null
     this.entry = null
-    // whether a card has been planned yet, false only while the piece's
-    // reviews are still being read
+    // whether a card has been planned yet
     this.planned = false
 
     // the last graded review known of each of the piece's items, by item id,
-    // which the hand scaffold reads the blamed hand from: read from the log
-    // (reviews are never cached, and free practice writes them too) before
-    // this deck plans a card, then kept up to date by its own passes. A deck
-    // that can never split reads nothing and plans at once
+    // which the hand scaffold reads the blamed hand from. The deck plans at
+    // once from the items the store has cached, and reads the log (reviews
+    // are never cached, and free practice writes them too) only when a bar
+    // that can split is failing, planning again from it when it lands; its
+    // own passes keep it up to date from there
     this.reviews = new Map()
-    if (this.handMeasures) {
+    if (this.advance().failing.size) {
       this.ready = this.loadReviews().then(() => this.advance()).catch(err => this.planUnread(err))
-    } else {
-      this.advance()
     }
   }
 
@@ -196,10 +196,11 @@ export class PlanDeck {
 
   /** Moves on to the card of the planner's next entry */
   advance() {
-    let {entry} = planNext({...this.planInput(), previous: this.entry && this.entry.itemId})
+    let {entry, state} = planNext({...this.planInput(), previous: this.entry && this.entry.itemId})
     this.entry = entry
     this.index = entry ? this.measures.indexOf(entry.measure) : null
     this.planned = true
+    return state
   }
 
   /**
@@ -242,11 +243,11 @@ export class PlanGenerator extends MeasureCardGenerator {
   constructor(deck, opts) {
     super(deck, opts)
     this.lastCaption = null
-    // the deck plans its first card once the piece's reviews are read, so
-    // the page shows it then (see refreshNoteList)
-    this.ready = deck.planned ? null : deck.ready
+    // a deck that reads the log plans again when it lands, so the page
+    // shows the card it then picks (see refreshNoteList)
+    this.ready = deck.ready ? deck.ready
       .then(() => this.startCard())
-      .catch(err => console.warn("Couldn't show today's first card", err))
+      .catch(err => console.warn("Couldn't show today's first card", err)) : null
   }
 
   /**

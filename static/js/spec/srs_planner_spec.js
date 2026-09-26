@@ -756,9 +756,9 @@ describe("today's programme on the staff", function() {
   // the deck plans its first card once the piece's reviews are read
   let generatorFor = async (cardMeasures=2, opts={}) => {
     let deck = new PlanDeck(pool(), {pieceId: piece.id, cardMeasures, store, now: () => time, ...opts})
-    await deck.ready
     let generator = new PlanGenerator(deck, {now: () => time})
     generators.push(generator)
+    await generator.ready
     let notes = new NoteList([], {generator})
     notes.fillBuffer(8)
     return {deck, generator, notes}
@@ -907,13 +907,14 @@ describe("today's programme on the staff", function() {
     // only the bar offered is drawn from the score hands apart, once
     expect(built).toEqual(["lower:1"])
 
-    // a reload, with nothing known of the piece's reviews, reads them from
-    // the log before it plans, so the same hand alone is offered again
+    // a reload, with nothing known of the piece's reviews, plans the bar
+    // hands together at once and reads the log because it is failing, so
+    // the same hand alone is offered again before a card of it is played
     let reopened = await openTestStore({keep: true})
     let reloaded = new PlanDeck(measures, {
       pieceId: piece.id, cardMeasures: 1, ...hands, store: reopened, now: () => time,
     })
-    expect([reloaded.playable, reloaded.entry]).toEqual([true, null])
+    expect(reloaded.entry).toEqual(jasmine.objectContaining({measure: 1, hand: "both"}))
     await reloaded.ready
     expect(reloaded.entry).toEqual(deck.entry)
     await reopened.close()
@@ -957,28 +958,43 @@ describe("today's programme on the staff", function() {
     expect(generator.statusLine()).toMatch(/^Once more · bar \d+$/)
   })
 
-  it("plans at once, without reading the log, for a deck that can never split", async function() {
+  it("plans at once, and reads the log only for a bar that can split and is failing", async function() {
     let measures = pool()
+    let deckFor = opts => new PlanDeck(measures, {
+      pieceId: piece.id, cardMeasures: 1, store, now: () => time, ...opts,
+    })
     spyOn(store, "reviews").and.callThrough()
 
-    // a session played with one hand, and one with no hands to split with:
-    // neither can offer a bar hands apart, so neither needs the log
-    let oneHand = new PlanDeck(measures, {
-      pieceId: piece.id, hand: "lower", cardMeasures: 1, store, now: () => time, ...handPools(),
-    })
-    expect(oneHand.entry).toEqual(jasmine.objectContaining({measure: 0, hand: "lower"}))
+    // a session played with one hand, one with no hands to split with, and
+    // one whose hands never share a bar: none can offer a bar hands apart
+    expect(deckFor({hand: "lower", ...handPools()}).entry)
+      .toEqual(jasmine.objectContaining({measure: 0, hand: "lower"}))
+    expect(deckFor({}).entry).toEqual(jasmine.objectContaining({measure: 0, hand: "both"}))
 
-    let noHands = new PlanDeck(measures, {pieceId: piece.id, cardMeasures: 1, store, now: () => time})
-    expect(noHands.entry).toEqual(jasmine.objectContaining({measure: 0, hand: "both"}))
+    let {handCard} = handPools()
+    let alternating = deckFor({handCard, handMeasures: {upper: [0, 2], lower: [1]}})
+    expect(alternating.entry).toEqual(jasmine.objectContaining({measure: 0, hand: "both"}))
+    expect(alternating.handMeasures).toBe(null)
+
+    // a deck that can split plans at once too while no bar of it is failing
+    let quiet = deckFor(handPools())
+    expect(quiet.entry).toEqual(jasmine.objectContaining({measure: 0, hand: "both"}))
+    expect(quiet.ready).toBe(undefined)
     expect(store.reviews).not.toHaveBeenCalled()
 
-    // a deck that can split still reads the log before it plans a card
-    let splitting = new PlanDeck(measures, {
-      pieceId: piece.id, cardMeasures: 1, store, now: () => time, ...handPools(),
-    })
-    expect(splitting.entry).toBe(null)
-    await splitting.ready
-    expect(splitting.entry).not.toBe(null)
+    // once a bar that can split fails, the log says which hand it blames,
+    // so the deck reads it and plans again from what it finds
+    let {generator, notes} = await generatorFor(1, handPools())
+    let stats = new NoteStats()
+    notes = await playCard({generator, notes}, stats)
+    stats.missNotes(["G3"])
+    stats.missNotes(["G3"])
+    await playCard({generator, notes}, stats)
+
+    let failing = deckFor(handPools())
+    expect(failing.entry).toEqual(jasmine.objectContaining({measure: 1, hand: "both"}))
+    await failing.ready
+    expect(failing.entry).toEqual(jasmine.objectContaining({measure: 1, hand: "lower"}))
     expect(store.reviews).toHaveBeenCalled()
   })
 
