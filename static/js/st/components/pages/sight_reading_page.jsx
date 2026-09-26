@@ -804,7 +804,9 @@ export default class SightReadingPage extends React.Component {
         gaEvent("sight_reading", "note", "hit")
         this.state.stats.hitNotes(event.hitNotes)
         update.notes = this.matcher.notes
-        this.advanceEngineMarks(event.from, this.matcher.notes)
+        // one column at a time: a hit may complete the next column too, from
+        // its keys played early
+        this.advanceEngineMarks(event.from, event.to)
         // a slip's shake plays out over the next column
         if (!event.stray) { update.noteShaking = false }
         this.state.slider.add(this.columnAdvance(event.from))
