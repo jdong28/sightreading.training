@@ -860,6 +860,62 @@ describe("musicxml ornaments", function() {
     ])
   })
 
+  it("stops a wavy line on another voice of its staff", function() {
+    let alto = "<voice>2</voice><staff>1</staff>"
+    let song = parseMusicXML(partwise(`
+<measure number="1">
+  ${attributes({})}
+  ${note("D", 5, 1, ornamented(`<trill-mark/>${wavy("start")}`, treble))}
+  ${note("E", 5, 1, treble)}
+  <backup><duration>2</duration></backup>
+  ${note("F", 5, 2, ornamented(wavy("stop"), alto))}
+  ${note("G", 5, 1, treble)}
+  ${note("A", 5, 1, treble)}
+</measure>`))
+
+    // the line is stopped in the staff's other voice, so it trills neither
+    // the G5 nor the A5 written after it
+    expect(ornaments(song)).toEqual([
+      ["D5", 0, {neighbours: ["E5"], trill: true}],
+      ["E5", 1, {neighbours: ["F5"], trill: true}],
+    ])
+  })
+
+  it("ends a wavy line the score never stops at the first rest of its voice", function() {
+    let song = parseMusicXML(partwise(`
+<measure number="1">
+  ${attributes({})}
+  ${note("D", 5, 1, ornamented(`<trill-mark/>${wavy("start")}`, treble))}
+  ${note("E", 5, 1, treble)}
+  ${rest(1, treble)}
+  ${note("G", 5, 1, treble)}
+</measure>`))
+
+    expect(ornaments(song)).toEqual([
+      ["D5", 0, {neighbours: ["E5"], trill: true}],
+      ["E5", 1, {neighbours: ["F5"], trill: true}],
+    ])
+  })
+
+  it("ends a wavy line the score never stops at the next note writing its own ornament", function() {
+    let song = parseMusicXML(partwise(`
+<measure number="1">
+  ${attributes({})}
+  ${note("D", 5, 1, ornamented(`<trill-mark/>${wavy("start")}`, treble))}
+  ${note("E", 5, 1, treble)}
+  ${note("F", 5, 1, ornamented("<mordent/>", treble))}
+  ${note("G", 5, 1, treble)}
+</measure>`))
+
+    // the mordent's own lower note is F5's, and the line ends there, so the
+    // G5 after it is not trilled
+    expect(ornaments(song)).toEqual([
+      ["D5", 0, {neighbours: ["E5"], trill: true}],
+      ["E5", 1, {neighbours: ["F5"], trill: true}],
+      ["F5", 2, {neighbours: ["E5"]}],
+    ])
+  })
+
   it("ends a wavy line on the note the score stops it on, even one it skips", function() {
     let song = parseMusicXML(partwise(`
 <measure number="1">

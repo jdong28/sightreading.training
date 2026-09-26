@@ -421,9 +421,17 @@ function walkPart(measures, partName) {
   // of the position they are written at. A grace note is written in the
   // measure of the note it leads into, so none is kept past the end of one
   let pendingGraces = new Map()
-  // the trills whose wavy line is still running, by voice and line number,
-  // each {voice, sides} of the neighbours it alternates with
+  // The trills whose wavy line is still running, by staff and line number,
+  // each {voice, sides} of the voice it trills and the neighbours it
+  // alternates with. A line the score never stops ends at the first rest of
+  // its voice, at the next note of it writing an ornament of its own, or with
+  // the part
   let openTrills = new Map()
+  let endTrills = trilled => {
+    for (let [key, line] of openTrills) {
+      if (line.voice == trilled) { openTrills.delete(key) }
+    }
+  }
 
   measures.forEach((measureEl, measureIdx) => {
     let position = 0 // in divisions, relative to measure start
@@ -498,18 +506,22 @@ function walkPart(measures, partName) {
           // rest keeps none
           let voice = +(childText(el, "voice") || 0)
 
-          // A wavy line runs its trill from the note it starts on to the note
-          // it stops on, whichever staff either is written on. The lines this
-          // note stops end here, before any of the guards below can skip the
-          // note carrying the stop, while the sides they were running with
-          // still trill this note
+          // A wavy line runs its trill from the note it starts on to the one
+          // it stops on, whichever voice of the staff that is written in. The
+          // lines this note stops end here, before any of the guards below can
+          // skip the note carrying the stop, while the sides they were running
+          // with still trill this note
           let lines = wavyLines(el)
           let stopping = new Set(lines.filter(line => line.type == "stop").map(line => line.number))
           let running = [...openTrills.values()]
             .filter(line => line.voice == voice)
             .flatMap(line => line.sides)
           for (let number of stopping) {
-            openTrills.delete(`${voice}:${number}`)
+            openTrills.delete(`${staff}:${number}`)
+          }
+
+          if (hasChild(el, "rest")) {
+            endTrills(voice)
           }
 
           if (hasChild(el, "grace")) {
@@ -591,15 +603,18 @@ function walkPart(measures, partName) {
 
           let {neighbours, trill} = ornamentNeighbours(el)
 
-          // a note under a running line is trilled with its own neighbours
-          if (!neighbours.length && running.length) {
+          // a note under a running line is trilled with its own neighbours;
+          // one writing an ornament of its own ends the line instead
+          if (neighbours.length) {
+            endTrills(voice)
+          } else if (running.length) {
             neighbours = [...new Set(running)].map(side => ({side, alter: null}))
             trill = true
           }
 
           for (let {number, type} of lines) {
             if (type == "start" && trill && !stopping.has(number)) {
-              openTrills.set(`${voice}:${number}`, {voice, sides: neighbours.map(n => n.side)})
+              openTrills.set(`${staff}:${number}`, {voice, sides: neighbours.map(n => n.side)})
             }
           }
 
