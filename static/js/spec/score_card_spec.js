@@ -1023,28 +1023,28 @@ describe("score page engine card", function() {
         part("P3", ["G", 2], notesOn(rightNotes, 6, 1))].join("\n  "))
   }
 
-  it("keeps the piece's source when a hand's staves can't be told in the score", async function() {
+  it("never offers a hand alone when the score can't tell that hand's staves", async function() {
     let source = strangerSource()
-    let {piece, generator, left} = await scaffoldedPiece(undefined, {readSource: () => Promise.resolve(source)})
+    let {piece, generator, left, right} = await scaffoldedPiece(undefined, {readSource: () => Promise.resolve(source)})
 
-    // the left hand alone is offered, but its staves can't be narrowed to,
-    // so the app's staff draws that card while the source stays the piece's
-    expect(page.currentCard().card.hand).toEqual("lower")
+    // bar 1 failed on the bass staff, but the engine can't draw that hand by
+    // itself here, so it comes back hands together on the piece's own source
     expect(page.state.engineSource.status).toEqual("ready")
     expect(page.state.engineSource.trackStaves.length).toEqual(3)
-    expect(page.engineCard()).toBe(null)
-    expect([...page.state.notes.currentColumn()]).toEqual([left[0]])
+    expect(page.currentCard().card.hand).toBeUndefined()
+    expect(generator.statusLine()).toEqual("Once more · bar 1")
+    expect(page.engineCard()).not.toBe(null)
+    expect(page.engineCard().staves).toBe(null)
+    expect([...page.state.notes.currentColumn()]).toEqual([left[0], right[0]])
 
-    // only the hand's own notes are drawn, so only they are asked for
-    for (let note of left) {
-      play([note])
-    }
+    // both hands are asked for, and the pass is written to the bar's item
+    left.forEach((note, idx) => play([note, right[idx]]))
     await generator.finishing
     flushSync(() => page.forceUpdate())
 
-    let alone = (await store.reviews({pieceId: piece.id}))
-      .find(review => review.itemId === `${piece.id}:lower:1-1`)
-    expect([alone.misses, alone.clean]).toEqual([0, left.length])
+    let reviews = await store.reviews({pieceId: piece.id})
+    expect(reviews.filter(review => review.itemId == `${piece.id}:lower:1-1`)).toEqual([])
+    expect(reviews.filter(review => review.itemId == `${piece.id}:both:1-1`).length).toEqual(2)
   })
 
   it("draws the left hand alone when today's programme offers a bar failing on its notes", async function() {

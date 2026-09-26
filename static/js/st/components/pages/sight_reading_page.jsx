@@ -335,11 +335,10 @@ export default class SightReadingPage extends React.Component {
     this.loadEngineSource()
 
     // a piece whose columns can't be joined (stored without the score's
-    // rhythm), or whose session hand's staves can't be told in the score, is
+    // rhythm), or whose drilled hand's staves can't be told in the score, is
     // drawn by the app's staff throughout
     let current = this.engineCards() && this.currentCard()
-    if (current && (!joinable(current.card.columns) ||
-        this.handStaves(this.currentSettings().hand) === undefined)) {
+    if (current && (!joinable(current.card.columns) || this.engineStaves() === undefined)) {
       this.setState({engineSource: {...this.state.engineSource, status: "failed"}})
       return
     }
@@ -468,11 +467,17 @@ export default class SightReadingPage extends React.Component {
   }
 
   // The staves the engine draws: the card's own hand, the session's unless
-  // today's programme offers the card as one hand alone. undefined where the
-  // score can't tell them apart, which leaves that card to the app's staff
-  // rather than failing the piece's source (see engineCard)
+  // today's programme offers the card as one hand alone
   engineStaves() {
     return this.handStaves(this.cardHand())
+  }
+
+  // Whether a bar may be offered as one hand alone (the hand scaffold of
+  // today's programme): only where the staff drawing the cards can draw one
+  // hand of the piece by itself, which the engine can't where the score
+  // can't tell that hand's staves from the rest
+  handsApart() {
+    return !this.engineCards() || this.handStaves(LEFT_HAND) !== undefined
   }
 
   // The engine card's props for the card at the head of the drill, or null
@@ -640,6 +645,12 @@ export default class SightReadingPage extends React.Component {
     // the measure cards grade each pass by the drill it is played in
     if (!keepGenerator && generatorInstance.setDrill) {
       generatorInstance.setDrill(() => ({mode: this.state.mode, speed: this.state.scrollSpeed}))
+    }
+
+    // today's programme offers a bar as one hand alone only where the staff
+    // drawing it can draw that hand by itself
+    if (!keepGenerator && generatorInstance.setHandsApart) {
+      generatorInstance.setHandsApart(() => this.handsApart())
     }
 
     // today's programme reads the log when a bar that can split is failing,

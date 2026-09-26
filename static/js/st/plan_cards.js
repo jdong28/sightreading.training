@@ -87,9 +87,11 @@ export class PlanDeck {
     // whether a card is being played, which the generator keeps up to date:
     // the plan made again after the read waits rather than throw a pass away
     this.playing = () => false
-    // whether the drill waits at each column, which the generator keeps up
-    // to date: the hand scaffold is offered in wait mode alone
+    // what the hand scaffold needs of the page, which the generator keeps
+    // up to date: a drill that waits at each column, and a staff that can
+    // draw one hand of the piece by itself (see split)
     this.waiting = () => true
+    this.splittable = () => true
 
     if (this.advance().failing.size) {
       this.ready = this.loadReviews()
@@ -107,6 +109,11 @@ export class PlanDeck {
     return Promise.resolve(store.reviews ? store.reviews({pieceId: this.pieceId}) : [])
       .then(reviews => learnReviews(this.reviews, reviews))
       .catch(err => console.warn("Couldn't read the piece's reviews", err))
+  }
+
+  /** @returns {boolean} whether a bar may be offered as one hand alone now */
+  split() {
+    return this.waiting() && this.splittable()
   }
 
   /** @returns {string} the hand of the card being shown, the session's or a hand alone */
@@ -178,7 +185,7 @@ export class PlanDeck {
       measures: this.measures,
       hand: this.sessionHand,
       handMeasures: this.handMeasures,
-      split: this.waiting(),
+      split: this.split(),
       lastReviews: this.reviews,
       now: this.now(),
       settings: store.schedulerSettings(),
@@ -275,15 +282,26 @@ export class PlanGenerator extends MeasureCardGenerator {
   }
 
   /**
+   * @param {function(): boolean} apart whether the staff drawing the cards
+   * can draw one hand of the piece by itself, which the page says (see
+   * SightReadingPage#handsApart); the card showing is planned again once
+   * it has
+   */
+  setHandsApart(apart) {
+    this.deck.splittable = apart
+    this.replan()
+  }
+
+  /**
    * @returns {boolean} whether the card showing isn't one to play now: a
    * programme with no card, which the page asks for at Begin (every bar the
    * piece has left rested in the sitting before, and the one that is over
-   * opens them again), or a hand alone while the drill scrolls, where a
-   * failing bar returns hands together
+   * opens them again), or a hand alone where the scaffold can't be offered,
+   * where a failing bar returns hands together
    */
   replanning() {
     let entry = this.deck.entry
-    return !(entry && (this.deck.waiting() || entry.hand == this.deck.sessionHand))
+    return !entry || (entry.hand != this.deck.sessionHand && !this.deck.split())
   }
 
   /**
