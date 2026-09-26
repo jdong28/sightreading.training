@@ -14,10 +14,11 @@
 // 2. a review due today, lowest predicted recall first, after a warm-up of
 //    the two likeliest recalled;
 // 3. a new measure, the next in score order not yet seen, while fewer than
-//    LADDER_CAP items are on the ladder, resting ones counted, new cards are
-//    at most half the cards played and the due reviews fit in REVIEW_SHARE of
-//    the time left to the target (with nothing else to do, up to
-//    IDLE_LADDER_CAP on the ladder).
+//    LADDER_CAP items are on the ladder, the ones resting counted, new cards
+//    are at most half the cards played and the due reviews fit in
+//    REVIEW_SHARE of the time left to the target (with nothing else to do,
+//    up to IDLE_LADDER_CAP on the ladder, and the sitting is over once the
+//    bars resting fill that).
 //    Once the first fifth of the target has passed, a new measure these
 //    limits allow goes ahead of the due reviews, so new material is
 //    interleaved with them rather than left until they are all done;
@@ -435,9 +436,7 @@ function candidates(state, {avoid}) {
 
   let newMeasures = unseen.map(measure => newSlot(state, measure)).filter(other)
 
-  // a bar resting is work the sitting has parked, not room for more
-  let idle = !rungs.length && !due.length && !early.length && !runThrough.length &&
-    !state.resting.size
+  let idle = !rungs.length && !due.length && !early.length && !runThrough.length
   let cap = idle ? IDLE_LADDER_CAP : LADDER_CAP
   let remainingMs = state.targetMs - state.elapsedMs
   let fits = dueReviews.length * state.cardMs <= REVIEW_SHARE * remainingMs
@@ -541,8 +540,8 @@ export function studyStatus(input) {
  * when nothing is due. Each piece is counted by the hand its own study is
  * played with (hands together by default): its programme's items, hands
  * together and that hand, plus a bar's other hand alone while its bar is in
- * trouble hands together. A hand alone left over from a scaffold the bar has
- * since held is retired, and never flags its piece.
+ * trouble hands together and the hand has not held since. A hand alone left
+ * over from a retired scaffold never flags its piece.
  * @param {Object} opts
  * @param {StudyRecord[]} opts.studies
  * @param {ItemRecord[]} opts.items every piece's
@@ -564,7 +563,9 @@ export function mostOverduePiece({studies, items, now}) {
       if (item.hand == "both" || item.hand == hand) { return true }
       let bar = together.get(item.startMeasure)
       if (!bar || !scheduled(bar)) { return true }
-      return ON_LADDER.includes(bar.state) && failedAt(bar) != null
+
+      let since = ON_LADDER.includes(bar.state) ? failedAt(bar) : null
+      return since != null && !held(item, since)
     }
 
     let due = bars.filter(item => scheduled(item) && item.due < endOfToday && offered(item))

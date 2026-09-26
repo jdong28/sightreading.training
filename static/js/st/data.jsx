@@ -199,8 +199,7 @@ export function planGenerator(staff, settings) {
   let apart = hand == "both" && staves.treble.length && staves.bass.length
 
   let handCard = (side, number) => pieceSectionMeasures(staff, {
-    ...whole, startMeasure: number, endMeasure: number,
-    hand: side == "upper" ? RIGHT_HAND : LEFT_HAND,
+    ...whole, startMeasure: number, endMeasure: number, hand: handSetting(side),
   }, song)[0]
 
   let deck = new PlanDeck(measures, {

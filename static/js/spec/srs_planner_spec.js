@@ -205,14 +205,22 @@ describe("today's programme planner", function() {
       // one fewer in progress and the next new measure comes through
       expect(entryOf([...[1, 2, 3].map(failed), inReview(5, {due: NOW - DAY})])).toEqual([NEW, 4])
 
-      // with nothing else to play either, the four still hold the cap: the
-      // sitting has no card left rather than a new bar in their place
+      // with nothing else to play the idle cap applies, so the sitting
+      // carries on with a new bar rather than ending at the four resting
       let alone = plan([1, 2, 3, 4].map(failed))
       expect([...alone.state.resting].sort()).toEqual([1, 2, 3, 4])
       expect(alone.state.unseen).toEqual([5, 6, 7, 8])
-      expect(alone.entry).toBe(null)
+      expect([alone.entry.reason, alone.entry.measure]).toEqual([NEW, 5])
 
-      expect(entryOf([1, 2, 3].map(failed))).toEqual([NEW, 4])
+      // until the bars resting fill the idle cap: a struggling player is
+      // never fed the rest of the piece
+      let full = planNext({
+        pieceId: "p", now: NOW, measures: Array.from({length: 20}, (_, idx) => idx + 1),
+        items: Array.from({length: IDLE_LADDER_CAP}, (_, idx) => failed(idx + 1)),
+      })
+      expect(full.state.laddered).toEqual(IDLE_LADDER_CAP)
+      expect(full.state.unseen.length).toBeGreaterThan(0)
+      expect(full.entry).toBe(null)
     })
 
     it("offers new measures only while the due reviews fit in the time left", function() {
@@ -661,6 +669,15 @@ describe("today's programme planner", function() {
       let retired = [other, left, item(inReview(3, {due: NOW + 5 * DAY}))]
       expect(mostOverduePiece({studies: [{...studies[0], hand: "lower"}, studies[1]], items: retired, now: NOW}))
         .toEqual("p")
+
+      // a hand the bar has held since its failure is retired too, though the
+      // bar is still on the ladder: p keeps one due bar, so q wins on two
+      let failing = item(onLadder(3, {due: NOW - DAY + 1000, last: NOW - DAY - 30 * MINUTE, grade: AGAIN}))
+      let heldLeft = {...left, recent: [25, 20].map(n => [NOW - DAY - n * MINUTE, 4, 4, GOOD])}
+      let twoDue = [1, 2].map(measure => item(inReview(measure, {due: NOW - DAY + 5000}), "both", "q"))
+
+      expect(mostOverduePiece({studies, items: [...twoDue, failing, heldLeft], now: NOW})).toEqual("q")
+      expect(mostOverduePiece({studies, items: [...twoDue, failing, left], now: NOW})).toEqual("p")
     })
 
     it("counts each piece by the hand its own study is played with", function() {
@@ -1033,6 +1050,41 @@ describe("today's programme on the staff", function() {
 
     // the programme is opened again: the failure it never saw splits the bar
     expect((await planDeck()).entry).toEqual(jasmine.objectContaining({measure: 1, hand: "lower"}))
+  })
+
+  it("ends the sitting once the bars resting fill the idle cap", async function() {
+    // twenty bars of one note each, the first eight failed three times in
+    // this sitting, so the bars never seen wait for the next one
+    let measures = Array.from({length: 20}, (_, idx) => ({number: idx + 1, columns: [["C4"]]}))
+    let at = time - MINUTE
+    for (let measure = 1; measure <= IDLE_LADDER_CAP; measure++) {
+      let id = itemId({pieceId: piece.id, hand: "both", startMeasure: measure, endMeasure: measure})
+      await store.recordAttempt({
+        item: {
+          id, pieceId: piece.id, hand: "both", startMeasure: measure, endMeasure: measure,
+          level: "bar", state: "learning", step: 0, due: at, last: at, s: 1, d: 5,
+          reps: 3, lapses: 2, streak: 0, lastGrade: AGAIN, hits: 0, misses: 3, attempts: 3,
+          lastPracticed: at, elapsedMs: 3000, algo: 1, createdAt: at - 3 * MINUTE,
+          recent: [2, 1, 0].map(n => [at - n * MINUTE, 1, 0, AGAIN]),
+        },
+        review: {
+          itemId: id, pieceId: piece.id, at, kind: "attempt", grade: AGAIN, was: "learning",
+          columns: 1, clean: 0, misses: 1, stuck: 0, skipped: 0, hesitations: 0, mode: "wait", algo: 1,
+        },
+      })
+    }
+
+    let deck = new PlanDeck(measures, {pieceId: piece.id, cardMeasures: 1, store, now: () => time})
+    let generator = new PlanGenerator(deck, {now: () => time})
+    generators.push(generator)
+
+    let state = planState(deck.planInput())
+    expect(state.laddered).toEqual(IDLE_LADDER_CAP)
+    expect(state.elapsedMs).toBeLessThan(state.targetMs)
+    expect(deck.entry).toBe(null)
+    expect(generator.summary().newMeasures).toEqual(20 - IDLE_LADDER_CAP)
+    expect(generator.statusLine())
+      .toEqual("Nothing more to practise this sitting · struggling bars rest until your next sitting")
   })
 
   it("says how many bars rest once the sitting has met its target", async function() {
