@@ -65,8 +65,8 @@ export default class NoteMatcher {
   // "chords") and anyOctave, whether the staff scrolls (scroll mode), onEvent,
   // told each judgement as it is made, and now, the clock of the moments no
   // event times (a column becoming the head through a new list, Begin, a
-  // press with no timeStamp): performance.now by default, the clock MIDI
-  // events are stamped by
+  // press with no timeStamp, the staff coming to rest on the hit line):
+  // performance.now by default, the clock MIDI events are stamped by
   constructor(notes, opts={}) {
     this.notes = notes || null
     this.mode = opts.mode || "notes"

@@ -118,9 +118,9 @@ export function attemptCounts(columns, {mode, lead=true, pace}) {
 
 /**
  * The columns of an attempt played in wait mode that were hesitated on: a
- * column taking longer than both HESITATION_MIN_MS and HESITATION_PACE times
- * the pace for the notated beats before it. The column opening the attempt
- * never is.
+ * column whose latency passes both HESITATION_MIN_MS and HESITATION_PACE
+ * times the pace for the notated beats before it. The column opening the
+ * attempt never is.
  * @param {AttemptColumn[]} columns
  * @param {Object} opts
  * @param {boolean} [opts.lead=true] whether columns[0] opens the attempt
