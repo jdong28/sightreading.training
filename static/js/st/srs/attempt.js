@@ -227,8 +227,8 @@ function gradedColumn(pass, idx, mode) {
  * reads it (see attemptPace and hesitations in st/srs/grade), leaving out
  * the columns the player walked away from as elapsedOf leaves them out of
  * the stored time: null for any other pass, whose pace the player didn't
- * set, and for one with no column played under PAUSE_MS. A column over
- * PAUSE_MS is a stop whatever the pace.
+ * set, and a null pace when no column was played under PAUSE_MS. A column
+ * over PAUSE_MS is a stop whatever the pace.
  * @param {AttemptPass} pass complete
  * @returns {{pace: number|null, beats: boolean, stops: number[]}|null} pace
  * in ms per beat (per column when beats is false, the columns carrying no
