@@ -246,28 +246,21 @@ const ORNAMENT_NEIGHBOURS = {
   "inverted-vertical-turn": ["upper", "lower"],
 }
 
-// The ornaments that keep alternating for as long as the note sounds, so the
-// note itself is struck again after its onset. A turn or mordent plays its
-// figure at the onset only
-const TRILLS = new Set(["trill-mark", "shake"])
-
 // the alteration an <accidental-mark> writes on an ornament's neighbour
 const ACCIDENTAL_MARKS = {
   "sharp": 1, "natural": 0, "flat": -1, "double-sharp": 2, "sharp-sharp": 2,
   "flat-flat": -2, "natural-sharp": 1, "natural-flat": -1,
 }
 
-// The neighbours a note's trill, turn or mordent plays, as {neighbours, trill}:
+// The neighbours a note's trill, turn or mordent plays, as
 // [{side: "upper" | "lower", alter}], alter being the accidental mark written
-// on that side, or null for the one in force, and whether any of them is a
-// trill (see TRILLS). Empty for a note without one. An <ornaments> element
-// lists each ornament followed by its accidental marks: a mark with placement
-// alters the side it names, one without it the next side still unaltered in
-// written order (a turn's upper then its lower), and a mark with no side left
-// to take alters nothing
+// on that side, or null for the one in force. Empty for a note without one.
+// An <ornaments> element lists each ornament followed by its accidental marks:
+// a mark with placement alters the side it names, one without it the next side
+// still unaltered in written order (a turn's upper then its lower), and a mark
+// with no side left to take alters nothing
 function ornamentNeighbours(noteEl) {
   let neighbours = []
-  let trill = false
 
   for (let notations of childEls(noteEl, "notations")) {
     for (let ornaments of childEls(notations, "ornaments")) {
@@ -276,7 +269,6 @@ function ornamentNeighbours(noteEl) {
       for (let el of ornaments.children) {
         let sides = ORNAMENT_NEIGHBOURS[el.localName]
         if (sides) {
-          trill = trill || TRILLS.has(el.localName)
           last = sides.map(side => ({side, alter: null}))
           neighbours.push(...last)
           continue
@@ -297,27 +289,7 @@ function ornamentNeighbours(noteEl) {
     }
   }
 
-  return {neighbours, trill}
-}
-
-// The wavy lines a note starts or stops, as [{number, type}]. A trill over
-// more than the note carrying its mark runs a <wavy-line> from that note to
-// the one it stops on, so every note under the line is trilled too
-function wavyLines(noteEl) {
-  let lines = []
-
-  for (let notations of childEls(noteEl, "notations")) {
-    for (let ornaments of childEls(notations, "ornaments")) {
-      for (let el of childEls(ornaments, "wavy-line")) {
-        let type = el.getAttribute("type")
-        if (type != "start" && type != "stop") { continue }
-
-        lines.push({number: el.getAttribute("number") || "1", type})
-      }
-    }
-  }
-
-  return lines
+  return neighbours
 }
 
 function clefSign(clefEl) {
@@ -425,19 +397,6 @@ function walkPart(measures, partName) {
   // of the position they are written at. A grace note is written in the
   // measure of the note it leads into, so none is kept past the end of one
   let pendingGraces = new Map()
-  // The trills whose wavy line is still running, by staff and line number,
-  // each {staff, voice, sides} of the staff and voice it trills and the
-  // neighbours it alternates with. A line the score never stops ends at the
-  // first rest of that staff and voice, at the next note of them writing an
-  // ornament of its own, or with the part
-  let openTrills = new Map()
-  let endTrills = (trilledStaff, trilledVoice) => {
-    for (let [key, line] of openTrills) {
-      if (line.staff == trilledStaff && line.voice == trilledVoice) {
-        openTrills.delete(key)
-      }
-    }
-  }
 
   measures.forEach((measureEl, measureIdx) => {
     let position = 0 // in divisions, relative to measure start
@@ -511,24 +470,6 @@ function walkPart(measures, partName) {
           // one pitch apart (see joinCard in st/score_render/card_join). A
           // rest keeps none
           let voice = +(childText(el, "voice") || 0)
-
-          // A wavy line runs its trill from the note it starts on to the one
-          // it stops on, whichever voice of the staff that is written in. The
-          // lines this note stops end here, before any of the guards below can
-          // skip the note carrying the stop, while the sides they were running
-          // with still trill this note
-          let lines = wavyLines(el)
-          let stopping = new Set(lines.filter(line => line.type == "stop").map(line => line.number))
-          let running = [...openTrills.values()]
-            .filter(line => line.staff == staff && line.voice == voice)
-            .flatMap(line => line.sides)
-          for (let number of stopping) {
-            openTrills.delete(`${staff}:${number}`)
-          }
-
-          if (hasChild(el, "rest")) {
-            endTrills(staff, voice)
-          }
 
           if (hasChild(el, "grace")) {
             // a grace note has no duration, so it isn't a note of its own: it
@@ -607,27 +548,9 @@ function walkPart(measures, partName) {
             pendingGraces.delete(voice)
           }
 
-          let {neighbours, trill} = ornamentNeighbours(el)
-
-          // A note under a running line is trilled with its own neighbours;
-          // one writing an ornament of its own ends the line instead. A wavy
-          // line follows one melodic line, so the rest of a chord it is
-          // written over is not trilled
+          let neighbours = ornamentNeighbours(el)
           if (neighbours.length) {
-            endTrills(staff, voice)
-          } else if (running.length && !isChord) {
-            neighbours = [...new Set(running)].map(side => ({side, alter: null}))
-            trill = true
-          }
-
-          for (let {number, type} of lines) {
-            if (type == "start" && trill && !stopping.has(number)) {
-              openTrills.set(`${staff}:${number}`, {staff, voice, sides: neighbours.map(n => n.side)})
-            }
-          }
-
-          if (neighbours.length) {
-            ornamented.push({event, staff, parts, neighbours, trill, at: start, idx: written.length - 1, fifths})
+            ornamented.push({event, staff, parts, neighbours, at: start, idx: written.length - 1, fifths})
           }
 
           part.events.push(event)
@@ -640,11 +563,7 @@ function walkPart(measures, partName) {
     // alteration of the last note on its letter and octave written on the
     // staff before the ornament in the measure (an accidental in force), else
     // the key signature's
-    for (let {event, staff, parts, neighbours, trill, at, idx, fifths} of ornamented) {
-      if (trill) {
-        event.trill = true
-      }
-
+    for (let {event, staff, parts, neighbours, at, idx, fifths} of ornamented) {
       event.neighbours = neighbours.map(({side, alter}) => {
         let neighbour = stepFrom(parts, side == "upper" ? 1 : -1)
         let inForce = written.filter((note, noteIdx) =>
@@ -727,8 +646,7 @@ function scoreTitle(root) {
 // Keeps the ornaments of a note event on the song note it is played as (a
 // tied note gathers those of the notes it is tied to): note.ornaments.graces,
 // the grace notes leading into it, and note.ornaments.neighbours, the notes
-// its trill, turn or mordent alternates it with, marked note.ornaments.trill
-// when that ornament keeps alternating (see TRILLS). Neither is played for the
+// its trill, turn or mordent alternates it with. Neither is played for the
 // note, so neither is required, but a player playing them as written doesn't
 // slip (see column.allowed in st/song_sections). An ornament written on a
 // tie's continuation, at, sounds from there on rather than over the whole
@@ -747,10 +665,6 @@ function addOrnaments(note, event, at) {
   }
 
   if (!event.neighbours || !event.neighbours.length) { return }
-
-  if (event.trill) {
-    note.ornaments.trill = true
-  }
 
   if (at > note.start && !ornamented) {
     note.ornaments.at = at

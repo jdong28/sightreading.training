@@ -762,7 +762,6 @@ describe("musicxml ornaments", function() {
     `<notations><ornaments>${marks}</ornaments></notations>${extra}`
 
   let treble = "<voice>1</voice><staff>1</staff>"
-  let wavy = type => `<wavy-line type="${type}" number="1"/>`
 
   let grace = (step, octave, extra="", alter=null) => `
 <note>
@@ -778,7 +777,7 @@ describe("musicxml ornaments", function() {
     expect(tuples(song.tracks[0])).toEqual([["G#5", 0, 2], ["F#5", 2, 2], ["G#5", 4, 2], ["C#5", 6, 2]])
     // four sharps: the note above F#5 is G#5
     expect(ornaments(song)).toEqual([
-      ["F#5", 2, {neighbours: ["G#5"], trill: true}],
+      ["F#5", 2, {neighbours: ["G#5"]}],
       ["G#5", 4, {graces: ["E5", "F#5"]}],
     ])
   })
@@ -822,15 +821,15 @@ describe("musicxml ornaments", function() {
     expect(ornaments(song)).toEqual([
       // two flats, Bb and Eb: above Eb5 is F5, below C5 is Bb4 (the octave
       // turns at C), above Bb4 is C5, around D5 are Eb5 and C5
-      ["Eb5", 0, {neighbours: ["F5"], trill: true}],
+      ["Eb5", 0, {neighbours: ["F5"]}],
       ["C5", 1, {neighbours: ["Bb4"]}],
       ["Bb4", 2, {neighbours: ["C5"]}],
       ["D5", 3, {neighbours: ["Eb5", "C5"]}],
       // the F#5 written earlier in the measure is in force
-      ["Eb5", 5, {neighbours: ["F#5"], trill: true}],
+      ["Eb5", 5, {neighbours: ["F#5"]}],
       // the marks: a sharp below the turn, a natural above the trill
       ["A4", 6, {neighbours: ["Bb4", "G#4"]}],
-      ["D5", 7, {neighbours: ["E5"], trill: true}],
+      ["D5", 7, {neighbours: ["E5"]}],
     ])
   })
 
@@ -852,155 +851,6 @@ describe("musicxml ornaments", function() {
     ])
   })
 
-  it("trills every note under a wavy line, across the bar, in its own voice only", function() {
-    let song = parseMusicXML(partwise(`
-<measure number="1">
-  ${attributes({fifths: 1, staves: 2, clefs: [[1, "G", 2], [2, "F", 4]]})}
-  ${note("D", 5, 1, ornamented(`<trill-mark/>${wavy("start")}`, treble))}
-  ${note("E", 5, 1, treble)}
-  ${note("G", 5, 1, treble)}
-  <backup><duration>3</duration></backup>
-  ${note("B", 3, 4, "<voice>5</voice><staff>2</staff>")}
-</measure>
-<measure number="2">
-  ${note("A", 5, 1, ornamented(wavy("stop"), treble))}
-  ${note("B", 5, 3, treble)}
-</measure>`))
-
-    // one sharp: each note under the line is trilled with its own upper
-    // neighbour, up to and including the note the line stops on. The left
-    // hand's note under the line is in another voice, so it is not trilled
-    expect(ornaments(song)).toEqual([
-      ["D5", 0, {neighbours: ["E5"], trill: true}],
-      ["E5", 1, {neighbours: ["F#5"], trill: true}],
-      ["G5", 2, {neighbours: ["A5"], trill: true}],
-      ["A5", 4, {neighbours: ["B5"], trill: true}],
-    ])
-  })
-
-  it("stops a wavy line on another voice of its staff", function() {
-    let alto = "<voice>2</voice><staff>1</staff>"
-    let song = parseMusicXML(partwise(`
-<measure number="1">
-  ${attributes({})}
-  ${note("D", 5, 1, ornamented(`<trill-mark/>${wavy("start")}`, treble))}
-  ${note("E", 5, 1, treble)}
-  <backup><duration>2</duration></backup>
-  ${note("F", 5, 2, ornamented(wavy("stop"), alto))}
-  ${note("G", 5, 1, treble)}
-  ${note("A", 5, 1, treble)}
-</measure>`))
-
-    // the line is stopped in the staff's other voice, so it trills neither
-    // the G5 nor the A5 written after it
-    expect(ornaments(song)).toEqual([
-      ["D5", 0, {neighbours: ["E5"], trill: true}],
-      ["E5", 1, {neighbours: ["F5"], trill: true}],
-    ])
-  })
-
-  it("trills only the melody note of a chord a wavy line is written over", function() {
-    let song = parseMusicXML(partwise(`
-<measure number="1">
-  ${attributes({})}
-  ${note("C", 5, 2, ornamented(`<trill-mark/>${wavy("start")}`, treble))}
-  ${note("E", 5, 2, `<chord/>${treble}`)}
-  ${note("D", 5, 2, ornamented(wavy("stop"), treble))}
-</measure>`))
-
-    // the line is written on the C5, so the E5 above it in the same chord is
-    // not trilled; the D5 the line stops on still is
-    expect(ornaments(song)).toEqual([
-      ["C5", 0, {neighbours: ["D5"], trill: true}],
-      ["D5", 2, {neighbours: ["E5"], trill: true}],
-    ])
-  })
-
-  it("keeps a wavy line to its own staff in a score that writes no voices", function() {
-    let upper = "<staff>1</staff>"
-    let lower = "<staff>2</staff>"
-    let song = parseMusicXML(partwise(`
-<measure number="1">
-  ${attributes({staves: 2, clefs: [[1, "G", 2], [2, "F", 4]]})}
-  ${note("D", 5, 1, ornamented(`<trill-mark/>${wavy("start")}`, upper))}
-  ${note("E", 5, 1, upper)}
-  ${note("F", 5, 1, upper)}
-  ${note("G", 5, 1, upper)}
-  <backup><duration>4</duration></backup>
-  ${note("G", 3, 1, lower)}
-  ${note("A", 3, 1, lower)}
-  ${note("B", 3, 1, lower)}
-  ${rest(1, lower)}
-</measure>
-<measure number="2">
-  ${note("A", 5, 1, ornamented(wavy("stop"), upper))}
-</measure>`))
-
-    // every note is voice 0, so only the staff tells the hands apart: the
-    // left hand's notes are not trilled and its rest doesn't end the line,
-    // which still runs to the A5 the score stops it on
-    expect(ornaments(song)).toEqual([
-      ["D5", 0, {neighbours: ["E5"], trill: true}],
-      ["E5", 1, {neighbours: ["F5"], trill: true}],
-      ["F5", 2, {neighbours: ["G5"], trill: true}],
-      ["G5", 3, {neighbours: ["A5"], trill: true}],
-      ["A5", 4, {neighbours: ["B5"], trill: true}],
-    ])
-  })
-
-  it("ends a wavy line the score never stops at the first rest of its voice", function() {
-    let song = parseMusicXML(partwise(`
-<measure number="1">
-  ${attributes({})}
-  ${note("D", 5, 1, ornamented(`<trill-mark/>${wavy("start")}`, treble))}
-  ${note("E", 5, 1, treble)}
-  ${rest(1, treble)}
-  ${note("G", 5, 1, treble)}
-</measure>`))
-
-    expect(ornaments(song)).toEqual([
-      ["D5", 0, {neighbours: ["E5"], trill: true}],
-      ["E5", 1, {neighbours: ["F5"], trill: true}],
-    ])
-  })
-
-  it("ends a wavy line the score never stops at the next note writing its own ornament", function() {
-    let song = parseMusicXML(partwise(`
-<measure number="1">
-  ${attributes({})}
-  ${note("D", 5, 1, ornamented(`<trill-mark/>${wavy("start")}`, treble))}
-  ${note("E", 5, 1, treble)}
-  ${note("F", 5, 1, ornamented("<mordent/>", treble))}
-  ${note("G", 5, 1, treble)}
-</measure>`))
-
-    // the mordent's own lower note is F5's, and the line ends there, so the
-    // G5 after it is not trilled
-    expect(ornaments(song)).toEqual([
-      ["D5", 0, {neighbours: ["E5"], trill: true}],
-      ["E5", 1, {neighbours: ["F5"], trill: true}],
-      ["F5", 2, {neighbours: ["E5"]}],
-    ])
-  })
-
-  it("ends a wavy line on the note the score stops it on, even one it skips", function() {
-    let song = parseMusicXML(partwise(`
-<measure number="1">
-  ${attributes({})}
-  ${note("D", 5, 1, ornamented(`<trill-mark/>${wavy("start")}`, treble))}
-  ${note("E", 5, 1, treble)}
-  ${rest(1, `${treble}${ornamented(wavy("stop"))}`)}
-  ${note("G", 5, 1, treble)}
-</measure>`))
-
-    // the rest carrying the stop is no note of the song, so the line would
-    // otherwise run on and trill the G5 after it
-    expect(ornaments(song)).toEqual([
-      ["D5", 0, {neighbours: ["E5"], trill: true}],
-      ["E5", 1, {neighbours: ["F5"], trill: true}],
-    ])
-  })
-
   it("gives a grace note written on the other staff to the note it leads into", function() {
     let song = parseMusicXML(partwise(`
 <measure number="1">
@@ -1018,33 +868,6 @@ describe("musicxml ornaments", function() {
     // left over at the end of the bar leads into no note of it, so it reaches
     // neither the G3 of the next bar nor anything else
     expect(ornaments(song)).toEqual([["C5", 0, {graces: ["A3"]}]])
-  })
-
-  it("trills nothing for a wavy line written with no trill mark", function() {
-    let song = parseMusicXML(partwise(`
-<measure number="1">
-  ${attributes({})}
-  ${note("C", 5, 1, ornamented(wavy("start"), treble))}
-  ${note("D", 5, 1, treble)}
-  ${note("E", 5, 1, ornamented(wavy("stop"), treble))}
-  ${note("F", 5, 1, treble)}
-</measure>`))
-
-    expect(ornaments(song)).toEqual([])
-  })
-
-  it("opens no span for a wavy line that doesn't say whether it starts or stops", function() {
-    let song = parseMusicXML(partwise(`
-<measure number="1">
-  ${attributes({})}
-  ${note("C", 5, 1, ornamented("<trill-mark/><wavy-line/>", treble))}
-  ${note("D", 5, 1, treble)}
-  ${note("E", 5, 1, treble)}
-</measure>`))
-
-    // the trill mark still trills its own note; the line says nothing the
-    // importer can run to a stop, so the notes after it are not trilled
-    expect(ornaments(song)).toEqual([["C5", 0, {neighbours: ["D5"], trill: true}]])
   })
 
   it("gives a grace note to a note written after it, never one a backup put before it", function() {
@@ -1070,16 +893,7 @@ describe("musicxml ornaments", function() {
     expect(tuples(song.tracks[0])).toEqual([["C5", 0, 8]])
     // the trill is written in bar 2, so it sounds from beat 4, not from the
     // merged note's own start
-    expect(ornaments(song)).toEqual([["C5", 0, {neighbours: ["D5"], trill: true, at: 4}]])
-  })
-
-  it("keeps a trill written on a tie's first note over the whole tie, wavy line and all", function() {
-    let song = parseMusicXML(tiedTrillScore({span: true}))
-
-    expect(tuples(song.tracks[0])).toEqual([["C5", 0, 8]])
-    // the trill mark is written in bar 1 and its wavy line runs to the
-    // continuation, so the merged note is trilled from its own start
-    expect(ornaments(song)).toEqual([["C5", 0, {neighbours: ["D5"], trill: true}]])
+    expect(ornaments(song)).toEqual([["C5", 0, {neighbours: ["D5"], at: 4}]])
   })
 
   it("keeps the ornaments of the notes a tie merges", function() {
@@ -1094,6 +908,6 @@ describe("musicxml ornaments", function() {
 </measure>`))
 
     expect(tuples(song)).toEqual([["C5", 0, 8]])
-    expect(ornaments(song)).toEqual([["C5", 0, {graces: ["B4"], neighbours: ["D5"], trill: true}]])
+    expect(ornaments(song)).toEqual([["C5", 0, {graces: ["B4"], neighbours: ["D5"]}]])
   })
 })

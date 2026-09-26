@@ -169,9 +169,9 @@ function tieHeads(note, staff) {
 // notes, and the notes of every trill, turn or mordent of ornamented (notes
 // with neighbours) sounding at it, from ornaments.at (a tie's continuation
 // carries its own) to the end of the note, and the ornamented note itself at
-// the columns a trill (ornaments.trill) strikes it again at, after its own
-// onset. A pitch the column plays is required rather than allowed, so it isn't
-// one. Pitch sorted, one name a pitch
+// the columns past its own onset, which its ornament strikes it again at. A
+// pitch the column plays is required rather than allowed, so it isn't one.
+// Pitch sorted, one name a pitch
 function allowedExtras(beat, onsetNotes, ornamented, required) {
   let names = onsetNotes.flatMap(note => (note.ornaments && note.ornaments.graces) || [])
 
@@ -181,7 +181,7 @@ function allowedExtras(beat, onsetNotes, ornamented, required) {
       note.start + note.duration > beat + ONSET_EPSILON / 2
     if (!sounding) { continue }
 
-    if (note.ornaments.trill && note.start < beat - ONSET_EPSILON / 2) {
+    if (note.start < beat - ONSET_EPSILON / 2) {
       names.push(note.note)
     }
     names.push(...note.ornaments.neighbours)

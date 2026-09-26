@@ -178,39 +178,6 @@ describe("song sections", function() {
       ])
     })
 
-    it("allows a trill written over more than one note at every column under its wavy line", function() {
-      // C major, 4/4: the right hand's quarters C5 D5 E5 under a trill's wavy
-      // line, then F5 after it stops, over the left hand's G3 A3 B3 C4
-      let treble = "<voice>1</voice>"
-      let trilled = (step, octave, line) => noteXML(step, octave, 1, 1,
-        `${treble}<notations><ornaments>${line}</ornaments></notations>`)
-      let song = parseMusicXML(`<?xml version="1.0" encoding="UTF-8"?>
-<score-partwise version="4.0">
-  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
-  <part id="P1">
-    <measure number="1">
-      <attributes><divisions>1</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><staves>2</staves><clef number="1"><sign>G</sign><line>2</line></clef><clef number="2"><sign>F</sign><line>4</line></clef></attributes>
-      ${trilled("C", 5, "<trill-mark/><wavy-line type=\"start\" number=\"1\"/>")}
-      ${noteXML("D", 5, 1, 1, treble)}
-      ${trilled("E", 5, "<wavy-line type=\"stop\" number=\"1\"/>")}
-      ${noteXML("F", 5, 1, 1, treble)}
-      <backup><duration>4</duration></backup>
-      ${["G", "A", "B"].map(step => noteXML(step, 3, 1, 2, "<voice>5</voice>")).join("")}
-      ${noteXML("C", 4, 1, 2, "<voice>5</voice>")}
-    </measure>
-  </part>
-</score-partwise>`)
-
-      // each note under the line allows its own upper neighbour; the note
-      // after the line stops allows none
-      expect(allowances(extractSectionColumns(song, {startMeasure: 1, endMeasure: 1, notation: true}))).toEqual([
-        [["G3", "C5"], ["D5"]],
-        [["A3", "D5"], ["E5"]],
-        [["B3", "E5"], ["F5"]],
-        [["C4", "F5"], null],
-      ])
-    })
-
     // 4/4, C major: a whole note C5 carrying one ornament over the left
     // hand's quarters G3 A3 B3 C4
     let heldOrnament = marks => parseMusicXML(`<?xml version="1.0" encoding="UTF-8"?>
@@ -230,20 +197,19 @@ describe("song sections", function() {
     let heldColumns = marks =>
       extractSectionColumns(heldOrnament(marks), {startMeasure: 1, endMeasure: 1, notation: true})
 
-    it("allows the ornamented note again while a trill alternates, but never for a mordent", function() {
-      // the mordent plays its lower note at the onset only, so the C5 it is
-      // written on is an allowance at no column under it
+    it("allows the ornamented note again at every column past its own onset", function() {
+      // an ornament returns to the note it is written on, so C5 is allowed
+      // wherever it sounds but the column that requires it
       expect(allowances(heldColumns("<mordent/>"))).toEqual([
-        [["G3", "C5"], ["B4"]], [["A3"], ["B4"]], [["B3"], ["B4"]], [["C4"], ["B4"]],
+        [["G3", "C5"], ["B4"]], [["A3"], ["B4", "C5"]], [["B3"], ["B4", "C5"]], [["C4"], ["B4", "C5"]],
       ])
 
-      // the trill keeps alternating, so it strikes C5 again after its onset
       expect(allowances(heldColumns("<trill-mark/>"))).toEqual([
         [["G3", "C5"], ["D5"]], [["A3"], ["C5", "D5"]], [["B3"], ["C5", "D5"]], [["C4"], ["C5", "D5"]],
       ])
     })
 
-    it("counts a slip for a mordent's note struck again at a column that doesn't play it", function() {
+    it("counts no slip for a mordent played as written across the next column", function() {
       let columns = heldColumns("<mordent/>")
       let queued = [...columns]
       let notes = new NoteList([], {generator: {nextNote: () => queued.shift() || []}})
@@ -252,14 +218,17 @@ describe("song sections", function() {
       let judged = []
       let matcher = new NoteMatcher(notes, {onEvent: event => judged.push(event)})
 
-      // the first column played and let go, then C5 struck again over A3
+      // the first column played, then the mordent's B4 and its return to C5
+      // over the A3 the left hand has moved on to
       matcher.noteOn("G3")
       matcher.noteOn("C5")
       matcher.noteOff("G3")
       matcher.noteOff("C5")
+      matcher.noteOn("B4")
+      matcher.noteOff("B4")
       matcher.noteOn("C5")
 
-      expect(judged.map(event => event.type)).toEqual(["hit", "miss"])
+      expect(judged.map(event => event.type)).toEqual(["hit"])
       expect([...matcher.notes.currentColumn()]).toEqual(["A3"])
     })
 
@@ -273,18 +242,6 @@ describe("song sections", function() {
       expect(allowances(columns)).toEqual([
         [["G3", "C5"], null], [["A3"], null], [["B3"], null], [["C4"], null],
         [["G3"], ["C5", "D5"]], [["A3"], ["C5", "D5"]], [["B3"], ["C5", "D5"]], [["C4"], ["C5", "D5"]],
-      ])
-    })
-
-    it("allows a trill whose wavy line carries it across a tie over both bars", function() {
-      let columns = extractSectionColumns(parseMusicXML(tiedTrillScore({span: true})),
-        {startMeasure: 1, endMeasure: 2, notation: true})
-
-      // the trill is written in bar 1, so it is allowed there too: only the
-      // column that plays C5 leaves it out, as that column requires it
-      expect(allowances(columns)).toEqual([
-        [["G3", "C5"], ["D5"]],
-        ...["A3", "B3", "C4", "G3", "A3", "B3", "C4"].map(note => [[note], ["C5", "D5"]]),
       ])
     })
 
