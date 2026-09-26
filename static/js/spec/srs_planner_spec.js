@@ -1057,7 +1057,7 @@ describe("today's programme on the staff", function() {
     expect(deck.advance().scaffolds.get(1)).toEqual("lower")
   })
 
-  it("plans without the reviews when one of them is beyond the planner", async function() {
+  it("keeps the plan it made when a review is beyond the planner", async function() {
     let measures = pool()
     let {built, ...hands} = handPools()
     let stats = new NoteStats()
@@ -1080,13 +1080,17 @@ describe("today's programme on the staff", function() {
     }]))
 
     let deck = new PlanDeck(measures, {pieceId: piece.id, cardMeasures: 1, ...hands, store, now: () => time})
-    await deck.ready
+    let generator = new PlanGenerator(deck, {now: () => time})
+    generators.push(generator)
+    let entry = deck.entry
+    expect(entry).toEqual(jasmine.objectContaining({measure: 1, hand: "both"}))
 
-    // the deck plans again without them rather than leaving the staff blank
+    // the plan the deck made from the items stands, so the staff keeps its
+    // card rather than going blank
+    expect(await generator.ready).toBe(false)
     expect(deck.planned).toBe(true)
-    expect(deck.reviews.size).toEqual(0)
-    expect(deck.entry).toEqual(jasmine.objectContaining({measure: 1, hand: "both"}))
-    expect(deck.card.measures).toEqual([1])
+    expect(deck.entry).toEqual(entry)
+    expect(generator.currentCard().measures).toEqual([1])
     expect(console.warn).toHaveBeenCalled()
   })
 

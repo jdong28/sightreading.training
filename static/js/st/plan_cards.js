@@ -91,23 +91,6 @@ export class PlanDeck {
     if (this.advance().failing.size) {
       this.ready = this.loadReviews()
         .then(() => { if (!this.playing()) { this.advance(false) } })
-        .catch(err => this.planUnread(err))
-    }
-  }
-
-  // The plan threw on what the piece has stored: the reviews are the one
-  // input it can do without, so it is planned again without them. Either way
-  // the deck counts as planned, so the page still has a status line and
-  // Begin can plan again rather than leaving the staff blank for good
-  planUnread(err) {
-    console.warn("Couldn't plan today's programme", err)
-    this.reviews.clear()
-    this.planned = true
-
-    try {
-      this.advance(false)
-    } catch (failed) {
-      console.warn("Couldn't plan today's programme", failed)
     }
   }
 
