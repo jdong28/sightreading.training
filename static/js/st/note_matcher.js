@@ -35,6 +35,17 @@
 // timeStamps, so a press with none (the on-screen keyboard) is judged as if
 // outside them.
 //
+// A key the score still sounds at a column's onset from an earlier one (a
+// key two voices share, or notes that overlap: column.sustained, see
+// extractSectionColumns) counts toward the column while it is down, held
+// rather than struck again (T6, rule 1; ruling D3(a)). That held credit is
+// applied lazily: when a key that isn't the head's own goes down (the player
+// has moved on), or when it would complete the head with the keys struck at
+// it, never before the column is the head, nor as it becomes the head.
+// Striking the key again is its own key down at the column, as before. A key
+// held through a note the score strikes again (the earlier one ends at the
+// onset) isn't sustained, so the column still waits for it.
+//
 // The ornaments the score writes at the head column (T7, rule 2.2) are
 // allowed extras: the key goes down, but nothing about it is judged. The
 // column carries them as its allowed (see extractSectionColumns in
@@ -44,11 +55,10 @@
 // its latency, from the moment it became the head to the first of its own
 // keys struck at it, which is what a hesitation is read from (so a column
 // completed late by a key held instead of struck again, or by a slow roll,
-// isn't one); how many of its keys were credited early (above) and held over
-// (heldCredit, 0 until score-sustained credit lands); and, in scroll mode,
-// how long it stood on the hit line before it completed (late), which is
-// recorded but never a miss: scroll mode scrolls to the line and waits
-// (ruling D4(a)). See measured.
+// isn't one); how many of its keys were credited early (above) and held
+// over (heldCredit, rule 1); and, in scroll mode, how long it stood on the
+// hit line before it completed (late), which is recorded but never a miss:
+// scroll mode scrolls to the line and waits (ruling D4(a)). See measured.
 
 // W_early: how long a key of the next column may wait for the column under
 // way to complete before it counts as a slip on it (ruling D2(a): about
@@ -127,9 +137,9 @@ export default class NoteMatcher {
   // adopts a note list built elsewhere (a rebuilt drill, a column scrolled
   // past): the keys struck at the old head are dropped, so its new one is
   // played afresh from the next key down, however many keys are still down.
-  // A key held over is neither credited to the new column (score-sustained
-  // credit is a later step) nor counted against it, having been judged on
-  // the column it was played on
+  // A key held over isn't counted against the new column, having been judged
+  // on the column it was played on, and counts toward it only where the
+  // score still sounds it there (held credit, applied lazily as ever)
   setNotes(notes) {
     notes = notes || null
     if (notes !== this.notes) {
@@ -247,13 +257,29 @@ export default class NoteMatcher {
 
     this.expireEarly(timeStamp)
 
+    // a key down that is neither the head's own nor the column just
+    // completed struck again is the player moving on: the columns its held
+    // keys complete are done first, and the key is judged at the one after
+    if (!this.inColumn(notes.currentColumn(), note) && !this.repeated(note, timeStamp)) {
+      let settled = this.notes
+      this.settleHeld(note)
+      notes = this.notes
+      if (notes !== settled) {
+        // struck at the head it was judged at
+        this.touched = {...this.touched, [note]: true}
+      }
+      if (!notes.currentColumn().length) { return }
+    }
+
     // rule 2: the head's own key, a key of the column just completed struck
     // again, a key of the next column played early, or else a slip
     let slip = false
-    if (this.inColumn(notes.currentColumn(), note)) {
-      // the first of the column's own keys down starts its spread, and the
-      // first struck at it (a key credited early was struck before it was
-      // the head) ends its latency
+    let own = this.inColumn(notes.currentColumn(), note)
+    if (own) {
+      // the first of the column's own keys down starts its spread, which
+      // the key down that completes the column ends, and the first struck
+      // at it (a key credited early was struck before it was the head) ends
+      // its latency
       if (!this.firstDown) {
         this.firstDown = true
         this.firstAt = timeStamp ?? null
@@ -270,7 +296,9 @@ export default class NoteMatcher {
       slip = true
     }
 
-    let matched = notes.matchesHead(Object.keys(this.touched), this.anyOctave)
+    // only the head's own key can complete it: any other key down settled
+    // what the keys held complete before it was judged
+    let matched = own && this.completes()
 
     // a slip counts the column as missed, but the keys touched still go on
     // to complete it. A wrong key still down as the column completes is
@@ -285,13 +313,15 @@ export default class NoteMatcher {
     }
   }
 
-  // The head column is complete, its last required key down at completedAt:
-  // it moves on, and the keys held early for the next column are credited
-  // to it, completing it too if they are all of it (rule 3)
+  // The head column is complete, its last required key down at completedAt
+  // (null when every key of it was held): it moves on, and the keys held
+  // early for the next column are credited to it, completing it too if they
+  // are all of it (rule 3), never by the credit it holds, which stays lazy
   hit(completedAt) {
     let notes = this.notes
     let column = notes.currentColumn()
     let touched = Object.keys(this.touched)
+    let held = this.heldCredit()
 
     // the moment the column completed, on the clock the measurements share:
     // the key that completed it carried no timeStamp (the on-screen
@@ -304,12 +334,13 @@ export default class NoteMatcher {
     let spread = this.firstAt != null && completedAt != null
       ? completedAt - this.firstAt
       : null
-    let measured = {spread, ...this.measured(at)}
+    let measured = {spread, ...this.measured(at, held)}
 
     let event = {
       type: "hit",
-      // the keys the stats credit the column with: the column's own
-      hitNotes: touched.filter(n => this.inColumn(column, n)),
+      // the keys the stats credit the column with: the column's own, struck
+      // or held
+      hitNotes: [...touched.filter(n => this.inColumn(column, n)), ...held],
       // the list as it was, for the width the staff slides by
       from: notes,
       // a slip's shake plays out over the next column
@@ -317,6 +348,9 @@ export default class NoteMatcher {
       // the column's keys that were struck before it was the head, which
       // measured counts as its early
       credited: this.credited,
+      // the column's keys the score still sounds that were held rather than
+      // struck again (rule 1), which measured counts as its heldCredit
+      heldCredited: held,
       // what the grade reads on the column, as it went with it (see measured)
       ...measured,
     }
@@ -332,8 +366,8 @@ export default class NoteMatcher {
     this.notes = advanced
 
     // the next column is played afresh, but for its keys struck early: the
-    // keys still down stay held, and none of them is otherwise credited to
-    // it (score-sustained credit is a later step)
+    // keys still down stay held, and count toward it only as held credit,
+    // lazily, where the score still sounds them
     this.startHead(at)
     this.previous = {column, at: completedAt}
 
@@ -354,6 +388,55 @@ export default class NoteMatcher {
     if (credited.length && advanced.matchesHead(credited, this.anyOctave)) {
       this.hit(Math.max(...credited.map(n => early[n])))
     }
+  }
+
+  // The head column's keys the score still sounds at its onset from an
+  // earlier one (column.sustained) that are down but weren't struck at it
+  heldCredit() {
+    let column = this.notes.currentColumn()
+    let sustained = column.sustained || []
+    if (!sustained.length) { return [] }
+
+    return Object.keys(this.held).filter(n => !this.touched[n] &&
+      sustained.some(s => this.notes.sameNote(n, s, this.anyOctave)))
+  }
+
+  // whether every key of the head column has gone down at it, or is held
+  // on where the score still sounds it (rule 1)
+  completes() {
+    return this.notes.matchesHead([...Object.keys(this.touched), ...this.heldCredit()], this.anyOctave)
+  }
+
+  // Held credit applied lazily, at a key down that isn't the head's own:
+  // each head its held keys complete is hit in turn, with none of its own
+  // keys struck to time it, up to the head the key belongs to. It stops at
+  // the end of the card (lastOfCard), so a looping card whose held key
+  // sounds through it credits the lap under way and not the laps after it.
+  // A card's cardIndex climbs to its last column, which ends the settling,
+  // so the loop always runs out
+  settleHeld(note) {
+    while (true) {
+      let column = this.notes.currentColumn()
+      if (!column.length || this.inColumn(column, note)) { return }
+      if (!this.heldCredit().length || !this.completes()) { return }
+
+      let last = this.lastOfCard()
+      this.hit(null)
+      if (last) { return }
+    }
+  }
+
+  // Whether the head is the last column of the card the list is playing:
+  // the column after it is empty (the gap between cards, the end of the
+  // run) or starts the next lap or card, its cardIndex no greater than the
+  // head's. A column carrying no cardIndex is its own card's last
+  lastOfCard() {
+    let next = this.columnAt(1)
+    if (!next.length) { return true }
+
+    let column = this.notes.currentColumn()
+    return column.cardIndex == null || next.cardIndex == null ||
+      next.cardIndex <= column.cardIndex
   }
 
   // Keys held early for the next column that the head hasn't completed
@@ -384,12 +467,15 @@ export default class NoteMatcher {
   }
 
   // counts a slip on the head column, blamed on its notes from the keys
-  // struck at it that are its own or slipped
+  // struck at it that are its own or slipped, and the keys it credits held:
+  // a note the column already has is never one the miss is put down to
   emitMiss() {
     let notes = this.notes
     let column = notes.currentColumn()
-    let struck = Object.keys(this.touched).filter(n =>
-      this.strays[n] || this.inColumn(column, n))
+    let struck = [
+      ...Object.keys(this.touched).filter(n => this.strays[n] || this.inColumn(column, n)),
+      ...this.heldCredit(),
+    ]
     this.emit(this.missColumn(column, notes.blamedNotes(struck, this.anyOctave)))
   }
 
@@ -409,12 +495,12 @@ export default class NoteMatcher {
   // - latency, from the column becoming the head to the first of its own
   //   keys down (a wrong key first doesn't end it)
   // - early, how many of its keys were credited from presses made before it
-  //   was the head (see hit), and heldCredit, how many were keys held over
-  //   that the score still sounds: 0 until score-sustained credit lands
+  //   was the head (see hit), and heldCredit, how many of the held keys the
+  //   score still sounds it counted (rule 1)
   // - late, in scroll mode, how long it stood on the hit line as the head
   //   before it completed (0 when it completed on its way there), null in
   //   wait mode. Never a miss (D4(a))
-  measured(time) {
+  measured(time, held) {
     let latency = this.firstKeyAt != null ? Math.max(0, this.firstKeyAt - this.headAt) : null
 
     let late = null
@@ -423,7 +509,7 @@ export default class NoteMatcher {
         Math.max(0, time - Math.max(this.onLineSince, this.headAt))
     }
 
-    return {latency, early: this.credited.length, heldCredit: 0, late}
+    return {latency, early: this.credited.length, heldCredit: held.length, late}
   }
 
   // the chord drill, when the keys down reach 0: the chord is checked on
