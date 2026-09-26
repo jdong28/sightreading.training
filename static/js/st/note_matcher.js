@@ -271,7 +271,7 @@ export default class NoteMatcher {
   // The head column is complete, its last required key down at completedAt
   // (null when every key of it was held): it moves on, and the keys held
   // early for the next column are credited to it, completing it too if they
-  // are all of it with its keys held (rule 3)
+  // are all of it (rule 3), never by the credit it holds, which stays lazy
   hit(completedAt) {
     let notes = this.notes
     let column = notes.currentColumn()
