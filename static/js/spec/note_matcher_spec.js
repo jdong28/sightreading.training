@@ -504,9 +504,31 @@ describe("note matcher", function() {
       expect(run(matcher, [["on", "C4", 1000]])).toEqual(["hit Bb3 (held Bb3)", "hit C4"])
     })
 
-    // a card of one column the key it holds sounds on through, looping: the
-    // key goes on crediting every lap, so one key down settles one lap of
-    // the list at most
+    // a looping card of two columns the key it holds sounds on through: the
+    // key would go on crediting every lap, so one key down settles the rest
+    // of the lap under way and stops where the card ends
+    it("settles the lap under way at one key down, not the laps after it", function() {
+      let position = 0
+      let notes = new NoteList([], {generator: {nextNote: () => {
+        let column = sustain(["Bb3"], "Bb3")
+        column.cardIndex = position++ % 2
+        return column
+      }}})
+      notes.fillBuffer(4)
+      let judged = []
+      let matcher = new NoteMatcher(notes, {onEvent: event => judged.push(event)})
+      matcher.judged = judged
+
+      // Bb3 strikes the card's first column and is held through the second,
+      // which the stray D4 settles; the next lap waits to be played
+      run(matcher, [["on", "Bb3", 0], ["on", "D4", 1000]])
+      expect(judged.map(event => event.type)).toEqual(["hit", "hit", "miss"])
+      expect(head(matcher)).toEqual(["Bb3"])
+    })
+
+    // columns carrying no cardIndex (a generator's own, never sustained in
+    // practice) say nothing about where a card ends, so only the list's
+    // length bounds the settling
     it("settles no more columns at one key down than the list holds", function() {
       let notes = new NoteList([], {generator: {nextNote: () => sustain(["Bb3"], "Bb3")}})
       notes.fillBuffer(3)

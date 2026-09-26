@@ -354,16 +354,34 @@ export default class NoteMatcher {
 
   // Held credit applied lazily, at a key down that isn't the head's own:
   // each head its held keys complete is hit in turn, with none of its own
-  // keys struck to time it, up to the head the key belongs to. At most as
-  // many as the list holds, as a looping card of one column its held key
-  // sounds through would complete every lap
+  // keys struck to time it, up to the head the key belongs to. It stops at
+  // the end of the card (lastOfCard), so a looping card whose held key
+  // sounds through it credits the lap under way and not the laps after it,
+  // and at as many columns as the list holds where nothing says where the
+  // card ends
   settleHeld(note) {
     for (let left = this.notes.length; left > 0; left--) {
       let column = this.notes.currentColumn()
       if (!column.length || this.inColumn(column, note)) { return }
       if (!this.heldCredit().length || !this.completes()) { return }
+
+      let last = this.lastOfCard()
       this.hit(null)
+      if (last) { return }
     }
+  }
+
+  // Whether the head is the last column of the card the list is playing:
+  // the column after it is empty (the gap between cards, the end of the
+  // run) or starts the next lap or card, its cardIndex no greater than the
+  // head's. Columns carrying no cardIndex say nothing, so nothing ends
+  lastOfCard() {
+    let next = this.columnAt(1)
+    if (!next.length) { return true }
+
+    let column = this.notes.currentColumn()
+    return column.cardIndex != null && next.cardIndex != null &&
+      next.cardIndex <= column.cardIndex
   }
 
   // Keys held early for the next column that the head hasn't completed
