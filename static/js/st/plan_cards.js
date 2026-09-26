@@ -79,9 +79,30 @@ export class PlanDeck {
     // the last graded review known of each of the piece's items, by item id,
     // which the hand scaffold reads the blamed hand from: read from the log
     // (reviews are never cached, and free practice writes them too) before
-    // this deck plans a card, then kept up to date by its own passes
+    // this deck plans a card, then kept up to date by its own passes. A deck
+    // that can never split reads nothing and plans at once
     this.reviews = new Map()
-    this.ready = this.loadReviews().then(() => this.advance())
+    if (this.handMeasures) {
+      this.ready = this.loadReviews().then(() => this.advance()).catch(err => this.planUnread(err))
+    } else {
+      this.advance()
+    }
+  }
+
+  // The plan threw on what the piece has stored: the reviews are the one
+  // input it can do without, so it is planned again without them. Either way
+  // the deck counts as planned, so the page still has a status line and
+  // Begin can plan again rather than leaving the staff blank for good
+  planUnread(err) {
+    console.warn("Couldn't plan today's programme", err)
+    this.reviews.clear()
+    this.planned = true
+
+    try {
+      this.advance()
+    } catch (failed) {
+      console.warn("Couldn't plan today's programme", failed)
+    }
   }
 
   getStore() {
@@ -223,7 +244,9 @@ export class PlanGenerator extends MeasureCardGenerator {
     this.lastCaption = null
     // the deck plans its first card once the piece's reviews are read, so
     // the page shows it then (see refreshNoteList)
-    this.ready = deck.planned ? null : deck.ready.then(() => this.startCard())
+    this.ready = deck.planned ? null : deck.ready
+      .then(() => this.startCard())
+      .catch(err => console.warn("Couldn't show today's first card", err))
   }
 
   /**

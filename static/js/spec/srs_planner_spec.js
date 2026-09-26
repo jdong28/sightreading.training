@@ -940,6 +940,64 @@ describe("today's programme on the staff", function() {
     expect(generator.statusLine()).toMatch(/^Once more · bar \d+$/)
   })
 
+  it("plans at once, without reading the log, for a deck that can never split", async function() {
+    let measures = pool()
+    spyOn(store, "reviews").and.callThrough()
+
+    // a session played with one hand, and one with no hands to split with:
+    // neither can offer a bar hands apart, so neither needs the log
+    let oneHand = new PlanDeck(measures, {
+      pieceId: piece.id, hand: "lower", cardMeasures: 1, store, now: () => time, ...handPools(),
+    })
+    expect(oneHand.entry).toEqual(jasmine.objectContaining({measure: 0, hand: "lower"}))
+
+    let noHands = new PlanDeck(measures, {pieceId: piece.id, cardMeasures: 1, store, now: () => time})
+    expect(noHands.entry).toEqual(jasmine.objectContaining({measure: 0, hand: "both"}))
+    expect(store.reviews).not.toHaveBeenCalled()
+
+    // a deck that can split still reads the log before it plans a card
+    let splitting = new PlanDeck(measures, {
+      pieceId: piece.id, cardMeasures: 1, store, now: () => time, ...handPools(),
+    })
+    expect(splitting.entry).toBe(null)
+    await splitting.ready
+    expect(splitting.entry).not.toBe(null)
+    expect(store.reviews).toHaveBeenCalled()
+  })
+
+  it("plans without the reviews when one of them is beyond the planner", async function() {
+    let measures = pool()
+    let {built, ...hands} = handPools()
+    let stats = new NoteStats()
+
+    // bar 1 fails hands together on the bass staff, so the next plan reads
+    // its review to pick the hand
+    let first = await generatorFor(1, hands)
+    let notes = await playCard(first, stats)
+    stats.missNotes(["G3"])
+    stats.missNotes(["G3"])
+    await playCard({generator: first.generator, notes}, stats)
+    expect(first.deck.entry).toEqual(jasmine.objectContaining({measure: 1, hand: "lower"}))
+    expect(built).toEqual(["lower:1"])
+
+    // the log now hands back a review the planner can't read
+    spyOn(console, "warn")
+    spyOn(store, "reviews").and.returnValue(Promise.resolve([{
+      itemId: `${piece.id}:both:1-1`, pieceId: piece.id, kind: "attempt", grade: AGAIN, at: time,
+      get staffMisses() { throw new Error("a review from a later version") },
+    }]))
+
+    let deck = new PlanDeck(measures, {pieceId: piece.id, cardMeasures: 1, ...hands, store, now: () => time})
+    await deck.ready
+
+    // the deck plans again without them rather than leaving the staff blank
+    expect(deck.planned).toBe(true)
+    expect(deck.reviews.size).toEqual(0)
+    expect(deck.entry).toEqual(jasmine.objectContaining({measure: 1, hand: "both"}))
+    expect(deck.card.measures).toEqual([1])
+    expect(console.warn).toHaveBeenCalled()
+  })
+
   it("reads the review log afresh for each deck, so a failure outside the programme splits the bar", async function() {
     let measures = pool()
     let {built, ...hands} = handPools()
