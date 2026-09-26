@@ -15,6 +15,7 @@ import {setAppStore} from "st/storage"
 import NoteList from "st/note_list"
 import NoteStats from "st/note_stats"
 import {AGAIN, HARD, GOOD, EASY} from "st/srs/grade"
+import {PAUSE_MS} from "st/srs/attempt"
 import {newItem} from "st/srs/records"
 import {predictedRecall, UNSCHEDULED_RECALL, DEFAULT_SCHEDULER_SETTINGS, DAY} from "st/srs/schedule"
 
@@ -670,6 +671,53 @@ describe("measure cards", function() {
         // scroll mode sets the pace, not the player
         drill = {mode: "scroll", speed: 25}
         await lap([1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000])
+        expect(generator.caption()).toBe(null)
+      })
+
+      // bar 19 in crotchets, looped on its own in wait mode, and a lap of
+      // it playing the time given for each column
+      let bar19Laps = () => {
+        let columns = [["G4"], ["A4"], ["B4"]].map((notes, idx) => Object.assign(notes, {beat: 4 + idx}))
+        let deck = new MeasureCardDeck(measureCards([{number: 19, columns}], 1), {
+          pieceId: "p", order: IN_ORDER, store,
+        })
+        let generator = track(new MeasureCardGenerator(deck, {now: () => time}))
+        generator.setDrill(() => ({mode: "wait"}))
+        let notes = new NoteList([], {generator})
+        let stats = new NoteStats()
+        notes.fillBuffer(6)
+
+        return {
+          generator,
+          lap: async times => {
+            for (let ms of times) {
+              time += ms
+              notes = hit(notes, stats)
+            }
+            await generator.finishing
+          },
+        }
+      }
+
+      it("leaves the columns a pass was paused on out of its pace, stopping on them", async function() {
+        let {generator, lap} = bar19Laps()
+
+        // walking away mid pass leaves the pace it was played at, and is a stop
+        await lap([500, 1000, 90 * 1000])
+        expect(generator.caption()).toEqual("♩ ≈ 60 · 1 stop, bar 19")
+
+        // with nothing played under PAUSE_MS there is no pace to show
+        await lap([500, PAUSE_MS, PAUSE_MS])
+        expect(generator.caption()).toBe(null)
+      })
+
+      it("clears the caption with the pass the page takes at Rest and Begin", async function() {
+        let {generator, lap} = bar19Laps()
+
+        await lap([500, 1000, 1000])
+        expect(generator.caption()).toEqual("♩ ≈ 60 · no stops")
+
+        generator.takePractice()
         expect(generator.caption()).toBe(null)
       })
 

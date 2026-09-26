@@ -224,26 +224,33 @@ function gradedColumn(pass, idx, mode) {
 
 /**
  * The pace of a pass played through in one go in wait mode, as its grade
- * reads it (see attemptPace and hesitations in st/srs/grade): null for any
- * other pass, whose pace the player didn't set.
+ * reads it (see attemptPace and hesitations in st/srs/grade), leaving out
+ * the columns the player walked away from as elapsedOf leaves them out of
+ * the stored time: null for any other pass, whose pace the player didn't
+ * set, and for one with no column played under PAUSE_MS. A column over
+ * PAUSE_MS is a stop whatever the pace.
  * @param {AttemptPass} pass complete
  * @returns {{pace: number|null, beats: boolean, stops: number[]}|null} pace
  * in ms per beat (per column when beats is false, the columns carrying no
- * score rhythm), and the bar number of each column hesitated on
+ * score rhythm), and the bar number of each column stopped on
  */
 export function passPace(pass) {
   if (!pass.complete || !pass.graded || !pass.played || !pass.drill || pass.drill.mode != "wait") {
     return null
   }
 
-  let columns = pass.columns.map((column, idx) => gradedColumn(pass, idx, "wait"))
-  let pace = attemptPace(columns)
   let {card} = pass
+  let columns = pass.columns.map((column, idx) => gradedColumn(pass, idx, "wait"))
+  let paused = columns.map(column => column.ms != null && column.ms >= PAUSE_MS)
+  let pace = attemptPace(columns.map((column, idx) =>
+    paused[idx] ? {...column, ms: null} : column))
+  let hesitated = new Set(hesitations(columns, {pace}))
 
   return {
     pace,
     beats: card.columns.every(column => column.beat != null),
-    stops: hesitations(columns, {pace}).map(idx => card.measures[card.columnMeasures[idx]]),
+    stops: columns.flatMap((column, idx) => idx > 0 && (paused[idx] || hesitated.has(idx)) ?
+      [card.measures[card.columnMeasures[idx]]] : []),
   }
 }
 

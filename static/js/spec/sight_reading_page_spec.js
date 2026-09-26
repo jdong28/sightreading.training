@@ -1508,6 +1508,26 @@ describe("sight reading page", function() {
       expect(el.textContent).toContain("measures 3–4")
     })
 
+    it("clears the caption of the last card at Rest and at the next Begin", async function() {
+      let el = await renderProgramme()
+      click(buttonNamed(el, "Begin"))
+
+      playHead()
+      playHead()
+      await finished()
+      expect(caption(el)).not.toBe(null)
+
+      click(buttonNamed(el, "Rest"))
+      await waitFor(() => store.recentSessions().length == 1, "the session to be saved")
+      flushSync(() => page.forceUpdate())
+      expect(caption(el)).toBe(null)
+
+      // the next session opens on no card of the one before it
+      click(buttonNamed(el, "Begin"))
+      flushSync(() => page.forceUpdate())
+      expect(caption(el)).toBe(null)
+    })
+
     it("suggests the piece in study most overdue", async function() {
       let other = (await importMusicXMLPiece("minuet.musicxml", minuetXML, store)).piece
       await store.putStudy({pieceId: other.id, status: "maintaining", startedAt: 0})

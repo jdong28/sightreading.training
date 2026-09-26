@@ -179,6 +179,12 @@ export class PlanGenerator extends MeasureCardGenerator {
     return [super.caption(), this.lastCaption].filter(Boolean).join(" · ") || null
   }
 
+  /** @returns {Object[]} see MeasureCardGenerator#takePractice, the caption going with it */
+  takePractice() {
+    this.lastCaption = null
+    return super.takePractice()
+  }
+
   /** @returns {Object} what the programme holds, see planSummary */
   summary() {
     return this.deck.summary()

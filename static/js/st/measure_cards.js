@@ -461,10 +461,13 @@ export class MeasureCardGenerator {
    * it is never graded: returns the practice on it so far, for the page to
    * add to the items' totals (see recordSectionPractice in st/storage), and
    * collects the rest of the card as practice alone. A pass not played yet
-   * is kept, timed afresh from now.
+   * is kept, timed afresh from now. The caption of the pass before it goes
+   * too, so a session never opens on the last one's.
    * @returns {Object[]} section practice, one per measure range
    */
   takePractice() {
+    this.lastPass = null
+
     let pass = this.pass
     if (!pass) { return [] }
 
