@@ -335,9 +335,11 @@ export function planState({
     [...bars, ...handBars].filter(item => playedAt(item).includes(lastCard)).map(item => item.id))
   if (previous) { recent.add(previous) }
 
-  // the bars failed REST_FAILURES times in the sitting, any hand, rest
+  // the bars the programme has in hand, failed REST_FAILURES times in the
+  // sitting whichever hand played them, rest
   let failures = new Map()
   for (let item of [...bars, ...handBars]) {
+    if (!liveMeasures.has(item.startMeasure)) { continue }
     let failed = item.recent.filter(([at, , , grade]) =>
       grade == AGAIN && at >= sitting.startedAt && at <= now).length
     failures.set(item.startMeasure, (failures.get(item.startMeasure) || 0) + failed)
@@ -394,7 +396,7 @@ export function planState({
 
   return {
     pieceId, hand, now, settings, order, byMeasure, recent, today, endOfToday,
-    live, ladder, laddered, review, dueReviews, unseen, resting, scaffolds, sitting,
+    live, awake, ladder, laddered, review, dueReviews, unseen, resting, scaffolds, sitting,
     cardMs, targetMs, elapsedMs,
     complete: elapsedMs >= targetMs || (!ladder.length && !dueReviews.length && !unseen.length),
   }
@@ -477,8 +479,9 @@ export function planNext(input) {
   }
 
   // a piece whose every measure waits past the target: its first new one,
-  // unless bars are resting, which the cap counts as work in progress
-  if (!next && state.unseen.length && !state.resting.size) {
+  // unless every bar it has in progress rests until the next sitting
+  let allResting = state.resting.size > 0 && !state.awake.length
+  if (!next && state.unseen.length && !allResting) {
     next = {reason: NEW, slot: newSlot(state, state.unseen[0])}
   }
 

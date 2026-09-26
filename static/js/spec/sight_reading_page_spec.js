@@ -1845,7 +1845,7 @@ describe("sight reading page", function() {
       expect(page.state.notes.generator instanceof PlanGenerator).toBe(true)
       expect(page.state.notes.generator.currentCard()).toBe(null)
       click(buttonNamed(el, "Begin"))
-      expect(plateStatus(el)).toEqual("Programme complete · every bar rests until your next sitting")
+      expect(plateStatus(el)).toEqual("Programme complete · 8 bars rest until your next sitting")
 
       // the next sitting: Begin plans again, without a timer of its own
       click(buttonNamed(el, "Rest"))

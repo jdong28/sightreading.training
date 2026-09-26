@@ -266,9 +266,15 @@ export class PlanGenerator extends MeasureCardGenerator {
 
     // the deck has no card: the bars in trouble rest until the next sitting,
     // and the programme is complete only when nothing else is left either
-    return this.deck.complete ?
-      "Programme complete · every bar rests until your next sitting" :
-      "Nothing more to practise this sitting · struggling bars rest until your next sitting"
+    let state = planState(this.deck.planInput())
+    if (!state.complete) {
+      return "Nothing more to practise this sitting · struggling bars rest until your next sitting"
+    }
+
+    let bars = state.resting.size
+    return bars ?
+      `Programme complete · ${bars} ${bars == 1 ? "bar rests" : "bars rest"} until your next sitting` :
+      "Programme complete"
   }
 
   /** @returns {string|null} the pace of the last card played and when it comes back */

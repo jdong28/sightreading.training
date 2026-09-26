@@ -539,6 +539,20 @@ describe("today's programme planner", function() {
       expect(entry.measure).not.toEqual(3)
     })
 
+    it("rests only a bar the programme has in hand, not one free practice failed alone", function() {
+      // a long sitting of free practice failed bar 3 left hand alone three
+      // times, and the programme has never played the piece, so it has no
+      // bar 3 of its own to rest
+      let alone = graded(3, [[ago(50), AGAIN], [ago(35), AGAIN], [ago(20), AGAIN]], "lower")
+      let {entry, state} = planNext({
+        pieceId: "p", items: [alone], measures: MEASURES, now: NOW, handMeasures: APART,
+      })
+
+      expect([...state.resting]).toEqual([])
+      expect(state.elapsedMs).toBeGreaterThan(state.targetMs)
+      expect([entry.reason, entry.measure]).toEqual([NEW, 1])
+    })
+
     it("rests a bar failing a third time in a sitting until the next", function() {
       let rows = [
         ["failed together, then twice alone", [[ago(10), AGAIN]], [[ago(8), AGAIN], [ago(6), AGAIN]], true],
@@ -907,7 +921,7 @@ describe("today's programme on the staff", function() {
     expect([...planState(deck.planInput()).resting].sort()).toEqual([0, 1, 2])
     expect(deck.entry).toBe(null)
     expect(generator.currentCard()).toBe(null)
-    expect(generator.statusLine()).toEqual("Programme complete · every bar rests until your next sitting")
+    expect(generator.statusLine()).toEqual("Programme complete · 3 bars rest until your next sitting")
     expect(generator.caption()).toEqual("Bar 2 rests until your next sitting")
     expect(notesOf(notes).every(column => column.length == 0)).toBe(true)
 
@@ -955,6 +969,35 @@ describe("today's programme on the staff", function() {
 
     // the programme is opened again: the failure it never saw splits the bar
     expect((await planDeck()).entry).toEqual(jasmine.objectContaining({measure: 1, hand: "lower"}))
+  })
+
+  it("says how many bars rest once the sitting has met its target", async function() {
+    // the pickup failed three times over a long sitting, the only bar the
+    // programme has in hand; bars 1 and 2 have never been played
+    let id = `${piece.id}:both:0-0`
+    let last = time - 19 * MINUTE
+    await store.recordAttempt({
+      item: {
+        id, pieceId: piece.id, hand: "both", startMeasure: 0, endMeasure: 0,
+        level: "bar", state: "learning", step: 0, due: last, last, s: 1, d: 5,
+        reps: 3, lapses: 2, streak: 0, lastGrade: AGAIN, hits: 0, misses: 3, attempts: 3,
+        lastPracticed: last, elapsedMs: 3000, algo: 1, createdAt: time - 50 * MINUTE,
+        recent: [49, 34, 19].map(n => [time - n * MINUTE, 1, 0, AGAIN]),
+      },
+      review: {
+        itemId: id, pieceId: piece.id, at: last, kind: "attempt", grade: AGAIN, was: "learning",
+        columns: 1, clean: 0, misses: 1, stuck: 0, skipped: 0, hesitations: 0, mode: "wait", algo: 1,
+      },
+    })
+
+    let {deck, generator} = await generatorFor(1)
+    let state = planState(deck.planInput())
+    expect([...state.resting]).toEqual([0])
+    expect(state.elapsedMs).toBeGreaterThan(state.targetMs)
+    expect(deck.entry).toBe(null)
+    expect(generator.summary().newMeasures).toEqual(2)
+    expect(generator.statusLine())
+      .toEqual("Programme complete · 1 bar rests until your next sitting")
   })
 
   it("never splits a piece played without its hands", async function() {
