@@ -6,7 +6,7 @@ import {
   parseSongText, staffTracks
 } from "st/song_sections"
 import {parseMusicXML} from "st/musicxml"
-import {noteXML, nocturneBars5to6, tiedTrillScore} from "spec/helpers"
+import {noteXML, nocturneBars5to6, tiedTrillScore, reverieOpening, repeatedNoteBar} from "spec/helpers"
 
 import {
   SheetMusicGenerator, generatorDefaultSettings, storeGeneratorSettings,
@@ -313,6 +313,57 @@ describe("song sections", function() {
         [["E5"], ["upper"], {upper: "g", lower: "f"}],
         [["C4", "E5"], ["lower", "upper"], {upper: "g", lower: "g"}],
       ])
+    })
+  })
+
+  // S(c) of the note detection report (T6): the notes the score still sounds
+  // at a column's onset from an earlier one, which the drill credits held
+  describe("notes the score still sounds", function() {
+    let sustained = columns => columns.map(column => column.sustained || null)
+
+    // the Rêverie's left hand: the ostinato returns to Bb3 (beat 5.5, tied on
+    // to beat 6.5) under the whole note Bb3 of beats 2 to 6, and the next whole
+    // note is struck at beat 6 under the tied Bb3
+    it("marks a key two voices share, held on from an earlier onset", function() {
+      let song = parseMusicXML(reverieOpening())
+      let columns = extractSectionColumns(song, {startMeasure: 2, endMeasure: 3, notation: true})
+
+      expect(columns.map(column => column.beat)).toEqual([2, 2.5, 3, 3.5, 4.5, 5, 5.5, 6, 6.5, 7, 7.5, 8.5, 9, 9.5])
+      expect(sustained(columns)).toEqual([
+        null, null, null, null, null, null, ["Bb3"], ["Bb3"], null, null, null, null, null, ["Bb3"],
+      ])
+    })
+
+    it("marks a note sounding from before the section", function() {
+      let song = parseMusicXML(reverieOpening())
+      let [first] = extractSectionColumns(song, {startMeasure: 3, endMeasure: 3, notation: true})
+
+      // the ostinato's Bb3 is tied over the bar line from beat 5.5
+      expect(first.beat).toEqual(6)
+      expect(first.sustained).toEqual(["Bb3"])
+    })
+
+    it("doesn't mark a note struck again as the one before it ends", function() {
+      let song = parseMusicXML(repeatedNoteBar())
+      let columns = extractSectionColumns(song, {notation: true})
+
+      expect(columns.map(column => [...column])).toEqual([["C#3", "G#4"], ["C#4"], ["G#2", "C#4"]])
+      expect(sustained(columns)).toEqual([null, null, null])
+    })
+
+    it("keeps the notes the staff's range keeps", function() {
+      let song = parseMusicXML(reverieOpening())
+      let columns = extractSectionColumns(song, {startMeasure: 2, endMeasure: 2, notation: true})
+
+      let [kept] = filterColumnsToRange(columns, "C4", "C6")
+      expect(kept.some(column => column.sustained)).toBe(false)
+      let [all] = filterColumnsToRange(columns, "C2", "C6")
+      expect(sustained(all)).toEqual([null, null, null, null, null, null, ["Bb3"]])
+    })
+
+    it("marks nothing without the score's notation, as for pasted notation", function() {
+      let song = parseMusicXML(reverieOpening())
+      expect(extractSectionColumns(song, {startMeasure: 2, endMeasure: 3}).some(column => column.sustained)).toBe(false)
     })
   })
 

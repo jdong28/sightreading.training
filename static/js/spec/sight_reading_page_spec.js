@@ -24,7 +24,7 @@ import {scopeEvent} from "st/events"
 import NoteStats, {addNoteListener} from "st/note_stats"
 import {parseNote} from "st/music"
 import {KEYBOARD_MAP, SYMBOL_MAP_INVERSE} from "st/keyboard_input"
-import {openTestStore, noteXML, reverieOpening, keyChangeScore, nocturneBars5to6} from "spec/helpers"
+import {openTestStore, noteXML, reverieOpening, keyChangeScore, nocturneBars5to6, repeatedNoteBar} from "spec/helpers"
 
 // a two staff 3/4 piece, measures 1 and 2
 let minuetXML = `<?xml version="1.0" encoding="UTF-8"?>
@@ -1658,7 +1658,9 @@ describe("sight reading page", function() {
 
       let anchor = store.item(`${piece.id}:both:1-1`)
       expect(anchor.state).not.toEqual("tracked")
-      expect(caption(el).textContent).toMatch(/^(♩ ≈ \d+ · )?no stops · (again in a moment|returns (tomorrow|in \d+ days))$/)
+      // the pace caption needs a pace, which two plays in one millisecond
+      // don't give, so it may be missing
+      expect(caption(el).textContent).toMatch(/^(♩ ≈ \d+ · no stops · )?(again in a moment|returns (tomorrow|in \d+ days))$/)
       expect(plateStatus(el)).toEqual("New · bar 3")
 
       // measure 3 slips: it comes straight back
@@ -1667,7 +1669,7 @@ describe("sight reading page", function() {
       playHead()
       await finished()
 
-      expect(caption(el).textContent).toMatch(/^(♩ ≈ \d+ · )?no stops · again in a moment$/)
+      expect(caption(el).textContent).toMatch(/^(♩ ≈ \d+ · no stops · )?again in a moment$/)
       expect(plateStatus(el)).toEqual("Once more · bar 3")
       expect(el.textContent).toContain("measures 3–4")
     })
@@ -2365,6 +2367,81 @@ describe("sight reading page", function() {
         perform([[1000, "on", "G#3"]])
         expect(counts()).toEqual([2, 1])
         expect(head()).toEqual(["E4"])
+      })
+    })
+
+    // T6 of the note detection report: a key the score still sounds at a
+    // column's onset, held rather than struck again, counts toward it
+    // (ruling D3(a)), credited once the next key goes down
+    describe("score-sustained credit (T6)", function() {
+      let heldCredits = () => {
+        let credits = []
+        let applyEvent = page.applyEvent.bind(page)
+        spyOn(page, "applyEvent").and.callFake(event => {
+          if (event.type == "hit") { credits.push(event.heldCredit.map(parseNote)) }
+          return applyEvent(event)
+        })
+        return credits
+      }
+
+      // the Rêverie's left hand in bars 2 and 3 of reverieOpening (the
+      // report's bars 1-2, its columns 0-13 here), then bar 4's G5 and C4, a
+      // beat every 500 ms: each key but Bb3 let up just before the next
+      let ostinato = [[2.5, "C4"], [3, "D4"], [3.5, "G4"], [4.5, "D4"], [5, "C4"],
+        [6.5, "C4"], [7, "D4"], [7.5, "G4"], [8.5, "D4"], [9, "C4"], [10, "G5"], [10.5, "C4"]]
+      let played = ostinato.flatMap(([beat, note]) => [[beat * 500, "on", note], [beat * 500 + 240, "off", note]])
+      let bb3 = parseNote("Bb3")
+
+      // C1: the Bb3 struck at beat 2 is held on through the whole bars, as
+      // the whole notes under the ostinato's own Bb3s sound it
+      it("follows the Rêverie's shared Bb3 held rather than struck again (C1)", async function() {
+        await renderPiece(reverieOpening(), {startMeasure: 2, endMeasure: 4})
+        expect(head().map(parseNote)).toEqual([bb3])
+        let credits = heldCredits()
+
+        perform([[1000, "on", "Bb3"], ...played])
+
+        expect(counts()).toEqual([16, 0])
+        expect(page.state.noteShaking).toBe(false)
+        // columns 6 and 7 (beats 5.5 and 6) and 13 (beat 9.5) held
+        expect(credits.map((credit, idx) => credit.length ? idx : null).filter(idx => idx != null))
+          .toEqual([6, 7, 13])
+        expect(credits[6]).toEqual([bb3])
+        expect(head().map(parseNote)).toEqual([parseNote("D4")])
+      })
+
+      // C0': the pianist strikes the shared Bb3 again at each of its onsets
+      it("follows the Rêverie's shared Bb3 struck again at each onset, with no slip (C0')", async function() {
+        await renderPiece(reverieOpening(), {startMeasure: 2, endMeasure: 4})
+        let credits = heldCredits()
+
+        perform([
+          [1000, "on", "Bb3"], [2720, "off", "Bb3"], [2750, "on", "Bb3"],
+          [2980, "off", "Bb3"], [3000, "on", "Bb3"], [4720, "off", "Bb3"], [4750, "on", "Bb3"],
+          ...played,
+        ])
+
+        expect(counts()).toEqual([16, 0])
+        expect(page.state.noteShaking).toBe(false)
+        expect(credits.every(credit => !credit.length)).toBe(true)
+        expect(head().map(parseNote)).toEqual([parseNote("D4")])
+      })
+
+      // A-hold: the Nocturne's C#4 struck at beat 9.5 and held through its
+      // repeat at beat 10, which the score strikes again (the eighth ends as
+      // the half begins), so the column still waits for it
+      it("still waits for a repeated note the score strikes again, held through", async function() {
+        await renderPiece(repeatedNoteBar(), {endMeasure: 1})
+        expect(sorted(head())).toEqual(["C#3", "G#4"])
+
+        perform([[0, "on", "C#3"], [0, "on", "G#4"], [750, "on", "C#4"], [1000, "on", "G#2"]])
+        expect(counts()).toEqual([2, 0])
+        expect(sorted(head())).toEqual(["C#4", "G#2"])
+
+        // struck again, it completes the column
+        perform([[1400, "off", "C#4"], [1450, "on", "C#4"]])
+        expect(counts()).toEqual([3, 0])
+        expect(sorted(head())).toEqual(["C#3", "G#4"])
       })
     })
 
