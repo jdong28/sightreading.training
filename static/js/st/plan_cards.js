@@ -405,17 +405,28 @@ export class PlanGenerator extends MeasureCardGenerator {
   /**
    * As MeasureCardGenerator#practiceOnly, save that a hand alone the scaffold
    * offers climbs its own ladder from the bar's failure, so it is on schedule
-   * unless it was played waiting, where the rule for any other card applies
+   * unless it was played waiting, where the rule for any other card applies,
+   * and that a bar resting until the next sitting is left as it is wherever
+   * it is played, so a card anchored on a neighbour writes it as practice
+   * alone however the pass went
    * @param {AttemptPass} pass complete
    * @param {Object} opts as for passAttempts
    * @returns {string[]}
    */
   practiceOnly(pass, opts) {
+    if (pass.practiceOnly) { return pass.practiceOnly }
+
+    let {pieceId, hand} = opts
+    let barId = measure => itemId({pieceId, hand, startMeasure: measure, endMeasure: measure})
+    let resting = planState(this.deck.planInput()).resting
+    let rested = pass.card.measures.filter(measure => resting.has(measure)).map(barId)
+
     let entry = this.deck.entry
     let apart = entry && entry.hand != this.deck.sessionHand
-    if (apart && entry.reason != WAIT) { return [] }
+    let offSchedule = apart && entry.reason != WAIT ? [] : super.practiceOnly(pass, opts)
 
-    return super.practiceOnly(pass, opts)
+    pass.practiceOnly = [...new Set([...rested, ...offSchedule])]
+    return pass.practiceOnly
   }
 
   // The piece is in study once a card of its programme is played: learning

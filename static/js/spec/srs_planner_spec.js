@@ -889,7 +889,7 @@ describe("today's programme on the staff", function() {
   // T8: a column's measurements reach the pass as the column is done, so the
   // grade the next card is planned from is the grade the review keeps
   it("plans from the last column's latency, the hesitation its review keeps", async function() {
-    let {deck, generator, notes} = generatorFor(2)
+    let {deck, generator, notes} = await generatorFor(2)
     let stats = new NoteStats()
     let barId = `${piece.id}:both:1-1`
 
@@ -914,6 +914,69 @@ describe("today's programme on the staff", function() {
     let review = (await store.reviews({pieceId: piece.id})).find(r => r.itemId == barId)
     expect([review.hesitations, review.grade, review.perColumn[2][2]]).toEqual([1, HARD, 6000])
     expect(store.item(barId).lastGrade).toEqual(HARD)
+  })
+
+  it("leaves a resting bar as it is when a neighbour's card plays it", async function() {
+    let at = time - MINUTE
+    let bar = (measure, grades, extra={}) => ({
+      id: itemId({pieceId: piece.id, hand: "both", startMeasure: measure, endMeasure: measure}),
+      pieceId: piece.id, hand: "both", startMeasure: measure, endMeasure: measure,
+      level: "bar", state: "learning", step: 0, due: at, last: at, s: 1, d: 5,
+      reps: grades.length, lapses: grades.filter(g => g == AGAIN).length, streak: 0,
+      lastGrade: grades[grades.length - 1], hits: 3, misses: 3 * grades.length,
+      attempts: grades.length, lastPracticed: at, elapsedMs: 3000, algo: 1,
+      createdAt: at - 5 * MINUTE,
+      recent: grades.map((grade, n) => [at - (grades.length - n) * 1000, 3, 0, grade]),
+      ...extra,
+    })
+    let write = async item => store.recordAttempt({
+      item,
+      review: {
+        itemId: item.id, pieceId: piece.id, at: item.last, kind: "attempt", grade: item.lastGrade,
+        was: "learning", columns: 3, clean: 0, misses: 3, stuck: 0, skipped: 0, hesitations: 0,
+        mode: "wait", algo: 1, staffMisses: {upper: 0, lower: 3},
+      },
+    })
+
+    // bar 2 has failed three times in this sitting, so it rests; bar 1 is
+    // due, and its card of two measures plays bar 2 with it
+    await write(bar(0, [GOOD], {state: "review", due: time + 20 * DAY}))
+    await write(bar(1, [GOOD]))
+    await write(bar(2, [AGAIN, AGAIN, AGAIN]))
+    time += 2 * MINUTE
+
+    let {deck, generator, notes} = await generatorFor(2)
+    let stats = new NoteStats()
+    let resting = store.item(`${piece.id}:both:2-2`)
+    let anchor = store.item(`${piece.id}:both:1-1`)
+    expect([...planState(deck.planInput()).resting]).toEqual([2])
+    expect(deck.entry.measure).toEqual(1)
+    expect(generator.currentCard().measures).toEqual([1, 2])
+
+    // the pass fails on bar 2's own column, the card's last
+    let count = generator.currentCard().columns.length
+    for (let i = 0; i < count; i++) {
+      time += 1000
+      if (i == count - 1) { stats.missNotes([...notes.currentColumn()]) }
+      notes = hit(notes, stats)
+    }
+    await generator.finishing
+
+    // its ladder is untouched: no review of its own, and its due date, state
+    // and lapses stand, while the pass counts as practice on it
+    let played = store.item(`${piece.id}:both:2-2`)
+    expect([played.due, played.state, played.lapses, played.lastGrade])
+      .toEqual([resting.due, resting.state, resting.lapses, resting.lastGrade])
+    expect(played.attempts).toBeGreaterThan(resting.attempts)
+    expect(played.lastPracticed).toBeGreaterThan(resting.lastPracticed)
+    expect((await store.reviews({pieceId: piece.id}))
+      .filter(review => review.itemId == `${piece.id}:both:2-2` && review.at > resting.last))
+      .toEqual([])
+
+    // the bar the card was anchored on is graded as usual
+    let played1 = store.item(`${piece.id}:both:1-1`)
+    expect(played1.reps).toBeGreaterThan(anchor.reps)
+    expect(played1.due).not.toEqual(anchor.due)
   })
 
   it("brings a failed measure back at once", async function() {
