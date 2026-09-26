@@ -245,6 +245,27 @@ export const tiedTrillScore = () => {
 </score-partwise>`
 }
 
+// The Nocturne's repeated C#4 (the report's beats 9.5 and 10, see
+// sr-note-detection-l3) as one 4/4 bar on two staves: treble G#4 (dotted
+// quarter), C#4 (eighth), C#4 (half); bass C#3 (half), G#2 (half). Its
+// columns are [C#3, G#4] [C#4] [G#2, C#4]: the eighth C#4 ends as the half is
+// struck, so the score doesn't still sound it at the last column
+export const repeatedNoteBar = () => `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <work><work-title>Repeated Note</work-title></work>
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes><divisions>2</divisions><key><fifths>4</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><staves>2</staves><clef number="1"><sign>G</sign><line>2</line></clef><clef number="2"><sign>F</sign><line>4</line></clef></attributes>
+      ${[["G", 4, 3, "quarter"], ["C", 4, 1, "eighth"], ["C", 4, 4, "half"]].map(([step, octave, duration, type]) =>
+        `<note><pitch><step>${step}</step><alter>1</alter><octave>${octave}</octave></pitch><duration>${duration}</duration><voice>1</voice><type>${type}</type>${duration == 3 ? "<dot/>" : ""}<staff>1</staff></note>`).join("")}
+      <backup><duration>8</duration></backup>
+      ${[["C", 3], ["G", 2]].map(([step, octave]) =>
+        `<note><pitch><step>${step}</step><alter>1</alter><octave>${octave}</octave></pitch><duration>4</duration><voice>2</voice><type>half</type><staff>2</staff></note>`).join("")}
+    </measure>
+  </part>
+</score-partwise>`
+
 // A 4/4 single staff piece of four whole notes in the given key signatures
 // (in fifths): the first key from measure 1, the second, if any, from
 // measure 3
