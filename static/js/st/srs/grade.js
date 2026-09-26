@@ -90,7 +90,7 @@ export function attemptCounts(columns, {mode, lead=true, pace}) {
     pace: mode == "wait" ? pace : null,
   }
 
-  columns.forEach((column, idx) => {
+  for (let column of columns) {
     counts.misses += column.misses
     if (column.skipped) {
       counts.skipped += 1
@@ -100,13 +100,28 @@ export function attemptCounts(columns, {mode, lead=true, pace}) {
 
     if (column.misses) { counts.slips += 1 }
     if (column.misses >= STUCK_MISSES) { counts.stuck += 1 }
+  }
 
-    if (mode == "wait" && hesitated(column, pace) && !(lead && idx == 0)) {
-      counts.hesitations += 1
-    }
-  })
+  if (mode == "wait") {
+    counts.hesitations = hesitations(columns, {lead, pace}).length
+  }
 
   return counts
+}
+
+/**
+ * The columns of an attempt played in wait mode that were hesitated on: a
+ * column taking longer than both HESITATION_MIN_MS and HESITATION_PACE times
+ * the pace for the notated beats before it. The column opening the attempt
+ * never is.
+ * @param {AttemptColumn[]} columns
+ * @param {Object} opts
+ * @param {boolean} [opts.lead=true] whether columns[0] opens the attempt
+ * @param {number|null} opts.pace ms per beat, see attemptPace
+ * @returns {number[]} their indices
+ */
+export function hesitations(columns, {lead=true, pace}) {
+  return columns.flatMap((column, idx) => hesitated(column, pace) && !(lead && idx == 0) ? [idx] : [])
 }
 
 function hesitated(column, pace) {

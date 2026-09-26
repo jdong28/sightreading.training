@@ -7,13 +7,19 @@
 // it is done it is graded and written to the local store (st/storage) as a
 // review of every measure of the card (and of the card's range), adding its
 // hits, misses and time to their items and scheduling each measure's item
-// (st/srs/schedule). The random picks favour the measures whose recall the
-// scheduler predicts lowest and those missed lately (practiceWeight).
+// (st/srs/schedule). A measure on the ladder whose rung isn't due yet is
+// graded only when the pass fails it, as in today's programme, so looping a
+// card never climbs the ladder: those passes add to its totals alone. The
+// random picks favour the measures whose recall the scheduler predicts lowest
+// and those missed lately (practiceWeight).
 
 import {addNoteListener} from "st/note_stats"
 import {getAppStore} from "st/storage"
-import {AttemptPass, passAttempts, passPractice, columnClefs} from "st/srs/attempt"
+import {AttemptPass, passAttempts, passPractice, passPace, columnClefs} from "st/srs/attempt"
+import {AGAIN} from "st/srs/grade"
+import {itemId} from "st/srs/records"
 import {practiceWeight} from "st/srs/schedule"
+import {onScheduleMeasures} from "st/srs/planner"
 
 export const IN_ORDER = "in order"
 export const RANDOM_ORDER = "random"
@@ -143,6 +149,36 @@ export function cardWeights(cards, items, {hand="both", now=Date.now(), settings
 }
 
 /**
+ * The caption after a pass (see passPace in st/srs/attempt): its pace as a
+ * quarter note tempo and where it stopped, eg. "♩ ≈ 52 · no stops" or
+ * "♩ ≈ 40 · 2 stops, bar 19". Nothing without a pace, which needs the
+ * score's rhythm on every column of the card.
+ * @param {{pace: number|null, beats: boolean, stops: number[]}|null} played
+ * @returns {string|null} null without a pace
+ */
+export function paceCaption(played) {
+  if (!played || !played.beats || !(played.pace > 0)) { return null }
+
+  let {pace, stops} = played
+  let bars = [...new Set(stops)]
+  let stopped = !stops.length ? "no stops" :
+    `${stops.length} ${stops.length == 1 ? "stop" : "stops"}, ${bars.length == 1 ? "bar" : "bars"} ${barWords(bars)}`
+
+  return `♩ ≈ ${Math.round(60 * 1000 / pace)} · ${stopped}`
+}
+
+// The first MAX_CAPTION_BARS bars, the rest counted:
+// eg. "17, 19 and 21", "17, 19, 21 and 2 more"
+const MAX_CAPTION_BARS = 3
+
+const barWords = bars => {
+  let shown = bars.slice(0, MAX_CAPTION_BARS)
+  let rest = bars.length - shown.length
+  let last = rest ? `${rest} more` : shown.pop()
+  return shown.length ? `${shown.join(", ")} and ${last}` : `${last}`
+}
+
+/**
  * Picks the card after previous (null for the first card). Only cards with
  * notes are picked. In order walks the cards and wraps; random picks by
  * weight, never previous when another card can be picked.
@@ -231,6 +267,14 @@ export class MeasureCardDeck {
     return this.index == null ? null : this.cards[this.index]
   }
 
+  /**
+   * @param {string} id
+   * @returns {ItemRecord|null} the item of an id, as stored
+   */
+  item(id) {
+    return this.getStore().item(id)
+  }
+
   /** Moves on to the next card */
   advance() {
     let store = this.getStore()
@@ -267,6 +311,8 @@ export class MeasureCardGenerator {
     this.now = now
     this.loop = deck.playableCount <= 1
     this.drill = () => ({mode: "wait"})
+    // the pass finished last, which the caption reads
+    this.lastPass = null
 
     this.startCard()
 
@@ -329,6 +375,11 @@ export class MeasureCardGenerator {
    */
   currentCardNumber() {
     return this.loop || this.deck.index == null ? null : this.deck.index + 1
+  }
+
+  /** @returns {string|null} the pace of the pass finished last, see paceCaption */
+  caption() {
+    return this.lastPass && paceCaption(passPace(this.lastPass))
   }
 
   /** @returns {MeasureCard[]} every card the staff may show */
@@ -410,10 +461,13 @@ export class MeasureCardGenerator {
    * it is never graded: returns the practice on it so far, for the page to
    * add to the items' totals (see recordSectionPractice in st/storage), and
    * collects the rest of the card as practice alone. A pass not played yet
-   * is kept, timed afresh from now.
+   * is kept, timed afresh from now. The caption of the pass before it goes
+   * too, so a session never opens on the last one's.
    * @returns {Object[]} section practice, one per measure range
    */
   takePractice() {
+    this.lastPass = null
+
     let pass = this.pass
     if (!pass) { return [] }
 
@@ -442,8 +496,11 @@ export class MeasureCardGenerator {
     let at = Math.max(pass.lastAt ?? this.now(), (this.writtenAt ?? -Infinity) + 1)
     this.writtenAt = at
 
+    this.lastPass = pass
+
+    // after the passes before it, whose items say which measures are on schedule
     let written = {pieceId: this.deck.pieceId, hand: this.deck.hand, at}
-    let finished = Promise.resolve().then(() => {
+    this.finishing = Promise.resolve(this.finishing).then(() => {
       let store = this.deck.getStore()
       let {attempts, practice} = this.passRecords(pass, {...written, sessionId: this.sessionId})
 
@@ -453,19 +510,52 @@ export class MeasureCardGenerator {
       ])
     }).catch(err => console.warn("Couldn't save the attempt", err))
 
-    this.finishing = Promise.all([this.finishing, finished])
     return written
   }
 
   /**
    * What a finished pass is written as: its graded attempts (see
-   * passAttempts), else its practice (see passPractice)
+   * passAttempts), but the practice of its measures played off schedule that
+   * didn't fail (see practiceOnly), else its practice (see passPractice)
    * @param {AttemptPass} pass
    * @param {Object} opts as for passAttempts
    * @returns {{attempts: Object[], practice: Object[]}}
    */
   passRecords(pass, opts) {
     let attempts = passAttempts(pass, opts)
-    return {attempts, practice: attempts.length ? [] : passPractice(pass, opts)}
+    if (!attempts.length) {
+      return {attempts, practice: passPractice(pass, opts)}
+    }
+
+    let practiceOnly = this.practiceOnly(pass, opts)
+    return {
+      attempts: attempts.filter(({id}) => !practiceOnly.includes(id)),
+      practice: passPractice(pass, opts).filter(stint => practiceOnly.includes(itemId(stint))),
+    }
+  }
+
+  /**
+   * The item ids of a graded pass's measures played off schedule (a ladder
+   * rung not due yet, see onScheduleMeasures in st/srs/planner) that the
+   * pass didn't fail: massed passes are practice, not evidence of recall, so
+   * they are written to the totals alone. Worked out once a pass, from its
+   * items as the pass found them (see MeasureCardDeck#item).
+   * @param {AttemptPass} pass complete
+   * @param {Object} opts as for passAttempts
+   * @returns {string[]}
+   */
+  practiceOnly(pass, opts) {
+    if (!pass.practiceOnly) {
+      let {pieceId, hand} = opts
+      let barId = measure => itemId({pieceId, hand, startMeasure: measure, endMeasure: measure})
+      let onSchedule = onScheduleMeasures(pass.card.measures, measure => this.deck.item(barId(measure)), opts.at)
+      let offSchedule = pass.card.measures.filter(measure => !onSchedule.includes(measure)).map(barId)
+
+      pass.practiceOnly = passAttempts(pass, opts)
+        .filter(({id, build}) => offSchedule.includes(id) && build(this.deck.item(id)).review.grade > AGAIN)
+        .map(({id}) => id)
+    }
+
+    return pass.practiceOnly
   }
 }

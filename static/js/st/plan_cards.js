@@ -7,11 +7,10 @@
 
 import {getAppStore} from "st/storage"
 import {MeasureCardGenerator, sectionCard} from "st/measure_cards"
-import {passAttempts, passPractice} from "st/srs/attempt"
 import {itemId, newItem, itemWithPractice} from "st/srs/records"
 import {scheduledAttempt} from "st/srs/schedule"
 import {
-  planNext, planState, planSummary, studyStatus, anchoredCard, onScheduleMeasures,
+  planNext, planState, planSummary, studyStatus, anchoredCard,
   entryStatus, entryCaption,
 } from "st/srs/planner"
 
@@ -138,8 +137,8 @@ export class PlanDeck {
 }
 
 // Plays the plan deck's cards. On top of the measure card generator it names
-// the card being played (statusLine) and says after each card when its
-// measure comes back (caption), and marks the piece in study
+// the card being played (statusLine) and adds to the caption after each card
+// when its measure comes back, and marks the piece in study
 export class PlanGenerator extends MeasureCardGenerator {
   /**
    * @param {PlanDeck} deck
@@ -175,9 +174,15 @@ export class PlanGenerator extends MeasureCardGenerator {
     return entry ? entryStatus(entry, {now: this.now(), complete: this.deck.complete}) : null
   }
 
-  /** @returns {string|null} when the last card played comes back */
+  /** @returns {string|null} the pace of the last card played and when it comes back */
   caption() {
-    return this.lastCaption
+    return [super.caption(), this.lastCaption].filter(Boolean).join(" · ") || null
+  }
+
+  /** @returns {Object[]} see MeasureCardGenerator#takePractice, the caption going with it */
+  takePractice() {
+    this.lastCaption = null
+    return super.takePractice()
   }
 
   /** @returns {Object} what the programme holds, see planSummary */
@@ -189,7 +194,8 @@ export class PlanGenerator extends MeasureCardGenerator {
   // the items as its attempts leave them, graded now though the hit on the
   // last column is counted just after (see notePlayed), so it is taken as
   // hit unless it was scrolled past. The measures played off schedule that
-  // didn't fail are settled here too, and written as practice alone
+  // didn't fail are settled here too (see practiceOnly), and written as
+  // practice alone
   finishPass(pass) {
     let opts = super.finishPass(pass)
     let entry = this.deck.entry
@@ -199,16 +205,6 @@ export class PlanGenerator extends MeasureCardGenerator {
 
     last.hit = hit || !scrolled
     let settings = this.deck.getStore().schedulerSettings()
-    let {pieceId, hand} = this.deck
-    let barId = measure => itemId({pieceId, hand, startMeasure: measure, endMeasure: measure})
-    let onSchedule = onScheduleMeasures(pass.card.measures, measure => this.deck.item(barId(measure)), opts.at)
-      .map(barId)
-    let offSchedule = pass.card.measures.map(barId).filter(id => !onSchedule.includes(id))
-
-    let built = passAttempts(pass, opts).map(({id, build}) => build(this.deck.item(id)))
-    pass.practiceOnly = built.filter(({item, review}) => offSchedule.includes(item.id) && review.grade > 1)
-      .map(({item}) => item.id)
-
     let {attempts, practice} = this.passRecords(pass, opts)
     let items = [
       ...attempts.map(({id, build}) => scheduledAttempt(build(this.deck.item(id)), settings).item),
@@ -225,22 +221,6 @@ export class PlanGenerator extends MeasureCardGenerator {
     }
 
     return opts
-  }
-
-  // a pass's measures played off schedule that didn't fail (practiceOnly, set
-  // in finishPass) are its practice rather than graded attempts
-  passRecords(pass, opts) {
-    let records = super.passRecords(pass, opts)
-    let practiceOnly = pass.practiceOnly || []
-    if (!practiceOnly.length) { return records }
-
-    return {
-      attempts: records.attempts.filter(({id}) => !practiceOnly.includes(id)),
-      practice: [
-        ...records.practice,
-        ...passPractice(pass, opts).filter(stint => practiceOnly.includes(itemId(stint))),
-      ],
-    }
   }
 
   // The piece is in study once a card of its programme is played: learning

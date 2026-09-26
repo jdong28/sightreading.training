@@ -1521,7 +1521,7 @@ describe("sight reading page", function() {
 
       let anchor = store.item(`${piece.id}:both:1-1`)
       expect(anchor.state).not.toEqual("tracked")
-      expect(caption(el).textContent).toMatch(/^(again in a moment|returns (tomorrow|in \d+ days))$/)
+      expect(caption(el).textContent).toMatch(/^(♩ ≈ \d+ · )?no stops · (again in a moment|returns (tomorrow|in \d+ days))$/)
       expect(plateStatus(el)).toEqual("New · bar 3")
 
       // measure 3 slips: it comes straight back
@@ -1530,9 +1530,29 @@ describe("sight reading page", function() {
       playHead()
       await finished()
 
-      expect(caption(el).textContent).toEqual("again in a moment")
+      expect(caption(el).textContent).toMatch(/^(♩ ≈ \d+ · )?no stops · again in a moment$/)
       expect(plateStatus(el)).toEqual("Once more · bar 3")
       expect(el.textContent).toContain("measures 3–4")
+    })
+
+    it("clears the caption of the last card at Rest and at the next Begin", async function() {
+      let el = await renderProgramme()
+      click(buttonNamed(el, "Begin"))
+
+      playHead()
+      playHead()
+      await finished()
+      expect(caption(el)).not.toBe(null)
+
+      click(buttonNamed(el, "Rest"))
+      await waitFor(() => store.recentSessions().length == 1, "the session to be saved")
+      flushSync(() => page.forceUpdate())
+      expect(caption(el)).toBe(null)
+
+      // the next session opens on no card of the one before it
+      click(buttonNamed(el, "Begin"))
+      flushSync(() => page.forceUpdate())
+      expect(caption(el)).toBe(null)
     })
 
     it("suggests the piece in study most overdue", async function() {

@@ -454,9 +454,10 @@ describe("today's programme on the staff", function() {
     notes = await playCard({generator, notes}, stats)
 
     // measures 0 and 1 are scheduled, as the planner foresaw; measure 2 is new
+    // with the pace of the pass, a crotchet a second
     let anchor = store.item(`${piece.id}:both:0-0`)
-    expect(generator.caption()).toEqual(entryCaption(anchor, time))
-    expect(generator.caption()).not.toBe(null)
+    expect(entryCaption(anchor, time)).not.toBe(null)
+    expect(generator.caption()).toEqual(`♩ ≈ 60 · no stops · ${entryCaption(anchor, time)}`)
     expect(deck.entry).toEqual(jasmine.objectContaining({reason: NEW, measure: 2}))
     expect(generator.currentCard().measures).toEqual([1, 2])
     expect(notesOf(notes).slice(0, 5)).toEqual([["G3", "G4"], ["A4"], ["B4"], ["C3", "E3", "G3", "C5"], []])

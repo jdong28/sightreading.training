@@ -162,7 +162,7 @@ export const EXERCISES_PROGRAMME = {
   // A generator may also name what it plays (all optional): sectionLabel(),
   // the title's words for its measures; cardLabel(), the plate's for its
   // card; statusLine(), the status line while the session runs; caption(), a
-  // line under the staff once a card is done.
+  // line under the staff after a pass through its card.
 }
 
 export const MISSING_ENGINE_SOURCE = "Drawn on the trainer's staff: this piece was imported " +

@@ -2,7 +2,7 @@ import MersenneTwister from "mersennetwister"
 
 import {
   measureCards, sectionCard, cardColumn, cardWeights, nextCardIndex,
-  MeasureCardDeck, MeasureCardGenerator, IN_ORDER, RANDOM_ORDER
+  MeasureCardDeck, MeasureCardGenerator, paceCaption, IN_ORDER, RANDOM_ORDER
 } from "st/measure_cards"
 
 import {SheetMusicGenerator, generatorDefaultSettings, fixGeneratorSettings} from "st/generators"
@@ -15,6 +15,7 @@ import {setAppStore} from "st/storage"
 import NoteList from "st/note_list"
 import NoteStats from "st/note_stats"
 import {AGAIN, HARD, GOOD, EASY} from "st/srs/grade"
+import {PAUSE_MS} from "st/srs/attempt"
 import {newItem} from "st/srs/records"
 import {predictedRecall, UNSCHEDULED_RECALL, DEFAULT_SCHEDULER_SETTINGS, DAY} from "st/srs/schedule"
 
@@ -254,6 +255,31 @@ describe("measure cards", function() {
       expect(deck.card.measures).toEqual([2])
       deck.advance()
       expect(deck.card.measures).toEqual([0, 1])
+    })
+  })
+
+  describe("pace caption", function() {
+    it("reads a pass's pace as a quarter note tempo and says where it stopped", function() {
+      expect(paceCaption({pace: 1150, beats: true, stops: []})).toEqual("♩ ≈ 52 · no stops")
+      expect(paceCaption({pace: 1500, beats: true, stops: [19]})).toEqual("♩ ≈ 40 · 1 stop, bar 19")
+      expect(paceCaption({pace: 1500, beats: true, stops: [19, 19]})).toEqual("♩ ≈ 40 · 2 stops, bar 19")
+      expect(paceCaption({pace: 500, beats: true, stops: [17, 19, 19, 21]}))
+        .toEqual("♩ ≈ 120 · 4 stops, bars 17, 19 and 21")
+    })
+
+    it("counts the stop bars past the first three", function() {
+      expect(paceCaption({pace: 1000, beats: true, stops: [2, 4, 6, 9]}))
+        .toEqual("♩ ≈ 60 · 4 stops, bars 2, 4, 6 and 1 more")
+      expect(paceCaption({pace: 1000, beats: true, stops: [2, 2, 4, 6, 9, 11, 14]}))
+        .toEqual("♩ ≈ 60 · 7 stops, bars 2, 4, 6 and 3 more")
+    })
+
+    it("says nothing without a pace or the score's rhythm", function() {
+      expect(paceCaption({pace: 800, beats: false, stops: [3]})).toBe(null)
+      expect(paceCaption({pace: 800, beats: false, stops: []})).toBe(null)
+      expect(paceCaption({pace: null, beats: true, stops: []})).toBe(null)
+      expect(paceCaption({pace: 0, beats: true, stops: []})).toBe(null)
+      expect(paceCaption(null)).toBe(null)
     })
   })
 
@@ -561,6 +587,138 @@ describe("measure cards", function() {
         notes = hit(notes, stats)
         await generator.finishing
         expect((await store.reviews({pieceId: "p"})).map(r => r.itemId)).toEqual(["p:both:2-2"])
+      })
+
+      it("never lets massed passes climb the ladder, grading a measure off its rung only when it fails", async function() {
+        let deck = new MeasureCardDeck(measureCards([pickupMeasures()[1]], 1), {
+          pieceId: "p", order: IN_ORDER, store,
+        })
+        let generator = track(new MeasureCardGenerator(deck, {now: () => time}))
+        generator.setDrill(() => ({mode: "scroll", speed: 25}))
+        let notes = new NoteList([], {generator})
+        let stats = new NoteStats()
+        notes.fillBuffer(6)
+
+        // one lap of the looping card at t, a column a second
+        let lap = async (t, {slip=false}={}) => {
+          for (let i = 0; i < 3; i++) {
+            time = t + i * 1000
+            if (slip && i == 1) { stats.missNotes(["A4"]) }
+            notes = hit(notes, stats)
+          }
+          await generator.finishing
+        }
+        let bar = () => store.item("p:both:1-1")
+        let barGrades = async () => (await store.reviews({pieceId: "p"})).map(r => r.grade)
+
+        // good at sight, then two clean loops 20 s apart
+        await lap(0)
+        expect([bar().state, bar().step, bar().due - time]).toEqual(["learning", 1, 150 * 1000])
+        let rung = bar()
+
+        await lap(20 * 1000)
+        await lap(40 * 1000)
+        expect(await barGrades()).toEqual([GOOD])
+        expect(bar()).toEqual(jasmine.objectContaining({
+          state: "learning", step: 1, due: rung.due, reps: rung.reps, hits: rung.hits + 6, lastPracticed: time,
+        }))
+
+        // a failed pass is graded, back to the first rung
+        await lap(60 * 1000, {slip: true})
+        expect(await barGrades()).toEqual([GOOD, AGAIN])
+        expect([bar().state, bar().step]).toEqual(["learning", 0])
+
+        // and the pass its rung comes due is graded
+        await lap(bar().due + 1000)
+        expect(await barGrades()).toEqual([GOOD, AGAIN, GOOD])
+      })
+
+      it("captions each pass played through in wait mode with its pace and stops", async function() {
+        // bars 18 and 19 in crotchets
+        let crotchets = (number, notes, from) => ({
+          number, columns: notes.map((note, idx) => Object.assign([note], {beat: from + idx})),
+        })
+        let deck = new MeasureCardDeck(measureCards([
+          crotchets(18, ["C4", "D4", "E4", "F4"], 0), crotchets(19, ["G4", "A4", "B4", "C5"], 4),
+        ], 2), {pieceId: "p", order: IN_ORDER, store})
+
+        let drill = {mode: "wait"}
+        let generator = track(new MeasureCardGenerator(deck, {now: () => time}))
+        generator.setDrill(() => drill)
+        let notes = new NoteList([], {generator})
+        let stats = new NoteStats()
+        notes.fillBuffer(8)
+
+        // a lap of the looping card, the time on each column
+        let lap = async times => {
+          for (let ms of times) {
+            time += ms
+            notes = hit(notes, stats)
+          }
+          await generator.finishing
+        }
+
+        expect(generator.caption()).toBe(null)
+        await lap([1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000])
+        expect(generator.caption()).toEqual("♩ ≈ 60 · no stops")
+
+        // a lap begun keeps the last one's
+        await lap([1500, 1500])
+        expect(generator.caption()).toEqual("♩ ≈ 60 · no stops")
+        await lap([1500, 1500, 4000, 1500, 4000, 1500])
+        expect(generator.caption()).toEqual("♩ ≈ 40 · 2 stops, bar 19")
+
+        // scroll mode sets the pace, not the player
+        drill = {mode: "scroll", speed: 25}
+        await lap([1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000])
+        expect(generator.caption()).toBe(null)
+      })
+
+      // bar 19 in crotchets, looped on its own in wait mode, and a lap of
+      // it playing the time given for each column
+      let bar19Laps = () => {
+        let columns = [["G4"], ["A4"], ["B4"]].map((notes, idx) => Object.assign(notes, {beat: 4 + idx}))
+        let deck = new MeasureCardDeck(measureCards([{number: 19, columns}], 1), {
+          pieceId: "p", order: IN_ORDER, store,
+        })
+        let generator = track(new MeasureCardGenerator(deck, {now: () => time}))
+        generator.setDrill(() => ({mode: "wait"}))
+        let notes = new NoteList([], {generator})
+        let stats = new NoteStats()
+        notes.fillBuffer(6)
+
+        return {
+          generator,
+          lap: async times => {
+            for (let ms of times) {
+              time += ms
+              notes = hit(notes, stats)
+            }
+            await generator.finishing
+          },
+        }
+      }
+
+      it("leaves the columns a pass was paused on out of its pace, stopping on them", async function() {
+        let {generator, lap} = bar19Laps()
+
+        // walking away mid pass leaves the pace it was played at, and is a stop
+        await lap([500, 1000, 90 * 1000])
+        expect(generator.caption()).toEqual("♩ ≈ 60 · 1 stop, bar 19")
+
+        // with nothing played under PAUSE_MS there is no pace to show
+        await lap([500, PAUSE_MS, PAUSE_MS])
+        expect(generator.caption()).toBe(null)
+      })
+
+      it("clears the caption with the pass the page takes at Rest and Begin", async function() {
+        let {generator, lap} = bar19Laps()
+
+        await lap([500, 1000, 1000])
+        expect(generator.caption()).toEqual("♩ ≈ 60 · no stops")
+
+        generator.takePractice()
+        expect(generator.caption()).toBe(null)
       })
 
       it("grades a pass by the drill it is played in, never one changing mode", async function() {
