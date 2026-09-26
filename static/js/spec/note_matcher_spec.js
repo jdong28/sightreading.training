@@ -400,6 +400,10 @@ describe("note matcher", function() {
   describe("score-sustained credit (T6)", function() {
     let sustain = (column, ...notes) => Object.assign(column, {sustained: notes})
 
+    // the drill only ever sustains an imported piece's columns, which reach
+    // it as one card's and each carry which of the card's columns it is
+    let asCard = columns => columns.map((column, idx) => Object.assign(column, {cardIndex: idx}))
+
     // the Rêverie's left hand, from its bar 1 (see reverieOpening): Bb3 C4,
     // then Bb3 at beats 5.5 and 6, each still sounding from an earlier onset,
     // then C4 D4
@@ -472,7 +476,7 @@ describe("note matcher", function() {
 
     for (let [what, columns, script, judged, left, opts] of rules) {
       it(what, function() {
-        let matcher = matcherFor(columns, opts)
+        let matcher = matcherFor(asCard(columns), opts)
         expect(run(matcher, script)).toEqual(judged)
         expect(head(matcher)).toEqual(left)
       })
@@ -524,20 +528,6 @@ describe("note matcher", function() {
       run(matcher, [["on", "Bb3", 0], ["on", "D4", 1000]])
       expect(judged.map(event => event.type)).toEqual(["hit", "hit", "miss"])
       expect(head(matcher)).toEqual(["Bb3"])
-    })
-
-    // columns carrying no cardIndex (a generator's own, never sustained in
-    // practice) say nothing about where a card ends, so only the list's
-    // length bounds the settling
-    it("settles no more columns at one key down than the list holds", function() {
-      let notes = new NoteList([], {generator: {nextNote: () => sustain(["Bb3"], "Bb3")}})
-      notes.fillBuffer(3)
-      let judged = []
-      let matcher = new NoteMatcher(notes, {onEvent: event => judged.push(event)})
-      matcher.judged = judged
-
-      run(matcher, [["on", "Bb3", 0], ["on", "D4", 1000]])
-      expect(judged.map(event => event.type)).toEqual(["hit", "hit", "hit", "hit", "miss"])
     })
   })
 
