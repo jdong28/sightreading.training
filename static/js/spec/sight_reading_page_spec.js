@@ -1859,6 +1859,24 @@ describe("sight reading page", function() {
         .toContain(page.state.notes.generator.deck.entry.measure)
     })
 
+    it("says the sitting is over, not the programme, while the cap holds new bars back", async function() {
+      // four bars failed three times each in this sitting: they hold the
+      // ladder cap, so the four bars never seen wait for the next sitting
+      let failedAt = Date.now() - 1000
+      let el = await renderProgramme({seed: async () => {
+        for (let measure = 1; measure <= 4; measure++) { await restingBar(measure, failedAt) }
+      }})
+
+      let generator = page.state.notes.generator
+      expect(generator.currentCard()).toBe(null)
+      expect(generator.summary().newMeasures).toEqual(4)
+      expect(generator.deck.complete).toBe(false)
+
+      click(buttonNamed(el, "Begin"))
+      expect(plateStatus(el))
+        .toEqual("Nothing more to practise this sitting · struggling bars rest until your next sitting")
+    })
+
     it("leaves free practice as it was", async function() {
       let el = await renderProgramme({study: false})
 

@@ -603,7 +603,9 @@ export default class SightReadingPage extends React.Component {
   // own. In scroll mode the engine's one system stands for every card, so a
   // bar today's programme offers as one hand alone is still drawn with the
   // other hand's notes: played as engraved they are neither required nor a
-  // wrong key, unless the head column asks for that pitch itself
+  // wrong key, unless the head column asks for that pitch itself. The head
+  // comes from the matcher's own list, which it advances as it judges, so
+  // presses batched into one render each see the head they landed on
   besideStaffNote(note) {
     if (this.state.mode != "scroll" || !this.engineCards()) { return false }
 
@@ -616,8 +618,8 @@ export default class SightReadingPage extends React.Component {
     }
 
     let pitch = parseNote(note)
-    return this.beside.pitches.has(pitch) &&
-      !this.state.notes.currentColumn().some(required => parseNote(required) == pitch)
+    let head = (this.matcher.notes || this.state.notes).currentColumn()
+    return this.beside.pitches.has(pitch) && !head.some(required => parseNote(required) == pitch)
   }
 
   // This generates a new set of notes, appropriate for when the generator or

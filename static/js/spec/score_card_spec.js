@@ -1045,6 +1045,37 @@ describe("score page engine card", function() {
     })
   }
 
+  it("judges a shared pitch pressed in the same render as the hit before it", async function() {
+    // the right hand of the bar plays E3, which the left hand alone also
+    // plays on its third column
+    let {piece, generator, left} = await scaffoldedPiece(["E3", "G5", "C5", "E5"])
+    flushSync(() => page.setMode("scroll"))
+    await cardDrawn()
+    expect(page.currentCard().card.hand).toEqual("lower")
+
+    play([left[0]])
+
+    // a MIDI packet the page renders once: the second column's note, which
+    // hits and moves the head on, and the third's, which the right hand
+    // also draws in this bar
+    flushSync(() => {
+      page.pressNote(left[1])
+      page.pressNote(left[2])
+    })
+    flushSync(() => {
+      page.releaseNote(left[1])
+      page.releaseNote(left[2])
+    })
+    play([left[3]])
+
+    await generator.finishing
+    flushSync(() => page.forceUpdate())
+
+    let alone = (await store.reviews({pieceId: piece.id}))
+      .find(review => review.itemId === `${piece.id}:lower:1-1`)
+    expect([alone.misses, alone.clean]).toEqual([0, left.length])
+  })
+
   it("draws the left hand alone when today's programme offers a bar failing on its notes", async function() {
     let {piece, generator} = await scaffoldedPiece()
 
