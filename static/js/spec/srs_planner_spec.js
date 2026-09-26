@@ -365,11 +365,12 @@ describe("today's programme planner", function() {
 
 const grand = {name: "grand", range: ["C2", "C6"]}
 
-// plays the head column like the sight reading page does on a hit
-let hit = (notes, stats) => {
+// plays the head column like the sight reading page does on a hit, with
+// what the matcher measured on it (see NoteMatcher#measured)
+let hit = (notes, stats, measured) => {
   let column = notes.currentColumn()
   notes = notes.clone()
-  notes.shift()
+  notes.shift(measured)
   notes.pushRandom()
   stats.hitNotes(column)
   return notes
@@ -468,6 +469,36 @@ describe("today's programme on the staff", function() {
 
     // the piece is in study
     expect(store.study(piece.id)).toEqual(jasmine.objectContaining({status: "learning", startedAt: time}))
+  })
+
+  // T8: a column's measurements reach the pass as the column is done, so the
+  // grade the next card is planned from is the grade the review keeps
+  it("plans from the last column's latency, the hesitation its review keeps", async function() {
+    let {deck, generator, notes} = generatorFor(2)
+    let stats = new NoteStats()
+    let barId = `${piece.id}:both:1-1`
+
+    // the pickup with measure 1, a second a column, each column struck at
+    // once but the last after a long wait: one hesitation, in measure 1
+    let columns = generator.currentCard().columns.length
+    expect(columns).toEqual(4)
+    for (let i = 0; i < columns; i++) {
+      time += 1000
+      notes = hit(notes, stats, {
+        latency: i == columns - 1 ? 6000 : 200, spread: 0, early: 0, heldCredit: 0, late: null,
+      })
+    }
+
+    // the card is graded as its last column is done, before the hit itself
+    // is counted: the item the next card is planned from hesitated on it
+    expect(deck.item(barId)).toEqual(jasmine.objectContaining({lastGrade: HARD}))
+
+    await generator.finishing
+    await generator.studying
+
+    let review = (await store.reviews({pieceId: piece.id})).find(r => r.itemId == barId)
+    expect([review.hesitations, review.grade, review.perColumn[2][2]]).toEqual([1, HARD, 6000])
+    expect(store.item(barId).lastGrade).toEqual(HARD)
   })
 
   it("brings a failed measure back at once", async function() {

@@ -398,8 +398,11 @@ export class MeasureCardGenerator {
     return this.pass
   }
 
-  // called by NoteList#shift with the list the column was removed from
-  columnDone(column, list) {
+  // called by NoteList#shift with the list the column was removed from and
+  // what the matcher measured on it when it was played, which the pass takes
+  // now: the grade of the pass this column finishes is read here (see
+  // PlanGenerator#finishPass), before the hit itself is counted
+  columnDone(column, list, measured) {
     let card = this.deck.card
     if (!card) { return }
 
@@ -407,7 +410,7 @@ export class MeasureCardGenerator {
     let pass = this.playedPass()
 
     // the hit is counted after the column is removed, see notePlayed
-    this.lastDone = {pass, index: pass.done(time)}
+    this.lastDone = {pass, index: pass.done(time, measured)}
 
     if (!pass.complete) {
       return
@@ -433,7 +436,7 @@ export class MeasureCardGenerator {
     }
   }
 
-  notePlayed({type, notes=[], blamed=notes, measured, stats}) {
+  notePlayed({type, notes=[], blamed=notes, stats}) {
     if (!this.deck.card) { return }
 
     if (stats) {
@@ -441,10 +444,11 @@ export class MeasureCardGenerator {
     }
 
     if (type == "hit") {
-      // a hit is counted right after its column is done
+      // a hit is counted right after its column is done, which its
+      // measurements reached in columnDone
       let done = this.lastDone
       if (done) {
-        done.pass.hit(done.index, measured)
+        done.pass.hit(done.index)
         let column = done.pass.card.columns[done.index]
         if (stats) { stats.countClefs(columnClefs(column), "hit") }
         this.lastDone = null

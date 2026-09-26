@@ -35,11 +35,12 @@ const notesOf = columns => [...columns].map(column => [...column])
 
 const emptyStore = {sectionStats: () => [], recordSectionPractice: async () => {}}
 
-// plays the head column like the sight reading page does on a hit
-let hit = (notes, stats) => {
+// plays the head column like the sight reading page does on a hit, with
+// what the matcher measured on it (see NoteMatcher#measured)
+let hit = (notes, stats, measured) => {
   let column = notes.currentColumn()
   notes = notes.clone()
-  notes.shift()
+  notes.shift(measured)
   notes.pushRandom()
   stats.hitNotes(column)
   return notes
@@ -651,11 +652,13 @@ describe("measure cards", function() {
         let stats = new NoteStats()
         notes.fillBuffer(8)
 
-        // a lap of the looping card, the time on each column
+        // a lap of the looping card, the time waited on each column before
+        // playing it: its latency, which a stop is read from, and the time on
+        // it, which sets the pace
         let lap = async times => {
           for (let ms of times) {
             time += ms
-            notes = hit(notes, stats)
+            notes = hit(notes, stats, {latency: ms})
           }
           await generator.finishing
         }

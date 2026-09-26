@@ -21,13 +21,13 @@ const twoBars = () => sectionCard([
 const noItems = () => null
 
 // plays the pass's head column, done at time, with the given slips first
-// and what the matcher measured on its hit: by default the column started
-// the moment it became the head's time away and all its keys down together
+// and what the matcher measured on it: by default the column started the
+// moment it became the head's time away and all its keys down together
 const play = (pass, time, {misses=[], counted=true, hit=true, measured}={}) => {
   let latency = pass.columnStartedAt == null ? null : time - pass.columnStartedAt
   misses.forEach((notes, idx) => pass.miss(notes, {counted: counted && idx == 0, time}))
-  let index = pass.done(time)
-  if (hit) { pass.hit(index, measured || {latency, spread: 0, early: 0, heldCredit: 0, late: null}) }
+  let index = pass.done(time, hit ? measured || {latency, spread: 0, early: 0, heldCredit: 0, late: null} : undefined)
+  if (hit) { pass.hit(index) }
 }
 
 describe("srs attempt", function() {

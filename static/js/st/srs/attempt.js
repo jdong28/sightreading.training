@@ -26,7 +26,7 @@ export const PAUSE_MS = 30 * 1000
 // how far an item's usual pace moves toward the pace of a clean attempt
 export const PACE_WEIGHT = 0.25
 
-// what the matcher measures on a column's hit, see AttemptPass#hit
+// what the matcher measures on a column when it is played, see AttemptPass#done
 const MEASURES = ["latency", "spread", "early", "heldCredit", "late"]
 const UNMEASURED = Object.fromEntries(MEASURES.map(key => [key, null]))
 
@@ -112,14 +112,21 @@ export class AttemptPass {
   /**
    * The head column is done with (played, skipped or scrolled past)
    * @param {number} time
+   * @param {Object} [measured] what the matcher measured on the column when
+   * it was played (see NoteMatcher#measured): latency, spread, early,
+   * heldCredit and late, each null when not measured. A column skipped or
+   * scrolled past has none, so the grade reads no hesitation on it
    * @returns {number} its index in the card
    */
-  done(time) {
+  done(time, measured={}) {
     let index = this.head
     let column = this.columns[index]
     column.done = true
     if (this.columnStartedAt != null) {
       column.ms = Math.max(0, time - this.columnStartedAt)
+    }
+    for (let key of MEASURES) {
+      column[key] = measured[key] ?? null
     }
 
     this.columnStartedAt = time
@@ -131,16 +138,9 @@ export class AttemptPass {
   /**
    * The column at index, just done with, was played
    * @param {number} index
-   * @param {Object} [measured] what the matcher measured on the column (see
-   * NoteMatcher#measured): latency, spread, early, heldCredit and late, each
-   * null when not measured
    */
-  hit(index, measured={}) {
-    let column = this.columns[index]
-    column.hit = true
-    for (let key of MEASURES) {
-      column[key] = measured[key] ?? null
-    }
+  hit(index) {
+    this.columns[index].hit = true
   }
 }
 

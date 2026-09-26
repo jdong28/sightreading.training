@@ -304,7 +304,7 @@ export default class NoteMatcher {
     let spread = this.firstAt != null && completedAt != null
       ? completedAt - this.firstAt
       : null
-    let measured = this.measured(at)
+    let measured = {spread, ...this.measured(at)}
 
     let event = {
       type: "hit",
@@ -314,18 +314,20 @@ export default class NoteMatcher {
       from: notes,
       // a slip's shake plays out over the next column
       stray: Object.keys(this.strays).length > 0,
-      spread,
       // the column's keys that were struck before it was the head, which
       // measured counts as its early
       credited: this.credited,
-      // what the grade reads on the column (see measured)
+      // what the grade reads on the column, as it went with it (see measured)
       ...measured,
     }
 
     let early = this.early
     this.slipped = false
     let advanced = notes.clone()
-    advanced.shift()
+    // the measurements go with the column as it is removed, so the generator
+    // has them the moment it is told the column is done, before it grades
+    // the pass they finish (see NoteList#shift)
+    advanced.shift(measured)
     advanced.pushRandom()
     this.notes = advanced
 

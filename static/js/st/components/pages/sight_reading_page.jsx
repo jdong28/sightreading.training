@@ -803,15 +803,9 @@ export default class SightReadingPage extends React.Component {
 
       case "hit":
         gaEvent("sight_reading", "note", "hit")
-        // the column's measurements go with the hit to the measure cards'
-        // attempt, for the grade
-        this.state.stats.hitNotes(event.hitNotes, {
-          latency: event.latency,
-          spread: event.spread,
-          early: event.early,
-          heldCredit: event.heldCredit,
-          late: event.late,
-        })
+        // the column's measurements reached the measure cards' attempt with
+        // the column as the matcher removed it (see NoteList#shift)
+        this.state.stats.hitNotes(event.hitNotes)
         update.notes = this.matcher.notes
         // one column at a time: a hit may complete the next column too, from
         // its keys played early
