@@ -49,7 +49,9 @@
 // sitting how the bar has gone.
 // The scaffold is the planner's alone: it is worked out from the items and
 // the last review of each bar, and writes nothing, so the schedule stays what
-// replay rebuilds.
+// replay rebuilds. The count of a piece's bars due must follow the same rule,
+// or a scaffold the planner has retired keeps flagging its piece as overdue
+// (mostOverduePiece, which reads items alone).
 //
 // Rest it until the next sitting: a bar failing a third time in a sitting,
 // whichever hand it was played with, is not offered again in the sitting. Its
