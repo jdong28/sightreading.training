@@ -974,14 +974,14 @@ describe("score page engine card", function() {
 
   // a two bar piano piece whose bar 1 fails hands together on the bass
   // staff, so today's programme offers that bar as the left hand alone
-  let scaffoldedPiece = async (right = rightNotes.map(step => `${step}5`)) => {
+  let scaffoldedPiece = async (right = rightNotes.map(step => `${step}5`), props = {}) => {
     let left = leftNotes.map(step => `${step}3`)
     let rightXML = right.map(name => noteXML(name.slice(0, -1), Number(name.slice(-1)), 1, 1)).join("")
     let bars = [1, 2].map(number => `<measure number="${number}">${number == 1 ? attributes([["G", 2], ["F", 4]], 2) : ""}${rightXML}<backup><duration>4</duration></backup>${notesOn(leftNotes, 3, 2)}</measure>`)
     let piece = await drillPiece(scoreOf("<score-part id=\"P1\"><part-name>Piano</part-name></score-part>",
       `<part id="P1">${bars.join("")}</part>`), {startMeasure: 1, endMeasure: 2, measuresPerCard: "1"})
     await store.putStudy({pieceId: piece.id, status: "learning", startedAt: Date.now()})
-    renderScorePage()
+    renderScorePage(props)
     await cardDrawn()
 
     flushSync(() => page.beginSession())
@@ -1044,6 +1044,62 @@ describe("score page engine card", function() {
       expect(alone.grade).toBeGreaterThan(1)
     })
   }
+
+  // the scaffolded piece's music with a third part its stored song doesn't
+  // know, so the score can't say which of its staves a hand alone reads
+  let strangerSource = () => {
+    let part = (id, clef, notes) => `<part id="${id}">${[1, 2].map(number =>
+      `<measure number="${number}">${number == 1 ? attributes([clef], 1) : ""}${notes}</measure>`)
+      .join("")}</part>`
+    return scoreOf(
+      ["P1", "P2", "P3"].map(id =>
+        `<score-part id="${id}"><part-name>${id}</part-name></score-part>`).join(""),
+      [part("P1", ["G", 2], notesOn(rightNotes, 5, 1)),
+        part("P2", ["F", 4], notesOn(leftNotes, 3, 1)),
+        part("P3", ["G", 2], notesOn(rightNotes, 6, 1))].join("\n  "))
+  }
+
+  it("keeps the piece's source when a hand's staves can't be told in the score", async function() {
+    let source = strangerSource()
+    let scaffold = await scaffoldedPiece(undefined, {readSource: () => Promise.resolve(source)})
+    let {piece, generator, left, right} = scaffold
+
+    // the left hand alone is offered, but its staves can't be narrowed to,
+    // so the session's are drawn and the source is still the one renderer
+    expect(page.currentCard().card.hand).toEqual("lower")
+    expect(page.state.engineSource.status).toEqual("ready")
+    expect(page.state.engineSource.trackStaves.length).toEqual(3)
+    expect(page.engineCard()).not.toBe(null)
+    expect(page.engineCard().staves).toBe(null)
+
+    // both hands are drawn, so the right hand's note at the head's own
+    // onset is neither required nor a wrong key
+    let misses = await playAsEngraved(scaffold)
+
+    expect(page.state.stats.misses).toEqual(misses)
+    let alone = (await store.reviews({pieceId: piece.id}))
+      .find(review => review.itemId === `${piece.id}:lower:1-1`)
+    expect([alone.misses, alone.clean]).toEqual([0, left.length])
+    expect(right.length).toEqual(left.length)
+  })
+
+  it("counts a wrong key the other hand plays at another onset of the bar", async function() {
+    let {right} = await scaffoldedPiece()
+    flushSync(() => page.setMode("scroll"))
+    await cardDrawn()
+    expect(page.currentCard().card.hand).toEqual("lower")
+
+    // the head is the bar's first column; the right hand's third note
+    // sounds two beats later, so pressing it here is a wrong key
+    let misses = page.state.stats.misses
+    play([right[2]])
+    let counted = page.state.stats.misses
+    expect(counted).toBeGreaterThan(misses)
+
+    // its note at the head's own onset is still drawn beside the card
+    play([right[0]])
+    expect(page.state.stats.misses).toEqual(counted)
+  })
 
   it("judges a shared pitch pressed in the same render as the hit before it", async function() {
     // the right hand of the bar plays E3, which the left hand alone also

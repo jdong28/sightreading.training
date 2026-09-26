@@ -16,6 +16,7 @@ import {
 } from "st/data"
 import {pieceSong, pieceSource} from "st/sheet_music_deck"
 import {parseMusicXML} from "st/musicxml"
+import {ONSET_EPSILON} from "st/song_sections"
 import {getAppStore} from "st/storage"
 import {
   ProgrammeDrawer, generatorLabel, staffLabel, keyLabel
@@ -441,13 +442,12 @@ export default class SightReadingPage extends React.Component {
     return hand ? handSetting(hand) : settings.hand
   }
 
-  // The score staves the drill's tracks read, the ones the engine draws:
-  // null for every staff, undefined when the stored song's tracks can't be
-  // told among the score's
-  engineStaves() {
+  // The score staves a hand setting's tracks read: null for every staff,
+  // undefined when the stored song's tracks can't be told among the score's
+  handStaves(hand) {
     let settings = this.currentSettings()
     let song = pieceSong(sheetMusicPiece(settings))
-    let tracks = handTracks(song, this.cardHand())
+    let tracks = handTracks(song, hand)
     if (!tracks) { return null }
 
     let all = this.state.engineSource?.trackStaves
@@ -460,6 +460,17 @@ export default class SightReadingPage extends React.Component {
       }
     }
     return cache.staves
+  }
+
+  // The staves the engine draws: the card's hand alone where the score can
+  // tell them apart, else the session's, so narrowing to a card never fails
+  // the piece's source — only the session's own hand can do that
+  engineStaves() {
+    let session = this.handStaves(this.currentSettings().hand)
+    if (session === undefined) { return undefined }
+
+    let narrowed = this.handStaves(this.cardHand())
+    return narrowed === undefined ? session : narrowed
   }
 
   // The engine card's props for the card at the head of the drill, or null
@@ -600,26 +611,33 @@ export default class SightReadingPage extends React.Component {
   }
 
   // D5(b): whether a pressed note is one the staff draws beside the card's
-  // own. In scroll mode the engine's one system stands for every card, so a
-  // bar today's programme offers as one hand alone is still drawn with the
-  // other hand's notes: played as engraved they are neither required nor a
-  // wrong key, unless the head column asks for that pitch itself. The head
-  // comes from the matcher's own list, which it advances as it judges, so
-  // presses batched into one render each see the head they landed on
+  // own. A bar today's programme offers as one hand alone is still drawn
+  // with the other hand's notes wherever the staves drawn aren't narrowed to
+  // it — the one system of scroll mode, or a hand the score can't tell apart
+  // — and the other hand's note at the head's own onset is then neither
+  // required nor a wrong key, unless the head asks for that pitch itself.
+  // The head comes from the matcher's own list, which it advances as it
+  // judges, so presses batched into one render each see the head they
+  // landed on
   besideStaffNote(note) {
-    if (this.state.mode != "scroll" || !this.engineCards()) { return false }
+    if (!this.engineCards()) { return false }
 
     let generator = this.state.notes && this.state.notes.generator
-    let current = generator && generator.besideNotes && this.currentCard()
+    let current = generator && generator.besideColumns && this.currentCard()
     if (!current) { return false }
+    if (this.state.mode != "scroll" && this.handStaves(this.cardHand()) !== undefined) { return false }
 
     if (!this.beside || this.beside.card != current.card) {
-      this.beside = {card: current.card, pitches: new Set(generator.besideNotes().map(parseNote))}
+      this.beside = {card: current.card, onsets: generator.besideColumns().map(column =>
+        ({beat: column.beat, pitches: new Set(column.map(parseNote))}))}
     }
 
     let pitch = parseNote(note)
     let head = (this.matcher.notes || this.state.notes).currentColumn()
-    return this.beside.pitches.has(pitch) && !head.some(required => parseNote(required) == pitch)
+    if (head.some(required => parseNote(required) == pitch)) { return false }
+
+    return this.beside.onsets.some(onset =>
+      Math.abs(onset.beat - head.beat) < ONSET_EPSILON && onset.pitches.has(pitch))
   }
 
   // This generates a new set of notes, appropriate for when the generator or

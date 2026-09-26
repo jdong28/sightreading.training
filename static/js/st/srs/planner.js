@@ -551,8 +551,10 @@ export function studyStatus(input) {
  * measures due by the end of today, the earliest due first on a tie; null
  * when nothing is due. A bar's hand alone counts while the bar has no
  * schedule hands together of its own, or while that bar is in trouble and
- * the hand has not held since: a hand alone left over from a retired
- * scaffold never flags its piece.
+ * the hand has not held since, which keeps a retired scaffold from flagging
+ * its piece. It reads no reviews, so only the two goods running can retire
+ * one here: a hand the planner retired by graduating still counts until the
+ * bar is played together again.
  * @param {Object} opts
  * @param {StudyRecord[]} opts.studies
  * @param {ItemRecord[]} opts.items every piece's
