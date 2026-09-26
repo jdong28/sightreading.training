@@ -66,10 +66,18 @@ describe("note matcher", function() {
       [["on", "D4"], ["on", "C4"]],
       ["miss C4", "hit C4"], ["G4"]],
 
+    // letting D4 up used to judge the column again, an uncounted miss that
+    // still shook it; releases judge nothing now (T4), so each wrong key is
+    // judged once, when it goes down
     ["a key outside the column is a slip, counted once for the column",
       [["C4"], ["G4"]],
       [["on", "D4"], ["off", "D4"], ["on", "E4"]],
-      ["miss C4", "uncounted C4", "slip C4"], ["C4"]],
+      ["miss C4", "slip C4"], ["C4"]],
+
+    ["a wrong key alone then released is one slip",
+      [["C4"], ["G4"]],
+      [["on", "D4"], ["off", "D4"]],
+      ["miss C4"], ["C4"]],
 
     ["counts one slip a try however many wrong keys are held together",
       [["C4"], ["G4"]],
@@ -81,10 +89,28 @@ describe("note matcher", function() {
       [["on", "D4"], ["forget"], ["on", "C4"]],
       ["miss C4", "miss C4", "hit C4"], ["G4"]],
 
-    ["every key up with a touched note unmatched misses, and the column is played afresh",
+    // every key up with the column unmatched used to miss it and forget the
+    // keys struck, so C4 had to go down again. Releases never judge (T4): a
+    // hand let up before the other lands, as under the pedal, completes it
+    ["letting every key up neither misses the column nor forgets the keys struck",
       [["C4", "E4"], ["G4"]],
-      [["on", "C4"], ["off", "C4"], ["on", "C4"], ["on", "E4"]],
-      ["miss E4", "hit C4+E4"], ["G4"]],
+      [["on", "C4"], ["off", "C4"], ["on", "E4"]],
+      ["hit C4+E4"], ["G4"]],
+
+    ["a column completes however far apart its keys go down, each let up before the next",
+      [["C4", "E4", "G4"], ["A4"]],
+      [["on", "C4", 0], ["off", "C4", 60], ["on", "E4", 5000], ["off", "E4", 5060], ["on", "G4", 20000]],
+      ["hit C4+E4+G4"], ["A4"]],
+
+    ["striking the column's key again after letting it up is no slip",
+      [["C4", "E4"], ["G4"]],
+      [["on", "C4"], ["off", "C4"], ["on", "C4"], ["off", "C4"], ["on", "E4"]],
+      ["hit C4+E4"], ["G4"]],
+
+    ["a wrong key let up before the stats start over isn't counted again at the hit",
+      [["C4"], ["G4"]],
+      [["on", "D4"], ["off", "D4"], ["forget"], ["on", "C4"]],
+      ["miss C4", "hit C4"], ["G4"]],
 
     ["keys let up that touched nothing in the column are no try at it",
       [["C4", "E4"], ["G4"], ["A4"]],
@@ -133,6 +159,94 @@ describe("note matcher", function() {
     expect(matcher.touched).toEqual({})
   })
 
+  it("keeps the keys struck at the head when every key comes up", function() {
+    let matcher = matcherFor([["C4", "E4"], ["G4"]])
+    run(matcher, [["on", "C4"], ["on", "D4"], ["off", "C4"], ["off", "D4"]])
+
+    expect(matcher.held).toEqual({})
+    expect(matcher.touched).toEqual({C4: true, D4: true})
+  })
+
+  // Adopting another list (a rebuilt drill, a column scrolled past) plays its
+  // head afresh: no key struck at the old one counts for it, whether it was
+  // let up or is still down. Score-sustained held credit is a later step (T6)
+  it("drops the keys struck at the old head when it adopts another list", function() {
+    let matcher = matcherFor([["C4", "G4"], ["A4"]])
+    run(matcher, [["on", "C4"], ["off", "C4"], ["on", "D4"]])
+
+    let rebuilt = new NoteList([["C4", "E4"], ["A4"]], {generator: {nextNote: () => []}})
+    matcher.setNotes(rebuilt)
+    expect(matcher.touched).toEqual({})
+    expect(matcher.held).toEqual({D4: true})
+
+    // the wrong D4 still down was counted on the column it was played on,
+    // and isn't counted again on the new head, which its own keys complete
+    expect(run(matcher, [["on", "C4"], ["on", "E4"]])).toEqual(["hit C4+E4"])
+  })
+
+  it("needs the new head's keys struck again however many are already down", function() {
+    let matcher = matcherFor([["C4", "E4", "G4"], ["B4"]])
+    run(matcher, [["on", "C4"], ["on", "E4"]])
+
+    let scrolled = new NoteList([["C4", "E4"], ["B4"]], {generator: {nextNote: () => []}})
+    matcher.setNotes(scrolled)
+
+    // C4 and E4 are still down, but neither went down at this column, so it
+    // isn't complete: a wrong key slips on it and leaves it on the list
+    expect(run(matcher, [["on", "D4"]])).toEqual(["miss C4+E4"])
+    expect(head(matcher)).toEqual(["C4", "E4"])
+
+    // struck again, they complete it, and the D4 held through isn't recounted
+    expect(run(matcher, [["on", "C4"], ["on", "E4"]])).toEqual(["hit C4+E4"])
+    expect(head(matcher)).toEqual(["B4"])
+  })
+
+  // The spread of a column: from the first of its keys to go down in the
+  // pass to the last, the one that completed it. Recorded on the hit for
+  // the grade to read later; nothing judges it
+  describe("the spread of a column", function() {
+    let spreads = (columns, script) => {
+      let matcher = matcherFor(columns)
+      run(matcher, script)
+      return matcher.judged.filter(event => event.type == "hit").map(event => event.spread)
+    }
+
+    it("runs from the first of the column's keys down to the last", function() {
+      expect(spreads([["C4", "E4", "G4"], ["A4"]], [
+        ["on", "C4", 1000], ["off", "C4", 1060],
+        ["on", "E4", 1080], ["off", "E4", 1140],
+        ["on", "G4", 1160],
+        ["on", "A4", 2000],
+      ])).toEqual([160, 0])
+    })
+
+    it("counts a key struck again from its first strike, and no wrong key", function() {
+      expect(spreads([["C4", "E4"], ["A4"]], [
+        ["on", "D4", 900],
+        ["on", "C4", 1000], ["off", "C4", 1050], ["on", "C4", 1400],
+        ["on", "E4", 1500],
+      ])).toEqual([500])
+    })
+
+    it("starts afresh at each column, with keys held across the hit not in it", function() {
+      expect(spreads([["C4"], ["E4", "G4"]], [
+        ["on", "C4", 1000],
+        ["on", "E4", 3000], ["on", "G4", 3200],
+      ])).toEqual([0, 200])
+    })
+
+    it("is null for presses with no timeStamp", function() {
+      expect(spreads([["C4", "E4"], ["A4"]], [["on", "C4"], ["on", "E4"]])).toEqual([null])
+    })
+
+    // the on-screen keyboard's presses carry no timeStamp, so a column with
+    // one of them among its keys has no spread to report, whichever it was
+    it("is null when either end of the column came with no timeStamp", function() {
+      expect(spreads([["C4", "E4"], ["A4"]], [["on", "C4"], ["on", "E4", 5000]])).toEqual([null])
+      expect(spreads([["C4", "E4"], ["A4"]], [["on", "C4", 1000], ["on", "E4"]])).toEqual([null])
+    })
+  })
+
   it("records the timeStamp of the event it was fed", function() {
     let matcher = matcherFor([["C4"], ["G4"]])
     matcher.noteOn("C4", 1234)
@@ -160,12 +274,14 @@ describe("note matcher", function() {
       expect(together).toEqual([["hit C4", "hit G4"], ["A4"]])
     })
 
+    // the release used to judge the column again (an uncounted miss); it
+    // judges nothing now (T4)
     it("judges a press and release of one key as when they are spread out", function() {
       let together = judge([["on", "D4", 1000], ["off", "D4", 1000]])
       let apart = judge([["on", "D4", 1000], ["off", "D4", 1020]])
 
       expect(together).toEqual(apart)
-      expect(together).toEqual([["miss C4", "uncounted C4"], ["C4"]])
+      expect(together).toEqual([["miss C4"], ["C4"]])
     })
 
     it("checks the release once however many keys come up together", function() {
@@ -187,7 +303,9 @@ describe("note matcher", function() {
       expect(matcher.judged).toEqual([])
     })
 
-    it("counts one miss for a column whose keys all come up in one event", function() {
+    // the last of the keys up used to judge the column once; releases judge
+    // nothing now (T4), however many come up together
+    it("judges nothing when a column's keys all come up in one event", function() {
       let matcher = matcherFor([["C4", "E4"], ["G4"]])
       run(matcher, [["on", "C4", 1000], ["on", "D4", 1000]])
 
@@ -196,8 +314,8 @@ describe("note matcher", function() {
         matcher.noteOff(note, 1100)
         return [...matcher.judged]
       })
-      expect(ups.map(events => events.length)).toEqual([0, 1])
-      expect(ups[1][0].counted).toBe(null)
+      expect(ups).toEqual([[], []])
+      expect(matcher.held).toEqual({})
     })
   })
 })

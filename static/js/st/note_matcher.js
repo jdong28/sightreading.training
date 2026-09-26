@@ -15,6 +15,13 @@
 // it, the chord drill's release check) at the point it makes it, so every
 // judgement reaches the stats before the list advance the ones after it
 // describe.
+//
+// In notes mode only key-downs are judged (T4). A key coming up only leaves
+// the keys down, so a hand let up before the other lands, keys let go early
+// under the pedal (which the matcher never reads) and a rolled chord caught
+// by it all complete their column: it is complete once every one of its keys
+// has gone down since it became the head, however far apart. How far apart
+// is recorded on the hit (its spread), and nothing judges it yet.
 
 export default class NoteMatcher {
   // notes is the NoteList the drill is playing (the matcher advances it);
@@ -27,17 +34,24 @@ export default class NoteMatcher {
     this.onEvent = opts.onEvent || null
 
     // the keys physically down, from each note on to its note off. It
-    // survives a hit, so letting up keys that played earlier columns is no
-    // try at the current one
+    // survives a hit, so a wrong key still down as a column completes is
+    // counted on it; letting keys up judges nothing (T4)
     this.held = {}
 
-    // the keys struck at the head column since it was last played afresh.
-    // Cleared at a hit and when every key comes up
+    // the keys struck at the head column since it became the head, wrong
+    // ones included. Kept however many keys come up (in notes mode), and
+    // cleared at a hit or when another list takes over
     this.touched = {}
 
+    // whether one of the head column's own keys has gone down at it, and
+    // when the first of them did, for its spread: null when that press
+    // carried no timeStamp (the on-screen keyboard)
+    this.firstDown = false
+    this.firstAt = null
+
     // the note list a miss was last counted on (a column counts missed once
-    // however many slips and releases it takes), and whether the try in
-    // progress has already counted a slip
+    // however many slips it takes), and whether the try in progress has
+    // already counted a slip
     this.missedNotes = null
     this.slipped = false
 
@@ -46,21 +60,32 @@ export default class NoteMatcher {
     this.lastEventAt = null
   }
 
-  // adopts a note list built elsewhere (a rebuilt drill, a skipped column)
+  // adopts a note list built elsewhere (a rebuilt drill, a column scrolled
+  // past): the keys struck at the old head are dropped, so its new one is
+  // played afresh from the next key down, however many keys are still down.
+  // A key held over is neither credited to the new column (score-sustained
+  // credit is a later step) nor counted against it, having been judged on
+  // the column it was played on
   setNotes(notes) {
-    this.notes = notes || null
+    notes = notes || null
+    if (notes !== this.notes) {
+      this.clearTouched()
+    }
+    this.notes = notes
   }
 
   // Begin and Rest: no key is down and no column is in progress
   clear() {
     this.held = {}
-    this.touched = {}
+    this.clearTouched()
   }
 
   // the head column is played afresh from the next key down, with the keys
   // still down left held (a skipped column)
   clearTouched() {
     this.touched = {}
+    this.firstDown = false
+    this.firstAt = null
   }
 
   // the stats started over, so the column under way may count a miss again
@@ -74,7 +99,8 @@ export default class NoteMatcher {
 
     // a key down with none of the column's touched keys held starts a new
     // try, which may slip again; keys held from earlier columns don't carry
-    // a try on
+    // a try on. A try only bounds the slips counted: letting its keys up
+    // judges nothing and keeps them struck
     if (!Object.keys(this.touched).some(n => this.held[n])) {
       this.slipped = false
     }
@@ -84,15 +110,16 @@ export default class NoteMatcher {
 
     // chords only check on release
     if (this.mode == "notes") {
-      this.judgePress(note)
+      this.judgePress(note, timeStamp)
     }
 
     return this.result()
   }
 
-  // A key came up. The release check runs at most once an event, when the
-  // last key down comes up. Answers null when the key wasn't down at all, so
-  // the page has nothing to render
+  // A key came up. In notes mode that judges nothing; the chord drill's
+  // release check runs at most once an event, when the last key down comes
+  // up. Answers null when the key wasn't down at all, so the page has
+  // nothing to render
   noteOff(note, timeStamp) {
     this.lastEventAt = timeStamp ?? null
 
@@ -104,11 +131,10 @@ export default class NoteMatcher {
     this.held = {...this.held}
     delete this.held[note]
 
-    if (Object.keys(this.held).length) {
-      return this.result()
+    if (this.mode == "chords" && !Object.keys(this.held).length) {
+      this.judgeChord()
     }
 
-    this.judgeRelease()
     return this.result()
   }
 
@@ -117,27 +143,41 @@ export default class NoteMatcher {
     if (this.onEvent) { this.onEvent(event) }
   }
 
-  // called on every key down in notes mode
-  judgePress(note) {
+  // called on every key down in notes mode, with the event's timeStamp
+  judgePress(note, timeStamp) {
     let notes = this.notes
     if (!notes) { return }
 
-    // nothing to play (eg. an empty section): no key is a slip, as no
-    // release is a miss
+    // nothing to play (eg. an empty section): no key is a slip
     if (!notes.currentColumn().length) { return }
 
     let touched = Object.keys(this.touched)
     let matched = notes.matchesHead(touched, this.anyOctave)
 
     // pressing a key outside the column is a slip: the column counts as
-    // missed, but the keys touched still go on to complete it. A slip in the
-    // same event that completes the column is counted before the hit
+    // missed, but the keys touched still go on to complete it. A wrong key
+    // still down as the column completes is counted before the hit, on
+    // stats started over since it went down too
     let stray = notes.strayNotes(touched, this.anyOctave)
-    if (stray.includes(note) || (matched && stray.length && this.missedNotes != notes)) {
+    let strayDown = stray.filter(n => this.held[n])
+    if (stray.includes(note) || (matched && strayDown.length && this.missedNotes != notes)) {
       this.emit(this.missColumn(notes.currentColumn(), notes.blamedNotes(touched, this.anyOctave)))
     }
 
+    // the first of the column's own keys down starts its spread
+    if (!stray.includes(note) && !this.firstDown) {
+      this.firstDown = true
+      this.firstAt = timeStamp ?? null
+    }
+
     if (!matched) { return }
+
+    // from the first of the column's keys down to this one, which completed
+    // it: null when either press came with no timeStamp (the on-screen
+    // keyboard), as their distance apart isn't known
+    let spread = this.firstAt != null && timeStamp != null
+      ? timeStamp - this.firstAt
+      : null
 
     this.slipped = false
     let from = notes
@@ -146,9 +186,10 @@ export default class NoteMatcher {
     advanced.pushRandom()
 
     this.notes = advanced
-    // the keys still down stay held: letting them up later is no try at the
-    // next column
-    this.touched = {}
+    // the next column is played afresh from the next key down: the keys
+    // still down stay held, but none of them is credited to it
+    // (score-sustained credit is a later step)
+    this.clearTouched()
 
     this.emit({
       type: "hit",
@@ -158,59 +199,35 @@ export default class NoteMatcher {
       from,
       // a slip's shake plays out over the next column
       stray: stray.length > 0,
+      spread,
     })
   }
 
-  // called when the keys down reach 0
-  judgeRelease() {
+  // the chord drill, when the keys down reach 0: the chord is checked on
+  // its release
+  judgeChord() {
     let notes = this.notes
     if (!notes) { return }
 
-    switch (this.mode) {
-      case "notes": {
-        let column = notes.currentColumn()
+    let touched = Object.keys(this.touched)
 
-        if (column.length == 0) {
-          this.slipped = false
-          this.touched = {}
-          return
-        }
-
-        // the keys let up played earlier columns (held across their hits),
-        // none this one: that isn't a try at it
-        let touched = Object.keys(this.touched)
-        if (!touched.length) { return }
-
-        // every key is up without the column matched: it counts as missed
-        // (once) and is played afresh from the next key down
-        this.emit(this.missColumn(column, notes.blamedNotes(touched, this.anyOctave)))
-        this.touched = {}
-        return
-      }
-
-      case "chords": {
-        let touched = Object.keys(this.touched)
-
-        if (notes.matchesHead(touched) && touched.length > 2) {
-          let from = notes
-          let advanced = notes.clone()
-          advanced.shift()
-          advanced.pushRandom()
-          this.notes = advanced
-          this.clear()
-          this.emit({type: "chordHit", from})
-        } else {
-          this.clear()
-          this.emit({type: "chordMiss"})
-        }
-        return
-      }
+    if (notes.matchesHead(touched) && touched.length > 2) {
+      let from = notes
+      let advanced = notes.clone()
+      advanced.shift()
+      advanced.pushRandom()
+      this.notes = advanced
+      this.clear()
+      this.emit({type: "chordHit", from})
+    } else {
+      this.clear()
+      this.emit({type: "chordMiss"})
     }
   }
 
-  // The head column counts as missed, at most once however many slips and
-  // releases it takes to complete it. missed are the column's notes the
-  // stats count against, blamed those the miss is put down to (see
+  // The head column counts as missed, at most once however many slips it
+  // takes to complete it. missed are the column's notes the stats count
+  // against, blamed those the miss is put down to (see
   // NoteList#blamedNotes); counted says what the stats make of it: the
   // column's first miss, a further slip in the same column, or nothing
   missColumn(missed, blamed) {
@@ -223,7 +240,7 @@ export default class NoteMatcher {
       counted = "slip"
     }
 
-    // one slip a try, from a key down to every key up
+    // one slip a try, from a key down to every key struck at the column up
     this.slipped = true
 
     return {type: "miss", missed, blamed, counted, notes: this.notes}
