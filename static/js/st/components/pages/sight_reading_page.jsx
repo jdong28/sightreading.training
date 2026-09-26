@@ -599,6 +599,24 @@ export default class SightReadingPage extends React.Component {
     return this.state.droppedPitches.has(parseNote(note))
   }
 
+  // D5(b): whether a pressed note is one the staff draws beside the card's
+  // own. In scroll mode the engine's one system stands for every card, so a
+  // bar today's programme offers as one hand alone is still drawn with the
+  // other hand's notes: played as engraved they are neither required nor a
+  // wrong key
+  besideStaffNote(note) {
+    if (this.state.mode != "scroll" || !this.engineCards()) { return false }
+
+    let generator = this.state.notes && this.state.notes.generator
+    let current = generator && generator.besideNotes && this.currentCard()
+    if (!current) { return false }
+
+    if (!this.beside || this.beside.card != current.card) {
+      this.beside = {card: current.card, pitches: new Set(generator.besideNotes().map(parseNote))}
+    }
+    return this.beside.pitches.has(parseNote(note))
+  }
+
   // This generates a new set of notes, appropriate for when the generator or
   // generator parameters have changed in some say. Pass the drill on the
   // staff to fill it again from that same drill rather than build it afresh,
@@ -955,8 +973,9 @@ export default class SightReadingPage extends React.Component {
     switch (this.state.currentGenerator.mode) {
       case "notes": {
         // D5(a): a note the app staff's fallback had to drop from an
-        // imported piece's section is neither required nor a wrong key
-        if (this.droppedStaffNote(note)) { return }
+        // imported piece's section, or (b) one the staff draws beside the
+        // card's own, is neither required nor a wrong key
+        if (this.droppedStaffNote(note) || this.besideStaffNote(note)) { return }
         break
       }
       case "chords": {

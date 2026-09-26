@@ -972,7 +972,9 @@ describe("score page engine card", function() {
     return join
   }
 
-  it("draws the left hand alone when today's programme offers a bar failing on its notes", async function() {
+  // a two bar piano piece whose bar 1 fails hands together on the bass
+  // staff, so today's programme offers that bar as the left hand alone
+  let scaffoldedPiece = async () => {
     let bars = [1, 2].map(number => `<measure number="${number}">${number == 1 ? attributes([["G", 2], ["F", 4]], 2) : ""}${notesOn(rightNotes, 5, 1)}<backup><duration>4</duration></backup>${notesOn(leftNotes, 3, 2)}</measure>`)
     let piece = await drillPiece(scoreOf("<score-part id=\"P1\"><part-name>Piano</part-name></score-part>",
       `<part id="P1">${bars.join("")}</part>`), {startMeasure: 1, endMeasure: 2, measuresPerCard: "1"})
@@ -1001,6 +1003,35 @@ describe("score page engine card", function() {
 
     let failed = (await store.reviews({pieceId: piece.id})).find(review => review.itemId == `${piece.id}:both:1-1`)
     expect([failed.grade, failed.staffMisses]).toEqual([1, {upper: 0, lower: 2}])
+
+    return {piece, generator}
+  }
+
+  it("counts no miss for the other hand's notes drawn beside a scaffold bar in scroll mode", async function() {
+    let {piece, generator} = await scaffoldedPiece()
+    expect(page.currentCard().card.hand).toEqual("lower")
+
+    // the whole section on one line, both staves drawn
+    flushSync(() => page.setMode("scroll"))
+    await cardDrawn()
+    expect(page.engineCard().staves).toBe(null)
+
+    // the bar played as engraved: the right hand's notes are drawn beside
+    // the card's own, so they are neither required nor a wrong key
+    let misses = page.state.stats.misses
+    leftNotes.forEach((step, idx) => play([`${rightNotes[idx]}5`, `${step}3`]))
+    await generator.finishing
+    flushSync(() => page.forceUpdate())
+
+    expect(page.state.stats.misses).toEqual(misses)
+    let alone = (await store.reviews({pieceId: piece.id}))
+      .find(review => review.itemId === `${piece.id}:lower:1-1`)
+    expect([alone.misses, alone.clean]).toEqual([0, leftNotes.length])
+    expect(alone.grade).toBeGreaterThan(1)
+  })
+
+  it("draws the left hand alone when today's programme offers a bar failing on its notes", async function() {
+    let {piece, generator} = await scaffoldedPiece()
 
     expect(generator.statusLine()).toEqual("Once more · bar 1 · left hand")
     expect(page.currentCard().card.hand).toEqual("lower")

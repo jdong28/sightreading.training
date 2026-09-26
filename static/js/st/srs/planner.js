@@ -14,9 +14,10 @@
 // 2. a review due today, lowest predicted recall first, after a warm-up of
 //    the two likeliest recalled;
 // 3. a new measure, the next in score order not yet seen, while fewer than
-//    LADDER_CAP items are on the ladder, new cards are at most half the cards
-//    played and the due reviews fit in REVIEW_SHARE of the time left to the
-//    target (with nothing else to do, up to IDLE_LADDER_CAP on the ladder).
+//    LADDER_CAP items are on the ladder, resting ones counted, new cards are
+//    at most half the cards played and the due reviews fit in REVIEW_SHARE of
+//    the time left to the target (with nothing else to do, up to
+//    IDLE_LADDER_CAP on the ladder).
 //    Once the first fifth of the target has passed, a new measure these
 //    limits allow goes ahead of the due reviews, so new material is
 //    interleaved with them rather than left until they are all done;
@@ -374,6 +375,8 @@ export function planState({
   }
 
   let awake = live.filter(item => !resting.has(item.startMeasure))
+  // the bars in progress, whether or not they rest: what the ladder holds
+  let laddered = live.filter(item => ON_LADDER.includes(item.state)).length
   let ladder = awake.filter(item => ON_LADDER.includes(item.state)).map(slotOf)
   let review = awake.filter(item => item.state == "review").map(slotOf)
   let dueReviews = review.filter(slot => slot.item.due < endOfToday)
@@ -391,7 +394,7 @@ export function planState({
 
   return {
     pieceId, hand, now, settings, order, byMeasure, recent, today, endOfToday,
-    live, ladder, review, dueReviews, unseen, resting, scaffolds, sitting,
+    live, ladder, laddered, review, dueReviews, unseen, resting, scaffolds, sitting,
     cardMs, targetMs, elapsedMs,
     complete: elapsedMs >= targetMs || (!ladder.length && !dueReviews.length && !unseen.length),
   }
@@ -431,7 +434,7 @@ function candidates(state, {avoid}) {
   let remainingMs = state.targetMs - state.elapsedMs
   let fits = dueReviews.length * state.cardMs <= REVIEW_SHARE * remainingMs
   let share = sitting.newCards <= NEW_SHARE * sitting.cards
-  let offerNew = ladder.length < cap && fits && (share || idle)
+  let offerNew = state.laddered < cap && fits && (share || idle)
   let newEntry = offerNew ? newMeasures.slice(0, 1).map(slot => ({reason: NEW, slot})) : []
 
   // past the warm-up fifth of the session, new material the limits allow is

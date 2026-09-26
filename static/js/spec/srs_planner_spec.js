@@ -186,6 +186,26 @@ describe("today's programme planner", function() {
       expect(entryOf(rungs(IDLE_LADDER_CAP), {measures})).toEqual([WAIT, 1])
     })
 
+    it("counts a bar resting toward the ladder cap, so no new bar takes its place", function() {
+      // four bars on the ladder, each failed three times in this sitting,
+      // with a review due: none of the four can be offered, but they are
+      // still the work in progress the cap counts
+      let failed = measure => ({
+        ...onLadder(measure, {due: NOW - MINUTE, grade: AGAIN}),
+        recent: [7, 6, 5].map(n => [NOW - n * MINUTE, 4, 0, AGAIN]),
+      })
+      let items = [...[1, 2, 3, 4].map(failed), inReview(5, {due: NOW - DAY})]
+      let {entry, state} = plan(items)
+
+      expect([...state.resting].sort()).toEqual([1, 2, 3, 4])
+      expect(state.ladder).toEqual([])
+      expect(state.laddered).toEqual(LADDER_CAP)
+      expect([entry.reason, entry.measure]).toEqual([REVIEW, 5])
+
+      // one fewer in progress and the next new measure comes through
+      expect(entryOf([...[1, 2, 3].map(failed), inReview(5, {due: NOW - DAY})])).toEqual([NEW, 4])
+    })
+
     it("offers new measures only while the due reviews fit in the time left", function() {
       // ten minutes into a twenty minute session, the reviews to come
       // interleaved with new material

@@ -283,6 +283,19 @@ export class PlanGenerator extends MeasureCardGenerator {
     return this.deck.summary()
   }
 
+  /**
+   * The notes of the card's bar the other hand plays, which a staff drawing
+   * the whole section draws beside a hand alone the scaffold offers
+   * @returns {string[]} empty while the card is the session's own hand
+   */
+  besideNotes() {
+    let entry = this.deck.entry
+    if (!entry || entry.hand == this.deck.sessionHand) { return [] }
+
+    let other = entry.hand == "upper" ? "lower" : "upper"
+    return this.deck.handCard(other, entry.measure).columns.flat()
+  }
+
   // the planner is told how the pass went before it plans the next card:
   // the items as its attempts leave them, graded now though the hit on the
   // last column is counted just after (see notePlayed), so it is taken as
