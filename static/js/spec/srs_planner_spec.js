@@ -664,12 +664,6 @@ describe("today's programme planner", function() {
           .withContext(name).toEqual(expected)
       }
 
-      // a study played with the left hand: those are its programme's own
-      // items, due however their bar stands hands together
-      let retired = [other, left, item(inReview(3, {due: NOW + 5 * DAY}))]
-      expect(mostOverduePiece({studies: [{...studies[0], hand: "lower"}, studies[1]], items: retired, now: NOW}))
-        .toEqual("p")
-
       // a hand the bar has held since its failure is retired too, though the
       // bar is still on the ladder: p keeps one due bar, so q wins on two
       let failing = item(onLadder(3, {due: NOW - DAY + 1000, last: NOW - DAY - 30 * MINUTE, grade: AGAIN}))
@@ -680,28 +674,19 @@ describe("today's programme planner", function() {
       expect(mostOverduePiece({studies, items: [...twoDue, failing, left], now: NOW})).toEqual("p")
     })
 
-    it("counts each piece by the hand its own study is played with", function() {
+    it("counts a piece practised with one hand alone", function() {
       let item = (fields, hand, pieceId) => ({...fields, pieceId, hand,
         id: itemId({pieceId, hand, startMeasure: fields.startMeasure, endMeasure: fields.endMeasure})})
 
-      // p is practised hands together, with one bar due; q is practised with
-      // the right hand, over bars in review from an earlier hands together
-      // phase, and has two right hand bars due
+      // p has one bar due hands together; q has only ever been played with
+      // the right hand, so its bars have no bar of their own to retire them
       let items = [
         item(inReview(1, {due: NOW - DAY}), "both", "p"),
-        ...[1, 2].map(m => item(inReview(m, {due: NOW + 5 * DAY}), "both", "q")),
-        ...[1, 2].map(m => item(inReview(m, {due: NOW - DAY}), "upper", "q")),
+        ...[1, 2].map(m => item(inReview(m, {due: NOW - DAY + 5000}), "upper", "q")),
       ]
-      let studies = [
-        {pieceId: "p", status: "learning", startedAt: 0},
-        {pieceId: "q", status: "learning", startedAt: 0, hand: "upper"},
-      ]
+      let studies = ["p", "q"].map(pieceId => ({pieceId, status: "learning", startedAt: 0}))
 
       expect(mostOverduePiece({studies, items, now: NOW})).toEqual("q")
-
-      // hands together, q's right hand items are scaffolds its bars retired
-      let together = [studies[0], {pieceId: "q", status: "learning", startedAt: 0}]
-      expect(mostOverduePiece({studies: together, items, now: NOW})).toEqual("p")
     })
 
     it("makes the programme the default in study", function() {
@@ -998,6 +983,80 @@ describe("today's programme on the staff", function() {
     expect(store.reviews).toHaveBeenCalled()
   })
 
+  // bar 1, failed twice running so its next rung is minutes off, with its
+  // misses split evenly across the staves so no hand is blamed
+  let barOneFailing = ({blame = {upper: 2, lower: 2}} = {}) => {
+    let at = time - 5 * MINUTE
+    let id = itemId({pieceId: piece.id, hand: "both", startMeasure: 1, endMeasure: 1})
+    return store.recordAttempt({
+      item: {
+        id, pieceId: piece.id, hand: "both", startMeasure: 1, endMeasure: 1,
+        level: "bar", state: "learning", step: 1, due: time + 5 * MINUTE, last: at, s: 1, d: 5,
+        reps: 2, lapses: 1, streak: 0, lastGrade: AGAIN, hits: 0, misses: 4, attempts: 2,
+        lastPracticed: at, elapsedMs: 4000, algo: 1, createdAt: at - MINUTE,
+        recent: [[at - MINUTE, 4, 0, AGAIN], [at, 4, 0, AGAIN]],
+      },
+      review: {
+        itemId: id, pieceId: piece.id, at, kind: "attempt", grade: AGAIN, was: "learning",
+        columns: 4, clean: 0, misses: 4, stuck: 0, skipped: 0, hesitations: 0, mode: "wait",
+        algo: 1, staffMisses: blame,
+      },
+    })
+  }
+
+  it("plans again from the log without dropping the card it never played", async function() {
+    let measures = pool()
+    await barOneFailing()
+
+    // bar 1 is failing and can split, so the deck reads the log; its review
+    // blames neither hand, so the plan it makes again is the same one
+    let deck = new PlanDeck(measures, {
+      pieceId: piece.id, cardMeasures: 1, store, now: () => time, ...handPools(),
+    })
+    expect(deck.entry).toEqual(jasmine.objectContaining({reason: NEW, measure: 0}))
+
+    await deck.ready
+    expect(deck.reviews.size).toEqual(1)
+    expect(deck.entry).toEqual(jasmine.objectContaining({reason: NEW, measure: 0}))
+  })
+
+  it("waits for the pass in progress before it plans again from the log", async function() {
+    let measures = pool()
+    await barOneFailing({blame: {upper: 0, lower: 4}})
+
+    // the log read is held up until the player is into the card
+    let landed
+    let reviews = await store.reviews({pieceId: piece.id})
+    spyOn(store, "reviews").and.returnValue(new Promise(resolve => { landed = resolve }))
+
+    // a card of two bars, so one column played leaves the pass in progress
+    let deck = new PlanDeck(measures, {
+      pieceId: piece.id, cardMeasures: 2, store, now: () => time, ...handPools(),
+    })
+    let generator = new PlanGenerator(deck, {now: () => time})
+    generators.push(generator)
+    let notes = new NoteList([], {generator})
+    notes.fillBuffer(8)
+
+    let entry = deck.entry
+    let card = generator.currentCard()
+    expect(entry).toEqual(jasmine.objectContaining({reason: NEW, measure: 0}))
+
+    time += 1000
+    notes = hit(notes, new NoteStats())
+    expect(generator.playing()).toBe(true)
+
+    landed(reviews)
+    expect(await generator.ready).toBe(false)
+
+    // the card the player is on is left alone, and the reviews are kept for
+    // the plan after it
+    expect(deck.entry).toEqual(entry)
+    expect(generator.currentCard()).toBe(card)
+    expect(deck.reviews.size).toEqual(1)
+    expect(deck.advance().scaffolds.get(1)).toEqual("lower")
+  })
+
   it("plans without the reviews when one of them is beyond the planner", async function() {
     let measures = pool()
     let {built, ...hands} = handPools()
@@ -1196,15 +1255,10 @@ describe("today's programme on the staff", function() {
     expect(reloaded.deck.entry).toEqual(entry)
   })
 
-  it("marks the piece maintaining once every measure is scheduled, under the hand it is played with", async function() {
+  it("marks the piece maintaining once every measure is scheduled", async function() {
     let {generator, notes} = await generatorFor(3)
     notes = await playCard({generator, notes}, new NoteStats())
-    expect(store.study(piece.id))
-      .toEqual(jasmine.objectContaining({status: "maintaining", hand: "both"}))
-
-    let left = await generatorFor(3, {hand: "lower"})
-    left.notes = await playCard(left, new NoteStats())
-    expect(store.study(piece.id).hand).toEqual("lower")
+    expect(store.study(piece.id)).toEqual(jasmine.objectContaining({status: "maintaining"}))
   })
 
   describe("settings", function() {

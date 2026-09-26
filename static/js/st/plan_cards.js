@@ -84,8 +84,14 @@ export class PlanDeck {
     // that can split is failing, planning again from it when it lands; its
     // own passes keep it up to date from there
     this.reviews = new Map()
+    // whether a card is being played, which the generator keeps up to date:
+    // the plan made again after the read waits rather than throw a pass away
+    this.playing = () => false
+
     if (this.advance().failing.size) {
-      this.ready = this.loadReviews().then(() => this.advance()).catch(err => this.planUnread(err))
+      this.ready = this.loadReviews()
+        .then(() => { if (!this.playing()) { this.advance(false) } })
+        .catch(err => this.planUnread(err))
     }
   }
 
@@ -99,7 +105,7 @@ export class PlanDeck {
     this.planned = true
 
     try {
-      this.advance()
+      this.advance(false)
     } catch (failed) {
       console.warn("Couldn't plan today's programme", failed)
     }
@@ -194,9 +200,16 @@ export class PlanDeck {
     }
   }
 
-  /** Moves on to the card of the planner's next entry */
-  advance() {
-    let {entry, state} = planNext({...this.planInput(), previous: this.entry && this.entry.itemId})
+  /**
+   * Moves on to the card of the planner's next entry
+   * @param {boolean} [played] whether the entry showing was played, which
+   * keeps the planner from offering it again at once; the plan made afresh
+   * after the log read has played nothing
+   * @returns {Object} the planner's state, see planState
+   */
+  advance(played=true) {
+    let previous = played && this.entry ? this.entry.itemId : null
+    let {entry, state} = planNext({...this.planInput(), previous})
     this.entry = entry
     this.index = entry ? this.measures.indexOf(entry.measure) : null
     this.planned = true
@@ -243,11 +256,25 @@ export class PlanGenerator extends MeasureCardGenerator {
   constructor(deck, opts) {
     super(deck, opts)
     this.lastCaption = null
-    // a deck that reads the log plans again when it lands, so the page
-    // shows the card it then picks (see refreshNoteList)
+    deck.playing = () => this.playing()
+    // a deck that reads the log plans again when it lands, unless a pass is
+    // in progress; it resolves to whether the page should fill the staff
+    // again from the card it then picks (see refreshNoteList)
     this.ready = deck.ready ? deck.ready
-      .then(() => this.startCard())
-      .catch(err => console.warn("Couldn't show today's first card", err)) : null
+      .then(() => {
+        if (this.playing()) { return false }
+        this.startCard()
+        return true
+      })
+      .catch(err => {
+        console.warn("Couldn't show today's first card", err)
+        return false
+      }) : null
+  }
+
+  /** @returns {boolean} whether the card showing has been played into */
+  playing() {
+    return !!this.pass && this.pass.touched
   }
 
   /**
@@ -381,20 +408,17 @@ export class PlanGenerator extends MeasureCardGenerator {
   }
 
   // The piece is in study once a card of its programme is played: learning
-  // until each of its measures has been scheduled, then maintaining, with the
-  // hand it is played with, which mostOverduePiece counts its due items by
+  // until each of its measures has been scheduled, then maintaining
   markStudy(time) {
     let store = this.deck.getStore()
     let study = store.study(this.deck.pieceId)
     let status = this.deck.studyStatus()
-    let hand = this.deck.sessionHand
-    if (study && (study.status == "shelved" || (study.status == status && study.hand == hand))) { return }
+    if (study && (study.status == status || study.status == "shelved")) { return }
 
     this.studying = Promise.resolve(this.studying).then(() => store.putStudy({
       ...study,
       pieceId: this.deck.pieceId,
       status,
-      hand,
       startedAt: study ? study.startedAt : time,
     })).catch(err => console.warn("Couldn't save the study", err))
   }

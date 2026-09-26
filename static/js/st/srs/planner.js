@@ -542,11 +542,10 @@ export function studyStatus(input) {
 /**
  * Which piece in study most needs practice: the one with the most single
  * measures due by the end of today, the earliest due first on a tie; null
- * when nothing is due. Each piece is counted by the hand its own study is
- * played with (hands together by default): its programme's items, hands
- * together and that hand, plus a bar's other hand alone while its bar is in
- * trouble hands together and the hand has not held since. A hand alone left
- * over from a retired scaffold never flags its piece.
+ * when nothing is due. A bar's hand alone counts while the bar has no
+ * schedule hands together of its own, or while that bar is in trouble and
+ * the hand has not held since: a hand alone left over from a retired
+ * scaffold never flags its piece.
  * @param {Object} opts
  * @param {StudyRecord[]} opts.studies
  * @param {ItemRecord[]} opts.items every piece's
@@ -555,17 +554,16 @@ export function studyStatus(input) {
  */
 export function mostOverduePiece({studies, items, now}) {
   let endOfToday = dayStart(localDay(now) + 1)
-  let studied = new Map(studies.filter(study => STUDYING.includes(study.status))
-    .map(study => [study.pieceId, study.hand || "both"]))
+  let studied = new Set(studies.filter(study => STUDYING.includes(study.status)).map(s => s.pieceId))
 
   let best = null
-  for (let [pieceId, hand] of studied) {
+  for (let pieceId of studied) {
     let bars = items.filter(item => item.pieceId == pieceId && item.startMeasure == item.endMeasure &&
       !item.beats)
     let together = new Map(bars.filter(item => item.hand == "both").map(item => [item.startMeasure, item]))
 
     let offered = item => {
-      if (item.hand == "both" || item.hand == hand) { return true }
+      if (item.hand == "both") { return true }
       let bar = together.get(item.startMeasure)
       if (!bar || !scheduled(bar)) { return true }
 

@@ -655,8 +655,8 @@ export default class SightReadingPage extends React.Component {
     // today's programme reads the log when a bar that can split is failing,
     // so the staff is filled again from the card it then picks
     if (!keepGenerator && generatorInstance.ready) {
-      generatorInstance.ready.then(() => {
-        if (!this.unmounted && this.state.notes?.generator == generatorInstance) {
+      generatorInstance.ready.then(replanned => {
+        if (replanned && !this.unmounted && this.state.notes?.generator == generatorInstance) {
           this.refreshNoteList(generatorInstance)
         }
       })

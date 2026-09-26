@@ -128,8 +128,6 @@ export const RECENT_ATTEMPTS = 5
  * @property {string} pieceId
  * @property {string} status one of STUDY_STATUSES
  * @property {number} startedAt
- * @property {string} [hand] one of HANDS, the hand the piece's programme was
- * last played with, hands together when absent
  * @property {Object} [map] {algo, basis: "musicxml"|"song", computedAt,
  * measures, numbersHash, phrases: [start, end][], sections: [start, end][],
  * strengths: number[], edited}
@@ -231,7 +229,6 @@ export function validStudy(study) {
   return !!study && typeof study == "object" &&
     typeof study.pieceId == "string" && study.pieceId != "" &&
     STUDY_STATUSES.includes(study.status) && isTime(study.startedAt) &&
-    optional(study.hand, hand => HANDS.includes(hand)) &&
     optional(study.map, map => !!map && typeof map == "object")
 }
 
