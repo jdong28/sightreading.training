@@ -455,6 +455,27 @@ describe("today's programme planner", function() {
       expect(entryIn([again, ...held], {lastReviews: blame(ago(2), 0, 2)})).toEqual([LADDER, 3, "lower"])
     })
 
+    it("offers a hand alone on its own schedule once it has been played since the failure", function() {
+      let failed = graded(3, [[ago(10), AGAIN]])
+      let reviews = blame(ago(10), 0, 3)
+
+      // the left hand alone graduated before the bar failed, so the failure
+      // sends the bar to it at once, however far off its own review is
+      let waiting = graded(3, [[NOW - 3 * DAY, EASY]], "lower")
+      expect(waiting.state).toEqual("review")
+      expect(waiting.due).toBeGreaterThan(NOW)
+      expect(entryIn([failed, waiting], {lastReviews: reviews})).toEqual([LADDER, 3, "lower"])
+
+      // played since the failure and graded hard: it still holds the bar,
+      // but comes back when its own schedule says rather than at once
+      let hard = graded(3, [[NOW - 3 * DAY, EASY], [ago(5), HARD]], "lower")
+      expect([hard.state, hard.lastGrade]).toEqual(["review", HARD])
+      let {entry, state} = planned([failed, hard], {lastReviews: reviews})
+      expect(state.scaffolds.get(3)).toEqual("lower")
+      expect(state.ladder.find(slot => slot.measure == 3).due).toEqual(hard.due)
+      expect(entry.measure).not.toEqual(3)
+    })
+
     it("rests a bar failing a third time in a sitting until the next", function() {
       let rows = [
         ["failed together, then twice alone", [[ago(10), AGAIN]], [[ago(8), AGAIN], [ago(6), AGAIN]], true],

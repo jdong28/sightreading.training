@@ -18,28 +18,6 @@ import {
   entryStatus, cardCaption, WAIT,
 } from "st/srs/planner"
 
-// the last graded review known of each item of a piece, by store then piece
-// id then item id, which the hand scaffold reads the blamed hand from: read
-// from the log whenever a deck is made (reviews are never cached, and free
-// practice writes them too) and kept up to date by the attempts the deck
-// plans from
-const knownReviews = new WeakMap()
-
-function reviewsKnown(store, pieceId) {
-  let pieces = knownReviews.get(store)
-  if (!pieces) {
-    pieces = new Map()
-    knownReviews.set(store, pieces)
-  }
-
-  let reviews = pieces.get(pieceId)
-  if (!reviews) {
-    reviews = new Map()
-    pieces.set(pieceId, reviews)
-  }
-  return reviews
-}
-
 // keeps the later of each item's graded reviews
 function learnReviews(known, reviews) {
   for (let review of reviews) {
@@ -95,10 +73,11 @@ export class PlanDeck {
     // reviews are still being read
     this.planned = false
 
-    // the hand scaffold reads the blamed hand from the log, so a card is
-    // planned only once the piece's reviews have been read afresh: anything
-    // else on the page (free practice) writes them too
-    this.reviews = reviewsKnown(this.getStore(), pieceId)
+    // the last graded review known of each of the piece's items, by item id,
+    // which the hand scaffold reads the blamed hand from: read from the log
+    // (reviews are never cached, and free practice writes them too) before
+    // this deck plans a card, then kept up to date by its own passes
+    this.reviews = new Map()
     this.ready = this.loadReviews().then(() => this.advance())
   }
 
