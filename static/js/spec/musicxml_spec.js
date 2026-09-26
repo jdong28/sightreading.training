@@ -950,6 +950,15 @@ describe("musicxml ornaments", function() {
     expect(ornaments(song)).toEqual([["C5", 0, {neighbours: ["D5"], trill: true, at: 4}]])
   })
 
+  it("keeps a trill written on a tie's first note over the whole tie, wavy line and all", function() {
+    let song = parseMusicXML(tiedTrillScore({span: true}))
+
+    expect(tuples(song.tracks[0])).toEqual([["C5", 0, 8]])
+    // the trill mark is written in bar 1 and its wavy line runs to the
+    // continuation, so the merged note is trilled from its own start
+    expect(ornaments(song)).toEqual([["C5", 0, {neighbours: ["D5"], trill: true}]])
+  })
+
   it("keeps the ornaments of the notes a tie merges", function() {
     let song = parseMusicXML(partwise(`
 <measure number="1">

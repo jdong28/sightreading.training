@@ -217,11 +217,16 @@ export const nocturneBars5to6 = () => {
 }
 
 // Two 4/4 bars in C major whose right hand holds C5 tied across the barline,
-// with the trill written on the continuation in bar 2, over the left hand's
-// quarters G3 A3 B3 C4 in each bar
-export const tiedTrillScore = () => {
+// over the left hand's quarters G3 A3 B3 C4 in each bar. The trill is written
+// on the continuation in bar 2, or with span on bar 1's note, its wavy line
+// running from there to the continuation
+export const tiedTrillScore = ({span=false}={}) => {
   let quarters = () => ["G", "A", "B", "C"].map((step, idx) =>
     noteXML(step, idx == 3 ? 4 : 3, 1, 2, "<voice>5</voice>")).join("")
+
+  let ornaments = marks => `<notations><ornaments>${marks}</ornaments></notations>`
+  let wavy = type => `<wavy-line type="${type}" number="1"/>`
+  let tie = type => `<voice>1</voice><tie type="${type}"/>`
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <score-partwise version="4.0">
@@ -229,12 +234,12 @@ export const tiedTrillScore = () => {
   <part id="P1">
     <measure number="1">
       <attributes><divisions>1</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><staves>2</staves><clef number="1"><sign>G</sign><line>2</line></clef><clef number="2"><sign>F</sign><line>4</line></clef></attributes>
-      ${noteXML("C", 5, 4, 1, "<voice>1</voice><tie type=\"start\"/>")}
+      ${noteXML("C", 5, 4, 1, tie("start") + (span ? ornaments(`<trill-mark/>${wavy("start")}`) : ""))}
       <backup><duration>4</duration></backup>
       ${quarters()}
     </measure>
     <measure number="2">
-      ${noteXML("C", 5, 4, 1, "<voice>1</voice><tie type=\"stop\"/><notations><ornaments><trill-mark/></ornaments></notations>")}
+      ${noteXML("C", 5, 4, 1, tie("stop") + ornaments(span ? wavy("stop") : "<trill-mark/>"))}
       <backup><duration>4</duration></backup>
       ${quarters()}
     </measure>

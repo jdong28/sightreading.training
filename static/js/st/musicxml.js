@@ -710,8 +710,10 @@ function scoreTitle(root) {
 // slip (see column.allowed in st/song_sections). An ornament written on a
 // tie's continuation, at, sounds from there on rather than over the whole
 // merged note: note.ornaments.at, the beat its neighbours start at, kept only
-// when that is past the note's own start
+// when no segment before it carried an ornament of its own
 function addOrnaments(note, event, at) {
+  let ornamented = !!(note.ornaments && note.ornaments.neighbours)
+
   for (let field of ["graces", "neighbours"]) {
     let names = event[field]
     if (!names || !names.length) { continue }
@@ -727,7 +729,7 @@ function addOrnaments(note, event, at) {
     note.ornaments.trill = true
   }
 
-  if (at > note.start && note.ornaments.at == null) {
+  if (at > note.start && !ornamented) {
     note.ornaments.at = at
   }
 }

@@ -276,6 +276,18 @@ describe("song sections", function() {
       ])
     })
 
+    it("allows a trill whose wavy line carries it across a tie over both bars", function() {
+      let columns = extractSectionColumns(parseMusicXML(tiedTrillScore({span: true})),
+        {startMeasure: 1, endMeasure: 2, notation: true})
+
+      // the trill is written in bar 1, so it is allowed there too: only the
+      // column that plays C5 leaves it out, as that column requires it
+      expect(allowances(columns)).toEqual([
+        [["G3", "C5"], ["D5"]],
+        ...["A3", "B3", "C4", "G3", "A3", "B3", "C4"].map(note => [[note], ["C5", "D5"]]),
+      ])
+    })
+
     it("keeps a column's allowances through the range filter and the generator's copies", function() {
       let column = Object.assign(["C2", "C4"], {allowed: ["D4"]})
       let [[kept]] = filterColumnsToRange([column], "C3", "C6")
