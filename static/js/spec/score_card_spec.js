@@ -952,6 +952,268 @@ describe("score page engine card", function() {
   <part id="P2"><measure number="1">${attributes([["F", 4]], 1)}${notesOn(leftNotes, 3, 1)}</measure></part>`),
   }
 
+  // the page's card drawn again, to read what the engine drew
+  let drawnAgain = async () => {
+    let join
+    let props = page.engineCard()
+    let own = document.createElement("div")
+    own.style.width = "1100px"
+    document.body.appendChild(own)
+    let ownRoot = createRoot(own)
+    try {
+      flushSync(() => ownRoot.render(React.createElement(ScoreCard, {
+        ...props, onDrawn: drawn => join = drawn,
+      })))
+      await waitFor(() => join, {message: "the card drawn again"})
+    } finally {
+      flushSync(() => ownRoot.unmount())
+      own.remove()
+    }
+    return join
+  }
+
+  // a two bar piano piece whose bar 1 fails hands together on one staff, so
+  // today's programme offers that bar as that hand alone
+  let scaffoldedPiece = async (right = rightNotes.map(step => `${step}5`), props = {}, blame = "lower") => {
+    let left = leftNotes.map(step => `${step}3`)
+    let rightXML = right.map(name => noteXML(name.slice(0, -1), Number(name.slice(-1)), 1, 1)).join("")
+    let bars = [1, 2].map(number => `<measure number="${number}">${number == 1 ? attributes([["G", 2], ["F", 4]], 2) : ""}${rightXML}<backup><duration>4</duration></backup>${notesOn(leftNotes, 3, 2)}</measure>`)
+    let piece = await drillPiece(scoreOf("<score-part id=\"P1\"><part-name>Piano</part-name></score-part>",
+      `<part id="P1">${bars.join("")}</part>`), {startMeasure: 1, endMeasure: 2, measuresPerCard: "1"})
+    await store.putStudy({pieceId: piece.id, status: "learning", startedAt: Date.now()})
+    renderScorePage(props)
+    await cardDrawn()
+
+    flushSync(() => page.beginSession())
+    let generator = page.state.notes.generator
+    expect(generator.statusLine()).toEqual("New · bar 1")
+
+    // a wrong key under the other hand's note on each of two columns: the
+    // blamed hand's notes are the untouched ones, and the bar fails
+    let [touched, untouched] = blame == "lower" ? [right, left] : [left, right]
+    for (let idx of [0, 1]) {
+      flushSync(() => page.pressNote(touched[idx]))
+      flushSync(() => page.pressNote("A#2"))
+      flushSync(() => page.releaseNote("A#2"))
+      flushSync(() => page.pressNote(untouched[idx]))
+      flushSync(() => page.releaseNote(untouched[idx]))
+      flushSync(() => page.releaseNote(touched[idx]))
+    }
+    play([left[2], right[2]])
+    play([left[3], right[3]])
+    await generator.finishing
+    flushSync(() => page.forceUpdate())
+
+    let failed = (await store.reviews({pieceId: piece.id})).find(review => review.itemId == `${piece.id}:both:1-1`)
+    expect([failed.grade, failed.staffMisses])
+      .toEqual([1, blame == "lower" ? {upper: 0, lower: 2} : {upper: 2, lower: 0}])
+
+    return {piece, generator, left, right}
+  }
+
+  // the scaffolded piece's music with a third part its stored song doesn't
+  // know, so the score can't say which of its staves a hand alone reads
+  let strangerSource = () => {
+    let part = (id, clef, notes) => `<part id="${id}">${[1, 2].map(number =>
+      `<measure number="${number}">${number == 1 ? attributes([clef], 1) : ""}${notes}</measure>`)
+      .join("")}</part>`
+    return scoreOf(
+      ["P1", "P2", "P3"].map(id =>
+        `<score-part id="${id}"><part-name>${id}</part-name></score-part>`).join(""),
+      [part("P1", ["G", 2], notesOn(rightNotes, 5, 1)),
+        part("P2", ["F", 4], notesOn(leftNotes, 3, 1)),
+        part("P3", ["G", 2], notesOn(rightNotes, 6, 1))].join("\n  "))
+  }
+
+  it("engraves a right hand alone once, however often the page renders", async function() {
+    await scaffoldedPiece(undefined, {}, "upper")
+    expect(page.currentCard().card.hand).toEqual("upper")
+    await cardDrawn()
+
+    // the drawn card follows the drill through its join, so the renders a
+    // played key brings must not engrave it again
+    let drawn = page.staff.drawCount
+    let join = page.staff.cardJoin
+    expect(join).not.toBe(null)
+
+    flushSync(() => page.forceUpdate())
+    flushSync(() => page.forceUpdate())
+
+    expect(page.staff.drawCount).toEqual(drawn)
+    expect(page.staff.cardJoin).toBe(join)
+  })
+
+  it("offers the hand alone on a piece with no stored source", async function() {
+    await scaffoldedPiece()
+    expect(page.currentCard().card.hand).toEqual("lower")
+
+    // the page is opened again on the piece, whose source is no longer
+    // stored; its reviews land while that read is still outstanding
+    flushSync(() => root.unmount())
+    container.remove()
+    let settle
+    renderScorePage({readSource: () => new Promise(resolve => { settle = () => resolve(null) })})
+
+    let loading = await waitFor(() => page.state.notes && page.state.notes.generator,
+      {message: "today's programme"})
+    await loading.ready
+    flushSync(() => {})
+    expect(page.state.engineSource.status).toEqual("loading")
+    expect(page.currentCard().card.hand).toBeUndefined()
+
+    // the app's staff draws the piece, and it can draw one hand by itself,
+    // so the failing bar comes back as the hand its misses were blamed on
+    settle()
+    await waitFor(() => page.currentCard() && page.currentCard().card.hand,
+      {message: "the bar offered as one hand alone"})
+
+    expect(page.state.engineSource.status).toEqual("missing")
+    expect(page.engineCard()).toBe(null)
+    expect(page.currentCard().card.hand).toEqual("lower")
+    expect([...page.state.notes.currentColumn()]).toEqual(["C3"])
+    expect(page.state.notes.generator.statusLine()).toEqual("Once more · bar 1 · left hand")
+  })
+
+  it("offers no hand alone before the piece's source has settled", async function() {
+    let {piece} = await scaffoldedPiece()
+    expect(page.currentCard().card.hand).toEqual("lower")
+
+    // the page is opened again on the same piece, whose stored source has a
+    // part its song doesn't know; its reviews land while the source is
+    // still being read, so the first plan doesn't know what can be drawn
+    flushSync(() => root.unmount())
+    container.remove()
+    let settle
+    renderScorePage({readSource: () => new Promise(resolve => { settle = () => resolve(strangerSource()) })})
+
+    let generator = await waitFor(() => page.state.notes && page.state.notes.generator,
+      {message: "today's programme"})
+    await generator.ready
+    flushSync(() => {})
+    expect(page.state.engineSource.status).toEqual("loading")
+    expect(page.currentCard().card.hand).toBeUndefined()
+
+    // the source settles, and the bar the engine can't split stays together
+    settle()
+    await waitFor(() => page.state.engineSource.status != "loading", {message: "the piece's source"})
+    expect(page.state.engineSource.status).toEqual("ready")
+    expect(page.currentCard().card.hand).toBeUndefined()
+    expect(await store.reviews({pieceId: piece.id})).not.toEqual([])
+  })
+
+  it("never offers a hand alone when the score can't tell that hand's staves", async function() {
+    let source = strangerSource()
+    let {piece, generator, left, right} = await scaffoldedPiece(undefined, {readSource: () => Promise.resolve(source)})
+
+    // bar 1 failed on the bass staff, but the engine can't draw that hand by
+    // itself here, so it comes back hands together on the piece's own source
+    expect(page.state.engineSource.status).toEqual("ready")
+    expect(page.state.engineSource.trackStaves.length).toEqual(3)
+    expect(page.currentCard().card.hand).toBeUndefined()
+    expect(generator.statusLine()).toEqual("Once more · bar 1")
+    expect(page.engineCard()).not.toBe(null)
+    expect(page.engineCard().staves).toBe(null)
+    expect([...page.state.notes.currentColumn()]).toEqual([left[0], right[0]])
+
+    // both hands are asked for, and the pass is written to the bar's item
+    left.forEach((note, idx) => play([note, right[idx]]))
+    await generator.finishing
+    flushSync(() => page.forceUpdate())
+
+    let reviews = await store.reviews({pieceId: piece.id})
+    expect(reviews.filter(review => review.itemId == `${piece.id}:lower:1-1`)).toEqual([])
+    expect(reviews.filter(review => review.itemId == `${piece.id}:both:1-1`).length).toEqual(2)
+  })
+
+  it("draws the left hand alone when today's programme offers a bar failing on its notes", async function() {
+    let {piece, generator} = await scaffoldedPiece()
+
+    expect(generator.statusLine()).toEqual("Once more · bar 1 · left hand")
+    expect(page.currentCard().card.hand).toEqual("lower")
+    expect([...page.state.notes.currentColumn()]).toEqual(["C3"])
+    expect(page.engineCard().staves).not.toBe(null)
+
+    let join = await drawnAgain()
+    expect(join.join.unmatched).toEqual([])
+    expect(join.result.notes.map(note => note.pitch).sort())
+      .toEqual(leftNotes.map(step => parseNote(`${step}3`)).sort())
+
+    // the left hand alone is written to its own item
+    for (let step of leftNotes) {
+      play([`${step}3`])
+    }
+    await generator.finishing
+    expect(store.item(`${piece.id}:lower:1-1`)).not.toBe(null)
+  })
+
+  it("keeps the grade of a pass the drill leaves and returns to the same mode", async function() {
+    let left = leftNotes.map(step => `${step}3`)
+    let right = rightNotes.map(step => `${step}5`)
+    let bars = [1, 2].map(number => `<measure number="${number}">${number == 1 ? attributes([["G", 2], ["F", 4]], 2) : ""}${notesOn(rightNotes, 5, 1)}<backup><duration>4</duration></backup>${notesOn(leftNotes, 3, 2)}</measure>`)
+    let piece = await drillPiece(scoreOf("<score-part id=\"P1\"><part-name>Piano</part-name></score-part>",
+      `<part id="P1">${bars.join("")}</part>`), {startMeasure: 1, endMeasure: 2, measuresPerCard: "1"})
+    await store.putStudy({pieceId: piece.id, status: "learning", startedAt: Date.now()})
+    renderScorePage()
+    await cardDrawn()
+
+    flushSync(() => page.beginSession())
+    let generator = page.state.notes.generator
+    expect(page.currentCard().card.hand).toBeUndefined()
+
+    // half the bar hands together, then the drill scrolls and waits again:
+    // the card never leaves, so the pass it is collecting doesn't either
+    play([left[0], right[0]])
+    play([left[1], right[1]])
+
+    flushSync(() => page.setMode("scroll"))
+    await cardDrawn()
+    flushSync(() => page.setMode("wait"))
+    await cardDrawn()
+
+    expect(page.currentCard().card.hand).toBeUndefined()
+    play([left[2], right[2]])
+    play([left[3], right[3]])
+    await generator.finishing
+    flushSync(() => page.forceUpdate())
+
+    let graded = (await store.reviews({pieceId: piece.id}))
+      .filter(review => review.itemId == `${piece.id}:both:1-1` && review.grade)
+    expect(graded.length).toEqual(1)
+  })
+
+  it("returns a failing bar hands together when the drill scrolls", async function() {
+    let {piece, generator} = await scaffoldedPiece()
+    expect(page.currentCard().card.hand).toEqual("lower")
+
+    flushSync(() => page.setMode("scroll"))
+    await cardDrawn()
+
+    // the hand scaffold is offered in wait mode alone, so the bar comes
+    // back hands together and both staves are asked for again
+    expect(page.currentCard().card.hand).toBeUndefined()
+    expect(generator.statusLine()).toEqual("Once more · bar 1")
+    expect([...page.state.notes.currentColumn()]).toEqual(["C3", "E5"])
+    expect(page.engineCard().staves).toBe(null)
+
+    // the whole section on one line, as the slider moves along for any card
+    let system = await drawnAgain()
+    let distinct = pitches => [...new Set(pitches)].sort((a, b) => a - b)
+    expect(distinct(system.result.notes.map(note => note.pitch))).toEqual(distinct([
+      ...leftNotes.map(step => parseNote(`${step}3`)),
+      ...rightNotes.map(step => parseNote(`${step}5`)),
+    ]))
+
+    // played hands together, the pass is written to the bar's own item and
+    // nothing more is written to the hand's
+    leftNotes.forEach((step, idx) => play([`${step}3`, `${rightNotes[idx]}5`]))
+    await generator.finishing
+    flushSync(() => page.forceUpdate())
+
+    let reviews = await store.reviews({pieceId: piece.id})
+    expect(reviews.filter(review => review.itemId == `${piece.id}:lower:1-1`)).toEqual([])
+    expect(reviews.filter(review => review.itemId == `${piece.id}:both:1-1`).length).toEqual(2)
+  })
+
   for (let [shape, xml] of Object.entries(SCORE_SHAPES)) {
     for (let [hand, pitches] of [
       [RIGHT_HAND, rightNotes.map(step => parseNote(`${step}5`))],
@@ -962,23 +1224,7 @@ describe("score page engine card", function() {
         renderScorePage()
         await cardDrawn()
 
-        // the page's card drawn again, to read what the engine drew
-        let join
-        let props = page.engineCard()
-        let own = document.createElement("div")
-        own.style.width = "1100px"
-        document.body.appendChild(own)
-        let ownRoot = createRoot(own)
-        try {
-          flushSync(() => ownRoot.render(React.createElement(ScoreCard, {
-            ...props, onDrawn: drawn => join = drawn,
-          })))
-          await waitFor(() => join, {message: "the card drawn again"})
-        } finally {
-          flushSync(() => ownRoot.unmount())
-          own.remove()
-        }
-
+        let join = await drawnAgain()
         expect(join.join.unmatched).toEqual([])
         expect(join.join.heads.every(heads => heads.length > 0)).toBe(true)
         expect(join.result.notes.map(note => note.pitch).sort()).toEqual([...pitches].sort())

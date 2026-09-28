@@ -164,18 +164,50 @@ export function drilledRange(settings) {
   return {startMeasure: settings.startMeasure, endMeasure: settings.endMeasure}
 }
 
+// The bars of the drilled measures each hand alone has notes in, read from
+// the columns' own staves (what a miss is blamed on), so the hand scaffold
+// only ever splits a bar the drill could blame that hand for
+function handMeasuresOf(measures) {
+  let bars = {upper: [], lower: []}
+
+  for (let {number, columns} of measures) {
+    for (let staff of Object.keys(bars)) {
+      if (columns.some(column => column.staves && column.staves.includes(staff))) {
+        bars[staff].push(number)
+      }
+    }
+  }
+
+  return bars
+}
+
 // The programme's generator for the settings: the piece's measures as
 // planned cards (st/plan_cards), or null for a piece without notes on the
-// staff
+// staff. Played hands together on a piece with a staff per hand, the deck can
+// ask for one bar of one hand's notes alone for the hand scaffold (see
+// st/srs/planner), which is drawn from the score only when a bar is offered
 export function planGenerator(staff, settings) {
   let piece = sheetMusicPiece(settings)
   let song = piece && pieceSong(piece)
   if (!song) { return null }
 
   let [startMeasure, endMeasure] = measureNumberRange(song)
-  let measures = pieceSectionMeasures(staff, {...settings, startMeasure, endMeasure}, song)
+  let whole = {...settings, startMeasure, endMeasure}
+  let measures = pieceSectionMeasures(staff, whole, song)
+  let hand = itemHand(settings.hand)
+  let staves = staffTracks(song)
+  let apart = hand == "both" && staves.treble.length && staves.bass.length
+
+  let handCard = (side, number) => pieceSectionMeasures(staff, {
+    ...whole, startMeasure: number, endMeasure: number, hand: handSetting(side),
+  }, song)[0]
+
   let deck = new PlanDeck(measures, {
-    pieceId: piece.id, hand: itemHand(settings.hand), cardMeasures: planCardMeasures(settings),
+    pieceId: piece.id,
+    hand,
+    handMeasures: apart ? handMeasuresOf(measures) : null,
+    handCard: apart ? handCard : null,
+    cardMeasures: planCardMeasures(settings),
   })
 
   return deck.playable ? new PlanGenerator(deck) : null
@@ -191,6 +223,18 @@ export function itemHand(hand) {
       return "lower"
     default:
       return "both"
+  }
+}
+
+// the hand setting that practices the items of an item hand, see itemHand
+export function handSetting(hand) {
+  switch (hand) {
+    case "upper":
+      return RIGHT_HAND
+    case "lower":
+      return LEFT_HAND
+    default:
+      return BOTH_HANDS
   }
 }
 

@@ -12,7 +12,7 @@ import staffStyles from "st/components/staff.module.css"
 
 import {noteName, parseNote} from "st/music"
 import {
-  STAVES, GENERATORS, sheetMusicPiece, handTracks, drilledRange, sectionDroppedPitches, RIGHT_HAND, LEFT_HAND,
+  STAVES, GENERATORS, sheetMusicPiece, handTracks, handSetting, drilledRange, sectionDroppedPitches, RIGHT_HAND, LEFT_HAND,
 } from "st/data"
 import {pieceSong, pieceSource} from "st/sheet_music_deck"
 import {parseMusicXML} from "st/musicxml"
@@ -304,6 +304,17 @@ export default class SightReadingPage extends React.Component {
       }
     }
 
+    // today's programme offers a hand alone in wait mode alone, so a bar the
+    // scaffold split returns hands together once the drill scrolls, taking
+    // the practice of the pass the card it leaves was collecting
+    let playing = this.state.notes && this.state.notes.generator
+    if (prevState.mode != this.state.mode && playing && playing.replanning && playing.replanning()) {
+      this.flushPractice(playing)
+      if (playing.replan()) {
+        this.refreshNoteList(playing)
+      }
+    }
+
     // a rebuilt drill abandons the pass the old generator was collecting
     let before = prevState.notes && prevState.notes.generator
     if (before && before != (this.state.notes && this.state.notes.generator)) {
@@ -323,9 +334,9 @@ export default class SightReadingPage extends React.Component {
 
     this.loadEngineSource()
 
-    // a card whose columns can't be joined (a piece stored without the
-    // score's rhythm), or whose hand's staves can't be told in the score, is
-    // drawn by the app's staff
+    // a piece whose columns can't be joined (stored without the score's
+    // rhythm), or whose drilled hand's staves can't be told in the score, is
+    // drawn by the app's staff throughout
     let current = this.engineCards() && this.currentCard()
     if (current && (!joinable(current.card.columns) || this.engineStaves() === undefined)) {
       this.setState({engineSource: {...this.state.engineSource, status: "failed"}})
@@ -333,8 +344,13 @@ export default class SightReadingPage extends React.Component {
     }
 
     // whole-keyboard detection (T1) depends on whether the engine actually
-    // draws the piece; rebuild the columns when that changes
-    if (drewBefore != this.engineCards()) {
+    // draws the piece, and today's programme offers a hand alone only once
+    // the staff that draws it is known (see handsApart): rebuild the drill
+    // when the source settles, whatever it settles to, and whenever the
+    // engine takes the piece over or hands it back
+    let settled = prevState.engineSource?.status == "loading" &&
+      this.state.engineSource?.status != "loading"
+    if (settled || drewBefore != this.engineCards()) {
       this.refreshNoteList()
     }
   }
@@ -427,13 +443,20 @@ export default class SightReadingPage extends React.Component {
     return source.status == "loading" || (this.engineCards() && !this.state.staffWidth)
   }
 
-  // The score staves the drill's tracks read, the ones the engine draws:
-  // null for every staff, undefined when the stored song's tracks can't be
-  // told among the score's
-  engineStaves() {
+  // The hand setting the card at the head is drawn with: the hand alone
+  // today's programme offers it as, else the settings'
+  cardHand() {
+    let current = this.currentCard()
+    let hand = current && current.card.hand
+    return hand ? handSetting(hand) : this.currentSettings().hand
+  }
+
+  // The score staves a hand setting's tracks read: null for every staff,
+  // undefined when the stored song's tracks can't be told among the score's
+  handStaves(hand) {
     let settings = this.currentSettings()
     let song = pieceSong(sheetMusicPiece(settings))
-    let tracks = handTracks(song, settings.hand)
+    let tracks = handTracks(song, hand)
     if (!tracks) { return null }
 
     let all = this.state.engineSource?.trackStaves
@@ -446,6 +469,28 @@ export default class SightReadingPage extends React.Component {
       }
     }
     return cache.staves
+  }
+
+  // The staves the engine draws: the card's own hand, the session's unless
+  // today's programme offers the card as one hand alone
+  engineStaves() {
+    return this.handStaves(this.cardHand())
+  }
+
+  // Whether a bar may be offered as one hand alone (the hand scaffold of
+  // today's programme): only where the staff drawing the cards can draw one
+  // hand of the piece by itself, which the engine can't where the score
+  // can't tell that hand's staves from the rest. Nothing is offered apart
+  // until the piece's source has settled and the staff is known. Read on
+  // every plan, so it leaves the one slot of the staves cache to the card
+  // being drawn
+  handsApart() {
+    let source = this.state.engineSource
+    if (this.programme.engine && (!source || source.status == "loading")) { return false }
+    if (!this.engineCards()) { return true }
+
+    let song = pieceSong(sheetMusicPiece(this.currentSettings()))
+    return !!(song && source.trackStaves && source.trackStaves.length == song.tracks.length)
   }
 
   // The engine card's props for the card at the head of the drill, or null
@@ -586,8 +631,10 @@ export default class SightReadingPage extends React.Component {
   }
 
   // This generates a new set of notes, appropriate for when the generator or
-  // generator parameters have changed in some say
-  refreshNoteList() {
+  // generator parameters have changed in some say. Pass the drill on the
+  // staff to fill it again from that same drill rather than build it afresh,
+  // eg. once today's programme has a card to show
+  refreshNoteList(keepGenerator=null) {
     let generator = this.state.currentGenerator
 
     let generatorSettings = {
@@ -599,7 +646,7 @@ export default class SightReadingPage extends React.Component {
     }
 
     let staff = this.columnStaff()
-    let generatorInstance = generator.create.call(
+    let generatorInstance = keepGenerator || generator.create.call(
       generator,
       staff,
       this.state.keySignature,
@@ -609,8 +656,24 @@ export default class SightReadingPage extends React.Component {
       sectionDroppedPitches(staff, generatorSettings) : new Set()
 
     // the measure cards grade each pass by the drill it is played in
-    if (generatorInstance.setDrill) {
+    if (!keepGenerator && generatorInstance.setDrill) {
       generatorInstance.setDrill(() => ({mode: this.state.mode, speed: this.state.scrollSpeed}))
+    }
+
+    // today's programme offers a bar as one hand alone only where the staff
+    // drawing it can draw that hand by itself
+    if (!keepGenerator && generatorInstance.setHandsApart) {
+      generatorInstance.setHandsApart(() => this.handsApart())
+    }
+
+    // today's programme reads the log when a bar that can split is failing,
+    // so the staff is filled again from the card it then picks
+    if (!keepGenerator && generatorInstance.ready) {
+      generatorInstance.ready.then(replanned => {
+        if (replanned && !this.unmounted && this.state.notes?.generator == generatorInstance) {
+          this.refreshNoteList(generatorInstance)
+        }
+      })
     }
 
     var notes
@@ -697,6 +760,13 @@ export default class SightReadingPage extends React.Component {
   // Begin: a fresh session in new stats, with the elapsed clock running
   beginSession() {
     if (this.state.session) { return }
+
+    // today's programme plans again here, so a piece whose every bar rested
+    // in the sitting before is offered again in this one
+    let playing = this.state.notes && this.state.notes.generator
+    if (playing && playing.replan && playing.replan()) {
+      this.refreshNoteList(playing)
+    }
 
     this.matcher.clear()
     this.restartSession({
