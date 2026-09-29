@@ -169,6 +169,26 @@ describe("dev metrics", function() {
       expect(report.ranges[0]).toEqual(jasmine.objectContaining({grade: GOOD, rule: "hesitation"}))
     })
 
+    it("takes the first column played as the one that can't hesitate", function() {
+      let pass = finished([
+        [2000, {measured: {settled: true, latency: null, heldCredit: 1}}],
+        [3500], [4000], [4500],
+      ])
+      let report = runReport(pass)
+
+      expect(report.pace).toEqual(500)
+      expect(report.columns.map(column => column.ms)).toEqual([null, 2500, 500, 500])
+      expect(report.columns.map(column => column.latency)).toEqual([null, 2500, 500, 500])
+      expect(report.columns.map(column => column.settled)).toEqual([true, false, false, false])
+      // the column played after the settled one opens the run, so neither
+      // gets a threshold: the grade never hesitates on them, however long
+      // the wait
+      expect(report.columns.map(column => column.threshold)).toEqual(
+        [null, null, HESITATION_MIN_MS, HESITATION_MIN_MS])
+      expect(report.columns.map(column => column.hesitated)).toEqual([false, false, false, false])
+      expect(columnRows(pass).map(row => row.status)).toEqual(["settled", "hit", "hit", "hit"])
+    })
+
     it("checks an easy pace against the item's usual pace as the pass found it", function() {
       let pass = finished([[3000], [3500], [4000], [4500]])
       let slow = {...newItem({pieceId: "p", hand: "both", startMeasure: 1, endMeasure: 2}, 0),

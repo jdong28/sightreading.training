@@ -1,5 +1,5 @@
 import {
-  gradeAttempt, gradeRule, hesitationThreshold, attemptPace, attemptCounts,
+  gradeAttempt, gradeRule, hesitationThreshold, attemptPace, attemptCounts, openingColumn,
   AGAIN, HARD, GOOD, EASY, HESITATION_MIN_MS, HESITATION_PACE,
 } from "st/srs/grade"
 
@@ -95,6 +95,18 @@ describe("srs grade", function() {
         {ms: 9000}, {ms: 400}, {ms: 1200, gap: 2}, {ms: 700}, {skipped: true, ms: 1}, {ms: null})
       expect(attemptPace(columns)).toEqual(600)
       expect(attemptPace(columns, {lead: false})).toEqual(650)
+    })
+
+    // a column settled by a key held has no time of its own, so the column
+    // played after it opens the attempt when every one before it was settled
+    it("opens the attempt at the first column played, settled ones before it left out", function() {
+      let settled = {settled: true, ms: null, latency: null}
+      let columns = played(settled, {ms: 9000, latency: 9000}, {ms: 400}, {ms: 600})
+      expect(openingColumn(columns)).toEqual(1)
+      expect(openingColumn(columns, {lead: false})).toEqual(-1)
+      expect(attemptPace(columns)).toEqual(500)
+      expect(attemptCounts(columns, {mode: "wait"}).hesitations).toEqual(0)
+      expect(attemptCounts(columns, {mode: "wait", lead: false}).hesitations).toEqual(1)
     })
 
     it("counts a column without the score's rhythm as one beat", function() {

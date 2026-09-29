@@ -98,7 +98,8 @@ export const COLUMN_JOIN_KEYS = ["beat", "notation", "extras", "allowed", "susta
  * joins it by and the ornaments it allows (see COLUMN_JOIN_KEYS), and
  * `cardIndex`, idx, which of the card's columns it is, so the page can mark
  * it on a card an engine drew
- * (st/score_render)
+ * (st/score_render) and the matcher can tell a card's first and last columns
+ * apart (see lastOfCard, settleCardEnd in st/note_matcher)
  * @param {MeasureCard} card
  * @param {number} idx
  * @returns {string[]}
