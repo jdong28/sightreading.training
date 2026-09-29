@@ -142,7 +142,8 @@ export default class DevMetricsPanel extends React.Component {
           <dt>Last hit</dt>
           <dd>{keys(lastHit.hitNotes)}: latency {formatMs(lastHit.latency)}, spread {formatMs(lastHit.spread)},
             early {keys(lastHit.credited)}, held over {keys(lastHit.heldCredited)}
-            {lastHit.late != null && `, late ${formatMs(lastHit.late)}`}</dd>
+            {lastHit.late != null && `, late ${formatMs(lastHit.late)}`}
+            {lastHit.settled && ", settled by keys held (no time of its own)"}</dd>
         </>}
       </dl>
       {pass ? this.renderPass(pass) :
@@ -253,7 +254,7 @@ export default class DevMetricsPanel extends React.Component {
         <dd>{mode}, written {clock(report.at)}{report.hand && `, ${report.hand == "both" ? "hands together" : `${report.hand} hand`}`}</dd>
         <dt>Grade pace</dt>
         <dd>{paced(report.pace, report.tempo)}: the median time on a column per notated beat before
-          it, the first column and any skipped or untimed one left out, a column paused on counted
+          it, the first column played and any skipped, settled or untimed one left out, a column paused on counted
           {report.mode == "scroll" && "; not read in scroll mode"}
           {report.mode == "wait" &&
             ` · hesitations, latency over max(${formatMs(HESITATION_MIN_MS)}, ${HESITATION_PACE} × this pace × beats): ` +
@@ -289,7 +290,7 @@ export default class DevMetricsPanel extends React.Component {
               <td>{formatMs(column.threshold)}</td>
               <td>{column.hesitated ? "yes" : ""}</td>
               <td>{column.misses}</td>
-              <td>{column.skipped ? "skipped" : column.stuck ? "stuck" : ""}</td>
+              <td>{column.skipped ? "skipped" : column.stuck ? "stuck" : column.settled ? "settled" : ""}</td>
             </tr>)}
         </tbody>
       </table>

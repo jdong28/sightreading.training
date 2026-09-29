@@ -179,10 +179,14 @@ describe("dev metrics", function() {
       expect(report.pace).toEqual(500)
       expect(report.columns.map(column => column.ms)).toEqual([null, 2500, 500, 500])
       expect(report.columns.map(column => column.latency)).toEqual([null, 2500, 500, 500])
-      // the column played after the settled one opens the run, so it gets no
-      // threshold: the grade never hesitates on it, however long it waited
-      expect(report.columns[1].threshold).toBeNull()
+      expect(report.columns.map(column => column.settled)).toEqual([true, false, false, false])
+      // the column played after the settled one opens the run, so neither
+      // gets a threshold: the grade never hesitates on them, however long
+      // the wait
+      expect(report.columns.map(column => column.threshold)).toEqual(
+        [null, null, HESITATION_MIN_MS, HESITATION_MIN_MS])
       expect(report.columns.map(column => column.hesitated)).toEqual([false, false, false, false])
+      expect(columnRows(pass).map(row => row.status)).toEqual(["settled", "hit", "hit", "hit"])
     })
 
     it("checks an easy pace against the item's usual pace as the pass found it", function() {

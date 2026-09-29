@@ -93,7 +93,8 @@ const columnBar = (card, idx) => card.measures[card.columnMeasures[idx]]
  * The columns of a pass as the matcher measured them, for the live view.
  * @param {AttemptPass} pass
  * @returns {Object[]} one a column of the card: index, bar, notes, status
- * ("hit", "skipped", "missed" for one scrolled past in scroll mode, which
+ * ("hit", "settled" for one completed by keys held from before with none
+ * struck at it, "skipped", "missed" for one scrolled past in scroll mode, which
  * the grade counts missed rather than skipped, "head", "to come", or
  * "before" for the columns ahead of where the rest of an abandoned pass took
  * up), slips (every try gone wrong), ms (time on the column) and the
@@ -105,7 +106,7 @@ export function columnRows(pass) {
   let mode = pass.drill ? pass.drill.mode : null
   return pass.columns.map((column, idx) => {
     let status = idx < pass.from ? "before" :
-      column.done ? (column.hit ? "hit" : columnSkipped(column, mode) ? "skipped" : "missed") :
+      column.done ? (column.hit ? (column.settled ? "settled" : "hit") : columnSkipped(column, mode) ? "skipped" : "missed") :
       idx == pass.head ? "head" : "to come"
 
     return {
@@ -188,10 +189,11 @@ export function runReport(pass) {
       gap: column.gap,
       ms: column.ms,
       latency: column.latency,
-      threshold: wait && idx != opening && !column.skipped ? hesitationThreshold(column, grading.pace) : null,
+      threshold: wait && idx != opening && !column.skipped && !column.settled ? hesitationThreshold(column, grading.pace) : null,
       hesitated: hesitated.has(idx),
       misses: column.misses,
       skipped: column.skipped,
+      settled: column.settled,
       stuck: column.misses >= STUCK_MISSES,
     })),
     ranges: grading.ranges.map(range => {
