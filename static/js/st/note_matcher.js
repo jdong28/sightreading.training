@@ -505,28 +505,35 @@ export default class NoteMatcher {
     return column.some(n => this.notes.sameNote(note, n, this.anyOctave))
   }
 
+  // From the head column becoming the head to the first of its own keys
+  // down, null until one of them is (a wrong key first doesn't end it)
+  headLatency() {
+    return this.firstKeyAt != null ? Math.max(0, this.firstKeyAt - this.headAt) : null
+  }
+
+  // In scroll mode, how long the head column has stood on the hit line as
+  // the head at time (0 while it is still on its way there), null in wait
+  // mode. Never a miss (D4(a))
+  headOnLine(time) {
+    if (!this.scroll) { return null }
+    return this.onLineSince == null ? 0 :
+      Math.max(0, time - Math.max(this.onLineSince, this.headAt))
+  }
+
   // The head column's measurements for the grade, as the key down at time
-  // completes it:
-  // - latency, from the column becoming the head to the first of its own
-  //   keys down (a wrong key first doesn't end it)
-  // - early, how many of its keys were credited from presses made before it
-  //   was the head (see hit), and heldCredit, how many of the held keys the
-  //   score still sounds it counted (rule 1)
-  // - late, in scroll mode, how long it stood on the hit line as the head
-  //   before it completed (0 when it completed on its way there), null in
-  //   wait mode. Never a miss (D4(a))
+  // completes it: its latency and how late it was on the hit line, plus
+  // early, how many of its keys were credited from presses made before it
+  // was the head (see hit), and heldCredit, how many of the held keys the
+  // score still sounds it counted (rule 1).
   // hit adds settled, whether held credit completed it with none of its keys
   // struck at it (see settleHeld), which gives it no time of its own
   measured(time, held) {
-    let latency = this.firstKeyAt != null ? Math.max(0, this.firstKeyAt - this.headAt) : null
-
-    let late = null
-    if (this.scroll) {
-      late = this.onLineSince == null ? 0 :
-        Math.max(0, time - Math.max(this.onLineSince, this.headAt))
+    return {
+      latency: this.headLatency(),
+      early: this.credited.length,
+      heldCredit: held.length,
+      late: this.headOnLine(time),
     }
-
-    return {latency, early: this.credited.length, heldCredit: held.length, late}
   }
 
   // the chord drill, when the keys down reach 0: the chord is checked on
@@ -590,13 +597,12 @@ export default class NoteMatcher {
     let now = this.now()
     return {
       waiting: Math.max(0, now - this.headAt),
-      latency: this.firstKeyAt != null ? Math.max(0, this.firstKeyAt - this.headAt) : null,
+      latency: this.headLatency(),
       touched: Object.keys(this.touched),
       held: Object.keys(this.held),
       early: Object.keys(this.early),
       credited: [...this.credited],
-      onLine: this.scroll && this.onLineSince != null ?
-        Math.max(0, now - Math.max(this.onLineSince, this.headAt)) : null,
+      onLine: this.headOnLine(now),
     }
   }
 }

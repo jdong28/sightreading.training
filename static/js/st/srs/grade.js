@@ -173,7 +173,8 @@ function hesitated(column, pace) {
 }
 
 /**
- * The grade of an attempt from its counts:
+ * The grade of an attempt from its counts, with the name of the rule that
+ * gave it:
  * - again: a column skipped or stuck, or slips on over a quarter of them
  * - hard: any slip, or hesitations on over a quarter of them
  * - good: no slip
@@ -185,18 +186,7 @@ function hesitated(column, pace) {
  * tempo was imposed
  * @param {boolean} [opts.firstSight] the item's first attempt
  * @param {number} [opts.usualPace] the item's paceMs
- * @returns {number} AGAIN, HARD, GOOD or EASY
- */
-export function gradeOf(counts, opts) {
-  return gradeRule(counts, opts).grade
-}
-
-/**
- * The grade of an attempt from its counts (see gradeOf) with the name of the
- * rule of gradeOf that gave it
- * @param {Object} counts see attemptCounts
- * @param {Object} opts as for gradeOf
- * @returns {{grade: number, rule: string}}
+ * @returns {{grade: number, rule: string}} grade is AGAIN, HARD, GOOD or EASY
  */
 export function gradeRule(counts, {mode, firstSight=false, usualPace}) {
   let {columns, slips, stuck, skipped, hesitations, pace} = counts
@@ -217,7 +207,7 @@ export function gradeRule(counts, {mode, firstSight=false, usualPace}) {
 }
 
 /**
- * The counts and grade of an attempt, see attemptCounts and gradeOf.
+ * The counts and grade of an attempt, see attemptCounts and gradeRule.
  * @param {AttemptColumn[]} columns
  * @param {Object} opts the options of both
  * @returns {Object} the counts with grade and the rule that gave it (see
