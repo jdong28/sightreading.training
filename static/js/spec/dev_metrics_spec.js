@@ -92,6 +92,21 @@ describe("dev metrics", function() {
       expect(rows[2]).toEqual(jasmine.objectContaining({ms: 400, latency: null}))
     })
 
+    it("calls a column scrolled past missed, as the grade counts it", function() {
+      let pass = new AttemptPass(twoBars(), {startedAt: 1000})
+      pass.drill = {mode: "scroll", speed: 80}
+      play(pass, 3000)
+      pass.miss(["A4"], {time: 3400})
+      pass.done(3400)
+      expect(columnRows(pass).map(row => row.status)).toEqual(["hit", "missed", "head", "to come"])
+
+      play(pass, 3800)
+      play(pass, 4200)
+      pass.written = {pieceId: "p", hand: "both", at: pass.lastAt}
+      expect(runReport(pass).columns[1]).toEqual(
+        jasmine.objectContaining({misses: 1, skipped: false}))
+    })
+
     it("marks the columns before the rest of an abandoned pass", function() {
       let pass = new AttemptPass(twoBars(), {from: 2, continued: true, startedAt: 1000})
       expect(columnRows(pass).map(row => row.status)).toEqual(["before", "before", "head", "to come"])
@@ -147,6 +162,19 @@ describe("dev metrics", function() {
       expect(card.reason).toEqual("good: no slip or hesitation, but pace 500 ms/beat > 1.15 × usual 400 ms = 460 ms")
       expect(bar1).toEqual(jasmine.objectContaining({grade: EASY, firstSight: true}))
       expect(bar1.reason).toEqual("easy: no slip or hesitation, at first sight, so no usual pace to keep")
+    })
+
+    it("keeps the after-run caption's pace and stops apart from the grade's", function() {
+      let pass = finished([[3000], [40000], [80000], [80500]])
+      let report = runReport(pass)
+
+      // the grade counts a column paused on, the caption leaves it out and
+      // calls it a stop, so the two paces judge different hesitations
+      expect(report.pace).toEqual(37000)
+      expect(report.columns.every(column => !column.hesitated)).toBe(true)
+      expect(report.captionPace).toEqual(500)
+      expect(report.captionTempo).toEqual(120)
+      expect(report.stops).toEqual([1, 1])
     })
 
     it("says why a pass isn't graded", function() {
