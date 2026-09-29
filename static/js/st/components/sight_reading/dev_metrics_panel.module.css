@@ -1,0 +1,193 @@
+/* The developer metrics panel floats over the page's right edge, below the
+   fixed header, so opening it never moves the staff */
+
+.panel {
+    position: fixed;
+    top: calc(var(--header-height) + 8px);
+    right: 8px;
+    bottom: 8px;
+    z-index: 30;
+    display: flex;
+    flex-direction: column;
+    width: min(520px, calc(100vw - 16px));
+    background: var(--salon-paper);
+    border: 1px solid var(--salon-rule-strong);
+    border-radius: 6px;
+    box-shadow: 0 8px 24px rgba(36, 31, 24, 0.18);
+    color: var(--salon-ink);
+    font-family: var(--font-ui);
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+.header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border-bottom: var(--salon-hairline);
+    background: var(--salon-paper-warm);
+    border-radius: 6px 6px 0 0;
+}
+
+.title {
+    font-family: var(--font-display);
+    font-size: 15px;
+    font-weight: 500;
+}
+
+.tabs {
+    display: flex;
+    gap: 4px;
+    flex: 1;
+}
+
+.tab, .close, .refresh {
+    font: inherit;
+    color: var(--salon-ink-soft);
+    background: none;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    padding: 2px 8px;
+    cursor: pointer;
+
+    &:hover {
+        border-color: var(--salon-rule);
+    }
+}
+
+.tab.active {
+    color: var(--salon-ink);
+    background: var(--salon-paper);
+    border-color: var(--salon-rule-strong);
+}
+
+.close {
+    font-size: 16px;
+    line-height: 1;
+}
+
+.refresh {
+    border-color: var(--salon-rule);
+}
+
+.body {
+    flex: 1;
+    overflow: auto;
+    padding: 8px 10px 12px;
+    font-variant-numeric: tabular-nums;
+}
+
+.facts {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: 2px 10px;
+    margin: 0 0 10px;
+
+    dt {
+        color: var(--salon-ink-muted);
+    }
+
+    dd {
+        margin: 0;
+    }
+}
+
+.heading {
+    margin: 12px 0 4px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--salon-ink-soft);
+}
+
+.note {
+    margin: 8px 0;
+    color: var(--salon-ink-muted);
+}
+
+.counts {
+    margin: 0 0 4px;
+}
+
+.pickers {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 12px;
+    margin-bottom: 8px;
+}
+
+.picker {
+    display: inline-block;
+    margin-bottom: 8px;
+    color: var(--salon-ink-muted);
+
+    select {
+        font: inherit;
+        max-width: 100%;
+    }
+}
+
+.pickers .picker {
+    margin-bottom: 0;
+}
+
+.table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 8px;
+
+    th, td {
+        padding: 2px 4px;
+        text-align: right;
+        white-space: nowrap;
+        border-bottom: var(--salon-hairline);
+    }
+
+    th {
+        color: var(--salon-ink-muted);
+        font-weight: 500;
+    }
+
+    th:nth-child(-n+3), td:nth-child(-n+3) {
+        text-align: left;
+    }
+}
+
+.head td {
+    background: var(--salon-band);
+}
+
+.dim td {
+    color: var(--salon-ink-muted);
+    opacity: 0.6;
+}
+
+.bad td {
+    color: var(--salon-oxblood);
+}
+
+.table .reason td {
+    text-align: left;
+    white-space: normal;
+    color: var(--salon-ink-soft);
+    padding-bottom: 6px;
+}
+
+.review {
+    border-top: var(--salon-double-rule);
+    padding-top: 4px;
+    margin-top: 8px;
+}
+
+.metrics_pill.metrics_pill {
+    padding: 9px 14px;
+}
+
+/* where the pill goes without the header (fullscreen), clear of the staff */
+.floating_toggle {
+    position: fixed;
+    top: 8px;
+    right: 8px;
+    z-index: 31;
+}

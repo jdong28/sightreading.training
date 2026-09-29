@@ -562,4 +562,24 @@ export default class NoteMatcher {
       touched: {...this.touched},
     }
   }
+
+  // The head column as it stands, for the developer metrics panel to show
+  // while it is played, judging nothing: how long it has been the head and
+  // its latency once one of its own keys went down (ms on the matcher's
+  // clock, see measured), the keys struck at it and down, the keys held
+  // early for the next column and those credited to it early, and in scroll
+  // mode how long it has stood on the hit line
+  inspect() {
+    let now = this.now()
+    return {
+      waiting: Math.max(0, now - this.headAt),
+      latency: this.firstKeyAt != null ? Math.max(0, this.firstKeyAt - this.headAt) : null,
+      touched: Object.keys(this.touched),
+      held: Object.keys(this.held),
+      early: Object.keys(this.early),
+      credited: [...this.credited],
+      onLine: this.scroll && this.onLineSince != null ?
+        Math.max(0, now - Math.max(this.onLineSince, this.headAt)) : null,
+    }
+  }
 }
