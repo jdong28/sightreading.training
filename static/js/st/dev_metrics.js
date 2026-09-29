@@ -18,7 +18,7 @@ import {itemId} from "st/srs/records"
 export const DEV_METRICS_KEY = "st:dev_metrics:v1"
 
 // the URL flag that enables the panel (?devMetrics=1) or disables it
-// (?devMetrics=0), remembered in DEV_METRICS_KEY
+// (?devMetrics=0), remembered in DEV_METRICS_KEY; any other value is ignored
 export const DEV_METRICS_PARAM = "devMetrics"
 
 export const GRADE_NAMES = {[AGAIN]: "again", [HARD]: "hard", [GOOD]: "good", [EASY]: "easy"}
@@ -35,7 +35,7 @@ export function devMetricsState({search=window.location.search, storage=window.l
     let flag = new URLSearchParams(search).get(DEV_METRICS_PARAM)
     if (flag == "0") {
       storage.removeItem(DEV_METRICS_KEY)
-    } else if (flag != null && !storage.getItem(DEV_METRICS_KEY)) {
+    } else if (flag == "1" && !storage.getItem(DEV_METRICS_KEY)) {
       storage.setItem(DEV_METRICS_KEY, "open")
     }
 

@@ -171,7 +171,8 @@ export default class DevMetricsPanel extends React.Component {
     return <table className={styles.table}>
       <thead>
         <tr>
-          <th>#</th><th>bar</th><th>notes</th><th>state</th><th title="tries gone wrong">slips</th>
+          <th>#</th><th>bar</th><th>notes</th><th>state</th>
+          <th title="tries gone wrong on the column">tries</th>
           <th title="time on the column: from the column before done to this one done">time</th>
           <th title="from the column becoming the head to its first own key down">latency</th>
           <th title="first to last of its keys down">spread</th>
@@ -247,7 +248,7 @@ export default class DevMetricsPanel extends React.Component {
         <dd>{mode}, written {clock(report.at)}{report.hand && `, ${report.hand == "both" ? "hands together" : `${report.hand} hand`}`}</dd>
         <dt>Grade pace</dt>
         <dd>{paced(report.pace, report.tempo)}: the median time on a column per notated beat before
-          it, the first column left out, every column counted
+          it, the first column and any skipped or untimed one left out, a column paused on counted
           {report.mode == "scroll" && "; not read in scroll mode"}
           {report.mode == "wait" &&
             ` · hesitations, latency over max(${formatMs(HESITATION_MIN_MS)}, ${HESITATION_PACE} × this pace × beats): ` +
@@ -265,7 +266,8 @@ export default class DevMetricsPanel extends React.Component {
         <thead>
           <tr>
             <th>#</th><th>bar</th><th>notes</th><th title="notated beats from the column before">gap</th>
-            <th>time</th><th>latency</th><th>threshold</th><th>hesitated</th><th>slips</th><th>flag</th>
+            <th>time</th><th>latency</th><th>threshold</th><th>hesitated</th>
+            <th title="tries gone wrong on the column">tries</th><th>flag</th>
           </tr>
         </thead>
         <tbody>
@@ -294,7 +296,9 @@ export default class DevMetricsPanel extends React.Component {
       <table className={styles.table}>
         <thead>
           <tr>
-            <th>item</th><th>grade</th><th title="clean / columns">clean</th><th>slips</th><th>misses</th>
+            <th>item</th><th>grade</th><th title="clean / columns">clean</th>
+            <th title="columns with any try gone wrong">slipped cols</th>
+            <th title="every try gone wrong, over all its columns">misses</th>
             <th>hesit.</th><th>usual pace</th><th>written as</th>
           </tr>
         </thead>
