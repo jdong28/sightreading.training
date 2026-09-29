@@ -147,8 +147,11 @@ export default class DevMetricsPanel extends React.Component {
       </dl>
       {pass ? this.renderPass(pass) :
         <p className={styles.note}>
-          This drill keeps no attempts: runs are timed and graded for imported pieces on the
-          sheet music page. The matcher's own measurements are above.
+          {generator && generator.deck ?
+            "The chosen section has no playable column, so there is no pass to time." :
+            "This drill keeps no attempts: runs are timed and graded for imported pieces on the " +
+              "sheet music page."}
+          {" The matcher's own measurements are above."}
         </p>}
     </>
   }

@@ -1,9 +1,14 @@
+import * as React from "react"
+import {createRoot} from "react-dom/client"
+import {flushSync} from "react-dom"
+
 import {
   devMetricsState, storeDevMetricsOpen, formatMs, tempoOf, rangeLabel, columnRows, runReport,
   gradeReason, perColumnRows, itemReviews, handItems, DEV_METRICS_KEY,
 } from "st/dev_metrics"
+import DevMetricsPanel from "st/components/sight_reading/dev_metrics_panel"
 import {AttemptPass, passAttempts} from "st/srs/attempt"
-import {sectionCard} from "st/measure_cards"
+import {sectionCard, MeasureCardDeck, MeasureCardGenerator, IN_ORDER} from "st/measure_cards"
 import {newItem} from "st/srs/records"
 import {AGAIN, HARD, GOOD, EASY, HESITATION_MIN_MS} from "st/srs/grade"
 
@@ -235,6 +240,54 @@ describe("dev metrics", function() {
       {slips: 1, stalled: false, latency: 300, spread: 20, early: 1, heldCredit: 0, late: null},
     ])
     expect(perColumnRows(undefined)).toEqual([])
+  })
+
+  // the Live tab shows the pass being played; without one it must say why,
+  // which is not the same reason for a measure card drill as for a staff one
+  describe("the live tab without a pass", function() {
+    let container, root
+    let matcher = {inspect: () => ({
+      waiting: 0, latency: null, touched: [], held: [], early: [], credited: [], onLine: null,
+    })}
+
+    let renderPanel = generator => {
+      container = document.createElement("div")
+      document.body.appendChild(container)
+      root = createRoot(container)
+      flushSync(() => root.render(React.createElement(DevMetricsPanel, {
+        generator, matcher, session: true, close: () => {},
+      })))
+      return container
+    }
+
+    afterEach(function() {
+      flushSync(() => root.unmount())
+      container.remove()
+    })
+
+    it("says a section with nothing to play has no playable column", function() {
+      // a bar of rests alone: the deck picks no card, so the generator's
+      // pass is null though the drill does grade its attempts
+      let deck = new MeasureCardDeck([sectionCard([{number: 1, columns: []}])], {
+        pieceId: "p", order: IN_ORDER, store: {},
+      })
+      let generator = new MeasureCardGenerator(deck)
+
+      try {
+        expect(generator.pass).toBe(null)
+        let el = renderPanel(generator)
+        expect(el.textContent).toContain("no playable column")
+        expect(el.textContent).not.toContain("keeps no attempts")
+      } finally {
+        generator.stop()
+      }
+    })
+
+    it("says a drill with no deck keeps no attempts", function() {
+      let el = renderPanel({})
+      expect(el.textContent).toContain("keeps no attempts")
+      expect(el.textContent).not.toContain("no playable column")
+    })
   })
 
   it("lists a hand's items in bar order", function() {
