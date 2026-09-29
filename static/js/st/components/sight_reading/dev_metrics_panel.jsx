@@ -256,8 +256,8 @@ export default class DevMetricsPanel extends React.Component {
         {report.mode == "wait" && <>
           <dt>Caption pace</dt>
           <dd>{paced(report.captionPace, report.captionTempo)}: the after-run caption's own, which
-            leaves a column paused on out of the pace and counts it a stop, so it is not what the
-            grade read above
+            leaves a column paused on out of the pace, and counts a pause or a hesitation at that
+            pace a stop, so neither figure is what the grade read above
             {" · "}stops {report.stops.length ? barsOf(report.stops) : "none"}</dd>
         </>}
       </dl>
@@ -394,8 +394,8 @@ export default class DevMetricsPanel extends React.Component {
       {rows.length > 0 && <table className={styles.table}>
         <thead>
           <tr>
-            <th>#</th><th>slips</th><th>stalled</th><th>latency</th><th>spread</th><th>early</th>
-            <th>held</th><th>late</th>
+            <th>#</th><th title="tries gone wrong on the column">tries</th><th>stalled</th>
+            <th>latency</th><th>spread</th><th>early</th><th>held</th><th>late</th>
           </tr>
         </thead>
         <tbody>

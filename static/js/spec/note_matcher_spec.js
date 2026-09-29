@@ -485,6 +485,36 @@ describe("note matcher", function() {
       expect(judged.map(event => event.late)).toEqual([1500, 0, 1500, 500])
       expect(head(matcher)).toEqual(["B4"])
     })
+
+    // the developer metrics panel shows the head column through inspect(),
+    // which must report the figures the hit goes on to record
+    it("inspects the head column as the hit's own measurements read it", function() {
+      let clock = 0
+      let matcher = matcherFor([["C4"], ["E4"], ["G4"]], {now: () => clock, scroll: true})
+      let inspected = () => {
+        let {latency, onLine} = matcher.inspect()
+        return [latency, onLine]
+      }
+
+      expect(inspected()).toEqual([null, 0])
+
+      // the staff is still moving, so the head has yet to reach the line
+      matcher.onLine(null)
+      clock = 1000
+      expect(inspected()).toEqual([null, 0])
+
+      matcher.noteOn("C4", 1000)
+      expect(matcher.judged[0].late).toEqual(0)
+
+      // E4 is the head from 1000 and reaches the line at 1200
+      matcher.onLine(1200)
+      clock = 1700
+      expect(inspected()).toEqual([null, 500])
+
+      matcher.noteOn("E4", 1700)
+      let hit = matcher.judged[1]
+      expect([hit.latency, hit.late]).toEqual([700, 500])
+    })
   })
 
   // T6 of the note detection report, rule 1's held credit: a key the score

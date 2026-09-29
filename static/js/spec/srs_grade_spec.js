@@ -1,5 +1,5 @@
 import {
-  gradeAttempt, gradeOf, gradeRule, hesitationThreshold, attemptPace, attemptCounts,
+  gradeAttempt, gradeRule, hesitationThreshold, attemptPace, attemptCounts,
   AGAIN, HARD, GOOD, EASY, HESITATION_MIN_MS, HESITATION_PACE,
 } from "st/srs/grade"
 
@@ -119,9 +119,9 @@ describe("srs grade", function() {
 
   it("grades the counts alone", function() {
     let counts = {columns: 4, slips: 0, stuck: 0, skipped: 0, hesitations: 0, pace: 500}
-    expect(gradeOf(counts, {mode: "wait"})).toEqual(EASY)
-    expect(gradeOf({...counts, pace: 600}, {mode: "wait", usualPace: 500})).toEqual(GOOD)
-    expect(gradeOf({...counts, slips: 1}, {mode: "wait"})).toEqual(HARD)
+    expect(gradeRule(counts, {mode: "wait"}).grade).toEqual(EASY)
+    expect(gradeRule({...counts, pace: 600}, {mode: "wait", usualPace: 500}).grade).toEqual(GOOD)
+    expect(gradeRule({...counts, slips: 1}, {mode: "wait"}).grade).toEqual(HARD)
   })
 
   it("names the rule that gave the grade", function() {
