@@ -41,10 +41,11 @@
 // rather than struck again (T6, rule 1; ruling D3(a)). That held credit is
 // applied lazily: when a key that isn't the head's own goes down (the player
 // has moved on), or when it would complete the head with the keys struck at
-// it, never before the column is the head, nor as it becomes the head.
-// Striking the key again is its own key down at the column, as before. A key
-// held through a note the score strikes again (the earlier one ends at the
-// onset) isn't sustained, so the column still waits for it.
+// it, never before the column is the head, nor as it becomes the head save
+// the one column below. Striking the key again is its own key down at the
+// column, as before. A key held through a note the score strikes again (the
+// earlier one ends at the onset) isn't sustained, so the column still waits
+// for it.
 //
 // The one column credited as it becomes the head is the card's last (not
 // its first, which a key of that card credits instead, so one key down never
