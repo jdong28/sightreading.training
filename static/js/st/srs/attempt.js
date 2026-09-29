@@ -179,9 +179,14 @@ export function columnClefs(column, notes=column) {
   return [...new Set(signs)]
 }
 
-// The measure ranges a pass counts for: the card's own when it spans several
-// measures, then each of its measures, with the indices of their columns
-function passRanges(card) {
+/**
+ * The measure ranges a pass counts for: the card's own when it spans several
+ * measures, then each of its measures, with the indices of their columns
+ * (and for the card's own, its bars, each as a range)
+ * @param {MeasureCard} card
+ * @returns {{startMeasure: number, endMeasure: number, indices: number[], bars?: Object[]}[]}
+ */
+export function passRanges(card) {
   let bars = card.measures.map((measure, idx) => ({
     startMeasure: measure,
     endMeasure: measure,
@@ -305,6 +310,39 @@ export function passPace(pass) {
 }
 
 /**
+ * What the grade of a pass played through reads (see passAttempts): the
+ * drill it was played in, each of its columns as the grade reads it, the
+ * pace hesitations are judged by (the whole card's, for each of its ranges)
+ * and the ranges it counts for (see passRanges)
+ * @param {AttemptPass} pass played
+ * @returns {{mode: string, speed: number|undefined, columns: AttemptColumn[],
+ * pace: number|null, ranges: Object[]}}
+ */
+export function passGrading(pass) {
+  let {mode, speed} = pass.drill
+  let columns = pass.columns.map((column, idx) => gradedColumn(pass, idx, mode))
+  return {mode, speed, columns, pace: attemptPace(columns), ranges: passRanges(pass.card)}
+}
+
+/**
+ * The grade of one range of a pass (see passGrading) as an attempt at its
+ * item as stored before it
+ * @param {Object} grading see passGrading
+ * @param {number[]} indices the range's columns in the card
+ * @param {ItemRecord|null} current the item before the attempt, null for
+ * none yet
+ * @returns {{firstSight: boolean, lead: boolean, columns: AttemptColumn[],
+ * graded: Object}} graded is gradeAttempt's
+ */
+export function gradeRange({mode, pace, columns: cardColumns}, indices, current) {
+  let firstSight = !current || current.attempts == 0 && !current.recent.length
+  let lead = indices[0] == 0
+  let columns = indices.map(idx => cardColumns[idx])
+  let graded = gradeAttempt(columns, {mode, lead, pace, firstSight, usualPace: current?.paceMs})
+  return {firstSight, lead, columns, graded}
+}
+
+/**
  * The attempts a finished pass makes, one for each range of the pass (the
  * card's, then each of its measures), each graded from its own columns.
  * Each is built from its item as stored when it is written (see
@@ -323,19 +361,14 @@ export function passPace(pass) {
 export function passAttempts(pass, {pieceId, hand, at=pass.lastAt, sessionId}) {
   if (!pass.complete || !pass.graded || !pass.played || !pass.drill) { return [] }
 
-  let {mode, speed} = pass.drill
-  let cardColumns = pass.columns.map((column, idx) => gradedColumn(pass, idx, mode))
-  let pace = attemptPace(cardColumns)
+  let grading = passGrading(pass)
+  let {mode, speed, columns: cardColumns} = grading
 
-  return passRanges(pass.card).map(({startMeasure, endMeasure, indices, bars}) => {
+  return grading.ranges.map(({startMeasure, endMeasure, indices, bars}) => {
     let range = {pieceId, hand, startMeasure, endMeasure}
     let build = stored => {
       let current = stored || newItem(range, at)
-      let firstSight = current.attempts == 0 && !current.recent.length
-
-      let lead = indices[0] == 0
-      let columns = indices.map(idx => cardColumns[idx])
-      let graded = gradeAttempt(columns, {mode, lead, pace, firstSight, usualPace: current.paceMs})
+      let {firstSight, lead, columns, graded} = gradeRange(grading, indices, current)
 
       let collected = indices.map(idx => pass.columns[idx])
       let totals = totalsOf(collected)
