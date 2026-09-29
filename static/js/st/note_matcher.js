@@ -62,7 +62,10 @@
 // A column settled by held credit (settleHeld) had none of its keys struck
 // at it, so it has no time of its own: it is measured settled, with no
 // latency, and the next column played is timed from when the column before
-// it completed, so the wait lands on the column the player reached for.
+// it completed, so the wait lands on the column the player reached for. That
+// carry stays within the card: a settled column that ends one carries
+// nothing over, so the next card's first column is timed from the same
+// moment as the pass it opens (see AttemptPass).
 
 // W_early: how long a key of the next column may wait for the column under
 // way to complete before it counts as a slip on it (ruling D2(a): about
@@ -329,6 +332,10 @@ export default class NoteMatcher {
     let touched = Object.keys(this.touched)
     let held = this.heldCredit()
 
+    // a settled column's wait carries only to the next column of its own
+    // card: the card it ends keeps nothing back for the one after it
+    let carry = settled && !this.lastOfCard()
+
     // the moment the column completed, on the clock the measurements share:
     // the key that completed it carried no timeStamp (the on-screen
     // keyboard) when completedAt is null
@@ -373,10 +380,10 @@ export default class NoteMatcher {
 
     // the next column is played afresh, but for its keys struck early: the
     // keys still down stay held, and count toward it only as held credit,
-    // lazily, where the score still sounds them. After a settled column it
-    // is timed from when the settled one became the head, as nothing of
-    // that wait was spent on the column settled
-    this.startHead(settled ? this.headAt : at)
+    // lazily, where the score still sounds them. After a settled column of
+    // the same card it is timed from when the settled one became the head,
+    // as nothing of that wait was spent on the column settled
+    this.startHead(carry ? this.headAt : at)
     this.previous = {column, at: completedAt}
 
     let next = advanced.currentColumn()

@@ -483,6 +483,25 @@ describe("note matcher", function() {
       ])
     })
 
+    // the carry stops at the card's end: the next card's first column opens
+    // a pass of its own, timed from the press that settled the card before
+    // it, so its latency and the pass's time on it say the same thing
+    it("times the first column of the next card from the press that settled the card before it", function() {
+      let sustain = column => Object.assign(column, {sustained: ["Bb3"]})
+      let columns = [["Bb3"], sustain(["Bb3"]), ["C4"], ["D4"]]
+        .map((column, idx) => Object.assign(column, {cardIndex: idx % 2}))
+      let matcher = matcherFor(columns, {now: () => clock})
+      clock = 0
+      run(matcher, [["on", "Bb3", 0]])
+      clock = 2000
+      run(matcher, [["on", "C4", 2000], ["off", "C4", 2200], ["on", "D4", 2900]])
+
+      let hits = matcher.judged.filter(event => event.type == "hit")
+      expect(hits.map(hit => [hit.settled, hit.latency])).toEqual([
+        [true, null], [false, 0], [false, 900],
+      ])
+    })
+
     it("records in scroll mode how long a column stood on the hit line before it completed, never as a miss", function() {
       let matcher = matcherFor([["C4"], ["E4"], ["G4"], ["A4"], ["B4"]], {now: () => 0, scroll: true})
 
