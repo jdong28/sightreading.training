@@ -44,8 +44,9 @@ export const EASY_PACE = 1.15
  * @property {number} misses slips on the column, each try with a wrong key
  * pressed
  * @property {boolean} [skipped] passed over without being played
- * @property {number|null} [ms] time on the column: from the column before
- * it done to it done, which the pace is worked out from
+ * @property {number|null} [ms] time on the column: from the column played
+ * before it done to it done (a settled column between them carries its wait
+ * here), which the pace is worked out from
  * @property {number|null} [latency] from the column becoming the head to the
  * first of its own keys down, which a hesitation is read from; null (or
  * absent) when not measured, never a hesitation
