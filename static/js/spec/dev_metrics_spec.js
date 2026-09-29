@@ -265,19 +265,35 @@ describe("dev metrics", function() {
       container.remove()
     })
 
-    it("says a section with nothing to play has no playable column", function() {
+    let cardDeck = cards => new MeasureCardDeck(cards, {pieceId: "p", order: IN_ORDER, store: {}})
+
+    it("says nothing is to play when a card drill's section has none", function() {
       // a bar of rests alone: the deck picks no card, so the generator's
-      // pass is null though the drill does grade its attempts
-      let deck = new MeasureCardDeck([sectionCard([{number: 1, columns: []}])], {
-        pieceId: "p", order: IN_ORDER, store: {},
-      })
+      // pass is null though the drill does grade the cards it does pick
+      let generator = new MeasureCardGenerator(cardDeck([sectionCard([{number: 1, columns: []}])]))
+
+      try {
+        expect([generator.pass, generator.deck.playableCount]).toEqual([null, 0])
+        expect(renderPanel(generator).textContent).toContain("nothing to play right now")
+      } finally {
+        generator.stop()
+      }
+    })
+
+    // today's programme reaches this with every bar playable, once it is
+    // complete or every bar it has left rests until the next sitting
+    it("says the same when a playable deck has no card to play now", function() {
+      let deck = cardDeck([sectionCard([{number: 1, columns: [col(0, "G4")]}])])
       let generator = new MeasureCardGenerator(deck)
 
       try {
-        expect(generator.pass).toBe(null)
-        let el = renderPanel(generator)
-        expect(el.textContent).toContain("no playable column")
-        expect(el.textContent).not.toContain("keeps no attempts")
+        deck.index = null
+        generator.startCard()
+        expect([generator.pass, deck.playableCount]).toEqual([null, 1])
+
+        let note = renderPanel(generator).textContent
+        expect(note).toContain("nothing to play right now")
+        expect(note).not.toContain("The chosen section has no playable column")
       } finally {
         generator.stop()
       }
@@ -286,7 +302,7 @@ describe("dev metrics", function() {
     it("says a drill with no deck keeps no attempts", function() {
       let el = renderPanel({})
       expect(el.textContent).toContain("keeps no attempts")
-      expect(el.textContent).not.toContain("no playable column")
+      expect(el.textContent).not.toContain("nothing to play right now")
     })
   })
 
