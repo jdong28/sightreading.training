@@ -15,10 +15,12 @@
 // on its hit: its latency, which the grade reads hesitations from, its
 // spread, the keys credited early and held over, and in scroll mode how late
 // it was on the hit line. A graded review stores them a column (perColumn),
-// so a revised grade can be worked out again from the log.
+// so a revised grade can be worked out again from the log. A column the
+// matcher settled by a key held (none of its keys struck at it) gets no time
+// of its own: the next column done is timed from the column before it.
 
 import {itemId, newItem, itemWithPractice, RECENT_ATTEMPTS, STAVES} from "st/srs/records"
-import {gradeAttempt, attemptPace, hesitations, GRADE_ALGO} from "st/srs/grade"
+import {gradeAttempt, attemptPace, hesitations, openingColumn, GRADE_ALGO} from "st/srs/grade"
 
 // time on one column longer than this is a pause, left out of elapsed times
 export const PAUSE_MS = 30 * 1000
@@ -54,7 +56,8 @@ export class AttemptPass {
     // the drill the pass is played in, {mode, speed}, set when first played
     this.drill = null
     this.columns = card.columns.map(() => ({
-      misses: 0, counted: 0, hit: false, done: false, ms: null, staffMisses: {upper: 0, lower: 0},
+      misses: 0, counted: 0, hit: false, done: false, settled: false, ms: null,
+      staffMisses: {upper: 0, lower: 0},
       ...UNMEASURED,
     }))
   }
@@ -114,7 +117,8 @@ export class AttemptPass {
    * @param {number} time
    * @param {Object} [measured] what the matcher measured on the column when
    * it was played (see NoteMatcher#measured): latency, spread, early,
-   * heldCredit and late, each null when not measured. A column skipped or
+   * heldCredit and late, each null when not measured, and settled when a key
+   * held completed it with none of its keys struck at it. A column skipped or
    * scrolled past has none, so the grade reads no hesitation on it
    * @returns {number} its index in the card
    */
@@ -122,14 +126,20 @@ export class AttemptPass {
     let index = this.head
     let column = this.columns[index]
     column.done = true
-    if (this.columnStartedAt != null) {
-      column.ms = Math.max(0, time - this.columnStartedAt)
-    }
     for (let key of MEASURES) {
       column[key] = measured[key] ?? null
     }
 
-    this.columnStartedAt = time
+    // a settled column has no time of its own: the time since the column
+    // before it goes to the next column done
+    column.settled = !!measured.settled
+    if (!column.settled) {
+      if (this.columnStartedAt != null) {
+        column.ms = Math.max(0, time - this.columnStartedAt)
+      }
+      this.columnStartedAt = time
+    }
+
     this.lastAt = time
     this.head += 1
     return index
@@ -224,17 +234,21 @@ export function passPractice(pass, {pieceId, hand, at=pass.lastAt}) {
   })
 }
 
-// what the grade reads of the pass's column at idx
+// what the grade reads of the pass's column at idx: its gap counts from the
+// column played before it, as its time does, settled columns left out
 function gradedColumn(pass, idx, mode) {
   let column = pass.columns[idx]
   let beat = pass.card.columns[idx].beat
-  let before = idx > 0 ? pass.card.columns[idx - 1].beat : null
+  let played = idx - 1
+  while (played >= 0 && pass.columns[played].settled) { played -= 1 }
+  let before = played >= 0 ? pass.card.columns[played].beat : null
   let gap = beat != null && before != null ? beat - before : null
 
   return {
     misses: column.misses,
     // a column scrolled past was missed, not skipped
     skipped: column.done && !column.hit && !(mode == "scroll" && column.misses > 0),
+    settled: column.settled,
     ms: column.ms,
     latency: column.latency,
     gap,
@@ -280,11 +294,12 @@ export function passPace(pass) {
   let pace = attemptPace(columns.map((column, idx) =>
     paused[idx] ? {...column, ms: null} : column))
   let hesitated = new Set(hesitations(columns, {pace}))
+  let opening = openingColumn(columns)
 
   return {
     pace,
     beats: card.columns.every(column => column.beat != null),
-    stops: columns.flatMap((column, idx) => idx > 0 && (paused[idx] || hesitated.has(idx)) ?
+    stops: columns.flatMap((column, idx) => idx > opening && (paused[idx] || hesitated.has(idx)) ?
       [card.measures[card.columnMeasures[idx]]] : []),
   }
 }
@@ -353,8 +368,9 @@ export function passAttempts(pass, {pieceId, hand, at=pass.lastAt, sessionId}) {
         algo: GRADE_ALGO,
       }
 
-      if (lead && columns[0].ms != null) {
-        review.leadMs = Math.round(columns[0].ms)
+      let opening = columns[openingColumn(columns, {lead})]
+      if (opening && opening.ms != null) {
+        review.leadMs = Math.round(opening.ms)
       }
 
       if (mode == "scroll" && speed != null) {

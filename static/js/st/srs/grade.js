@@ -7,13 +7,19 @@
 // pace in the attempt scaled by the notated gap before it, so a column after
 // a long note is never taken for a hesitation. The latency, not the time on
 // the column, is what hesitates: a column completed late because a key was
-// held instead of struck again, or rolled slowly, was started on time. The
-// thresholds are a first guess; reviews keep the raw measurements and
-// GRADE_ALGO, so history can be graded again by a revised function.
+// held instead of struck again, or rolled slowly, was started on time. A
+// column settled by a key held (none of its keys struck at it) has no time
+// of its own: the next column played carries the wait and the notated beats
+// since the column played before it. The thresholds are a first guess;
+// reviews keep the raw measurements and GRADE_ALGO, so history can be graded
+// again by a revised function.
 
 // the version of this grading, stored on each review as algo: 1 read
-// hesitations from the time on each column, 2 from its latency
-export const GRADE_ALGO = 2
+// hesitations from the time on each column, 2 from its latency, 3 times a
+// column settled by a key held not at all, its time and latency carried to
+// the next column played (whose stored latency runs from the column played
+// before it)
+export const GRADE_ALGO = 3
 
 export const AGAIN = 1
 export const HARD = 2
@@ -38,13 +44,18 @@ export const EASY_PACE = 1.15
  * @property {number} misses slips on the column, each try with a wrong key
  * pressed
  * @property {boolean} [skipped] passed over without being played
- * @property {number|null} [ms] time on the column: from the column before
- * it done to it done, which the pace is worked out from
+ * @property {number|null} [ms] time on the column: from the column played
+ * before it done to it done (a settled column between them carries its wait
+ * here), which the pace is worked out from
  * @property {number|null} [latency] from the column becoming the head to the
  * first of its own keys down, which a hesitation is read from; null (or
  * absent) when not measured, never a hesitation
- * @property {number|null} [gap] notated beats from the column before it,
- * null when the column carries no score rhythm
+ * @property {number|null} [gap] notated beats from the column played before
+ * it (settled columns between them left out), null when the column carries
+ * no score rhythm
+ * @property {boolean} [settled] completed by a key held with none of its own
+ * struck at it, so untimed (no ms, no latency): never a hesitation, left out
+ * of the pace, and never the column opening the attempt
  */
 
 const median = values => {
@@ -56,18 +67,31 @@ const median = values => {
 const beatsOf = column => column.gap > 0 ? column.gap : 1
 
 /**
+ * The column opening an attempt, whose time is spent reading: the first one
+ * played, settled columns before it left out.
+ * @param {AttemptColumn[]} columns
+ * @param {Object} [opts]
+ * @param {boolean} [opts.lead=true] whether columns[0] opens the attempt
+ * @returns {number} its index, -1 when the columns don't open the attempt
+ */
+export function openingColumn(columns, {lead=true}={}) {
+  return lead ? columns.findIndex(column => !column.settled) : -1
+}
+
+/**
  * The player's own pace in an attempt: the median over its columns of the
  * time on each per notated beat before it (per column when the score's
- * rhythm isn't known), leaving out the first column when it opens the
- * attempt, as its time is spent reading, and skipped or untimed columns.
+ * rhythm isn't known), leaving out the column opening the attempt (see
+ * openingColumn), as its time is spent reading, and skipped or untimed columns.
  * @param {AttemptColumn[]} columns
  * @param {Object} [opts]
  * @param {boolean} [opts.lead=true] whether columns[0] opens the attempt
  * @returns {number|null} ms per beat, null without a timed column
  */
 export function attemptPace(columns, {lead=true}={}) {
+  let opening = openingColumn(columns, {lead})
   let paces = columns
-    .filter((column, idx) => !(lead && idx == 0) && !column.skipped && column.ms != null)
+    .filter((column, idx) => idx != opening && !column.skipped && column.ms != null)
     .map(column => column.ms / beatsOf(column))
 
   return paces.length ? median(paces) : null
@@ -80,7 +104,7 @@ export function attemptPace(columns, {lead=true}={}) {
  * @param {string} opts.mode "wait" or "scroll"; only wait mode times the
  * player, so scroll mode never hesitates
  * @param {boolean} [opts.lead=true] whether columns[0] opens the attempt,
- * never a hesitation
+ * whose opening column (see openingColumn) is never a hesitation
  * @param {number|null} [opts.pace] the pace to judge hesitations by, the
  * attempt's own by default (see attemptPace), eg. a whole card's for one of
  * its bars
@@ -120,7 +144,7 @@ export function attemptCounts(columns, {mode, lead=true, pace}) {
  * The columns of an attempt played in wait mode that were hesitated on: a
  * column whose latency passes both HESITATION_MIN_MS and HESITATION_PACE
  * times the pace for the notated beats before it. The column opening the
- * attempt never is.
+ * attempt (see openingColumn) never is, nor a settled one, which has no latency.
  * @param {AttemptColumn[]} columns
  * @param {Object} opts
  * @param {boolean} [opts.lead=true] whether columns[0] opens the attempt
@@ -128,7 +152,8 @@ export function attemptCounts(columns, {mode, lead=true, pace}) {
  * @returns {number[]} their indices
  */
 export function hesitations(columns, {lead=true, pace}) {
-  return columns.flatMap((column, idx) => hesitated(column, pace) && !(lead && idx == 0) ? [idx] : [])
+  let opening = openingColumn(columns, {lead})
+  return columns.flatMap((column, idx) => hesitated(column, pace) && idx != opening ? [idx] : [])
 }
 
 function hesitated(column, pace) {

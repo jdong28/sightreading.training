@@ -115,7 +115,9 @@ export const RECENT_ATTEMPTS = 5
  * wrong on it, stalled 1 when it was skipped, then what the note matcher
  * measured on its hit (see NoteMatcher#measured), ms or a count of keys,
  * each null when not measured (late is null in wait mode). Absent on reviews
- * graded before GRADE_ALGO 2
+ * graded before GRADE_ALGO 2. From GRADE_ALGO 3 a column settled by a key
+ * held (latency null, heldCredit above 0) is untimed, and the latency of the
+ * next column played runs from the column played before it
  * @property {number} [r] the recall the scheduler predicted
  * @property {number} [algo] the grading version
  * @property {number} [hits] legacy only
