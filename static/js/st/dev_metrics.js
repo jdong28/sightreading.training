@@ -6,7 +6,7 @@
 // run is graded through the same passGrading and gradeRange the stored
 // attempts are.
 
-import {passGrading, gradeRange, passPace} from "st/srs/attempt"
+import {passGrading, gradeRange, passPace, columnSkipped} from "st/srs/attempt"
 import {
   hesitations, hesitationThreshold, AGAIN, HARD, GOOD, EASY, STUCK_MISSES, SLIP_SHARE,
   HESITATION_SHARE, EASY_PACE,
@@ -93,16 +93,19 @@ const columnBar = (card, idx) => card.measures[card.columnMeasures[idx]]
  * The columns of a pass as the matcher measured them, for the live view.
  * @param {AttemptPass} pass
  * @returns {Object[]} one a column of the card: index, bar, notes, status
- * ("hit", "skipped", "head", "to come", or "before" for the columns ahead of
- * where the rest of an abandoned pass took up), slips (every try gone
- * wrong), ms (time on the column) and the matcher's latency, spread, early,
- * heldCredit and late, and the notes the score still sounds into it
+ * ("hit", "skipped", "missed" for one scrolled past in scroll mode, which
+ * the grade counts missed rather than skipped, "head", "to come", or
+ * "before" for the columns ahead of where the rest of an abandoned pass took
+ * up), slips (every try gone wrong), ms (time on the column) and the
+ * matcher's latency, spread, early, heldCredit and late, and the notes the
+ * score still sounds into it
  */
 export function columnRows(pass) {
   let {card} = pass
+  let mode = pass.drill ? pass.drill.mode : null
   return pass.columns.map((column, idx) => {
     let status = idx < pass.from ? "before" :
-      column.done ? (column.hit ? "hit" : "skipped") :
+      column.done ? (column.hit ? "hit" : columnSkipped(column, mode) ? "skipped" : "missed") :
       idx == pass.head ? "head" : "to come"
 
     return {
@@ -139,7 +142,10 @@ function ungradedWhy(pass) {
  * and each range's counts, grade and the rule that gave it. Each range is
  * graded against its item as the pass found it (pass.found, set once the
  * passes before it are written): until then, and for an item never
- * practised before, as at first sight.
+ * practised before, as at first sight. The pace and stops of the after-pass
+ * caption (passPace, which leaves a pause out of the pace and counts it a
+ * stop) are kept apart as captionPace, captionTempo and stops, since they
+ * are not what the grade read.
  * @param {AttemptPass} pass finished
  * @returns {Object}
  */
@@ -169,6 +175,8 @@ export function runReport(pass) {
     ...report,
     pace: grading.pace,
     tempo: report.beats ? tempoOf(grading.pace) : null,
+    captionPace: played ? played.pace : null,
+    captionTempo: played && played.beats ? tempoOf(played.pace) : null,
     stops: played ? played.stops : [],
     pending: !found,
     hand: hand ?? null,

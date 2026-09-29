@@ -233,21 +233,31 @@ export default class DevMetricsPanel extends React.Component {
     }
 
     let unit = report.beats ? "beat" : "column"
-    let pace = report.pace == null ? "none (too few timed columns)" :
-      `${formatMs(report.pace)} per ${unit}${report.tempo ? ` (♩ = ${report.tempo})` : ""}`
+    let paced = (ms, tempo) => ms == null ? "none (too few timed columns)" :
+      `${formatMs(ms)} per ${unit}${tempo ? ` (♩ = ${tempo})` : ""}`
+    let barsOf = numbers => {
+      let bars = [...new Set(numbers)]
+      return `${numbers.length}, ${bars.length == 1 ? "bar" : "bars"} ${bars.join(", ")}`
+    }
+    let hesitated = report.columns.filter(column => column.hesitated).map(column => column.bar)
 
     return <>
       <dl className={styles.facts}>
         <dt>Drill</dt>
         <dd>{mode}, written {clock(report.at)}{report.hand && `, ${report.hand == "both" ? "hands together" : `${report.hand} hand`}`}</dd>
-        <dt>Pace</dt>
-        <dd>{pace}: the median time on a column per notated beat before it, the first column left out
-          {report.mode == "scroll" && "; not read in scroll mode"}</dd>
+        <dt>Grade pace</dt>
+        <dd>{paced(report.pace, report.tempo)}: the median time on a column per notated beat before
+          it, the first column left out, every column counted
+          {report.mode == "scroll" && "; not read in scroll mode"}
+          {report.mode == "wait" &&
+            ` · hesitations, latency over max(${formatMs(HESITATION_MIN_MS)}, ${HESITATION_PACE} × this pace × beats): ` +
+            (hesitated.length ? barsOf(hesitated) : "none")}</dd>
         {report.mode == "wait" && <>
-          <dt>Hesitation</dt>
-          <dd>latency over max({formatMs(HESITATION_MIN_MS)}, {HESITATION_PACE} × pace × beats)
-            {" · "}stops {report.stops.length ?
-              `${report.stops.length}, bars ${[...new Set(report.stops)].join(", ")}` : "none"}</dd>
+          <dt>Caption pace</dt>
+          <dd>{paced(report.captionPace, report.captionTempo)}: the after-run caption's own, which
+            leaves a column paused on out of the pace and counts it a stop, so it is not what the
+            grade read above
+            {" · "}stops {report.stops.length ? barsOf(report.stops) : "none"}</dd>
         </>}
       </dl>
 

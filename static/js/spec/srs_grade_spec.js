@@ -1,7 +1,15 @@
 import {
-  gradeAttempt, gradeOf, gradeRule, GRADE_RULES, hesitationThreshold, attemptPace, attemptCounts, openingColumn,
+  gradeAttempt, gradeOf, gradeRule, hesitationThreshold, attemptPace, attemptCounts, openingColumn,
   AGAIN, HARD, GOOD, EASY, HESITATION_MIN_MS, HESITATION_PACE,
 } from "st/srs/grade"
+
+// every rule gradeRule can name: again for a column skipped or stuck, or
+// slips on over SLIP_SHARE of them; hard for a slip, or hesitations on over
+// HESITATION_SHARE of them; good in scroll mode, for a hesitation, or at a
+// pace over EASY_PACE times the usual; else easy
+const GRADE_RULES = [
+  "skipped", "stuck", "slips", "slip", "hesitations", "scroll", "hesitation", "pace", "easy",
+]
 
 // columns played at an even 500 ms a beat, one beat apart, each started
 // 400 ms after it became the head, with the misses of each (a number a

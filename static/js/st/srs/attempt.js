@@ -239,6 +239,17 @@ export function passPractice(pass, {pieceId, hand, at=pass.lastAt}) {
   })
 }
 
+/**
+ * Whether a column done with was skipped rather than played: in scroll mode
+ * one scrolled past with misses was missed, not skipped
+ * @param {Object} column a pass's column
+ * @param {string|null} mode the drill's mode
+ * @returns {boolean}
+ */
+export function columnSkipped(column, mode) {
+  return column.done && !column.hit && !(mode == "scroll" && column.misses > 0)
+}
+
 // what the grade reads of the pass's column at idx: its gap counts from the
 // column played before it, as its time does, settled columns left out
 function gradedColumn(pass, idx, mode) {
@@ -251,8 +262,7 @@ function gradedColumn(pass, idx, mode) {
 
   return {
     misses: column.misses,
-    // a column scrolled past was missed, not skipped
-    skipped: column.done && !column.hit && !(mode == "scroll" && column.misses > 0),
+    skipped: columnSkipped(column, mode),
     settled: column.settled,
     ms: column.ms,
     latency: column.latency,

@@ -192,8 +192,8 @@ export function gradeOf(counts, opts) {
 }
 
 /**
- * The grade of an attempt from its counts (see gradeOf) with the rule of
- * gradeOf that gave it, one of GRADE_RULES
+ * The grade of an attempt from its counts (see gradeOf) with the name of the
+ * rule of gradeOf that gave it
  * @param {Object} counts see attemptCounts
  * @param {Object} opts as for gradeOf
  * @returns {{grade: number, rule: string}}
@@ -215,14 +215,6 @@ export function gradeRule(counts, {mode, firstSight=false, usualPace}) {
   let atPace = firstSight || usualPace == null || pace == null || pace <= EASY_PACE * usualPace
   return atPace ? {grade: EASY, rule: "easy"} : {grade: GOOD, rule: "pace"}
 }
-
-// the rules of gradeRule: again for a column skipped or stuck, or slips on
-// over SLIP_SHARE of them; hard for a slip, or hesitations on over
-// HESITATION_SHARE of them; good in scroll mode, for a hesitation, or at a
-// pace over EASY_PACE times the usual; else easy
-export const GRADE_RULES = [
-  "skipped", "stuck", "slips", "slip", "hesitations", "scroll", "hesitation", "pace", "easy",
-]
 
 /**
  * The counts and grade of an attempt, see attemptCounts and gradeOf.
