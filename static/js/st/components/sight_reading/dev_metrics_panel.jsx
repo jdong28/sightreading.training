@@ -130,7 +130,7 @@ export default class DevMetricsPanel extends React.Component {
 
     return <>
       <dl className={styles.facts}>
-        <dt>Head</dt>
+        <dt>Head (at the last event)</dt>
         <dd>{session ? `waiting ${formatMs(head.waiting)}` : "at rest, nothing is judged"}
           {" · "}latency {formatMs(head.latency)}
           {head.onLine != null && ` · on the hit line ${formatMs(head.onLine)}`}</dd>
@@ -148,7 +148,9 @@ export default class DevMetricsPanel extends React.Component {
       {pass ? this.renderPass(pass) :
         <p className={styles.note}>
           {generator && generator.deck ?
-            "The chosen section has no playable column, so there is no pass to time." :
+            "No run is in progress: there is nothing to play right now, eg. today's programme is " +
+              "complete, every bar it has left rests until the next sitting, or the chosen " +
+              "section has no playable column." :
             "This drill keeps no attempts: runs are timed and graded for imported pieces on the " +
               "sheet music page."}
           {" The matcher's own measurements are above."}
