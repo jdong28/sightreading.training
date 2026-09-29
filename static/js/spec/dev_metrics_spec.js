@@ -51,10 +51,23 @@ describe("dev metrics", function() {
       storeDevMetricsOpen(false, storage)
       expect(devMetricsState({search: "", storage})).toEqual({enabled: true, open: false})
       // the flag doesn't reopen a panel closed by hand
-      expect(devMetricsState({search: "?devMetrics", storage})).toEqual({enabled: true, open: false})
+      expect(devMetricsState({search: "?devMetrics=1", storage})).toEqual({enabled: true, open: false})
 
       expect(devMetricsState({search: "?devMetrics=0", storage})).toEqual({enabled: false, open: false})
       expect(storage.entries[DEV_METRICS_KEY]).toBeUndefined()
+    })
+
+    it("ignores a flag that is neither 1 nor 0", function() {
+      let storage = memoryStorage()
+      for (let value of ["", "=", "=false", "=off", "=no", "=2"]) {
+        expect(devMetricsState({search: `?devMetrics${value}`, storage})).toEqual(
+          {enabled: false, open: false})
+      }
+      expect(storage.entries[DEV_METRICS_KEY]).toBeUndefined()
+
+      devMetricsState({search: "?devMetrics=1", storage})
+      expect(devMetricsState({search: "?devMetrics=false", storage})).toEqual(
+        {enabled: true, open: true})
     })
 
     it("stays off when storage can't be read", function() {
