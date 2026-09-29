@@ -46,6 +46,12 @@
 // held through a note the score strikes again (the earlier one ends at the
 // onset) isn't sustained, so the column still waits for it.
 //
+// The one column credited as it becomes the head is the card's last (not
+// its first): no key of the card is left to go down after it, so the card
+// finishes by itself. Striking a key held for it again at its onset anyway
+// is then excused until a key outside those goes down, so it is never a
+// slip on the card or lap after it (see settleCardEnd).
+//
 // The ornaments the score writes at the head column (T7, rule 2.2) are
 // allowed extras: the key goes down, but nothing about it is judged. The
 // column carries them as its allowed (see extractSectionColumns in
@@ -112,6 +118,12 @@ export default class NoteMatcher {
     // down, which a key struck again shortly after is excused against
     this.previous = null
 
+    // the keys held for the card's last column as it completed with them
+    // (see settleCardEnd), each excused when struck again until a key
+    // outside them goes down. They survive the hits after it, not a list
+    // taken on afresh
+    this.restrikes = {}
+
     // whether one of the head column's own keys has gone down at it, and
     // when the first of them did, for its spread: null when that press
     // carried no timeStamp (the on-screen keyboard)
@@ -156,10 +168,11 @@ export default class NoteMatcher {
 
   // the head column is played afresh from the next key down, with the keys
   // still down left held (a skipped column), and timed from now: no key is
-  // held early for the column after it, and no column just completed is
-  // looked back to
+  // held early for the column after it, and no column just completed (nor
+  // card's last column completed held) is looked back to
   clearTouched() {
     this.startHead(this.now())
+    this.restrikes = {}
   }
 
   // a column became the head at time: nothing is struck at it yet
@@ -257,10 +270,16 @@ export default class NoteMatcher {
 
     this.expireEarly(timeStamp)
 
-    // a key down that is neither the head's own nor the column just
-    // completed struck again is the player moving on: the columns its held
-    // keys complete are done first, and the key is judged at the one after
-    if (!this.inColumn(notes.currentColumn(), note) && !this.repeated(note, timeStamp)) {
+    // a key outside those held for the card's last column is the player
+    // moving on from it: they aren't excused struck again any more
+    if (!this.restrikes[note]) {
+      this.restrikes = {}
+    }
+
+    // a key down that is neither the head's own nor a key struck again is
+    // the player moving on: the columns its held keys complete are done
+    // first, and the key is judged at the one after
+    if (!this.inColumn(notes.currentColumn(), note) && !this.struckAgain(note, timeStamp)) {
       let settled = this.notes
       this.settleHeld(note)
       notes = this.notes
@@ -271,8 +290,9 @@ export default class NoteMatcher {
       if (!notes.currentColumn().length) { return }
     }
 
-    // rule 2: the head's own key, a key of the column just completed struck
-    // again, a key of the next column played early, or else a slip
+    // rule 2: the head's own key, a key struck again (of the column just
+    // completed, or held for the card's last column), a key of the next
+    // column played early, or else a slip
     let slip = false
     let own = this.inColumn(notes.currentColumn(), note)
     if (own) {
@@ -287,8 +307,8 @@ export default class NoteMatcher {
       if (this.firstKeyAt == null) {
         this.firstKeyAt = timeStamp ?? this.now()
       }
-    } else if (this.repeated(note, timeStamp)) {
-      // struck again: neither the head's nor a slip
+    } else if (this.struckAgain(note, timeStamp)) {
+      // neither the head's nor a slip
     } else if (timeStamp != null && this.inColumn(this.columnAt(1), note)) {
       this.early = {...this.early, [note]: timeStamp}
     } else {
@@ -311,6 +331,34 @@ export default class NoteMatcher {
     if (matched) {
       this.hit(timeStamp)
     }
+
+    this.settleCardEnd()
+  }
+
+  // The head just became the card's last column with every key of it down,
+  // struck early for it or held where the score still sounds it (rule 1):
+  // it completes now. Held credit is otherwise lazy, but no key of the card
+  // is left to go down after this column and settle it, so the card would
+  // wait for a key struck again. Never a card's first column (nor a column
+  // carrying no cardIndex), which only becomes the head as the lap or card
+  // before it ends, so one key down never finishes a lap it doesn't play.
+  //
+  // The player may still strike a key held for it again at its own onset,
+  // as the score writes it (D3(a)), which now comes after the card: each is
+  // excused (see struckAgain) until a key outside them goes down, however
+  // late, where LATE_REPEAT_WINDOW would call it a slip on what follows (or
+  // hold it early for the column after the head, which it isn't). The next
+  // lap or card starting on the key can't tell that from its own: the key
+  // plays it, and stays excused struck once more for it
+  settleCardEnd() {
+    let column = this.notes.currentColumn()
+    if (!column.length || !column.cardIndex || !this.lastOfCard()) { return }
+
+    let held = this.heldCredit()
+    if (!held.length || !this.completes()) { return }
+
+    this.hit(null)
+    this.restrikes = Object.fromEntries(held.map(n => [n, true]))
   }
 
   // The head column is complete, its last required key down at completedAt
@@ -455,6 +503,13 @@ export default class NoteMatcher {
     }
 
     this.emitMiss()
+  }
+
+  // whether a key down is one struck again rather than played: one of the
+  // column just completed (repeated), or held for the card's last column
+  // as it completed (see settleCardEnd)
+  struckAgain(note, timeStamp) {
+    return !!this.restrikes[note] || this.repeated(note, timeStamp)
   }
 
   // whether a key is one of the column just completed, struck again within

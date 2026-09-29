@@ -2543,7 +2543,9 @@ describe("sight reading page", function() {
       // beat every 500 ms: each key but Bb3 let up just before the next
       let ostinato = [[2.5, "C4"], [3, "D4"], [3.5, "G4"], [4.5, "D4"], [5, "C4"],
         [6.5, "C4"], [7, "D4"], [7.5, "G4"], [8.5, "D4"], [9, "C4"], [10, "G5"], [10.5, "C4"]]
-      let played = ostinato.flatMap(([beat, note]) => [[beat * 500, "on", note], [beat * 500 + 240, "off", note]])
+      let keys = (beats, ms=500) => beats.flatMap(([beat, note]) =>
+        [[beat * ms, "on", note], [beat * ms + ms / 2 - 10, "off", note]])
+      let played = keys(ostinato)
       let bb3 = parseNote("Bb3")
 
       // C1: the Bb3 struck at beat 2 is held on through the whole bars, as
@@ -2596,6 +2598,83 @@ describe("sight reading page", function() {
         perform([[1400, "off", "C#4"], [1450, "on", "C#4"]])
         expect(counts()).toEqual([3, 0])
         expect(sorted(head())).toEqual(["C#3", "G#4"])
+      })
+
+      // The Rêverie's bar 3 as a card of its own ends on the Bb3 at beat 9.5
+      // (the report's column 14), which the whole note struck at beat 6
+      // still sounds: no key of the card is left to go down after it, so it
+      // used to wait for the Bb3 struck again. It finishes by itself now,
+      // and striking the Bb3 again there anyway, as the score also writes it
+      // (D3(a)), is no slip on the card or lap after it
+      describe("a card ending on the held Bb3", function() {
+        // bar 3's ostinato after the Bb3 at beat 6, laps of the bar later,
+        // at ms a beat
+        let barThree = (laps=0, ms=500) => keys(ostinato.filter(([beat]) => beat > 6 && beat < 10)
+          .map(([beat, note]) => [beat + 4 * laps, note]), ms)
+
+        it("finishes the card by itself and goes on to the next", async function() {
+          let piece = await renderPiece(reverieOpening(), {startMeasure: 3, endMeasure: 4, measuresPerCard: "1"})
+          let generator = page.state.notes.generator
+          expect(head().map(parseNote)).toEqual([bb3])
+          let credits = heldCredits()
+
+          perform([[3000, "on", "Bb3"], ...barThree()])
+
+          expect(counts()).toEqual([7, 0])
+          expect(credits.map((credit, idx) => credit.length ? idx : null).filter(idx => idx != null))
+            .toEqual([6])
+          // the pass is finished and written, and bar 4 is up
+          expect(generator.lastPass.complete).toBe(true)
+          await generator.finishing
+          let stats = store.sectionStats(piece.id).find(stat => stat.startMeasure == 3 && stat.endMeasure == 3)
+          expect([stats.hits, stats.misses]).toEqual([7, 0])
+          expect(head().map(parseNote)).toEqual([parseNote("G5")])
+
+          // the Bb3 struck again at its own onset
+          perform([[4740, "off", "Bb3"], [4750, "on", "Bb3"], [5000, "on", "G5"]])
+          expect(counts()).toEqual([8, 0])
+          expect(page.state.noteShaking).toBe(false)
+          expect(head().map(parseNote)).toEqual([parseNote("C4")])
+        })
+
+        it("finishes each lap of the card looping by itself", async function() {
+          await renderPiece(reverieOpening(), {startMeasure: 3, endMeasure: 3})
+          let generator = page.state.notes.generator
+          // slower, so the eighth between beats 9.5 and 10 is longer than
+          // LATE_REPEAT_WINDOW
+          let ms = 700
+
+          perform([[6 * ms, "on", "Bb3"], ...barThree(0, ms)])
+          expect(counts()).toEqual([7, 0])
+          expect(generator.lastPass.complete).toBe(true)
+          // the lap after it starts on the Bb3 at beat 6
+          expect(head().map(parseNote)).toEqual([bb3])
+
+          // the Bb3 struck again at beat 9.5 can't be told from the next
+          // lap's own, which it plays; struck once more at that lap's beat 6
+          // it is excused, and the lap ends by itself as the first did
+          perform([
+            [9.5 * ms - 10, "off", "Bb3"], [9.5 * ms, "on", "Bb3"],
+            [10 * ms - 10, "off", "Bb3"], [10 * ms, "on", "Bb3"],
+            ...barThree(1, ms),
+          ])
+          expect(counts()).toEqual([14, 0])
+          expect(page.state.noteShaking).toBe(false)
+          expect(head().map(parseNote)).toEqual([bb3])
+        })
+
+        it("still waits at the card's last column for the Bb3 let up before it", async function() {
+          await renderPiece(reverieOpening(), {startMeasure: 3, endMeasure: 4, measuresPerCard: "1"})
+
+          perform([[3000, "on", "Bb3"], [4400, "off", "Bb3"], ...barThree()])
+          expect(counts()).toEqual([6, 0])
+          expect(head().map(parseNote)).toEqual([bb3])
+
+          // struck again, it finishes the card
+          perform([[4750, "on", "Bb3"]])
+          expect(counts()).toEqual([7, 0])
+          expect(head().map(parseNote)).toEqual([parseNote("G5")])
+        })
       })
     })
 
