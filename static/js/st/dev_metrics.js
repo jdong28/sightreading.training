@@ -8,7 +8,7 @@
 
 import {passGrading, gradeRange, passPace, columnSkipped} from "st/srs/attempt"
 import {
-  hesitations, hesitationThreshold, AGAIN, HARD, GOOD, EASY, STUCK_MISSES, SLIP_SHARE,
+  hesitations, hesitationThreshold, openingColumn, AGAIN, HARD, GOOD, EASY, STUCK_MISSES, SLIP_SHARE,
   HESITATION_SHARE, EASY_PACE,
 } from "st/srs/grade"
 import {itemId} from "st/srs/records"
@@ -166,6 +166,7 @@ export function runReport(pass) {
   let grading = passGrading(pass)
   let wait = grading.mode == "wait"
   let hesitated = new Set(wait ? hesitations(grading.columns, {pace: grading.pace}) : [])
+  let opening = openingColumn(grading.columns)
   let played = passPace(pass)
 
   let {pieceId, hand} = pass.written || {}
@@ -187,7 +188,7 @@ export function runReport(pass) {
       gap: column.gap,
       ms: column.ms,
       latency: column.latency,
-      threshold: wait && idx > 0 && !column.skipped ? hesitationThreshold(column, grading.pace) : null,
+      threshold: wait && idx != opening && !column.skipped ? hesitationThreshold(column, grading.pace) : null,
       hesitated: hesitated.has(idx),
       misses: column.misses,
       skipped: column.skipped,
