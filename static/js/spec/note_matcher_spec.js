@@ -464,6 +464,25 @@ describe("note matcher", function() {
       expect(hits.map(hit => [hit.early, hit.latency])).toEqual([[0, 1100], [1, 2900]])
     })
 
+    // the Rêverie's Bb3 held through the columns at 5.5 and 6, which the C4
+    // at 6.5 settles: they have no time of their own, and the C4, the column
+    // the player was reaching for, is timed from the C4 before them
+    it("times the column after those settled by a key held from the column before them", function() {
+      let sustain = column => Object.assign(column, {sustained: ["Bb3"]})
+      let columns = [["Bb3"], ["C4"], sustain(["Bb3"]), sustain(["Bb3"]), ["C4"], ["D4"]]
+        .map((column, idx) => Object.assign(column, {cardIndex: idx}))
+      let matcher = matcherFor(columns, {now: () => clock})
+      clock = 0
+      run(matcher, [["on", "Bb3", 0], ["on", "C4", 575], ["off", "C4", 800]])
+      clock = 2300
+      run(matcher, [["on", "C4", 2300], ["off", "C4", 2500], ["on", "D4", 2875]])
+
+      let hits = matcher.judged.filter(event => event.type == "hit")
+      expect(hits.map(hit => [hit.heldCredited.length, hit.settled, hit.latency])).toEqual([
+        [1, true, null], [1, true, null], [0, false, 1725], [0, false, 575],
+      ])
+    })
+
     it("records in scroll mode how long a column stood on the hit line before it completed, never as a miss", function() {
       let matcher = matcherFor([["C4"], ["E4"], ["G4"], ["A4"], ["B4"]], {now: () => 0, scroll: true})
 

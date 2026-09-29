@@ -169,6 +169,38 @@ describe("srs attempt", function() {
     expect([slowCard.review.hesitations, slowCard.review.grade]).toEqual([1, GOOD])
   })
 
+  // a column the matcher settled by a key held, none of its keys struck at
+  // it: its time and the notated beats before it go to the next column
+  // played, so the wait for it isn't a hesitation at the pace of the pass
+  it("carries the time on a column settled by a key held to the next column played", function() {
+    let settled = {latency: null, spread: null, early: 0, heldCredit: 1, late: null, settled: true}
+    play(pass, 2000)
+    play(pass, 2500)
+    play(pass, 4000, {measured: settled})
+    play(pass, 4500, {measured: {latency: 2000, spread: 0, early: 0, heldCredit: 0, late: null}})
+
+    expect(pass.columns.map(column => [column.settled, column.ms])).toEqual([
+      [false, 1000], [false, 500], [true, null], [false, 2000],
+    ])
+    let [card, bar1, bar2] = attemptsOf(pass)
+    expect(card.review.perColumn.map(column => column[2])).toEqual([1000, 500, null, 2000])
+    expect([card.review.hesitations, card.review.grade]).toEqual([0, EASY])
+    expect(card.review.elapsedMs).toEqual(3500)
+    expect([bar1.review.elapsedMs, bar2.review.elapsedMs]).toEqual([1500, 2000])
+  })
+
+  it("opens a pass at its first column played when those before it were settled by a key held", function() {
+    let settled = {latency: null, spread: null, early: 0, heldCredit: 1, late: null, settled: true}
+    play(pass, 1000, {measured: settled})
+    play(pass, 5000)
+    play(pass, 5500)
+    play(pass, 6000)
+
+    let [card] = attemptsOf(pass)
+    expect(card.review.leadMs).toEqual(4000)
+    expect([card.review.hesitations, card.review.grade]).toEqual([0, EASY])
+  })
+
   it("records how late each column stood on the line in scroll mode, never as a miss", function() {
     pass.drill = {mode: "scroll", speed: 30}
     let measured = late => ({latency: 300, spread: 0, early: 0, heldCredit: 0, late})

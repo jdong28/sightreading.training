@@ -1457,7 +1457,7 @@ describe("sight reading page", function() {
         await finished()
 
         let review = await card()
-        expect(review.algo).toEqual(2)
+        expect(review.algo).toEqual(3)
         expect(review.perColumn.slice(1).map(([slips, stalled, latency, spread, early, heldCredit, late]) =>
           [slips, stalled, latency, spread, early, heldCredit, late])).toEqual([
           [0, 0, 300, 5600, 0, 0, null],
@@ -1465,6 +1465,69 @@ describe("sight reading page", function() {
           [0, 0, 400, 0, 0, 0, null],
         ])
         expect([review.hesitations, review.grade]).toEqual([1, GOOD])
+      })
+
+      // The Rêverie's bars 2–3 at about 52 bpm, the left hand's Bb3 struck
+      // at beat 2 and held through the columns at beats 5.5 and 6, which the
+      // score still sounds it at: the C4 at 6.5 settles them, and it is the
+      // column the wait was spent on
+      it("carries the time on columns settled by a held key to the next column played", async function() {
+        piece = (await importMusicXMLPiece("reverie.musicxml", reverieOpening(), store)).piece
+        window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+          piece: piece.id, startMeasure: 2, endMeasure: 3, hand: BOTH_HANDS, measuresPerCard: "2",
+        }))
+        let el = renderScorePage()
+        click(buttonNamed(el, "Begin"))
+
+        // one clock for the events, the matcher and the pass
+        let generator = page.state.notes.generator
+        let clock = 0
+        let now = () => clock
+        generator.now = now
+        generator.deck.now = now
+        page.matcher.now = now
+        generator.pass.restart(0)
+
+        const BEAT = 1150
+        let at = beat => (beat - 2) * BEAT
+        let key = (on, note, beat) => {
+          clock = at(beat)
+          flushSync(() => midi(on, note, clock))
+        }
+        let strike = (note, beat) => {
+          key(true, note, beat)
+          key(false, note, beat + 0.25)
+        }
+
+        key(true, "Bb3", 2)
+        for (let [note, beat] of [["C4", 2.5], ["D4", 3], ["G4", 3.5], ["D4", 4.5], ["C4", 5]]) {
+          strike(note, beat)
+        }
+        expect([...page.state.notes.currentColumn()]).toEqual(["Bb3"])
+
+        // Bb3 still down: 5.5 and 6 are settled by the next key down
+        for (let [note, beat] of [["C4", 6.5], ["D4", 7], ["G4", 7.5], ["D4", 8.5], ["C4", 9]]) {
+          strike(note, beat)
+        }
+        key(false, "Bb3", 9.25)
+        strike("Bb3", 9.5)
+        await finished()
+
+        let review = (await reviews()).find(r => r.itemId == `${piece.id}:both:2-3`)
+        expect(review.columns).toEqual(14)
+        // [latency, heldCredit] of each column after the first
+        expect(review.perColumn.slice(1).map(([, , latency, , , heldCredit]) => [latency, heldCredit])).toEqual([
+          [575, 0], [575, 0], [575, 0], [1150, 0], [575, 0],
+          // 5.5 and 6: settled by the key held, timed not at all
+          [null, 1], [null, 1],
+          // 6.5 was waited for from the C4 at 5
+          [1725, 0],
+          [575, 0], [575, 0], [1150, 0], [575, 0], [575, 0],
+        ])
+        // the wait from beat 5 is bar 3's, where the column reached for is
+        expect(review.bars.map(bar => bar[4])).toEqual([3450, 5175])
+        expect([review.hesitations, review.grade]).toEqual([0, EASY])
+        expect(page.state.notes.generator.caption()).toEqual("♩ ≈ 52 · no stops")
       })
 
       it("records scroll mode's lateness on the hit line, never as a miss", async function() {
