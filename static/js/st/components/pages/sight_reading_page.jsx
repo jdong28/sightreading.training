@@ -5,10 +5,12 @@ import NoteStats from "st/note_stats"
 import SlideToZero from "st/slide_to_zero"
 import Keyboard, {KeyboardInput} from "st/components/keyboard"
 import StatsLightbox from "st/components/sight_reading/stats_lightbox"
+import DevMetricsPanel from "st/components/sight_reading/dev_metrics_panel"
 import Hotkeys from "st/components/hotkeys"
 
 import styles from "./sight_reading_page.module.css"
 import staffStyles from "st/components/staff.module.css"
+import devMetricsStyles from "st/components/sight_reading/dev_metrics_panel.module.css"
 
 import {noteName, parseNote} from "st/music"
 import {
@@ -24,6 +26,7 @@ import {
   Plate, Pill, StatCard, TitleBlock, FleuronRule, PullQuote, SectionLabel
 } from "st/components/salon"
 import {HEADER_ACTIONS_ID} from "st/components/header"
+import {devMetricsState, storeDevMetricsOpen} from "st/dev_metrics"
 import {setTitle, gaEvent, csrfToken} from "st/globals"
 import {dispatch, trigger} from "st/events"
 import {NOTE_EVENTS} from "st/midi"
@@ -243,6 +246,17 @@ export default class SightReadingPage extends React.Component {
     // keys touched and the head column. The page renders what it returns
     this.matcher = new NoteMatcher(null, {onEvent: event => this.applyEvent(event)})
 
+    // the developer metrics panel, enabled with ?devMetrics=1 (see
+    // st/dev_metrics): invisible unless enabled, and then toggled from the
+    // header
+    let devMetrics = devMetricsState()
+    this.devMetrics = devMetrics.enabled
+    this.toggleDevMetrics = () => {
+      let devMetricsOpen = !this.state.devMetricsOpen
+      storeDevMetricsOpen(devMetricsOpen)
+      this.setState({devMetricsOpen})
+    }
+
     this.state = {
       newRenderer: props.useStaffTwo || false,
       noteShaking: false,
@@ -281,6 +295,8 @@ export default class SightReadingPage extends React.Component {
       // the pitches the app staff's fallback drops from the drilled section
       // (see droppedStaffNote)
       droppedPitches: new Set(),
+
+      devMetricsOpen: devMetrics.open,
     }
   }
 
@@ -877,6 +893,8 @@ export default class SightReadingPage extends React.Component {
         // the column as the matcher removed it (see NoteList#shift)
         this.state.stats.hitNotes(event.hitNotes)
         update.notes = this.matcher.notes
+        // the keys it credited, for the developer metrics panel
+        if (this.devMetrics) { this.lastHit = event }
         // one column at a time: a hit may complete the next column too, from
         // its keys played early
         this.advanceEngineMarks(event.from, event.to)
@@ -1371,8 +1389,37 @@ export default class SightReadingPage extends React.Component {
         }}
       />
 
+      {this.renderDevMetrics()}
+
       <Hotkeys keyMap={this.keyMap} />
     </div>;
+  }
+
+  // the developer metrics panel and its pill in the header, only when
+  // enabled (see st/dev_metrics)
+  renderDevMetrics() {
+    if (!this.devMetrics) { return null }
+
+    let pill = <Pill
+      variant="ghost"
+      className={devMetricsStyles.metrics_pill}
+      aria-pressed={!!this.state.devMetricsOpen}
+      onClick={this.toggleDevMetrics}>
+      Metrics
+    </Pill>
+
+    return <>
+      {this.state.headerActions && !this.state.fullscreen ?
+        createPortal(pill, this.state.headerActions) :
+        <div className={devMetricsStyles.floating_toggle}>{pill}</div>}
+      {this.state.devMetricsOpen && <DevMetricsPanel
+        generator={this.currentNotesGenerator()}
+        matcher={this.matcher}
+        lastHit={this.lastHit}
+        session={!!this.state.session}
+        close={this.toggleDevMetrics}
+      />}
+    </>
   }
 
   // in the header's top row, or atop the trainer when there's no header or

@@ -21,6 +21,7 @@ import {SITTING_GAP_MS} from "st/srs/planner"
 import {AGAIN, GOOD, EASY} from "st/srs/grade"
 import {IN_ORDER, RANDOM_ORDER, MeasureCardGenerator} from "st/measure_cards"
 import {DRILL_STORAGE_KEY, SCORE_DRILL_STORAGE_KEY} from "st/generators"
+import {DEV_METRICS_KEY} from "st/dev_metrics"
 import {scopeEvent} from "st/events"
 import NoteStats, {addNoteListener} from "st/note_stats"
 import {parseNote} from "st/music"
@@ -312,7 +313,7 @@ describe("sight reading page", function() {
   let container, root, page, store, previousStore, savedStorage
   let clockInstalled = false
 
-  const STORAGE_KEYS = [DRILL_STORAGE_KEY, SCORE_DRILL_STORAGE_KEY, SHEET_MUSIC_STORAGE_KEY]
+  const STORAGE_KEYS = [DRILL_STORAGE_KEY, SCORE_DRILL_STORAGE_KEY, SHEET_MUSIC_STORAGE_KEY, DEV_METRICS_KEY]
 
   beforeEach(async function() {
     savedStorage = STORAGE_KEYS.map(key => [key, window.localStorage.getItem(key)])
@@ -1422,6 +1423,41 @@ describe("sight reading page", function() {
       click(buttonNamed(el, "Rest"))
       await waitFor(() => store.recentSessions().length == 1, "the session to be saved")
       expect(store.recentSessions()[0].clefs).toEqual({g: {hits: 2, misses: 0}, f: {hits: 2, misses: 0}})
+    })
+
+    describe("the developer metrics panel", function() {
+      let panel = el => el.querySelector("[data-dev-metrics]")
+      let tab = (el, name) => click([...panel(el).querySelectorAll("[role=tab]")].find(b => b.textContent == name))
+
+      it("is hidden unless enabled", async function() {
+        let el = await renderSection({measuresPerCard: "2"})
+        expect(buttonNamed(el, "Metrics")).toBeUndefined()
+        expect(panel(el)).toBe(null)
+      })
+
+      it("shows each column as it is played, then the run's grade and the stored reviews", async function() {
+        window.localStorage.setItem(DEV_METRICS_KEY, "closed")
+        let el = await renderSection({measuresPerCard: "2"})
+        expect(panel(el)).toBe(null)
+        click(buttonNamed(el, "Metrics"))
+        expect(window.localStorage.getItem(DEV_METRICS_KEY)).toEqual("open")
+
+        let rows = () => [...panel(el).querySelectorAll("tbody tr")].map(tr => tr.children[3].textContent)
+        expect(rows()).toEqual(["head", "to come"])
+        playHead()
+        expect(rows()).toEqual(["hit", "head"])
+
+        playHead()
+        await finished()
+        flushSync(() => {})
+
+        tab(el, "Runs")
+        expect(panel(el).textContent).toContain("easy: no slip or hesitation, at first sight")
+
+        tab(el, "History")
+        await waitFor(() => panel(el).textContent.includes("(was new)"), "the stored reviews")
+        expect(panel(el).querySelector("select[disabled]")).toBe(null)
+      })
     })
 
     // T8 of the note detection report: each column's measurements go from

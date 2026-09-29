@@ -1,7 +1,15 @@
 import {
-  gradeAttempt, gradeOf, attemptPace, attemptCounts, openingColumn,
-  AGAIN, HARD, GOOD, EASY, HESITATION_MIN_MS,
+  gradeAttempt, gradeRule, hesitationThreshold, attemptPace, attemptCounts, openingColumn,
+  AGAIN, HARD, GOOD, EASY, HESITATION_MIN_MS, HESITATION_PACE,
 } from "st/srs/grade"
+
+// every rule gradeRule can name: again for a column skipped or stuck, or
+// slips on over SLIP_SHARE of them; hard for a slip, or hesitations on over
+// HESITATION_SHARE of them; good in scroll mode, for a hesitation, or at a
+// pace over EASY_PACE times the usual; else easy
+const GRADE_RULES = [
+  "skipped", "stuck", "slips", "slip", "hesitations", "scroll", "hesitation", "pace", "easy",
+]
 
 // columns played at an even 500 ms a beat, one beat apart, each started
 // 400 ms after it became the head, with the misses of each (a number a
@@ -77,6 +85,7 @@ describe("srs grade", function() {
       hesitations: 1,
       pace: 600,
       grade: AGAIN,
+      rule: "skipped",
     })
   })
 
@@ -122,8 +131,37 @@ describe("srs grade", function() {
 
   it("grades the counts alone", function() {
     let counts = {columns: 4, slips: 0, stuck: 0, skipped: 0, hesitations: 0, pace: 500}
-    expect(gradeOf(counts, {mode: "wait"})).toEqual(EASY)
-    expect(gradeOf({...counts, pace: 600}, {mode: "wait", usualPace: 500})).toEqual(GOOD)
-    expect(gradeOf({...counts, slips: 1}, {mode: "wait"})).toEqual(HARD)
+    expect(gradeRule(counts, {mode: "wait"}).grade).toEqual(EASY)
+    expect(gradeRule({...counts, pace: 600}, {mode: "wait", usualPace: 500}).grade).toEqual(GOOD)
+    expect(gradeRule({...counts, slips: 1}, {mode: "wait"}).grade).toEqual(HARD)
+  })
+
+  it("names the rule that gave the grade", function() {
+    let counts = {columns: 4, slips: 0, stuck: 0, skipped: 0, hesitations: 0, pace: 500}
+    let seen = new Set()
+    let rule = (change, opts={}) => {
+      let given = gradeRule({...counts, ...change}, {mode: "wait", ...opts})
+      seen.add(given.rule)
+      return given
+    }
+
+    expect(rule({skipped: 1, stuck: 1})).toEqual({grade: AGAIN, rule: "skipped"})
+    expect(rule({stuck: 1, slips: 1})).toEqual({grade: AGAIN, rule: "stuck"})
+    expect(rule({slips: 2})).toEqual({grade: AGAIN, rule: "slips"})
+    expect(rule({slips: 1, hesitations: 2})).toEqual({grade: HARD, rule: "slip"})
+    expect(rule({hesitations: 2})).toEqual({grade: HARD, rule: "hesitations"})
+    expect(rule({}, {mode: "scroll"})).toEqual({grade: GOOD, rule: "scroll"})
+    expect(rule({hesitations: 1})).toEqual({grade: GOOD, rule: "hesitation"})
+    expect(rule({pace: 600}, {usualPace: 500})).toEqual({grade: GOOD, rule: "pace"})
+    expect(rule({pace: 575}, {usualPace: 500})).toEqual({grade: EASY, rule: "easy"})
+    expect(rule({pace: 600}, {usualPace: 500, firstSight: true})).toEqual({grade: EASY, rule: "easy"})
+    expect([...seen].sort()).toEqual([...GRADE_RULES].sort())
+  })
+
+  it("gives the latency a hesitation passes", function() {
+    expect(hesitationThreshold({gap: 1}, null)).toBe(null)
+    expect(hesitationThreshold({gap: 1}, 400)).toEqual(HESITATION_MIN_MS)
+    expect(hesitationThreshold({gap: 2}, 400)).toEqual(HESITATION_PACE * 800)
+    expect(hesitationThreshold({gap: null}, 800)).toEqual(HESITATION_PACE * 800)
   })
 })

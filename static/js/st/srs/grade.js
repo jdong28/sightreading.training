@@ -156,13 +156,25 @@ export function hesitations(columns, {lead=true, pace}) {
   return columns.flatMap((column, idx) => hesitated(column, pace) && idx != opening ? [idx] : [])
 }
 
+/**
+ * The latency past which a column is a hesitation at a pace, see hesitations
+ * @param {AttemptColumn} column
+ * @param {number|null} pace ms per beat
+ * @returns {number|null} ms, null without a pace
+ */
+export function hesitationThreshold(column, pace) {
+  if (pace == null) { return null }
+  return Math.max(HESITATION_MIN_MS, HESITATION_PACE * pace * beatsOf(column))
+}
+
 function hesitated(column, pace) {
   if (column.skipped || column.latency == null || pace == null) { return false }
-  return column.latency > Math.max(HESITATION_MIN_MS, HESITATION_PACE * pace * beatsOf(column))
+  return column.latency > hesitationThreshold(column, pace)
 }
 
 /**
- * The grade of an attempt from its counts:
+ * The grade of an attempt from its counts, with the name of the rule that
+ * gave it:
  * - again: a column skipped or stuck, or slips on over a quarter of them
  * - hard: any slip, or hesitations on over a quarter of them
  * - good: no slip
@@ -174,35 +186,34 @@ function hesitated(column, pace) {
  * tempo was imposed
  * @param {boolean} [opts.firstSight] the item's first attempt
  * @param {number} [opts.usualPace] the item's paceMs
- * @returns {number} AGAIN, HARD, GOOD or EASY
+ * @returns {{grade: number, rule: string}} grade is AGAIN, HARD, GOOD or EASY
  */
-export function gradeOf(counts, {mode, firstSight=false, usualPace}) {
+export function gradeRule(counts, {mode, firstSight=false, usualPace}) {
   let {columns, slips, stuck, skipped, hesitations, pace} = counts
   let n = Math.max(1, columns)
 
-  if (skipped > 0 || stuck > 0 || slips / n > SLIP_SHARE) {
-    return AGAIN
-  }
+  if (skipped > 0) { return {grade: AGAIN, rule: "skipped"} }
+  if (stuck > 0) { return {grade: AGAIN, rule: "stuck"} }
+  if (slips / n > SLIP_SHARE) { return {grade: AGAIN, rule: "slips"} }
 
-  if (slips > 0 || hesitations / n > HESITATION_SHARE) {
-    return HARD
-  }
+  if (slips > 0) { return {grade: HARD, rule: "slip"} }
+  if (hesitations / n > HESITATION_SHARE) { return {grade: HARD, rule: "hesitations"} }
+
+  if (mode != "wait") { return {grade: GOOD, rule: "scroll"} }
+  if (hesitations > 0) { return {grade: GOOD, rule: "hesitation"} }
 
   let atPace = firstSight || usualPace == null || pace == null || pace <= EASY_PACE * usualPace
-  if (mode == "wait" && hesitations == 0 && atPace) {
-    return EASY
-  }
-
-  return GOOD
+  return atPace ? {grade: EASY, rule: "easy"} : {grade: GOOD, rule: "pace"}
 }
 
 /**
- * The counts and grade of an attempt, see attemptCounts and gradeOf.
+ * The counts and grade of an attempt, see attemptCounts and gradeRule.
  * @param {AttemptColumn[]} columns
  * @param {Object} opts the options of both
- * @returns {Object} the counts with grade
+ * @returns {Object} the counts with grade and the rule that gave it (see
+ * gradeRule)
  */
 export function gradeAttempt(columns, opts) {
   let counts = attemptCounts(columns, opts)
-  return {...counts, grade: gradeOf(counts, opts)}
+  return {...counts, ...gradeRule(counts, opts)}
 }

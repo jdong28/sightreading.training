@@ -15,7 +15,7 @@
 
 import {addNoteListener} from "st/note_stats"
 import {getAppStore} from "st/storage"
-import {AttemptPass, passAttempts, passPractice, passPace, columnClefs} from "st/srs/attempt"
+import {AttemptPass, passAttempts, passPractice, passPace, passRanges, columnClefs} from "st/srs/attempt"
 import {AGAIN} from "st/srs/grade"
 import {itemId} from "st/srs/records"
 import {practiceWeight} from "st/srs/schedule"
@@ -508,10 +508,20 @@ export class MeasureCardGenerator {
 
     this.lastPass = pass
 
-    // after the passes before it, whose items say which measures are on schedule
+    // what the pass is written as, and below the items as it found them,
+    // which its attempts are built from: the developer metrics panel shows
+    // how the pass was graded from these
     let written = {pieceId: this.deck.pieceId, hand: this.deck.hand, at}
+    pass.written = written
+
+    // after the passes before it, whose items say which measures are on schedule
     this.finishing = Promise.resolve(this.finishing).then(() => {
       let store = this.deck.getStore()
+      pass.found = Object.fromEntries(passRanges(pass.card).map(({startMeasure, endMeasure}) => {
+        let id = itemId({pieceId: written.pieceId, hand: written.hand, startMeasure, endMeasure})
+        return [id, store.item(id)]
+      }))
+
       let {attempts, practice} = this.passRecords(pass, {...written, sessionId: this.sessionId})
 
       return Promise.all([
