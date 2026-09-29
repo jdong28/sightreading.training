@@ -634,11 +634,11 @@ describe("note matcher", function() {
       let matcher = loopMatcher(asCard([sustain(["Bb3"], "Bb3"), sustain(["Bb3"], "Bb3")]))
 
       // Bb3 strikes the card's first column and completes its second, the
-      // card's last, held as it becomes the head; the stray D4 settles the
-      // next lap, whose first column the key still sounds, and is judged at
-      // the lap after it, which waits to be played
+      // card's last, held as it becomes the head; the stray D4 belongs to no
+      // column of the next lap, which the player hasn't played, so it credits
+      // none of it and is judged at its first column
       run(matcher, [["on", "Bb3", 0], ["on", "D4", 1000]])
-      expect(matcher.judged.map(event => event.type)).toEqual(["hit", "hit", "hit", "hit", "miss"])
+      expect(matcher.judged.map(event => event.type)).toEqual(["hit", "hit", "miss"])
       expect(head(matcher)).toEqual(["Bb3"])
     })
 
@@ -683,6 +683,23 @@ describe("note matcher", function() {
           [...barThree(), ...barFour()],
           [["on", "Bb3", 0], ["on", "C4", 500], ["on", "G5", 1500], ["off", "Bb3", 1580], ["on", "Bb3", 1600]],
           ["hit Bb3", "hit C4", "hit Bb3 (held Bb3)", "hit G5", "miss C4"], ["C4"]],
+
+        // the score writes the held key once at the last column's onset, so
+        // striking that pitch again after it is a wrong key as any other is
+        ["excuses the held key struck again the once the score writes it",
+          [...barThree(), ...barFour()],
+          [["on", "Bb3", 0], ["on", "C4", 500], ["off", "Bb3", 980], ["on", "Bb3", 1000],
+            ["off", "Bb3", 1480], ["on", "Bb3", 1500]],
+          ["hit Bb3", "hit C4", "hit Bb3 (held Bb3)", "miss G5"], ["G5"]],
+
+        // the card end settled at the C4 that completed the column before it,
+        // which the C4's own late duplicate is still excused against, leaving
+        // the held Bb3 excused struck again after it
+        ["counts no slip for the column before the card's end bouncing after it settles",
+          [...barThree(), ...barFour()],
+          [["on", "Bb3", 0], ["on", "C4", 500], ["off", "C4", 540], ["on", "C4", 600],
+            ["off", "Bb3", 980], ["on", "Bb3", 1000], ["on", "G5", 1500]],
+          ["hit Bb3", "hit C4", "hit Bb3 (held Bb3)", "hit G5"], ["C4"]],
 
         ["judges any other key after the card as the next card's",
           [...barThree(), ...barFour()],
@@ -745,6 +762,20 @@ describe("note matcher", function() {
           ["off", "Bb3", 1480], ["on", "Bb3", 1500],
           ["on", "C4", 2000],
         ])).toEqual(["hit Bb3", "hit C4", "hit Bb3 (held Bb3)", "hit Bb3", "hit C4", "hit Bb3 (held Bb3)"])
+        expect(head(matcher)).toEqual(["Bb3"])
+      })
+
+      // the Rêverie's bar 3 played as a looping card, its first column the Bb3
+      // sounding on across the lap boundary (the tie out of bar 2, the whole
+      // note of the lap before): held through it rather than struck again, it
+      // is credited when the player plays the lap's own next key, with no slip
+      it("credits the next lap's first column held when the lap's next key goes down", function() {
+        let matcher = loopMatcher(asCard([sustain(["Bb3"], "Bb3"), ["C4"], sustain(["Bb3"], "Bb3")]))
+        expect(run(matcher, [
+          ["on", "Bb3", 0], ["on", "C4", 500],
+          ["off", "C4", 980], ["on", "C4", 1000],
+        ])).toEqual(["hit Bb3", "hit C4", "hit Bb3 (held Bb3)",
+          "hit Bb3 (held Bb3)", "hit C4", "hit Bb3 (held Bb3)"])
         expect(head(matcher)).toEqual(["Bb3"])
       })
 

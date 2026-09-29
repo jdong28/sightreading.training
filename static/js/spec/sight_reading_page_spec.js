@@ -2663,6 +2663,25 @@ describe("sight reading page", function() {
           expect(head().map(parseNote)).toEqual([bb3])
         })
 
+        // the lap's first column is the Bb3 at beat 6, which the tie out of
+        // the bar before sounds across its onset: held on through the lap
+        // boundary rather than struck again there, it is credited when the
+        // player plays the lap's own next key
+        it("credits the next lap's first Bb3 held through the boundary", async function() {
+          await renderPiece(reverieOpening(), {startMeasure: 3, endMeasure: 3})
+
+          perform([[3000, "on", "Bb3"], ...barThree()])
+          expect(counts()).toEqual([7, 0])
+          expect(head().map(parseNote)).toEqual([bb3])
+
+          // the Bb3 is never struck again: the lap's C4 at beat 10.5 credits
+          // its first column, and the lap ends by itself as the first did
+          perform(barThree(1))
+          expect(counts()).toEqual([14, 0])
+          expect(page.state.noteShaking).toBe(false)
+          expect(head().map(parseNote)).toEqual([bb3])
+        })
+
         it("still waits at the card's last column for the Bb3 let up before it", async function() {
           await renderPiece(reverieOpening(), {startMeasure: 3, endMeasure: 4, measuresPerCard: "1"})
 
