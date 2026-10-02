@@ -50,9 +50,31 @@ export interface CardNote {
   el: SVGGElement
 }
 
+// a box in CSS pixels of the drawn svg, from the first staff line of its
+// system's top staff to the last line of its bottom staff, barline to
+// barline
+export interface CardBox {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+export interface CardMeasure {
+  // the measure's position among the score's measures, 0-based (the engine
+  // options' fromMeasure/toMeasure count printed numbers instead)
+  index: number
+  // the score's printed bar number (st/measure_numbers): a pickup is 0, and
+  // a split bar's two positions share a number
+  number: number
+  box: CardBox
+}
+
 export interface CardResult {
   svg: SVGSVGElement
   notes: CardNote[]
+  // one per drawn measure position, in score order
+  measures: CardMeasure[]
 }
 
 export interface ScoreEngine {

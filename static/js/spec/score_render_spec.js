@@ -3,6 +3,7 @@ import {createRoot} from "react-dom/client"
 import {flushSync} from "react-dom"
 
 import {loadScoreEngines, enginesURL} from "st/score_render/load"
+import {shadeBands} from "st/score_render/card_shade"
 import {
   ScoreEnginesPage, MISSING_SOURCE_MESSAGE, ENGINE_ORDER,
 } from "st/components/pages/score_engines_page"
@@ -242,6 +243,28 @@ describe("score render", function() {
         }
       })
 
+      it("reports a box per drawn measure, in score order, each containing its own heads", async function() {
+        let result = await draw({fromMeasure: 1, toMeasure: 2})
+        expect(result.measures.map(m => [m.index, m.number])).toEqual([[1, 1], [2, 2]])
+
+        let svgRect = result.svg.getBoundingClientRect()
+        for (let measure of result.measures) {
+          let heads = result.notes.filter(note =>
+            note.onsetBeats >= 1 + 4 * (measure.number - 1) && note.onsetBeats < 1 + 4 * measure.number)
+          expect(heads.length).toBeGreaterThan(0)
+          for (let note of heads) {
+            let rect = note.el.getBoundingClientRect()
+            let left = rect.left - svgRect.left
+            expect(left).toBeGreaterThanOrEqual(measure.box.x - 2)
+            expect(left).toBeLessThanOrEqual(measure.box.x + measure.box.width + 2)
+          }
+        }
+
+        // boxes of one system share y and run left to right
+        expect(Math.abs(result.measures[1].box.y - result.measures[0].box.y)).toBeLessThan(2)
+        expect(result.measures[1].box.x).toBeGreaterThan(result.measures[0].box.x)
+      })
+
       it("wraps a range too wide for the plate onto a second system", async function() {
         let top = note => note.el.getBoundingClientRect().top
         let firstC5 = notes => notes.find(note => note.pitch == 72 && note.onsetBeats == 1)
@@ -253,12 +276,20 @@ describe("score render", function() {
         let lastC5 = wide.notes.find(note => note.pitch == 72 && note.onsetBeats == 1 + 4 * 11)
         expect(top(lastC5) - top(firstC5(wide.notes))).toBeGreaterThan(40)
         expect(wide.svg.getBoundingClientRect().height).toBeGreaterThan(shortHeight * 1.5)
+
+        // two systems, two distinct y values among the measure boxes
+        let ys = [...new Set(wide.measures.map(m => Math.round(m.box.y)))]
+        expect(ys.length).toBeGreaterThan(1)
       })
 
       it("draws a range as one system on one line however wide, for scroll mode", async function() {
         let result = await engine.renderSystem({musicXML: twoStaffScore(), fromMeasure: 1, toMeasure: 12, hand: "both"})
         container.replaceChildren(result.svg)
         expect(sortedKeys(result.notes)).toEqual(fixtureNotes(1, 12).sort(byOrder))
+
+        // one system: every measure box shares the same y
+        let ys = result.measures.map(m => Math.round(m.box.y))
+        expect(new Set(ys).size).toEqual(1)
 
         let rect = el => el.getBoundingClientRect()
         let c5s = result.notes.filter(note => note.pitch == 72).sort((a, b) => a.onsetBeats - b.onsetBeats)
@@ -284,6 +315,53 @@ describe("score render", function() {
     let [osmd, verovio] = cards.map(card =>
       card.notes.map(note => [note.id, ...noteKey(note)].join(" ")).sort())
     expect(osmd).toEqual(verovio)
+  })
+})
+
+describe("shadeBands", function() {
+  // two systems of 4 bars each (numbers 1-4 on y=100, 5-8 on y=300), 50px apart
+  let measures = Array.from({length: 8}, (_, idx) => ({
+    index: idx,
+    number: idx + 1,
+    box: {x: (idx % 4) * 50, y: idx < 4 ? 100 : 300, width: 50, height: 80},
+  }))
+
+  it("gives one band per system a range crosses, the label on the first band only", function() {
+    let shade = {id: "a", from: 2, to: 3, level: 2, on: true, label: "II"}
+    let bands = shadeBands(measures, [shade])
+    expect(bands.length).toEqual(1)
+    expect(bands[0]).toEqual({
+      id: "a", level: 2, on: true, label: "II",
+      box: {x: 50, y: 100, width: 100, height: 80},
+    })
+  })
+
+  it("splits a range spanning two systems into two bands, the label on the first", function() {
+    let shade = {id: "b", from: 3, to: 6, level: 3, on: false, label: "III"}
+    let bands = shadeBands(measures, [shade])
+    expect(bands.length).toEqual(2)
+    expect(bands[0]).toEqual({
+      id: "b", level: 3, on: false, label: "III",
+      box: {x: 100, y: 100, width: 100, height: 80},
+    })
+    expect(bands[1]).toEqual({
+      id: "b", level: 3, on: false, label: null,
+      box: {x: 0, y: 300, width: 100, height: 80},
+    })
+  })
+
+  it("shades both positions of a printed number covering two (a bar split round a repeat)", function() {
+    let split = [...measures, {index: 8, number: 4, box: {x: 200, y: 300, width: 50, height: 80}}]
+    let shade = {id: "c", from: 4, to: 4, level: 1, on: true, label: "I"}
+    let bands = shadeBands(split, [shade])
+    // number 4 is index 3 (system of 1-4) and also index 8 (a later position
+    // sharing the number): both are matched and shaded
+    expect(bands.length).toEqual(2)
+    expect(bands.map(b => b.box.y)).toEqual([100, 300])
+  })
+
+  it("skips a shade matching no drawn measure", function() {
+    expect(shadeBands(measures, [{id: "z", from: 20, to: 21, level: 1, on: true, label: "Z"}])).toEqual([])
   })
 })
 

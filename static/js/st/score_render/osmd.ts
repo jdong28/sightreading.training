@@ -9,7 +9,7 @@ import {OpenSheetMusicDisplay} from "opensheetmusicdisplay"
 
 import {prepareCard, onsetKey} from "./card_source"
 import type {SourceNote} from "./card_source"
-import type {CardOptions, SystemOptions, CardResult, CardNote, ScoreEngine} from "./types"
+import type {CardOptions, SystemOptions, CardResult, CardNote, CardMeasure, ScoreEngine} from "./types"
 
 export const OSMD_VERSION = "2.1.3"
 
@@ -110,10 +110,37 @@ async function draw(into: Display, opts: SystemOptions, width: number): Promise<
   const instruments = display.Sheet.Instruments
   const byOnset = notesByOnset(card.notes)
   const notes: CardNote[] = []
+  const measures: CardMeasure[] = []
   let unmatched = 0
 
-  for (const measures of display.GraphicSheet.MeasureList) {
-    for (const measure of measures) {
+  for (const measureRow of display.GraphicSheet.MeasureList) {
+    const present = measureRow.filter((m: any) => m)
+    if (present.length) {
+      const top = present[0]
+      const bottom = present[present.length - 1]
+      const idx = top.parentSourceMeasure.measureListIndex
+
+      // OSMD's MeasureList holds every measure of the whole score, drawn or
+      // not; only the ones inside the selected range are reported
+      if (idx >= card.firstIndex && idx <= card.lastIndex) {
+        const topShape = top.PositionAndShape
+        const bottomShape = bottom.PositionAndShape
+
+        measures.push({
+          index: idx,
+          number: card.numbers[idx] ?? idx + 1,
+          box: {
+            x: (topShape.AbsolutePosition.x + topShape.BorderLeft) * 10 * ZOOM,
+            y: topShape.AbsolutePosition.y * 10 * ZOOM,
+            width: (topShape.BorderRight - topShape.BorderLeft) * 10 * ZOOM,
+            height: (bottomShape.AbsolutePosition.y - topShape.AbsolutePosition.y) * 10 * ZOOM +
+              rules.StaffHeight * 10 * ZOOM,
+          },
+        })
+      }
+    }
+
+    for (const measure of measureRow) {
       if (!measure) { continue }
       for (const staffEntry of measure.staffEntries) {
         for (const voiceEntry of staffEntry.graphicalVoiceEntries) {
@@ -156,7 +183,7 @@ async function draw(into: Display, opts: SystemOptions, width: number): Promise<
 
   // the card leaves OSMD's host, which the next render draws into afresh
   svg.remove()
-  return {svg, notes}
+  return {svg, notes, measures}
 }
 
 function renderCard(opts: CardOptions): Promise<CardResult> {

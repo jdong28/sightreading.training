@@ -5,7 +5,7 @@
 // the drawn heads are found by the ids card_source tagged them with
 
 import {prepareCard} from "./card_source"
-import type {CardOptions, SystemOptions, CardResult, CardNote, ScoreEngine} from "./types"
+import type {CardOptions, SystemOptions, CardResult, CardNote, CardMeasure, ScoreEngine} from "./types"
 
 export const VEROVIO_VERSION = "6.3.0"
 
@@ -46,6 +46,52 @@ function loadToolkit(): Promise<Toolkit> {
 }
 
 let loadedXML: string | null = null
+
+// Verovio's g.measure elements are, in DOM order, exactly the selected
+// positions firstIndex..lastIndex; a measure's box is the union of its
+// staves' lines (g.staff > path). Measured with the svg briefly attached
+// offscreen, the way OSMD's own host stays, since getBoundingClientRect
+// needs real layout; Verovio's root has no viewBox, so its drawn size is
+// already in the same CSS pixels the rects come back in.
+function measureBoxes(svg: SVGSVGElement, card: {firstIndex: number, numbers: number[]}): CardMeasure[] {
+  const host = document.createElement("div")
+  Object.assign(host.style, {
+    position: "absolute", left: "-100000px", top: "0", visibility: "hidden",
+  })
+  host.appendChild(svg)
+  document.body.appendChild(host)
+
+  try {
+    const rootRect = svg.getBoundingClientRect()
+    const measures: CardMeasure[] = []
+
+    Array.from(svg.querySelectorAll<SVGGElement>("g.measure")).forEach((measureEl, position) => {
+      const lines = Array.from(measureEl.querySelectorAll<SVGPathElement>("g.staff > path"))
+      if (!lines.length) { return }
+
+      let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity
+      for (const line of lines) {
+        const rect = line.getBoundingClientRect()
+        left = Math.min(left, rect.left)
+        top = Math.min(top, rect.top)
+        right = Math.max(right, rect.right)
+        bottom = Math.max(bottom, rect.bottom)
+      }
+
+      const idx = card.firstIndex + position
+      measures.push({
+        index: idx,
+        number: card.numbers[idx] ?? idx + 1,
+        box: {x: left - rootRect.left, y: top - rootRect.top, width: right - left, height: bottom - top},
+      })
+    })
+
+    return measures
+  } finally {
+    host.removeChild(svg)
+    document.body.removeChild(host)
+  }
+}
 
 // the widest page Verovio lays out, which a system drawn on one line shrinks
 // to the width of its music
@@ -97,7 +143,9 @@ async function draw(opts: SystemOptions, width: number | null): Promise<CardResu
     notes.push({...source, el})
   }
 
-  return {svg, notes}
+  const measures = measureBoxes(svg, card)
+
+  return {svg, notes, measures}
 }
 
 function renderCard(opts: CardOptions): Promise<CardResult> {
