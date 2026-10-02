@@ -151,6 +151,9 @@ const STORES = {
  * @property {number} misses
  * @property {number} bestStreak
  * @property {Object<string, {hits: number, misses: number}>} notes by note name without octave
+ * @property {{passes: number, clean: number}} [selfGraded] the passes the
+ * player graded themself in acoustic mode (st/srs/self_grade), kept once one
+ * was graded in the session
  */
 
 /**

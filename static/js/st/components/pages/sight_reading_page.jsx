@@ -36,7 +36,7 @@ import {
   currentKeySignature, currentDrillMode, currentScrollSpeed, scoreKeySignature, storeGeneratorSettings,
   DRILL_STORAGE_KEY
 } from "st/generators"
-import {SELF_GRADES} from "st/srs/self_grade"
+import {SELF_GRADES, SELF_GRADE_DWELL_MS} from "st/srs/self_grade"
 import {SELF_ASPECTS} from "st/srs/records"
 import {AGAIN} from "st/srs/grade"
 
@@ -244,7 +244,7 @@ export default class SightReadingPage extends React.Component {
     // the grade row of acoustic mode, which the grade hotkeys go through
     this.selfGradeRow = React.createRef()
 
-    // set while a self grade is being written, see selfGrade
+    // set while a self grade is being applied, see selfGrade
     this.grading = false
 
     this.keyMap = {
@@ -325,9 +325,10 @@ export default class SightReadingPage extends React.Component {
   componentDidUpdate(prevProps, prevState) {
     this.syncMatcher()
 
-    // the instrument setting toggled: nothing detected so far belongs to the
-    // rebuilt drill, and its stored mode comes back when detection does
-    if (prevProps.acoustic != this.props.acoustic) {
+    // the instrument setting toggled on a page that can self-grade: nothing
+    // detected so far belongs to the rebuilt drill, and its stored mode comes
+    // back when detection does. A page that ignores the setting keeps playing
+    if (prevProps.acoustic != this.props.acoustic && this.programme.selfGrading) {
       if (!this.selfGraded() && currentDrillMode(this.programme.storageKey) == "scroll") {
         this.enterScrollMode()
       } else {
@@ -1526,19 +1527,28 @@ export default class SightReadingPage extends React.Component {
   // Ends the pass with the player's own grade (SelfGradeRow), in place of
   // detection: tells the generator, the session stats, and refills the
   // staff from the next card, the same path today's programme's ready uses.
-  // A pass takes one grade: the deck moves on as it is written, so a second
-  // grade before the staff is refilled (a repeated tap or key press in the
-  // same update) would grade the next card unplayed, and is ignored.
+  // A pass takes one grade, and the deck moves on as it is written, so every
+  // way in (the grade pills, the "Where?" chips and the hotkeys) is ignored
+  // here until the card on the staff has been up long enough to have been
+  // played (SELF_GRADE_DWELL_MS): a repeated tap or key press would otherwise
+  // grade the card it moved on to, which nobody played.
   selfGrade(grade, opts={}) {
     let generator = this.currentNotesGenerator()
     if (this.grading || !this.selfGraded() || !generator) { return }
 
-    this.grading = true
     let time = Date.now()
-    generator.selfGrade(grade, {...opts, sessionId: this.state.stats.id, time})
-    this.state.stats.selfGraded(grade, time)
-    this.refreshNoteList(generator)
-    this.setState(state => ({cardSeq: state.cardSeq + 1}), () => { this.grading = false })
+    let shownAt = generator.cardStartedAt()
+    if (shownAt == null || time - shownAt < SELF_GRADE_DWELL_MS) { return }
+
+    this.grading = true
+    try {
+      generator.selfGrade(grade, {...opts, sessionId: this.state.stats.id, time})
+      this.state.stats.selfGraded(grade, time)
+      this.refreshNoteList(generator)
+      this.setState(state => ({cardSeq: state.cardSeq + 1}))
+    } finally {
+      this.grading = false
+    }
   }
 
   // Hotkeys "1"-"4", only while a session is running in acoustic mode: each

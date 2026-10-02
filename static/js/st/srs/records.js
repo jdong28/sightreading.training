@@ -63,7 +63,8 @@ export const RECENT_ATTEMPTS = 5
  * @property {number} lastPracticed
  * @property {number} [elapsedMs] time spent playing it, kept once timed
  * @property {Array[]} recent the last RECENT_ATTEMPTS attempts, oldest first,
- * as [at, columns, clean, grade]
+ * as [at, columns, clean, grade]; columns and clean are null on a self-graded
+ * attempt, which counted none (see recentMissRate in st/srs/schedule)
  * @property {number} [paceMs] the item's usual pace, ms per notated beat (per
  * column without the score's rhythm), a running mean over its clean wait mode
  * attempts (see attemptPace in st/srs/grade)

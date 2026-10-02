@@ -25,6 +25,11 @@ export const SELF_GRADES = [
 // practice stint it would otherwise inflate
 export const SELF_PAUSE_MS = 5 * 60 * 1000
 
+// the least a card can have been up for to have been played: a grade sooner
+// than this after the card was shown is a repeat of the one before it, which
+// would grade the card the deck has just moved on to
+export const SELF_GRADE_DWELL_MS = 500
+
 /**
  * @param {number} grade 1-4
  * @returns {string} the grade's word, e.g. "Clean"

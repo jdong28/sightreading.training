@@ -22,6 +22,7 @@ import {AGAIN, HARD, GOOD, EASY} from "st/srs/grade"
 import {IN_ORDER, RANDOM_ORDER, MeasureCardGenerator} from "st/measure_cards"
 import {DRILL_STORAGE_KEY, SCORE_DRILL_STORAGE_KEY} from "st/generators"
 import {DEV_METRICS_KEY} from "st/dev_metrics"
+import {SELF_GRADE_DWELL_MS} from "st/srs/self_grade"
 import {scopeEvent} from "st/events"
 import NoteStats, {addNoteListener} from "st/note_stats"
 import {parseNote} from "st/music"
@@ -2849,6 +2850,23 @@ describe("sight reading page", function() {
       flushSync(() => {})
     }
 
+    // the clock the page and its generator read: a grade only counts once the
+    // card has been up long enough to have been played, so every spec that
+    // grades plays the card first
+    let now, realNow
+
+    beforeEach(function() {
+      realNow = Date.now
+      now = realNow()
+      Date.now = () => now
+    })
+
+    afterEach(function() {
+      Date.now = realNow
+    })
+
+    let played = (ms=SELF_GRADE_DWELL_MS) => { now += ms }
+
     let reviews = () => store.reviews({pieceId: piece.id})
     let finished = () => page.state.notes.generator.finishing
     let plateLabel = el => el.querySelector("[aria-live]").previousElementSibling.textContent
@@ -2888,6 +2906,7 @@ describe("sight reading page", function() {
       click(buttonNamed(el, "Begin"))
       expect(plateLabel(el)).toContain("measures 1–2")
 
+      played()
       click(buttonLike(el, "Clean"))
       await finished()
       expect((await reviews()).map(r => [r.itemId, r.mode, r.grade])).toEqual([
@@ -2898,6 +2917,7 @@ describe("sight reading page", function() {
       expect(plateLabel(el)).toContain("measures 3–4")
 
       // the hotkey "3" grades Clean too
+      played()
       flushSync(() => document.body.dispatchEvent(new KeyboardEvent("keydown", {keyCode: 51, bubbles: true})))
       await finished()
       expect((await reviews()).length).toEqual(6)
@@ -2909,28 +2929,110 @@ describe("sight reading page", function() {
       expect(page.state.notes).toBe(notesBefore)
     })
 
-    it("takes one grade a pass, so a repeated tap or key press grades nothing more", async function() {
+    // a pass takes one grade: the deck moves on as the grade is written, so a
+    // tap or key press repeated on the card it moved on to would grade a pass
+    // nobody played
+    it("ignores a grade pill tapped again before the next card has been played", async function() {
       let el = await renderAcoustic({measuresPerCard: "2"})
       click(buttonNamed(el, "Begin"))
 
-      // the pill tapped twice before the staff is refilled: the card it moves
-      // on to was never played, so it takes no grade
-      let clean = buttonLike(el, "Clean")
-      flushSync(() => { clean.click(); clean.click() })
+      played()
+      click(buttonLike(el, "Clean"))
       await finished()
       expect((await reviews()).map(r => r.itemId)).toEqual([
         `${piece.id}:both:1-1`, `${piece.id}:both:1-2`, `${piece.id}:both:2-2`,
       ])
       expect(plateLabel(el)).toContain("measures 3–4")
 
-      // and the hotkey likewise, while the card after it still takes its own
-      flushSync(() => {
-        document.body.dispatchEvent(new KeyboardEvent("keydown", {keyCode: 51, bubbles: true}))
-        document.body.dispatchEvent(new KeyboardEvent("keydown", {keyCode: 51, bubbles: true}))
-      })
+      // the second tap of a double tap, a tenth of a second later
+      played(100)
+      click(buttonLike(el, "Clean"))
+      await finished()
+      expect((await reviews()).length).toEqual(3)
+      expect(plateLabel(el)).toContain("measures 3–4")
+
+      // the same tap once the card has been played
+      played(600)
+      click(buttonLike(el, "Clean"))
       await finished()
       expect((await reviews()).length).toEqual(6)
       expect(plateLabel(el)).toContain("measures 5–6")
+    })
+
+    it("ignores a grade hotkey pressed again before the next card has been played", async function() {
+      let el = await renderAcoustic({measuresPerCard: "2"})
+      click(buttonNamed(el, "Begin"))
+      // let up between presses, since Hotkeys ignores a key's repeat
+      let press = () => flushSync(() => {
+        document.body.dispatchEvent(new KeyboardEvent("keydown", {keyCode: 51, bubbles: true}))
+        document.body.dispatchEvent(new KeyboardEvent("keyup", {keyCode: 51, bubbles: true}))
+      })
+
+      played()
+      press()
+      await finished()
+      expect((await reviews()).length).toEqual(3)
+      expect(plateLabel(el)).toContain("measures 3–4")
+
+      played(100)
+      press()
+      await finished()
+      expect((await reviews()).length).toEqual(3)
+      expect(plateLabel(el)).toContain("measures 3–4")
+
+      played(600)
+      press()
+      await finished()
+      expect((await reviews()).length).toEqual(6)
+      expect(plateLabel(el)).toContain("measures 5–6")
+    })
+
+    it("ignores a Where? answer given again before the next card has been played", async function() {
+      let el = await renderAcoustic({measuresPerCard: "2"})
+      click(buttonNamed(el, "Begin"))
+
+      played()
+      click(buttonLike(el, "Stumbled"))
+      click(exactButton(el, "Bar 2"))
+      await finished()
+      expect((await reviews()).map(r => r.itemId)).toEqual([
+        `${piece.id}:both:1-2`, `${piece.id}:both:2-2`,
+      ])
+      expect(plateLabel(el)).toContain("measures 3–4")
+
+      // the chips of the card it moved on to answer nothing yet
+      played(100)
+      click(buttonLike(el, "Stumbled"))
+      click(exactButton(el, "Bar 4"))
+      await finished()
+      expect((await reviews()).length).toEqual(2)
+
+      // the question stays up, and the same chip writes once the card has
+      // been played
+      played(600)
+      click(exactButton(el, "Bar 4"))
+      await finished()
+      expect((await reviews()).map(r => r.itemId).slice(2)).toEqual([
+        `${piece.id}:both:3-4`, `${piece.id}:both:4-4`,
+      ])
+    })
+
+    it("goes on grading after a self grade throws", async function() {
+      let el = await renderAcoustic({measuresPerCard: "2"})
+      click(buttonNamed(el, "Begin"))
+
+      let generator = page.state.notes.generator
+      let selfGrade = generator.selfGrade
+      generator.selfGrade = () => { throw new Error("nope") }
+
+      played()
+      expect(() => page.selfGrade(GOOD)).toThrow()
+      generator.selfGrade = selfGrade
+
+      played()
+      click(buttonLike(el, "Clean"))
+      await finished()
+      expect((await reviews()).length).toEqual(3)
     })
 
     it("asks Where? from the grade hotkey as from its pill, grading the bar chosen", async function() {
@@ -2938,6 +3040,7 @@ describe("sight reading page", function() {
       click(buttonNamed(el, "Begin"))
 
       // the hotkey "1" (Fell apart) on a two-bar card opens the question
+      played()
       flushSync(() => document.body.dispatchEvent(new KeyboardEvent("keydown", {keyCode: 49, bubbles: true})))
       expect(el.querySelector("[data-self-grade-followup]")).not.toBe(null)
       expect(await reviews()).toEqual([])
@@ -2966,6 +3069,7 @@ describe("sight reading page", function() {
       expect(statValue(el, "Clean")).toEqual("0")
       expect(plateStatus(el)).not.toMatch(/^Next ·/)
 
+      played()
       click(buttonLike(el, "Easy"))
       await finished()
       expect(statValue(el, "Passes")).toEqual("1")
@@ -3003,6 +3107,21 @@ describe("sight reading page", function() {
       expect(await reviews()).toEqual([])
     })
 
+    it("leaves the drill of a page that ignores the setting alone when it is toggled", async function() {
+      let el = renderPage()
+      click(buttonNamed(el, "Begin"))
+      let notes = page.state.notes
+      let mode = page.state.mode
+      expect(notes).not.toBe(null)
+
+      flushSync(() => root.render(React.createElement(MemoryRouter, {},
+        React.createElement(SightReadingPage, {ref: p => page = p, acoustic: true}))))
+      flushSync(() => {})
+
+      expect(page.state.notes).toBe(notes)
+      expect(page.state.mode).toEqual(mode)
+    })
+
     it("writes a review from a self grade and shows the next entry in today's programme, resting a bar failed Fell apart three times", async function() {
       let at = Date.now() - 60000
       piece = (await importMusicXMLPiece("salon_octet.musicxml", octetXML, store)).piece
@@ -3032,6 +3151,7 @@ describe("sight reading page", function() {
 
       click(buttonNamed(el, "Begin"))
       let entryBefore = plateStatus(el)
+      played()
       click(buttonLike(el, "Clean"))
       await page.state.notes.generator.finishing
       await page.state.notes.generator.studying
@@ -3045,6 +3165,7 @@ describe("sight reading page", function() {
       let el = await renderAcoustic({measuresPerCard: "2"})
       click(buttonNamed(el, "Begin"))
 
+      played()
       click(buttonLike(el, "Stumbled"))
       expect(el.textContent).toContain("Where?")
       click(exactButton(el, "Bar 2"))
@@ -3070,6 +3191,7 @@ describe("sight reading page", function() {
       let el = await renderAcoustic({measuresPerCard: "2"})
       click(buttonNamed(el, "Begin"))
 
+      played()
       click(exactButton(el, "rhythm"))
       click(buttonLike(el, "Clean"))
       await finished()
@@ -3078,6 +3200,7 @@ describe("sight reading page", function() {
       expect(written.length).toEqual(3)
       expect(written.every(r => JSON.stringify(r.slipped) == JSON.stringify(["rhythm"]))).toBe(true)
 
+      played()
       click(buttonLike(el, "Easy"))
       await finished()
       let next = (await reviews()).slice(written.length)
@@ -3088,6 +3211,7 @@ describe("sight reading page", function() {
     it("lists an acoustic session in the rail as passes graded after Rest", async function() {
       let el = await renderAcoustic({measuresPerCard: "2"})
       click(buttonNamed(el, "Begin"))
+      played()
       click(buttonLike(el, "Clean"))
       await finished()
 
