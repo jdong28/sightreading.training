@@ -67,7 +67,9 @@ export const LIBRARY_FORMAT = "sightreading-library"
 // 6: pieces carry the ornaments of their notes (song format 3, see
 // st/sheet_music_deck); version 5 pieces are read as they are, with no
 // ornaments allowed until their score is imported again
-export const LIBRARY_VERSION = 6
+// 7: reviews may be self-graded (mode: "self", no counts); version 6
+// libraries hold none and import as they are
+export const LIBRARY_VERSION = 7
 
 // sessions started within this many days are loaded into the cache
 export const RECENT_SESSION_DAYS = 30
@@ -1051,6 +1053,9 @@ export class LocalStore {
    * @param {number} [practice.at] when it was practiced, defaults to now
    * @param {number} [practice.elapsedMs] time spent playing it, added to the
    * item's elapsedMs
+   * @param {boolean} [practice.played] counts the stint as an attempt even
+   * with no hits or misses, for a self-graded stint that played notes but
+   * recorded none (st/srs/attempt)
    * @returns {Promise<SectionStatsRecord>} the section stats of the range
    */
   recordSectionPractice(practice) {
@@ -1064,10 +1069,10 @@ export class LocalStore {
   }
 
   // the item of the practiced range with the practice added
-  practicedItem({pieceId, hand="both", startMeasure, endMeasure, hits, misses, at=Date.now(), elapsedMs}) {
+  practicedItem({pieceId, hand="both", startMeasure, endMeasure, hits, misses, at=Date.now(), elapsedMs, played}) {
     let range = {pieceId, hand, startMeasure, endMeasure}
     let current = this.item(itemId(range)) || newItem(range, at)
-    let item = itemWithPractice(current, {hits, misses, at, elapsedMs})
+    let item = itemWithPractice(current, {hits, misses, at, elapsedMs, played})
 
     if (!validItem(item)) {
       throw new Error("Not a valid section practice")

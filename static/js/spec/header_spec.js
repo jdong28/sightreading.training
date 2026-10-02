@@ -87,6 +87,22 @@ describe("header", function() {
     expect(dot.classList.contains(styles.connected)).toBe(true)
   })
 
+  // acoustic mode (st/srs/self_grade): the instrument setting, not a piece
+  // setting, so it reads "Acoustic piano" whatever midiInput is
+  it("reads Acoustic piano when the instrument is acoustic, whatever midiInput is", function() {
+    let el = renderHeader({acoustic: true, midiInput: {name: "Roland FP-30"}})
+    let status = el.querySelector(`.${styles.instrument_status}`)
+    expect(status.textContent).toEqual("Acoustic piano")
+    let dot = status.querySelector(`.${styles.instrument_dot}`)
+    expect(dot.classList.contains(styles.acoustic)).toBe(true)
+    expect(dot.classList.contains(styles.connected)).toBe(false)
+  })
+
+  it("reads Acoustic piano with no midiInput at all", function() {
+    let el = renderHeader({acoustic: true})
+    expect(el.querySelector(`.${styles.instrument_status}`).textContent).toEqual("Acoustic piano")
+  })
+
   it("opens the device picker from the instrument status", function() {
     let el = renderHeader()
     let picked = jasmine.createSpy("pickMidi")

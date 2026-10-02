@@ -89,9 +89,13 @@ export class PlanDeck {
     this.playing = () => false
     // what the hand scaffold needs of the page, which the generator keeps
     // up to date: a drill that waits at each column, and a staff that can
-    // draw one hand of the piece by itself (see split)
+    // draw one hand of the piece by itself (see split). Acoustic mode turns
+    // the scaffold off outright (selfGraded): self failures never split a
+    // bar, and a bar split by an earlier detected failure returns hands
+    // together while it is on
     this.waiting = () => true
     this.splittable = () => true
+    this.selfGraded = () => false
 
     if (this.advance().failing.size) {
       this.ready = this.loadReviews()
@@ -113,7 +117,7 @@ export class PlanDeck {
 
   /** @returns {boolean} whether a bar may be offered as one hand alone now */
   split() {
-    return this.waiting() && this.splittable()
+    return this.waiting() && this.splittable() && !this.selfGraded()
   }
 
   /** @returns {string} the hand of the card being shown, the session's or a hand alone */
@@ -278,6 +282,7 @@ export class PlanGenerator extends MeasureCardGenerator {
   setDrill(drill) {
     super.setDrill(drill)
     this.deck.waiting = () => this.drill().mode != "scroll"
+    this.deck.selfGraded = () => this.drill().mode == "self"
     this.replan()
   }
 

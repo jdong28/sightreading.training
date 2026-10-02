@@ -18,7 +18,7 @@ import {
 } from "st/data"
 import {PlanGenerator} from "st/plan_cards"
 import {SITTING_GAP_MS} from "st/srs/planner"
-import {AGAIN, GOOD, EASY} from "st/srs/grade"
+import {AGAIN, HARD, GOOD, EASY} from "st/srs/grade"
 import {IN_ORDER, RANDOM_ORDER, MeasureCardGenerator} from "st/measure_cards"
 import {DRILL_STORAGE_KEY, SCORE_DRILL_STORAGE_KEY} from "st/generators"
 import {DEV_METRICS_KEY} from "st/dev_metrics"
@@ -2821,6 +2821,234 @@ describe("sight reading page", function() {
       expect(counts()).toEqual([2, 0])
       expect(head()).toEqual(["E5"])
       expect(page.state.noteShaking).toBe(false)
+    })
+  })
+
+  // acoustic mode (st/srs/self_grade): the toggle lives with the instrument,
+  // not the piece, so it is passed in as the acoustic prop rather than
+  // written to any sheet music setting
+  describe("acoustic mode", function() {
+    let piece
+
+    let renderAcoustic = async (settings, drill) => {
+      piece = (await importMusicXMLPiece("salon_octet.musicxml", octetXML, store)).piece
+      if (drill) {
+        window.localStorage.setItem(SCORE_DRILL_STORAGE_KEY, JSON.stringify(drill))
+      }
+      window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+        piece: piece.id, startMeasure: 1, endMeasure: 8, hand: BOTH_HANDS, ...settings,
+      }))
+      return renderPage(ScorePage, {programme: {...SCORE_PROGRAMME, engine: null}, acoustic: true})
+    }
+
+    let rerenderAcoustic = acoustic => {
+      flushSync(() => root.render(React.createElement(MemoryRouter, {},
+        React.createElement(ScorePage, {
+          ref: p => page = p, programme: {...SCORE_PROGRAMME, engine: null}, acoustic,
+        }))))
+      flushSync(() => {})
+    }
+
+    let reviews = () => store.reviews({pieceId: piece.id})
+    let finished = () => page.state.notes.generator.finishing
+    let plateLabel = el => el.querySelector("[aria-live]").previousElementSibling.textContent
+    let buttonLike = (el, text) => [...el.querySelectorAll("button")].find(b => b.textContent.includes(text))
+    let exactButton = (el, text) => [...el.querySelectorAll("button")].find(b => b.textContent.trim() == text)
+
+    it("ignores MIDI messages and key presses: nothing detected, nothing written", async function() {
+      let el = await renderAcoustic({measuresPerCard: "2"})
+      click(buttonNamed(el, "Begin"))
+
+      let notesBefore = page.state.notes
+      play(notesBefore.currentColumn())
+      flushSync(() => page.onMidiMessage({
+        data: new Uint8Array([0x90, parseNote(notesBefore.currentColumn()[0]), 100]), timeStamp: 0,
+      }))
+
+      expect(page.state.stats.hits).toEqual(0)
+      expect(page.state.stats.misses).toEqual(0)
+      expect(page.state.notes).toBe(notesBefore)
+      expect(await reviews()).toEqual([])
+    })
+
+    it("shows no grade row at rest, a note instead, and the four grade pills once Begin is pressed", async function() {
+      let el = await renderAcoustic({measuresPerCard: "2"})
+      expect(el.textContent).toContain("press Begin, play the card, then grade it")
+      expect(buttonLike(el, "Clean")).toBeUndefined()
+
+      click(buttonNamed(el, "Begin"))
+      expect(el.querySelector("[data-self-grade-rest]")).toBe(null)
+      for (let word of ["Fell apart", "Stumbled", "Clean", "Easy"]) {
+        expect(buttonLike(el, word)).withContext(word).toBeDefined()
+      }
+    })
+
+    it("writes self reviews and advances the card on a grade tap or hotkey, never skipping on Space", async function() {
+      let el = await renderAcoustic({measuresPerCard: "2"})
+      click(buttonNamed(el, "Begin"))
+      expect(plateLabel(el)).toContain("measures 1–2")
+
+      click(buttonLike(el, "Clean"))
+      await finished()
+      expect((await reviews()).map(r => [r.itemId, r.mode, r.grade])).toEqual([
+        [`${piece.id}:both:1-1`, "self", GOOD],
+        [`${piece.id}:both:1-2`, "self", GOOD],
+        [`${piece.id}:both:2-2`, "self", GOOD],
+      ])
+      expect(plateLabel(el)).toContain("measures 3–4")
+
+      // the hotkey "3" grades Clean too
+      flushSync(() => document.body.dispatchEvent(new KeyboardEvent("keydown", {keyCode: 51, bubbles: true})))
+      await finished()
+      expect((await reviews()).length).toEqual(6)
+      expect(plateLabel(el)).toContain("measures 5–6")
+
+      // Space never skips in acoustic mode
+      let notesBefore = page.state.notes
+      flushSync(() => document.body.dispatchEvent(new KeyboardEvent("keydown", {keyCode: 32, bubbles: true})))
+      expect(page.state.notes).toBe(notesBefore)
+    })
+
+    it("shows Elapsed, Passes and Clean instead of the live MIDI figures, and never a 'Next ·' status", async function() {
+      let el = await renderAcoustic({measuresPerCard: "2"})
+      click(buttonNamed(el, "Begin"))
+
+      expect(el.textContent).not.toContain("Accuracy")
+      expect(el.textContent).not.toContain("Notes read")
+      expect(el.textContent).not.toContain("Best streak")
+      expect(statValue(el, "Passes")).toEqual("0")
+      expect(statValue(el, "Clean")).toEqual("0")
+      expect(plateStatus(el)).not.toMatch(/^Next ·/)
+
+      click(buttonLike(el, "Easy"))
+      await finished()
+      expect(statValue(el, "Passes")).toEqual("1")
+      expect(statValue(el, "Clean")).toEqual("1")
+    })
+
+    it("shows no Metrics pill or panel even with devMetrics on", async function() {
+      window.localStorage.setItem(DEV_METRICS_KEY, "open")
+      let el = await renderAcoustic({measuresPerCard: "2"})
+      expect(buttonNamed(el, "Metrics")).toBeUndefined()
+      expect(el.querySelector("[data-dev-metrics]")).toBe(null)
+    })
+
+    it("renders in wait mode despite a stored scroll mode, restoring scroll when switched off", async function() {
+      await renderAcoustic({measuresPerCard: "2"}, {mode: "scroll"})
+      expect(page.state.mode).toEqual("wait")
+      expect(JSON.parse(window.localStorage.getItem(SCORE_DRILL_STORAGE_KEY)).mode).toEqual("scroll")
+
+      rerenderAcoustic(false)
+      expect(page.state.mode).toEqual("scroll")
+    })
+
+    it("rebuilds the drill and detects again once switched off, abandoning a pass as practice if switched back on", async function() {
+      let el = await renderAcoustic({measuresPerCard: "2"})
+      click(buttonNamed(el, "Begin"))
+
+      rerenderAcoustic(false)
+      let notes = page.state.notes
+      expect(notes).not.toBe(null)
+      play(notes.currentColumn())
+      expect(page.state.stats.hits).toEqual(1)
+
+      rerenderAcoustic(true)
+      await finished()
+      expect(await reviews()).toEqual([])
+    })
+
+    it("writes a review from a self grade and shows the next entry in today's programme, resting a bar failed Fell apart three times", async function() {
+      let at = Date.now() - 60000
+      piece = (await importMusicXMLPiece("salon_octet.musicxml", octetXML, store)).piece
+      await store.putStudy({pieceId: piece.id, status: "learning", startedAt: Date.now()})
+
+      let id = `${piece.id}:both:1-1`
+      await store.recordAttempt({
+        item: {
+          id, pieceId: piece.id, hand: "both", startMeasure: 1, endMeasure: 1,
+          level: "bar", state: "learning", step: 0, due: at, last: at, s: 1, d: 5,
+          reps: 3, lapses: 2, streak: 0, lastGrade: AGAIN, hits: 0, misses: 0, attempts: 3,
+          lastPracticed: at, algo: 1, createdAt: at - 3 * 60000,
+          recent: [2, 1, 0].map(n => [at - n * 60000, null, null, AGAIN]),
+        },
+        review: {itemId: id, pieceId: piece.id, at, kind: "attempt", mode: "self", grade: AGAIN, was: "learning"},
+      })
+
+      window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+        piece: piece.id, startMeasure: 3, endMeasure: 4, hand: BOTH_HANDS, measuresPerCard: "2",
+      }))
+      let el = renderPage(ScorePage, {programme: {...SCORE_PROGRAMME, engine: null}, acoustic: true})
+      await page.state.notes?.generator?.ready
+      flushSync(() => {})
+
+      // the rested bar is never offered
+      expect(plateStatus(el)).not.toContain("bar 1")
+
+      click(buttonNamed(el, "Begin"))
+      let entryBefore = plateStatus(el)
+      click(buttonLike(el, "Clean"))
+      await page.state.notes.generator.finishing
+      await page.state.notes.generator.studying
+      flushSync(() => page.forceUpdate())
+
+      expect((await reviews()).some(r => r.mode == "self" && r.grade == GOOD)).toBe(true)
+      expect(plateStatus(el)).not.toEqual(entryBefore)
+    })
+
+    it("asks Where? for a failing grade on a two-bar card, grading only the chosen bar and the range, and Rest while it's open writes nothing", async function() {
+      let el = await renderAcoustic({measuresPerCard: "2"})
+      click(buttonNamed(el, "Begin"))
+
+      click(buttonLike(el, "Stumbled"))
+      expect(el.textContent).toContain("Where?")
+      click(exactButton(el, "Bar 2"))
+      await finished()
+
+      let written = await reviews()
+      expect(written.map(r => [r.itemId, r.mode, r.grade])).toEqual([
+        [`${piece.id}:both:1-2`, "self", HARD],
+        [`${piece.id}:both:2-2`, "self", HARD],
+      ])
+      let bar1 = store.item(`${piece.id}:both:1-1`)
+      expect(bar1.attempts).toEqual(1)
+      expect(bar1.recent).toEqual([])
+
+      // Rest while the question is open writes no review
+      click(buttonLike(el, "Stumbled"))
+      expect(el.textContent).toContain("Where?")
+      click(buttonNamed(el, "Rest"))
+      expect((await reviews()).length).toEqual(written.length)
+    })
+
+    it("stores toggled 'What slipped?' tags on every review of the pass, cleared for the next", async function() {
+      let el = await renderAcoustic({measuresPerCard: "2"})
+      click(buttonNamed(el, "Begin"))
+
+      click(exactButton(el, "rhythm"))
+      click(buttonLike(el, "Clean"))
+      await finished()
+
+      let written = await reviews()
+      expect(written.length).toEqual(3)
+      expect(written.every(r => JSON.stringify(r.slipped) == JSON.stringify(["rhythm"]))).toBe(true)
+
+      click(buttonLike(el, "Easy"))
+      await finished()
+      let next = (await reviews()).slice(written.length)
+      expect(next.length).toEqual(3)
+      expect(next.every(r => r.slipped === undefined)).toBe(true)
+    })
+
+    it("lists an acoustic session in the rail as passes graded after Rest", async function() {
+      let el = await renderAcoustic({measuresPerCard: "2"})
+      click(buttonNamed(el, "Begin"))
+      click(buttonLike(el, "Clean"))
+      await finished()
+
+      click(buttonNamed(el, "Rest"))
+      await waitFor(() => store.recentSessions().length == 1, "the session to be saved")
+      flushSync(() => page.forceUpdate())
+      expect(el.textContent).toContain("1 pass graded")
     })
   })
 

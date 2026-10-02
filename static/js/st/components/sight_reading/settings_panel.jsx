@@ -385,6 +385,9 @@ export class ScoreDrawer extends React.PureComponent {
     setMode: types.func.isRequired,
     scrollSpeed: types.number.isRequired,
     setScrollSpeed: types.func.isRequired,
+    // acoustic mode (st/srs/self_grade): each card waits for the player's own
+    // grade, so there is no tempo to set
+    acoustic: types.bool,
   }
 
   render() {
@@ -404,11 +407,15 @@ export class ScoreDrawer extends React.PureComponent {
           {this.renderKeyHint()}
         </SettingsGroup> : null}
 
-      <TempoSettings
-        mode={this.props.mode}
-        setMode={this.props.setMode}
-        scrollSpeed={this.props.scrollSpeed}
-        setScrollSpeed={this.props.setScrollSpeed} />
+      {this.props.acoustic ?
+        <SettingsGroup label="Tempo">
+          <p className={styles.input_hint}>Acoustic piano: each card waits for your grade</p>
+        </SettingsGroup> :
+        <TempoSettings
+          mode={this.props.mode}
+          setMode={this.props.setMode}
+          scrollSpeed={this.props.scrollSpeed}
+          setScrollSpeed={this.props.setScrollSpeed} />}
 
       <Pill
         variant="primary"

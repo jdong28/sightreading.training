@@ -3,7 +3,7 @@ import {FSRSAlgorithm, generatorParameters} from "ts-fsrs"
 import {makeFsrs, S_MIN} from "st/srs/fsrs"
 import {
   applyGrade, replay, localDay, dayStart, predictedRecall, recentMissRate, practiceWeight,
-  schedulable, scheduled, validSchedulerSettings, validPracticeSettings,
+  schedulable, scheduled, scheduledAttempt, validSchedulerSettings, validPracticeSettings,
   DEFAULT_SCHEDULER_SETTINGS, DEFAULT_PRACTICE_SETTINGS, SCHEDULER_ALGO,
   DAY, MINUTE
 } from "st/srs/schedule"
@@ -348,6 +348,64 @@ describe("spaced repetition scheduler", function() {
       expect(recentMissRate(item, now)).toBeCloseTo(0.25, 9)
       expect(recentMissRate({...item, recent: [[now - 14 * DAY, 4, 0, AGAIN]]}, now)).toBeCloseTo(0.5, 9)
       expect(recentMissRate(bar(), now)).toEqual(0)
+    })
+  })
+
+  // acoustic mode: a self-graded review carries a grade and nothing else
+  // (st/srs/self_grade), so it schedules exactly as a detected review would
+  describe("self-graded reviews", function() {
+    let now = at(20, 12)
+
+    it("schedules a self review exactly as a detected review of the same grade", function() {
+      let item = reviewItem(now - 10 * DAY, 10)
+      let detected = {
+        itemId: item.id, at: now, pieceId: "p", kind: "attempt", grade: GOOD, was: "review",
+        columns: 4, clean: 4, misses: 0, stuck: 0, skipped: 0, hesitations: 0, mode: "wait", algo: 1,
+      }
+      let self = {itemId: item.id, at: now, pieceId: "p", kind: "attempt", mode: "self", grade: GOOD, was: "review"}
+
+      let viaDetected = scheduledAttempt({item, review: detected})
+      let viaSelf = scheduledAttempt({item, review: self})
+
+      for (let field of ["state", "step", "due", "s", "d"]) {
+        expect(viaSelf.item[field]).toEqual(viaDetected.item[field])
+      }
+      expect(viaSelf.review.r).toEqual(viaDetected.review.r)
+    })
+
+    it("replays a log mixing detected and self reviews, equal to building the item one at a time, after a JSON round trip too", function() {
+      let id = "p:both:3-3"
+      let detected = (at, grade) => ({
+        itemId: id, at, pieceId: "p", kind: "attempt", grade, was: "new",
+        columns: 4, clean: grade == AGAIN ? 0 : 4, misses: grade == AGAIN ? 4 : 0,
+        stuck: 0, skipped: 0, hesitations: 0, mode: "wait", algo: 1,
+      })
+      let self = (at, grade) => ({itemId: id, at, pieceId: "p", kind: "attempt", mode: "self", grade, was: "review"})
+
+      let log = [detected(now, GOOD), self(now + MINUTE, HARD), detected(now + 2 * MINUTE, EASY)]
+
+      let built = bar()
+      for (let review of log) {
+        built = applyGrade(built, review.grade, review.at)
+        built = {...built, recent: [...built.recent, [review.at, review.columns ?? null, review.clean ?? null, review.grade]]
+          .slice(-RECENT_ATTEMPTS)}
+      }
+
+      expect(replay(log, {item: bar()})).toEqual(built)
+      expect(replay(log, {item: bar()}).recent[1]).toEqual([now + MINUTE, null, null, HARD])
+
+      let roundTripped = JSON.parse(JSON.stringify(log))
+      expect(replay(roundTripped, {item: bar()})).toEqual(built)
+    })
+
+    it("counts a self entry's share missed from its grade alone, a detected entry as before", function() {
+      let selfEntry = grade => ({...bar(), recent: [[now, null, null, grade]]})
+      expect(recentMissRate(selfEntry(AGAIN), now)).toBeCloseTo(1, 9)
+      expect(recentMissRate(selfEntry(HARD), now)).toBeCloseTo(0.5, 9)
+      expect(recentMissRate(selfEntry(GOOD), now)).toEqual(0)
+      expect(recentMissRate(selfEntry(EASY), now)).toEqual(0)
+
+      expect(recentMissRate({...bar(), recent: [[now, 4, 2, HARD]]}, now)).toBeCloseTo(0.5, 9)
     })
   })
 

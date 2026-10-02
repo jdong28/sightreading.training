@@ -12,6 +12,7 @@ import {
   HESITATION_SHARE, EASY_PACE,
 } from "st/srs/grade"
 import {itemId} from "st/srs/records"
+import {selfWord} from "st/srs/self_grade"
 
 // the localStorage key of the panel: absent while it's disabled, else
 // whether it's open, "open" or "closed"
@@ -152,6 +153,19 @@ function ungradedWhy(pass) {
  */
 export function runReport(pass) {
   let {card} = pass
+
+  if (pass.selfGrade) {
+    return {
+      self: true,
+      mode: pass.drill ? pass.drill.mode : null,
+      grade: pass.selfGrade.grade,
+      word: selfWord(pass.selfGrade.grade),
+      slipped: pass.selfGrade.slipped || [],
+      at: pass.written ? pass.written.at : pass.lastAt,
+      measures: card.measures,
+    }
+  }
+
   let why = ungradedWhy(pass)
   let report = {
     mode: pass.drill ? pass.drill.mode : null,

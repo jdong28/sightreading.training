@@ -755,6 +755,99 @@ describe("measure cards", function() {
           ["p:both:2-2", "scroll", 25, GOOD],
         ])
       })
+
+      // acoustic mode: the player grades the pass themself (st/srs/self_grade)
+      describe("self-graded passes", function() {
+        it("writes the self reviews through the store and advances the deck", async function() {
+          let {generator} = generatorFor()
+          generator.setDrill(() => ({mode: "self"}))
+
+          time = 2000
+          generator.selfGrade(GOOD, {sessionId: "s1"})
+          await generator.finishing
+
+          let reviews = await store.reviews({pieceId: "p"})
+          expect(reviews.map(r => [r.itemId, r.mode, r.grade, r.sessionId])).toEqual([
+            ["p:both:0-0", "self", GOOD, "s1"],
+            ["p:both:0-1", "self", GOOD, "s1"],
+            ["p:both:1-1", "self", GOOD, "s1"],
+          ])
+          expect(generator.deck.card.measures).toEqual([2])
+        })
+
+        it("restarts a looping card from its first column after a self grade", async function() {
+          let deck = new MeasureCardDeck(measureCards([pickupMeasures()[1]], 1), {pieceId: "p", order: IN_ORDER, store})
+          let generator = track(new MeasureCardGenerator(deck, {now: () => time}))
+          generator.setDrill(() => ({mode: "self"}))
+          let notes = new NoteList([], {generator})
+          notes.fillBuffer(6)
+
+          time = 1000
+          generator.selfGrade(EASY)
+          await generator.finishing
+
+          expect([...generator.nextNote()]).toEqual(["G3", "G4"])
+        })
+
+        it("writes practice only for a self-graded Clean pass off schedule, but a review for Fell apart", async function() {
+          let deck = new MeasureCardDeck(measureCards([pickupMeasures()[1]], 1), {pieceId: "p", order: IN_ORDER, store})
+          let generator = track(new MeasureCardGenerator(deck, {now: () => time}))
+          generator.setDrill(() => ({mode: "self"}))
+          let notes = new NoteList([], {generator})
+          notes.fillBuffer(6)
+          let bar = () => store.item("p:both:1-1")
+
+          // first sight: self-graded Clean puts the bar on the ladder, due later in the session
+          time = 1000
+          generator.selfGrade(GOOD)
+          await generator.finishing
+          expect(bar().state).toEqual("learning")
+          expect(bar().due).toBeGreaterThan(time)
+
+          // off schedule now: self-graded Clean writes no review, only totals
+          time = 1500
+          generator.selfGrade(GOOD)
+          await generator.finishing
+          expect((await store.reviews({pieceId: "p"})).length).toEqual(1)
+          expect(bar().attempts).toEqual(2)
+          expect(bar().lastPracticed).toEqual(1500)
+
+          // a failing self grade off schedule is still graded
+          time = 2000
+          generator.selfGrade(AGAIN)
+          await generator.finishing
+          let reviews = await store.reviews({pieceId: "p"})
+          expect(reviews.map(r => r.grade)).toEqual([GOOD, AGAIN])
+        })
+
+        it("captions a self pass with its grade's word, and takePractice leaves an untouched one untimed only", async function() {
+          let {generator} = generatorFor()
+          generator.setDrill(() => ({mode: "self"}))
+
+          expect(generator.caption()).toBe(null)
+          time = 1000
+          generator.selfGrade(HARD)
+          await generator.finishing
+          expect(generator.caption()).toEqual("Stumbled")
+
+          time = 5000
+          expect(generator.takePractice()).toEqual([])
+        })
+
+        it("asks Where? after a failing grade on a multi-bar card only", function() {
+          let {generator} = generatorFor()
+          let followUp = generator.selfFollowUp(AGAIN)
+          expect(followUp.prompt).toEqual("Where?")
+          expect(followUp.choices.map(c => c.label)).toEqual(["Bar 0", "Bar 1", "Throughout"])
+          expect(followUp.choices.map(c => c.value)).toEqual([[0], [1], null])
+
+          expect(generator.selfFollowUp(GOOD)).toBe(null)
+
+          let single = new MeasureCardDeck(measureCards([pickupMeasures()[1]], 1), {pieceId: "p", order: IN_ORDER, store})
+          let soloGen = track(new MeasureCardGenerator(single, {now: () => time}))
+          expect(soloGen.selfFollowUp(AGAIN)).toBe(null)
+        })
+      })
     })
   })
 

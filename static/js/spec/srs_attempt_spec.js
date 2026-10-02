@@ -1,7 +1,10 @@
-import {AttemptPass, passAttempts, passPractice, columnClefs, PAUSE_MS} from "st/srs/attempt"
+import {
+  AttemptPass, passAttempts, passPractice, passPace, columnClefs, PAUSE_MS, selfAttempts, selfPractice,
+} from "st/srs/attempt"
 import {sectionCard} from "st/measure_cards"
 import {newItem, validItem, validReview} from "st/srs/records"
 import {AGAIN, HARD, GOOD, EASY, GRADE_ALGO} from "st/srs/grade"
+import {SELF_PAUSE_MS} from "st/srs/self_grade"
 
 // a column of notes on the grand staff at a beat, eg. col(0, ["G3", "lower"], ["G4", "upper"])
 const col = (beat, ...notes) => {
@@ -345,5 +348,60 @@ describe("srs attempt", function() {
     expect(columnClefs(chord)).toEqual(["g", "f"])
     expect(columnClefs(chord, ["G3"])).toEqual(["f"])
     expect(columnClefs(["C4"])).toEqual([])
+  })
+
+  // acoustic mode: the player grades the pass themself (st/srs/self_grade),
+  // in place of detection
+  describe("self-graded passes", function() {
+    let selfAttemptsOf = (p, opts={}) => selfAttempts(p, {pieceId: "p", hand: "both", ...opts})
+      .map(({id, build}) => ({id, ...build((opts.items || noItems)(id))}))
+
+    it("gives the range and each bar, each a self review with none of detection's fields", function() {
+      pass.selfGrade = {grade: GOOD}
+      let attempts = selfAttemptsOf(pass, {at: 5000})
+      expect(attempts.map(a => a.id)).toEqual(["p:both:1-2", "p:both:1-1", "p:both:2-2"])
+      expect(attempts.every(({item, review}) => validItem(item) && validReview(review))).toBe(true)
+
+      let [card, bar1, bar2] = attempts
+      expect(card.review).toEqual({
+        itemId: "p:both:1-2", at: 5000, pieceId: "p", kind: "attempt", mode: "self",
+        grade: GOOD, was: "new", elapsedMs: 4000,
+      })
+      expect(card.item).toEqual(jasmine.objectContaining({
+        id: "p:both:1-2", attempts: 1, lastPracticed: 5000, elapsedMs: 4000,
+        recent: [[5000, null, null, GOOD]],
+      }))
+      expect(card.item.paceMs).toBeUndefined()
+
+      // elapsed time split by each bar's share of the card's columns
+      expect(bar1.review.elapsedMs).toEqual(3000)
+      expect(bar2.review.elapsedMs).toEqual(1000)
+    })
+
+    it("grades only the named bars when bars is given, leaving the rest to selfPractice", function() {
+      pass.selfGrade = {grade: HARD, bars: [2]}
+      let attempts = selfAttemptsOf(pass, {at: 5000})
+      expect(attempts.map(a => a.id)).toEqual(["p:both:1-2", "p:both:2-2"])
+
+      let practice = selfPractice(pass, {pieceId: "p", hand: "both", at: 5000})
+      expect(practice).toEqual([
+        {pieceId: "p", hand: "both", startMeasure: 1, endMeasure: 1, hits: 0, misses: 0, played: true, at: 5000, elapsedMs: 3000},
+      ])
+    })
+
+    it("leaves out the elapsed time, and adds none, over SELF_PAUSE_MS", function() {
+      pass.selfGrade = {grade: EASY}
+      let at = 1000 + SELF_PAUSE_MS + 1000
+      let attempts = selfAttemptsOf(pass, {at})
+      expect(attempts.every(a => a.review.elapsedMs === undefined)).toBe(true)
+      expect(attempts.every(a => a.item.elapsedMs === undefined)).toBe(true)
+    })
+
+    it("keeps no pace and writes no detected attempt for a self-graded pass", function() {
+      pass.selfGrade = {grade: GOOD}
+      pass.drill = {mode: "self"}
+      expect(passPace(pass)).toBe(null)
+      expect(passAttempts(pass, {pieceId: "p", hand: "both"})).toEqual([])
+    })
   })
 })

@@ -5,6 +5,8 @@ import {MemoryRouter, Routes, Route} from "react-router-dom"
 
 import App, {HomeGate, HeaderChrome} from "st/components/app"
 import drawerStyles from "st/components/sight_reading/programme_drawer.module.css"
+import headerStyles from "st/components/header.module.css"
+import DevicePickerLightbox from "st/components/device_picker_lightbox"
 import {SHEET_MUSIC_STORAGE_KEY} from "st/data"
 import {DRILL_STORAGE_KEY, SCORE_DRILL_STORAGE_KEY} from "st/generators"
 import {ONBOARDED_KEY, hasOnboarded} from "st/onboarding"
@@ -218,6 +220,57 @@ describe("app routing", function() {
       expect(activeNav(el)).toEqual(["Sight reading"])
       expect(drawerText(el)).toContain("Clef")
       expect(drawerText(el)).not.toContain("Import MusicXML")
+    })
+
+    // acoustic mode (st/srs/self_grade): the instrument setting, read into
+    // every page's acoustic prop, and the header's own status
+    describe("the acoustic instrument setting", function() {
+      let instrumentStatus = el => el.querySelector(`.${headerStyles.instrument_status}`)
+      let radioFor = (el, text) => [...el.querySelectorAll("label")]
+        .find(label => label.textContent.includes(text)).querySelector("input[type=radio]")
+      let saveButton = el => [...el.querySelectorAll("button")].find(b => b.textContent == "Save selections")
+
+      afterEach(function() {
+        window.localStorage.removeItem("defaults:acoustic")
+      })
+
+      it("reads defaults:acoustic into the pages' acoustic prop, and saves the choice from the device lightbox", function() {
+        window.localStorage.setItem("defaults:acoustic", "1")
+        let el = renderApp("/sheet-music")
+        expect(instrumentStatus(el).textContent).toEqual("Acoustic piano")
+
+        // choosing MIDI clears the stored flag
+        flushSync(() => instrumentStatus(el).click())
+        flushSync(() => radioFor(el, "MIDI keyboard").click())
+        flushSync(() => saveButton(el).click())
+        expect(window.localStorage.getItem("defaults:acoustic")).toBe(null)
+        expect(instrumentStatus(el).textContent).not.toEqual("Acoustic piano")
+
+        // choosing Acoustic writes it back
+        flushSync(() => instrumentStatus(el).click())
+        flushSync(() => radioFor(el, "Acoustic piano").click())
+        flushSync(() => saveButton(el).click())
+        expect(window.localStorage.getItem("defaults:acoustic")).toEqual("1")
+        expect(instrumentStatus(el).textContent).toEqual("Acoustic piano")
+      })
+    })
+  })
+
+  // acoustic mode: the Instrument section (with the Acoustic piano choice)
+  // renders even without Web MIDI support, since that's exactly who plays
+  // acoustic (Safari, iPad)
+  describe("device picker lightbox", function() {
+    it("renders the Instrument section without midi support", function() {
+      container = document.createElement("div")
+      document.body.appendChild(container)
+      root = createRoot(container)
+      flushSync(() => {
+        root.render(React.createElement(DevicePickerLightbox, {midi: null, onClose: () => {}}))
+      })
+
+      expect(container.textContent).toContain("Instrument")
+      expect(container.textContent).toContain("Acoustic piano")
+      expect(container.textContent).toContain("MIDI support not detected")
     })
   })
 

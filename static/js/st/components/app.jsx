@@ -28,14 +28,14 @@ import {BrowserRouter, Route, Routes, Navigate, useLocation} from "react-router-
 import {SampleOutput} from "st/sample_output"
 
 // the onboarding card owns its own full-viewport chrome
-export function HeaderChrome({midiInput}) {
+export function HeaderChrome({midiInput, acoustic}) {
   let location = useLocation()
   if (location.pathname == "/welcome") {
     return null
   }
 
   return <div className="header_spacer">
-    <Header midiInput={midiInput} />
+    <Header midiInput={midiInput} acoustic={acoustic} />
   </div>
 }
 
@@ -56,7 +56,10 @@ class Layout extends React.Component {
     this.state = {
       outputDeviceType: device,
       forwardMidi: readConfig("defaults:forwardMidi") == 1,
-      midiOutputChannel
+      midiOutputChannel,
+      // the instrument setting: acoustic piano, in place of MIDI detection
+      // (st/srs/self_grade)
+      acoustic: readConfig("defaults:acoustic") == 1,
     }
 
     if (navigator.requestMIDIAccess) {
@@ -115,6 +118,7 @@ class Layout extends React.Component {
       midi: this.state.midi,
       midiInput: this.state.midiInput,
       midiOutput: this.state.midiOutputChannel,
+      acoustic: this.state.acoustic,
     }
   }
 
@@ -130,7 +134,7 @@ class Layout extends React.Component {
     let pageProps = this.pageProps()
 
     return <div className="page_layout">
-      <HeaderChrome midiInput={this.state.midiInput} />
+      <HeaderChrome midiInput={this.state.midiInput} acoustic={this.state.acoustic} />
 
       <Routes>
         <Route path="/" element={<HomeGate><SightReadingPage {...pageProps} /></HomeGate>} />
@@ -245,6 +249,7 @@ class Layout extends React.Component {
       selectedOutputChannel={this.state.midiOutputChannel}
       selectedOutputIdx={this.state.midiOutputIdx}
       selectedOutputDeviceType={this.state.outputDeviceType}
+      acoustic={this.state.acoustic}
 
       onClose={lb => {
         let config = lb.midiConfiguration()
@@ -261,11 +266,13 @@ class Layout extends React.Component {
           midiOutputChannel: output,
           midiOutputIdx: config.outputIdx,
           outputDeviceType: config.outputDeviceType,
+          acoustic: config.acoustic,
         })
 
         writeConfig("defaults:midiIn", input ? input.name : undefined)
         writeConfig("defaults:forwardMidi", config.forwardMidi ? "1" : undefined)
         writeConfig("defaults:outputDeviceType", config.outputDeviceType || undefined)
+        writeConfig("defaults:acoustic", config.acoustic ? "1" : undefined)
       }} />
   }
 }

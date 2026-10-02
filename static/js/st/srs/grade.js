@@ -1,5 +1,6 @@
 // The grade of one attempt at an item, worked out from what detection saw on
-// each of its columns, never asked of the player: again, hard, good or easy.
+// each of its columns: again, hard, good or easy. This is detection's grade;
+// in acoustic mode the player grades the pass instead (st/srs/self_grade).
 //
 // Only the notes are judged. The score's rhythm enters in one place, and only
 // to excuse: a column's latency (from it becoming the head to the first of its

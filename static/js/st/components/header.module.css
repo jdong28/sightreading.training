@@ -113,6 +113,11 @@
             border-color: var(--salon-oxblood);
             background: var(--salon-oxblood);
         }
+
+        &.acoustic {
+            border-color: var(--salon-gilt);
+            background: var(--salon-gilt);
+        }
     }
 
     .instrument_name {
