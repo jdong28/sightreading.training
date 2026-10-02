@@ -234,21 +234,6 @@ describe("dev metrics", function() {
       expect(report.columns.every(column => column.threshold == null && !column.hesitated)).toBe(true)
       expect(report.ranges[0]).toEqual(jasmine.objectContaining({grade: GOOD, rule: "scroll"}))
     })
-
-    // acoustic mode: the player grades the pass themself, so there is
-    // nothing detected to report measurements of (st/srs/self_grade)
-    it("reports a self-graded pass by its grade, not as nothing played", function() {
-      let pass = new AttemptPass(twoBars(), {startedAt: 1000})
-      pass.selfGrade = {grade: HARD, slipped: ["rhythm"]}
-      pass.lastAt = 5000
-      pass.written = {pieceId: "p", hand: "both", at: 5000}
-
-      let report = runReport(pass)
-      expect(report).toEqual(jasmine.objectContaining({
-        self: true, grade: HARD, word: "Stumbled", slipped: ["rhythm"], at: 5000, measures: [1, 2],
-      }))
-      expect(report.why).toBeUndefined()
-    })
   })
 
   it("words each grading rule", function() {

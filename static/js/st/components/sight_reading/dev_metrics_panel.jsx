@@ -235,14 +235,6 @@ export default class DevMetricsPanel extends React.Component {
   }
 
   renderRun(report) {
-    if (report.self) {
-      return <p className={styles.note}>
-        Self-graded on an acoustic piano: <strong>{report.word}</strong> ({GRADE_NAMES[report.grade]}).
-        Nothing was detected, so there are no measurements.
-        {report.slipped.length > 0 && ` What slipped: ${report.slipped.join(", ")}.`}
-      </p>
-    }
-
     let mode = report.mode == "scroll" ? `scroll mode at speed ${report.speed ?? "—"}` : `${report.mode} mode`
     if (!report.graded) {
       return <p className={styles.note}>{mode}. Not graded: {report.why}.</p>
