@@ -4,12 +4,13 @@
 // One database holds the stores in STORES: the imported sheet music pieces
 // (the deck, see st/sheet_music_deck), the source score each piece was
 // imported from, the practice records of spaced repetition (items, the log of
-// reviews and studies, see st/srs/records), practice sessions, and in meta
-// the scheduler's and practice settings (st/srs/schedule).
-// init() loads the pieces, items, studies, recent sessions and settings into an
-// in-memory cache so the UI reads synchronously (eg. a generator's settings
-// inputs on every render); a piece's source and the reviews are read on
-// demand. Every
+// reviews and studies, see st/srs/records), a piece's flagged passages
+// (annotations, see st/difficulty), practice sessions, and in meta the
+// scheduler's and practice settings (st/srs/schedule).
+// init() loads the pieces, items, studies, annotations, recent sessions and
+// settings into an in-memory cache so the UI reads synchronously (eg. a
+// generator's settings inputs on every render); a piece's source and the
+// reviews are read on demand. Every
 // mutation is async, writes to the database first and only then updates the
 // cache, so a failed write (usually the storage quota) leaves both untouched.
 // Mutations run one at a time in call order.
@@ -35,6 +36,7 @@ import {
   SOURCE_ENCODING, compressSource, decompressSource, isCompressedSource,
   bytesToBase64, base64ToBytes
 } from "st/score_source"
+import {validAnnotation} from "st/difficulty/records"
 
 export const DB_NAME = "sightreading"
 
@@ -45,7 +47,9 @@ export const DB_NAME = "sightreading"
 // 4: adds the items, reviews and studies stores; each sectionStats row is
 // migrated into a tracked item and a legacy review, and the sectionStats store
 // is left as it was, frozen: nothing reads or writes it after the migration
-export const DB_VERSION = 4
+// 5: adds the annotations store, a piece's flagged passages (st/difficulty);
+// pieces stored before it are analysed on first open
+export const DB_VERSION = 5
 
 // the localStorage deck used before the local store, migrated into the pieces
 // store once, see migrateLegacyDeck. The key itself is left in place
@@ -69,7 +73,9 @@ export const LIBRARY_FORMAT = "sightreading-library"
 // ornaments allowed until their score is imported again
 // 7: reviews may be self-graded (mode: "self", no counts); version 6
 // libraries hold none and import as they are
-export const LIBRARY_VERSION = 7
+// 8: carries the annotations of the pieces (st/difficulty); older libraries
+// have none, and their pieces are analysed on first open
+export const LIBRARY_VERSION = 8
 
 // sessions started within this many days are loaded into the cache
 export const RECENT_SESSION_DAYS = 30
@@ -97,6 +103,7 @@ const STORES = {
     indexes: {at: "at", sessionId: "sessionId", pieceId: "pieceId"},
   },
   studies: {keyPath: "pieceId"},
+  annotations: {keyPath: "pieceId"},
 }
 
 /**
@@ -174,6 +181,8 @@ const STORES = {
  * @property {Object[]} [settings] the scheduler and practice settings records
  * (st/srs/schedule), since version 5
  * @property {SectionStatsRecord[]} [sectionStats] before version 5
+ * @property {AnnotationRecord[]} [annotations] a piece's flagged passages
+ * (st/difficulty), since version 8
  * @property {SessionRecord[]} sessions
  */
 
@@ -191,6 +200,7 @@ const STORES = {
  * @property {number} updatedSections items replaced by more recently practiced ones
  * @property {number} addedReviews
  * @property {number} addedStudies studies of pieces that had none
+ * @property {number} addedAnnotations annotations added to a piece without one
  * @property {number} importedSettings settings records, which replace this library's
  * @property {number} addedSessions
  * @property {number} existingSessions
@@ -272,6 +282,10 @@ async function upgradeSchema(db, oldVersion, newVersion, transaction) {
       items.put(itemFromSectionStats(stats, now))
       reviews.put(legacyReview(stats))
     }
+  }
+
+  if (oldVersion >= 1 && oldVersion < 5) {
+    createStore(db, "annotations")
   }
 }
 
@@ -721,10 +735,11 @@ export class LocalStore {
   }
 
   async loadCache() {
-    let [pieces, items, studies, sessions, scheduler, practice] = await Promise.all([
+    let [pieces, items, studies, annotations, sessions, scheduler, practice] = await Promise.all([
       this.backend.getAll("pieces"),
       this.backend.getAll("items"),
       this.backend.getAll("studies"),
+      this.backend.getAll("annotations"),
       this.backend.getAllFrom("sessions", "startedAt", Date.now() - RECENT_SESSION_DAYS * DAY),
       this.backend.get("meta", SCHEDULER_SETTINGS_KEY),
       this.backend.get("meta", PRACTICE_SETTINGS_KEY),
@@ -734,6 +749,7 @@ export class LocalStore {
       pieces: pieces.sort(byImportOrder),
       items,
       studies,
+      annotations,
       sessions: sessions.sort(byStart),
       settings: {
         scheduler: validSchedulerSettings(scheduler) ? scheduler : DEFAULT_SCHEDULER_SETTINGS,
@@ -805,6 +821,43 @@ export class LocalStore {
   /** @returns {StudyRecord[]} every piece the player has begun */
   studies() {
     return this.cache.studies
+  }
+
+  /**
+   * A piece's flagged passages (st/difficulty), or null for a piece with
+   * none yet (see ensureAnnotation in st/sheet_music_deck).
+   * @param {string} pieceId
+   * @returns {AnnotationRecord|null}
+   */
+  annotation(pieceId) {
+    return this.cache.annotations.find(record => record.pieceId == pieceId) || null
+  }
+
+  /** @returns {AnnotationRecord[]} every piece's flagged passages, of the pieces that have them */
+  annotations() {
+    return this.cache.annotations
+  }
+
+  /**
+   * Adds or replaces a piece's flagged passages.
+   * @param {AnnotationRecord} record
+   * @returns {Promise<AnnotationRecord>}
+   */
+  putAnnotation(record) {
+    return this.mutate(async () => {
+      if (!validAnnotation(record) || !this.piece(record.pieceId)) {
+        throw new Error("Not a valid annotation")
+      }
+
+      await this.backend.write([{store: "annotations", put: record}])
+
+      this.cache = {
+        ...this.cache,
+        annotations: [...this.cache.annotations.filter(a => a.pieceId != record.pieceId), record],
+      }
+
+      return record
+    })
   }
 
   /**
@@ -955,6 +1008,7 @@ export class LocalStore {
         {store: "pieces", delete: id},
         {store: "pieceSources", delete: id},
         {store: "studies", delete: id},
+        {store: "annotations", delete: id},
         ...deletes("items", this.items(id)),
         ...deletes("reviews", reviews),
         ...deletes("sectionStats", sections),
@@ -965,6 +1019,7 @@ export class LocalStore {
         pieces: this.cache.pieces.filter(piece => piece.id != id),
         items: this.cache.items.filter(item => item.pieceId != id),
         studies: this.cache.studies.filter(study => study.pieceId != id),
+        annotations: this.cache.annotations.filter(a => a.pieceId != id),
       }
 
       return true
@@ -1166,6 +1221,7 @@ export class LocalStore {
         items: this.cache.items,
         reviews,
         studies: this.cache.studies,
+        annotations: this.cache.annotations,
         settings: [this.cache.settings.scheduler, this.cache.settings.practice],
         sessions: sessions.sort(byStart),
       }
@@ -1201,7 +1257,7 @@ export class LocalStore {
 
       let report = {
         addedPieces: 0, existingPieces: 0, invalidPieces: 0, fullPieces: 0, addedSources: 0,
-        addedSections: 0, updatedSections: 0, addedReviews: 0, addedStudies: 0,
+        addedSections: 0, updatedSections: 0, addedReviews: 0, addedStudies: 0, addedAnnotations: 0,
         importedSettings: 0, addedSessions: 0, existingSessions: 0,
       }
 
@@ -1361,6 +1417,17 @@ export class LocalStore {
         }
       }
 
+      let annotations = [...this.cache.annotations]
+      for (let record of Array.isArray(data.annotations) ? data.annotations : []) {
+        let pieceId = validAnnotation(record) && sameSongIds.has(record.pieceId) && pieceIds.get(record.pieceId)
+        if (pieceId && !annotations.some(a => a.pieceId == pieceId)) {
+          let copy = {...record, pieceId}
+          annotations.push(copy)
+          ops.push({store: "annotations", put: copy})
+          report.addedAnnotations += 1
+        }
+      }
+
       let settings = {...this.cache.settings}
       for (let record of data.version >= 5 && Array.isArray(data.settings) ? data.settings : []) {
         let name = settingsName(record)
@@ -1400,6 +1467,7 @@ export class LocalStore {
         pieces: pieces.sort(byImportOrder),
         items,
         studies,
+        annotations,
         sessions: recentSessions.sort(byStart),
         settings,
       }
@@ -1430,7 +1498,7 @@ export class LocalStore {
 }
 
 const emptyCache = () => ({
-  pieces: [], items: [], studies: [], sessions: [],
+  pieces: [], items: [], studies: [], annotations: [], sessions: [],
   settings: {scheduler: DEFAULT_SCHEDULER_SETTINGS, practice: DEFAULT_PRACTICE_SETTINGS},
 })
 
