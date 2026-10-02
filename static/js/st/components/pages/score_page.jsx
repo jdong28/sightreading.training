@@ -16,6 +16,7 @@ import * as React from "react"
 import SightReadingPage from "st/components/pages/sight_reading_page"
 import {ScoreDrawer} from "st/components/sight_reading/settings_panel"
 import {ProgrammePlate} from "st/components/sight_reading/programme_plate"
+import {PassagesPlate} from "st/components/sight_reading/passages_plate"
 import {
   STAVES, SHEET_MUSIC_GENERATOR, PROGRAMME_PRACTICE, sheetMusicPiece, sheetMusicStaffFor
 } from "st/data"
@@ -49,9 +50,14 @@ function programmeOf(settings, id) {
   return {...input.pick(settings, id).settings, practice: PROGRAMME_PRACTICE}
 }
 
-// the plate before a planned session, see st/components/sight_reading/programme_plate
+// the plate before a planned session, see st/components/sight_reading/programme_plate,
+// and the piece's flagged passages at rest (st/difficulty), see
+// st/components/sight_reading/passages_plate
 function ScorePreface(props) {
-  return <ProgrammePlate pickPiece={programmeOf} {...props} />
+  return <>
+    <ProgrammePlate pickPiece={programmeOf} {...props} />
+    <PassagesPlate {...props} />
+  </>
 }
 
 export const SCORE_PROGRAMME = {
