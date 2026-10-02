@@ -36,7 +36,7 @@ import {
   currentKeySignature, currentDrillMode, currentScrollSpeed, scoreKeySignature, storeGeneratorSettings,
   DRILL_STORAGE_KEY
 } from "st/generators"
-import {SELF_GRADES, SELF_GRADE_DWELL_MS} from "st/srs/self_grade"
+import {SELF_GRADES} from "st/srs/self_grade"
 import {SELF_ASPECTS} from "st/srs/records"
 import {AGAIN} from "st/srs/grade"
 
@@ -763,7 +763,9 @@ export default class SightReadingPage extends React.Component {
     this.matcher.mode = generator.mode
     this.advanceEngineMarks(this.state.notes, notes)
 
-    return this.setState({ notes, droppedPitches })
+    // the grade row of acoustic mode is keyed by this, so a rebuilt drill
+    // starts it fresh, as a graded pass does
+    return this.setState(state => ({ notes, droppedPitches, cardSeq: state.cardSeq + 1 }))
   }
 
   // keeps state.staffWidth up to date with the staff wrapper's width, which
@@ -1527,25 +1529,20 @@ export default class SightReadingPage extends React.Component {
   // Ends the pass with the player's own grade (SelfGradeRow), in place of
   // detection: tells the generator, the session stats, and refills the
   // staff from the next card, the same path today's programme's ready uses.
-  // A pass takes one grade, and the deck moves on as it is written, so every
-  // way in (the grade pills, the "Where?" chips and the hotkeys) is ignored
-  // here until the card on the staff has been up long enough to have been
-  // played (SELF_GRADE_DWELL_MS): a repeated tap or key press would otherwise
-  // grade the card it moved on to, which nobody played.
+  // A pass takes one grade, and the deck moves on as it is written: the row
+  // waits out SELF_GRADE_DWELL_MS after every change of what it shows, which
+  // the refill below is one of, and the flag stops a second grade applied
+  // before that refill renders.
   selfGrade(grade, opts={}) {
     let generator = this.currentNotesGenerator()
     if (this.grading || !this.selfGraded() || !generator) { return }
 
-    let time = Date.now()
-    let shownAt = generator.cardStartedAt()
-    if (shownAt == null || time - shownAt < SELF_GRADE_DWELL_MS) { return }
-
     this.grading = true
     try {
+      let time = Date.now()
       generator.selfGrade(grade, {...opts, sessionId: this.state.stats.id, time})
       this.state.stats.selfGraded(grade, time)
       this.refreshNoteList(generator)
-      this.setState(state => ({cardSeq: state.cardSeq + 1}))
     } finally {
       this.grading = false
     }
@@ -1887,12 +1884,16 @@ export default class SightReadingPage extends React.Component {
             (generator ? generatorLabel(generator) : session.generator)
 
           let parts = [staff ? `${staffLabel(staff)} staff` : session.staff, exercise].filter(Boolean)
+          // a sitting that detected notes and graded passes of its own (the
+          // instrument toggled part way through) is summed up by both
           let accuracy = accuracyPercent(session.notesRead, session.misses)
           let {selfGraded} = session
-          let detail = selfGraded ?
+          let graded = selfGraded ?
             `${selfGraded.passes} ${selfGraded.passes == 1 ? "pass" : "passes"} graded` +
               (selfGraded.clean ? ` · ${selfGraded.clean} clean` : "") :
-            accuracy == null ? "No notes read" : `${accuracy}% accuracy`
+            null
+          let detail = [accuracy == null ? null : `${accuracy}% accuracy`, graded]
+            .filter(Boolean).join(" · ") || "No notes read"
 
           return <li key={session.id} className={styles.evening_row}>
             <span className={styles.numeral}>{romanNumeral(idx + 1)}</span>

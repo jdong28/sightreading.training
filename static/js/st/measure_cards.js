@@ -385,14 +385,6 @@ export class MeasureCardGenerator {
   }
 
   /**
-   * @returns {number|null} when the card on the staff was shown (or timed
-   * afresh at Begin, see takePractice), null before it has been handed out
-   */
-  cardStartedAt() {
-    return this.pass ? this.pass.columnStartedAt : null
-  }
-
-  /**
    * @returns {number|null} the card's position in the deck, from 1, or null
    * for a deck with a single card, looped like the whole section
    */

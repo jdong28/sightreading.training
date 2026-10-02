@@ -2987,34 +2987,53 @@ describe("sight reading page", function() {
       expect(plateLabel(el)).toContain("measures 5–6")
     })
 
-    it("ignores a Where? answer given again before the next card has been played", async function() {
+    it("ignores a Where? chip tapped as the question appears, and answers once it has settled", async function() {
+      let el = await renderAcoustic({measuresPerCard: "2"})
+      click(buttonNamed(el, "Begin"))
+
+      // the card played, then a double tap on Fell apart: the second tap
+      // lands a tenth of a second later on the chip the question put under it
+      played()
+      click(buttonLike(el, "Fell apart"))
+      expect(el.querySelector("[data-self-grade-followup]")).not.toBe(null)
+
+      played(100)
+      click(exactButton(el, "Bar 1"))
+      await finished()
+      expect(await reviews()).toEqual([])
+      expect(el.querySelector("[data-self-grade-followup]")).not.toBe(null)
+
+      // the question stays up, and answers as chosen once it has settled
+      played(600)
+      click(exactButton(el, "Bar 2"))
+      await finished()
+      expect((await reviews()).map(r => [r.itemId, r.grade])).toEqual([
+        [`${piece.id}:both:1-2`, AGAIN],
+        [`${piece.id}:both:2-2`, AGAIN],
+      ])
+    })
+
+    it("starts the grade row fresh when the drill is rebuilt under it", async function() {
       let el = await renderAcoustic({measuresPerCard: "2"})
       click(buttonNamed(el, "Begin"))
 
       played()
-      click(buttonLike(el, "Stumbled"))
-      click(exactButton(el, "Bar 2"))
-      await finished()
-      expect((await reviews()).map(r => r.itemId)).toEqual([
-        `${piece.id}:both:1-2`, `${piece.id}:both:2-2`,
-      ])
-      expect(plateLabel(el)).toContain("measures 3–4")
+      click(exactButton(el, "rhythm"))
+      click(buttonLike(el, "Fell apart"))
+      expect(el.querySelector("[data-self-grade-followup]")).not.toBe(null)
 
-      // the chips of the card it moved on to answer nothing yet
-      played(100)
-      click(buttonLike(el, "Stumbled"))
-      click(exactButton(el, "Bar 4"))
-      await finished()
-      expect((await reviews()).length).toEqual(2)
+      // a new passage rebuilds the drill, so the question and the tags of the
+      // card it replaces go with it
+      click(buttonNamed(el, "New passage"))
+      expect(el.querySelector("[data-self-grade-followup]")).toBe(null)
+      expect(buttonLike(el, "Fell apart")).toBeDefined()
 
-      // the question stays up, and the same chip writes once the card has
-      // been played
-      played(600)
-      click(exactButton(el, "Bar 4"))
+      played()
+      click(buttonLike(el, "Clean"))
       await finished()
-      expect((await reviews()).map(r => r.itemId).slice(2)).toEqual([
-        `${piece.id}:both:3-4`, `${piece.id}:both:4-4`,
-      ])
+      let written = await reviews()
+      expect(written.length).toEqual(3)
+      expect(written.every(r => r.grade == GOOD && r.slipped === undefined)).toBe(true)
     })
 
     it("goes on grading after a self grade throws", async function() {
@@ -3049,6 +3068,7 @@ describe("sight reading page", function() {
       flushSync(() => document.body.dispatchEvent(new KeyboardEvent("keydown", {keyCode: 52, bubbles: true})))
       expect(el.querySelector("[data-self-grade-followup]")).not.toBe(null)
 
+      played()
       click(exactButton(el, "Bar 1"))
       await finished()
       expect((await reviews()).map(r => [r.itemId, r.grade])).toEqual([
@@ -3168,6 +3188,7 @@ describe("sight reading page", function() {
       played()
       click(buttonLike(el, "Stumbled"))
       expect(el.textContent).toContain("Where?")
+      played()
       click(exactButton(el, "Bar 2"))
       await finished()
 
@@ -3181,6 +3202,7 @@ describe("sight reading page", function() {
       expect(bar1.recent).toEqual([])
 
       // Rest while the question is open writes no review
+      played()
       click(buttonLike(el, "Stumbled"))
       expect(el.textContent).toContain("Where?")
       click(buttonNamed(el, "Rest"))
@@ -3206,6 +3228,27 @@ describe("sight reading page", function() {
       let next = (await reviews()).slice(written.length)
       expect(next.length).toEqual(3)
       expect(next.every(r => r.slipped === undefined)).toBe(true)
+    })
+
+    it("lists the accuracy and the passes graded of a sitting that did both", async function() {
+      let el = await renderAcoustic({measuresPerCard: "2"})
+      click(buttonNamed(el, "Begin"))
+
+      // read with the instrument switched off, then graded with it back on
+      rerenderAcoustic(false)
+      play(page.state.notes.currentColumn())
+      expect(page.state.stats.hits).toEqual(1)
+
+      rerenderAcoustic(true)
+      played()
+      click(buttonLike(el, "Clean"))
+      await finished()
+
+      click(buttonNamed(el, "Rest"))
+      await waitFor(() => store.recentSessions().length == 1, "the session to be saved")
+      flushSync(() => page.forceUpdate())
+      expect(el.textContent).toContain("100% accuracy")
+      expect(el.textContent).toContain("1 pass graded")
     })
 
     it("lists an acoustic session in the rail as passes graded after Rest", async function() {

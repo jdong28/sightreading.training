@@ -3,6 +3,7 @@ import * as types from "prop-types"
 
 import {Pill} from "st/components/salon"
 import {AGAIN, HARD} from "st/srs/grade"
+import {SELF_GRADE_DWELL_MS} from "st/srs/self_grade"
 
 import styles from "./self_grade_row.module.css"
 
@@ -16,6 +17,11 @@ import styles from "./self_grade_row.module.css"
 // read by the scheduler (SELF_ASPECTS in st/srs/records); they clear with
 // every pass, so this component keeps no state across one (see its key in
 // SightReadingPage#renderSelfGrade).
+//
+// Nothing is graded within SELF_GRADE_DWELL_MS of the row changing what it
+// shows: a pass can't have been played in that time, and the second tap of a
+// double tap would otherwise answer for whatever took the place of what was
+// tapped (the next card's pills, or the chip the question put under the pill).
 export default class SelfGradeRow extends React.Component {
   static propTypes = {
     grades: types.array.isRequired,
@@ -30,6 +36,15 @@ export default class SelfGradeRow extends React.Component {
   constructor(props) {
     super(props)
     this.state = {pendingGrade: null, slipped: []}
+    // when the row last changed what it shows: mounted with the card (it is
+    // keyed by it) and set again as the "Where?" question takes the pills'
+    // place, the one time every way in is measured from
+    this.shownAt = Date.now()
+  }
+
+  /** @returns {boolean} whether what the row shows has been up long enough to answer */
+  settled() {
+    return Date.now() - this.shownAt >= SELF_GRADE_DWELL_MS
   }
 
   toggleAspect(aspect) {
@@ -43,9 +58,10 @@ export default class SelfGradeRow extends React.Component {
   // the one path a grade takes, from a pill or the page's hotkeys: a grade
   // with a "Where?" question waits for the answer rather than ending the pass
   grade(grade) {
-    if (this.state.pendingGrade != null) { return }
+    if (this.state.pendingGrade != null || !this.settled()) { return }
 
     if (this.props.followUp && (grade == AGAIN || grade == HARD)) {
+      this.shownAt = Date.now()
       this.setState({pendingGrade: grade})
       return
     }
@@ -54,6 +70,8 @@ export default class SelfGradeRow extends React.Component {
   }
 
   chooseWhere(value) {
+    if (!this.settled()) { return }
+
     this.props.onGrade(this.state.pendingGrade, {bars: value, slipped: this.state.slipped})
   }
 
