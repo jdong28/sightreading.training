@@ -28,6 +28,7 @@ import {
 import {getAppStore} from "st/storage"
 import {PlanDeck, PlanGenerator} from "st/plan_cards"
 import {inStudy} from "st/srs/planner"
+import {flagsInForce} from "st/difficulty/records"
 
 import {ChordGenerator, MultiKeyChordGenerator} from "st/chord_generators"
 import {GStaff, FStaff, GrandStaff, ChordStaff} from "st/components/staves"
@@ -146,6 +147,33 @@ export function programmeOffered(settings) {
 export function plannedPractice(settings, store=getAppStore()) {
   if (settings.practice == FREE_PRACTICE || !programmeOffered(settings)) { return false }
   return settings.practice == PROGRAMME_PRACTICE || inStudy(store.study(settings.piece))
+}
+
+// The settings' piece's flagged passages in force (st/difficulty),
+// hardest first, or [] for a piece without any (not yet analysed, or none
+// worth flagging)
+export function sheetMusicPassages(settings, store=getAppStore()) {
+  let piece = sheetMusicPiece(settings)
+  return piece ? flagsInForce(store.annotation(piece.id)) : []
+}
+
+// The settings for practising a flagged passage in free practice, as one
+// card, under the given hand (handSetting): "Practise" keeps the drawer's
+// own hand, a hand pill passes "upper"/"lower"
+export function passageSettings(settings, flag, hand) {
+  let bounds = sheetMusicMeasureBounds(settings)
+  let clamp = value => bounds ? Math.min(bounds[1], Math.max(bounds[0], value)) : value
+  let startMeasure = clamp(flag.start)
+  let endMeasure = Math.max(startMeasure, clamp(flag.end))
+
+  return {
+    ...settings,
+    practice: FREE_PRACTICE,
+    startMeasure,
+    endMeasure,
+    measuresPerCard: WHOLE_SECTION,
+    hand: hand ? handSetting(hand) : settings.hand,
+  }
 }
 
 // the measures per card of the programme, see PLAN_CARD_MEASURES
@@ -838,6 +866,15 @@ const ALL_GENERATORS = [
           "order, and those you missed again in a moment." :
           "Free practice plays the measures you pick.",
         visible: settings => programmeOffered(settings),
+      },
+      {
+        name: "passage",
+        label: "difficult passages",
+        type: "passages",
+        values: settings => sheetMusicPassages(settings),
+        update: (settings, flag) => passageSettings(settings, flag),
+        hint: "From the score analysis, hardest first. Picking one sets the section.",
+        visible: settings => !plannedPractice(settings) && sheetMusicPassages(settings).length > 0,
       },
       {
         name: "song",

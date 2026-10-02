@@ -839,5 +839,32 @@ describe("sheet music deck", function() {
       await removePiece(piece.id)
       expect(sheetMusicSection(grand, {...settings, endMeasure: 1}).columns).toEqual([["C4"], ["D4"]])
     })
+
+    it("offers the piece's flagged passages as quick picks in free practice only", async function() {
+      let passageInput = SHEET_MUSIC_GENERATOR.inputs.find(i => i.name == "passage")
+      let {piece} = await importMusicXMLPiece("workhorse.musicxml", workhorseScore())
+
+      let free = {piece: piece.id, practice: "free practice", startMeasure: 1, endMeasure: 1, hand: BOTH_HANDS}
+      expect(passageInput.visible(free)).toBe(true)
+      let flags = passageInput.values(free)
+      expect(flags.length).toBeGreaterThan(0)
+      expect(flags[0].id.startsWith("score:")).toBe(true)
+
+      let picked = passageInput.update(free, flags[0])
+      expect(picked.startMeasure).toEqual(flags[0].start)
+      expect(picked.endMeasure).toEqual(flags[0].end)
+      expect(picked.measuresPerCard).toEqual("all")
+      expect(picked.practice).toEqual("free practice")
+
+      // absent in today's programme
+      let planned = {...free, practice: "programme"}
+      expect(passageInput.visible(planned)).toBe(false)
+
+      // absent for a piece without passages
+      let {piece: short} = await importMusicXMLPiece("minuet.musicxml", pickupScore())
+      let shortSettings = {...free, piece: short.id}
+      expect(passageInput.values(shortSettings)).toEqual([])
+      expect(passageInput.visible(shortSettings)).toBe(false)
+    })
   })
 })

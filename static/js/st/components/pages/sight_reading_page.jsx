@@ -1999,7 +1999,10 @@ export default class SightReadingPage extends React.Component {
           storeGeneratorSettings(generator.storageKey, settings)
         }
         this.setGenerator(generator, settings)
-      }} />
+      }}
+      source={this.state.engineSource}
+      engine={this.programme.engine}
+      loadEngines={this.props.loadEngines} />
   }
 
   // the plate's gentle feedback state (see PlateFeedback): an ink smudge at

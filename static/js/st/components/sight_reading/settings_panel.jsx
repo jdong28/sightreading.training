@@ -4,6 +4,7 @@ import Slider from "st/components/slider"
 import NumberPicker from "st/components/number_picker"
 import Select from "st/components/select"
 import {Pill} from "st/components/salon"
+import {LEVEL_WORDS} from "st/difficulty/index"
 import PdfSteps from "st/components/sight_reading/pdf_steps"
 import {scoreEnginesPath} from "st/score_render/route"
 import {trigger} from "st/events"
@@ -540,6 +541,9 @@ export class GeneratorSettings extends React.PureComponent {
           case "deck":
             fn = this.renderDeck
             break
+          case "passages":
+            fn = this.renderPassages
+            break
           default:
             console.error(`No input renderer for ${input.type}`)
             return
@@ -547,7 +551,8 @@ export class GeneratorSettings extends React.PureComponent {
 
         // multi control inputs are not wrapped in a label so clicking the
         // label text does not focus an arbitrary control
-        let el = ["toggles", "text", "deck", "select", "noteRange", "measure"].includes(input.type) ? "div" : "label"
+        let el = ["toggles", "text", "deck", "select", "noteRange", "measure", "passages"].includes(input.type) ?
+          "div" : "label"
 
         let inside = React.createElement(el, null, ...[
           <div className={this.styles.input_label}>{input.label || input.name}</div>,
@@ -640,6 +645,36 @@ export class GeneratorSettings extends React.PureComponent {
 
     return <>
       {control}
+      {hint ? <div className={this.styles.input_hint}>{hint}</div> : null}
+    </>
+  }
+
+  // The settings' piece's flagged passages (st/difficulty) as quick picks
+  // for the section: a pill per passage, the one matching the picked
+  // section selected. Picking one sets the section (input.update); the
+  // input stores nothing of its own, so it re-reads the store on every
+  // render, showing a piece's picks as soon as it has been analysed
+  renderPassages(input, idx) {
+    let settings = this.cachedSettings
+    let flags = typeof input.values == "function" ? input.values(settings) : input.values
+    let hint = typeof input.hint == "function" ? input.hint(settings) : input.hint
+
+    return <>
+      <div className={this.styles.pills} role="group" aria-label={input.label || input.name}>
+        {flags.map(flag => {
+          let selected = settings.startMeasure == flag.start && settings.endMeasure == flag.end
+          return <Pill
+            key={flag.id}
+            variant="choice"
+            className={this.styles.small_pill}
+            selected={selected}
+            onClick={() => {
+              if (!selected) { this.updateSettings(input.update(settings, flag)) }
+            }}>
+            {`Bars ${flag.start}–${flag.end} · ${LEVEL_WORDS[flag.level]}`}
+          </Pill>
+        })}
+      </div>
       {hint ? <div className={this.styles.input_hint}>{hint}</div> : null}
     </>
   }
