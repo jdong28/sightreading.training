@@ -165,6 +165,11 @@ export function shiftNoteOctave(note, octaves) {
   return `${parsed[1]}${+parsed[2] + octaves}`
 }
 
+// eg. "C#4" -> "C♯4", in the app's octave numbering like the keyboard labels
+export function displayNoteName(note) {
+  return String(note).replace("#", "♯").replace(/^([A-G])b/, "$1♭")
+}
+
 // the staff row of a note, counting letter steps up from C in the pitch's
 // octave 0 (so rows don't depend on the octave numbering of names)
 export function noteStaffOffset(note) {

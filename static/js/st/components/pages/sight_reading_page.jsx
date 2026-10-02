@@ -15,7 +15,7 @@ import styles from "./sight_reading_page.module.css"
 import staffStyles from "st/components/staff.module.css"
 import devMetricsStyles from "st/components/sight_reading/dev_metrics_panel.module.css"
 
-import {noteName, parseNote} from "st/music"
+import {noteName, parseNote, displayNoteName} from "st/music"
 import {
   STAVES, GENERATORS, sheetMusicPiece, handTracks, handSetting, drilledRange, sectionDroppedPitches, RIGHT_HAND, LEFT_HAND,
 } from "st/data"
@@ -112,11 +112,6 @@ export function romanNumeral(n) {
     }
   }
   return out
-}
-
-// eg. "C#4" -> "C♯4", in the app's octave numbering like the keyboard labels
-function displayNoteName(note) {
-  return String(note).replace("#", "♯").replace(/^([A-G])b/, "$1♭")
 }
 
 function measuresLabel(start, end) {

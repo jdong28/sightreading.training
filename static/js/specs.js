@@ -1,4 +1,5 @@
 import "./specs.css"
+import "spec/difficulty_spec"
 import "spec/generators_spec"
 import "spec/song_sections_spec"
 import "spec/sheet_music_deck_spec"
