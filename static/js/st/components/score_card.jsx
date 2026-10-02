@@ -19,6 +19,7 @@ import {loadScoreEngines} from "st/score_render/load"
 import {joinCard, markCard} from "st/score_render/card_join"
 import {scrollTrack, scrollAdvance, scrollOffset} from "st/score_render/card_scroll"
 import {placeBadges} from "st/score_render/card_badges"
+import {shadeBands} from "st/score_render/card_shade"
 
 import styles from "./score_card.module.css"
 
@@ -56,6 +57,33 @@ function cloneResult({svg, notes}) {
   return {svg: clone, notes: notes.map(note => ({...note, el: copies[indexOf.get(note.el)]}))}
 }
 
+const SVG_NS = "http://www.w3.org/2000/svg"
+
+// an overview's shade rects carry this attribute (their shade's id), so a
+// redrawn shade can find and clear the last one's
+const DATA_SHADE = "data-shade"
+
+// the drawn svg's own size in CSS pixels, the space CardMeasure boxes are
+// measured in: its width/height attributes when it has them (both engines
+// set them), else its current rendered size
+function naturalSize(svg) {
+  let width = svg.width && svg.width.baseVal && svg.width.baseVal.value
+  let height = svg.height && svg.height.baseVal && svg.height.baseVal.value
+  if (width && height) { return {width, height} }
+  let rect = svg.getBoundingClientRect()
+  return {width: rect.width, height: rect.height}
+}
+
+// a box in CSS pixels -> the svg's own user units (OSMD's root viewBox
+// scales them down by ZOOM; Verovio's root has none, so its units are
+// already pixels)
+function userUnitsPerPixel(svg) {
+  let viewBox = svg.viewBox && svg.viewBox.baseVal
+  if (!viewBox || !viewBox.width) { return 1 }
+  let {width} = naturalSize(svg)
+  return width ? viewBox.width / width : 1
+}
+
 export class ScoreCard extends React.Component {
   static propTypes = {
     musicXML: types.string.isRequired,
@@ -77,8 +105,9 @@ export class ScoreCard extends React.Component {
     slider: types.object,
     // the song model's measure starts, the clock the columns are timed on
     measureStarts: types.array,
-    // the card's columns, as extractSectionColumns gives them
-    columns: types.array.isRequired,
+    // the card's columns, as extractSectionColumns gives them; left out for
+    // an overview, which never joins or marks heads
+    columns: types.array,
     // the index of the column at the head of the drill, null for none
     head: types.number,
     // the indices of the columns a miss was counted on
@@ -93,12 +122,23 @@ export class ScoreCard extends React.Component {
     onError: types.func,
     // called with {join, result} once a card is drawn
     onDrawn: types.func,
+    // draws the card to be read, not played: no columns, no join, no marks;
+    // its root is [data-score-overview], never [data-score-card], so it is
+    // never found by a selector looking for the trainer's own card. Shaded
+    // by shades, each {id, from, to, level, on, label} (st/score_render/
+    // card_shade); a changed shades prop restyles in place without redrawing
+    overview: types.bool,
+    shades: types.array,
+    // called with a shade's id when its band or label is clicked
+    onShade: types.func,
   }
 
   static defaultProps = {
     engine: "osmd",
     loadEngines: loadScoreEngines,
+    columns: [],
     missed: [],
+    shades: [],
   }
 
   constructor(props) {
@@ -107,7 +147,7 @@ export class ScoreCard extends React.Component {
     this.plateRef = React.createRef()
     this.stripRef = React.createRef()
     this.badgesRef = React.createRef()
-    this.state = {drawing: true}
+    this.state = {drawing: true, bands: []}
     this.drawCount = 0
     // systems kept drawn, most recently used first: {key, musicXML, svg, result}
     this.systemCache = []
@@ -125,6 +165,10 @@ export class ScoreCard extends React.Component {
 
     if (redraw) {
       this.draw()
+    } else if (p.overview) {
+      if (prevProps.shades != p.shades) {
+        this.shade()
+      }
     } else if (prevProps.columns != p.columns) {
       this.join()
     } else if (prevProps.head != p.head || prevProps.missed != p.missed) {
@@ -214,7 +258,55 @@ export class ScoreCard extends React.Component {
     let into = system ? this.stripRef.current : this.plateRef.current
     into.replaceChildren(result.svg)
     this.setState({drawing: false})
-    this.join()
+
+    if (this.props.overview) {
+      this.shade()
+    } else {
+      this.join()
+    }
+  }
+
+  // Shades the drawn measures for an overview (see card_shade), as <rect>s
+  // inside the svg, under the music: classes only, no fill/stroke
+  // attributes, which score_card.module.css's blanket recolouring skips, and
+  // inserted after the engine's own background rect, which it makes
+  // transparent. The bands also drive the HTML label layer (render), which
+  // tracks the svg's drawn size in percentages rather than its own text
+  // shrinking with it.
+  shade() {
+    if (!this.result) { return }
+    let svg = this.result.svg
+    let bands = shadeBands(this.result.measures, this.props.shades)
+    let ratio = userUnitsPerPixel(svg)
+
+    for (let el of svg.querySelectorAll(`[${DATA_SHADE}]`)) {
+      el.remove()
+    }
+
+    let background = svg.firstElementChild
+    let after = background
+    for (let band of bands) {
+      let rect = document.createElementNS(SVG_NS, "rect")
+      rect.setAttribute(DATA_SHADE, band.id)
+      rect.setAttribute("x", band.box.x * ratio)
+      rect.setAttribute("y", band.box.y * ratio)
+      rect.setAttribute("width", band.box.width * ratio)
+      rect.setAttribute("height", band.box.height * ratio)
+      rect.setAttribute("class", classNames(
+        styles.score_shade, styles[`shade_level_${band.level}`], {[styles.on]: band.on}))
+      rect.addEventListener("click", () => {
+        if (this.props.onShade) { this.props.onShade(band.id) }
+      })
+
+      if (after && after.nextSibling) {
+        svg.insertBefore(rect, after.nextSibling)
+      } else {
+        svg.appendChild(rect)
+      }
+      after = rect
+    }
+
+    this.setState({bands})
   }
 
   join() {
@@ -357,6 +449,26 @@ export class ScoreCard extends React.Component {
     }
   }
 
+  // the HTML overlay of a shaded band's label, in percentages of the svg's
+  // own drawn size so it tracks any scaling the plate applies and never
+  // shrinks below the 11px floor the way embedded svg text would
+  renderShadeLabels() {
+    if (!this.result) { return null }
+    let {width, height} = naturalSize(this.result.svg)
+    if (!width || !height) { return null }
+
+    return this.state.bands.filter(band => band.label).map(band => (
+      <button
+        key={band.id}
+        type="button"
+        className={classNames(styles.shade_label, styles[`shade_level_${band.level}`], {[styles.on]: band.on})}
+        style={{left: `${band.box.x / width * 100}%`, top: `${band.box.y / height * 100}%`}}
+        onClick={() => this.props.onShade && this.props.onShade(band.id)}>
+        {band.label}
+      </button>
+    ))
+  }
+
   render() {
     let plate
     if (this.props.system) {
@@ -368,13 +480,16 @@ export class ScoreCard extends React.Component {
       plate = <div key="card" ref={this.plateRef} className={styles.plate} />
     }
 
+    let rootProps = this.props.overview ? {"data-score-overview": true} : {"data-score-card": true}
+
     return <div
       ref={this.rootRef}
       className={classNames(styles.score_card, {[styles.drawing]: this.state.drawing})}
-      data-score-card
+      {...rootProps}
       aria-busy={this.state.drawing}>
       {plate}
       {this.renderBadges()}
+      {this.props.overview && <div className={styles.shade_labels}>{this.renderShadeLabels()}</div>}
     </div>
   }
 

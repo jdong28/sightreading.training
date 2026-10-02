@@ -464,6 +464,82 @@ describe("card scroll", function() {
   })
 })
 
+describe("score card overview", function() {
+  let container, root
+
+  let mount = props => {
+    container = document.createElement("div")
+    container.style.width = "600px"
+    document.body.appendChild(container)
+    root = createRoot(container)
+    flushSync(() => {
+      root.render(React.createElement(ScoreCard, {
+        musicXML: pickupScore(), fromMeasure: 0, toMeasure: 2, hand: "both", width: 500,
+        overview: true, ...props,
+      }))
+    })
+    return container
+  }
+
+  afterEach(function() {
+    flushSync(() => root.unmount())
+    container.remove()
+  })
+
+  it("draws a rect per shaded band and an HTML label per shade, clickable, with no [data-score-card]", async function() {
+    let onShade = jasmine.createSpy("onShade")
+    let shades = [
+      {id: "a", from: 1, to: 1, level: 3, on: true, label: "I"},
+      {id: "b", from: 2, to: 2, level: 1, on: false, label: "II"},
+    ]
+    mount({shades, onShade})
+
+    await waitFor(() => container.querySelector("[data-score-overview] svg rect[data-shade]"),
+      {message: "the shaded overview"})
+
+    expect(container.querySelector("[data-score-card]")).toBe(null)
+    expect(container.querySelector("[data-score-overview]")).toBeTruthy()
+
+    let rects = [...container.querySelectorAll("rect[data-shade]")]
+    expect(rects.map(el => el.getAttribute("data-shade")).sort()).toEqual(["a", "b"])
+    for (let rect of rects) {
+      expect(rect.hasAttribute("fill")).toBe(false)
+      expect(rect.hasAttribute("stroke")).toBe(false)
+    }
+
+    let labels = [...container.querySelectorAll("button")]
+    expect(labels.map(el => el.textContent).sort()).toEqual(["I", "II"])
+    for (let label of labels) {
+      expect(parseFloat(getComputedStyle(label).fontSize)).toBeGreaterThanOrEqual(11)
+    }
+
+    rects.find(el => el.getAttribute("data-shade") == "a").dispatchEvent(new MouseEvent("click", {bubbles: true}))
+    expect(onShade).toHaveBeenCalledWith("a")
+
+    labels.find(el => el.textContent == "II").dispatchEvent(new MouseEvent("click", {bubbles: true}))
+    expect(onShade).toHaveBeenCalledWith("b")
+  })
+
+  it("restyles in place without redrawing when the shade on changes", async function() {
+    let shades = [{id: "a", from: 1, to: 1, level: 2, on: false, label: "I"}]
+    let el = mount({shades})
+
+    await waitFor(() => el.querySelector("rect[data-shade]"), {message: "the shaded overview"})
+    let svg = el.querySelector("svg")
+    let rect = el.querySelector("rect[data-shade]")
+    expect(rect.getAttribute("class")).not.toContain("on")
+
+    flushSync(() => root.render(React.createElement(ScoreCard, {
+      musicXML: pickupScore(), fromMeasure: 0, toMeasure: 2, hand: "both", width: 500,
+      overview: true, shades: [{...shades[0], on: true}],
+    })))
+
+    expect(el.querySelector("svg")).toBe(svg) // the same element: no redraw
+    let restyled = el.querySelector("rect[data-shade]")
+    expect(restyled.getAttribute("class")).toContain("on")
+  })
+})
+
 describe("score page engine card", function() {
   let container, root, page, store, previousStore, savedStorage
   const STORAGE_KEYS = [SCORE_DRILL_STORAGE_KEY, SHEET_MUSIC_STORAGE_KEY]

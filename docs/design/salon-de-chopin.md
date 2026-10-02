@@ -227,6 +227,7 @@ fallback and for testing.
 | Oxblood | `#7d2c2c` | primary action, active nav, emphasis figures |
 | Oxblood dark | `#571d1d` | primary hover |
 | Piano lid | `#4a2c1c → #2f1b11` | rosewood band above keyboard |
+| Heat ramp | `#f1e8d8 → #7d2c2c` (5 steps) | difficulty strip cells, score overview shading |
 
 **Wallpaper** (page background, repeated on every screen):
 
