@@ -40,7 +40,11 @@ export default class SelfGradeRow extends React.Component {
     }))
   }
 
+  // the one path a grade takes, from a pill or the page's hotkeys: a grade
+  // with a "Where?" question waits for the answer rather than ending the pass
   grade(grade) {
+    if (this.state.pendingGrade != null) { return }
+
     if (this.props.followUp && (grade == AGAIN || grade == HARD)) {
       this.setState({pendingGrade: grade})
       return

@@ -520,22 +520,27 @@ export class MeasureCardGenerator {
 
   /**
    * The follow-up question after a self grade, see SelfGradeRow: "Where?"
-   * after Fell apart or Stumbled on a card of more than one measure, naming
-   * each bar plus "Throughout" (whose value grades every bar, as Clean or
-   * Easy already would). Null for a one-measure card, or for Clean or Easy.
+   * after Fell apart or Stumbled on a card of more than one bar with notes,
+   * naming each of those bars plus "Throughout" (whose value grades every
+   * bar, as Clean or Easy already would). Only the bars a pass writes a
+   * review of are named (passRanges leaves out a bar of rests alone), so the
+   * grade always reaches the bar chosen. Null for a one-bar card, or for
+   * Clean or Easy.
    * @param {number} grade 1-4
    * @returns {{prompt: string, choices: {label: string, value: number[]|null}[]}|null}
    */
   selfFollowUp(grade) {
     let card = this.deck.card
-    if (!card || card.measures.length < 2 || (grade != AGAIN && grade != HARD)) {
-      return null
-    }
+    if (!card || (grade != AGAIN && grade != HARD)) { return null }
+
+    let ranges = passRanges(card)
+    let bars = ranges.find(range => range.bars)?.bars ?? ranges
+    if (bars.length < 2) { return null }
 
     return {
       prompt: "Where?",
       choices: [
-        ...card.measures.map(measure => ({label: `Bar ${measure}`, value: [measure]})),
+        ...bars.map(({startMeasure}) => ({label: `Bar ${startMeasure}`, value: [startMeasure]})),
         {label: "Throughout", value: null},
       ],
     }
@@ -619,11 +624,10 @@ export class MeasureCardGenerator {
    */
   passRecords(pass, opts) {
     if (pass.selfGrade) {
-      let attempts = selfAttempts(pass, opts)
       let practiceOnly = this.practiceOnly(pass, opts)
       return {
-        attempts: attempts.filter(({id}) => !practiceOnly.includes(id)),
-        practice: [...selfPractice(pass, opts), ...selfPractice(pass, {...opts, only: practiceOnly})],
+        attempts: selfAttempts(pass, opts).filter(({id}) => !practiceOnly.includes(id)),
+        practice: selfPractice(pass, {...opts, also: practiceOnly}),
       }
     }
 

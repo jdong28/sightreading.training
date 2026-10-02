@@ -24,10 +24,6 @@ export const ITEM_STATES = [
 
 export const REVIEW_KINDS = ["attempt", "legacy", "implied"]
 
-// how an attempt's pass was played: detection ("wait"/"scroll") or graded by
-// the player on an acoustic piano ("self", st/srs/self_grade)
-export const REVIEW_MODES = ["wait", "scroll", "self"]
-
 // what a self-graded review's optional "What slipped?" tags may name
 export const SELF_ASPECTS = ["notes", "rhythm", "tempo", "fingering", "musicality"]
 
@@ -111,7 +107,7 @@ export const RECENT_ATTEMPTS = 5
  * @property {number} [hesitations]
  * @property {number} [elapsedMs] pauses over 30 s left out
  * @property {number} [leadMs] reading time before the first note
- * @property {string} [mode] one of REVIEW_MODES: "wait" or "scroll" for a
+ * @property {string} [mode] how the pass was played: "wait" or "scroll" for a
  * detected pass, "self" for one graded by the player on an acoustic piano,
  * with none of this record's detection fields (see st/srs/self_grade)
  * @property {number} [speed]

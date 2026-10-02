@@ -834,6 +834,44 @@ describe("measure cards", function() {
           expect(generator.takePractice()).toEqual([])
         })
 
+        it("names only the bars with notes in Where?, so the grade reaches the bar chosen", async function() {
+          // bar 5 is a bar of rests alone: it carries no column, so no pass
+          // of the card can write a review of it
+          let withRest = [
+            {number: 4, columns: [["C4"]]},
+            {number: 5, columns: []},
+            {number: 6, columns: [["E4"]]},
+          ]
+          let deck = new MeasureCardDeck(measureCards(withRest, 3), {pieceId: "p", order: IN_ORDER, store})
+          let generator = track(new MeasureCardGenerator(deck, {now: () => time}))
+          generator.setDrill(() => ({mode: "self"}))
+          let notes = new NoteList([], {generator})
+          notes.fillBuffer(4)
+          expect(generator.currentCard().measures).toEqual([4, 5, 6])
+
+          let followUp = generator.selfFollowUp(AGAIN)
+          expect(followUp.choices.map(c => c.label)).toEqual(["Bar 4", "Bar 6", "Throughout"])
+
+          time = 1000
+          generator.selfGrade(AGAIN, {bars: [6]})
+          await generator.finishing
+
+          expect((await store.reviews({pieceId: "p"})).map(r => [r.itemId, r.grade])).toEqual([
+            ["p:both:4-6", AGAIN],
+            ["p:both:6-6", AGAIN],
+          ])
+          // the bar it wasn't blamed on takes the practice
+          expect(store.item("p:both:4-4").attempts).toEqual(1)
+        })
+
+        it("asks nothing when one bar of the card has every column", function() {
+          let withRest = [{number: 4, columns: [["C4"]]}, {number: 5, columns: []}]
+          let deck = new MeasureCardDeck(measureCards(withRest, 2), {pieceId: "p", order: IN_ORDER, store})
+          let generator = track(new MeasureCardGenerator(deck, {now: () => time}))
+          expect(generator.currentCard().measures).toEqual([4, 5])
+          expect(generator.selfFollowUp(AGAIN)).toBe(null)
+        })
+
         it("asks Where? after a failing grade on a multi-bar card only", function() {
           let {generator} = generatorFor()
           let followUp = generator.selfFollowUp(AGAIN)

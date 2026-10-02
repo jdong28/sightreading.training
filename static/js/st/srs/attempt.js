@@ -535,19 +535,19 @@ export function selfAttempts(pass, {pieceId, hand, at=pass.lastAt, sessionId}) {
 /**
  * The practice of a self-graded pass's ranges not written as an attempt (see
  * selfAttempts): bars the "Where?" follow-up didn't name, for the totals of
- * their items (see recordSectionPractice in st/storage). With opts.only, the
- * ranges of those item ids instead (for ranges selfAttempts wrote that
+ * their items (see recordSectionPractice in st/storage), and with opts.also
+ * the ranges of those item ids as well (ranges selfAttempts wrote that
  * MeasureCardGenerator#practiceOnly demotes to practice, eg. an off-schedule
- * bar that didn't fail).
+ * bar that didn't fail). Every range appears at most once.
  * @param {AttemptPass} pass complete, with pass.selfGrade set
  * @param {Object} opts
  * @param {string} opts.pieceId
  * @param {string} opts.hand
  * @param {number} [opts.at]
- * @param {string[]} [opts.only] item ids, in place of the ranges not selected
+ * @param {string[]} [opts.also] item ids written as practice too
  * @returns {Object[]}
  */
-export function selfPractice(pass, {pieceId, hand, at=pass.lastAt, only}={}) {
+export function selfPractice(pass, {pieceId, hand, at=pass.lastAt, also}={}) {
   if (!pass.selfGrade) { return [] }
 
   let selectedBars = pass.selfGrade.bars ?? pass.card.measures
@@ -555,8 +555,9 @@ export function selfPractice(pass, {pieceId, hand, at=pass.lastAt, only}={}) {
 
   return passRanges(pass.card)
     .filter(range => {
+      if (!range.bars && !selectedBars.includes(range.startMeasure)) { return true }
       let id = itemId({pieceId, hand, startMeasure: range.startMeasure, endMeasure: range.endMeasure})
-      return only ? only.includes(id) : !range.bars && !selectedBars.includes(range.startMeasure)
+      return !!also && also.includes(id)
     })
     .map(range => {
       let elapsedMs = selfElapsedOf(pass, range, total)

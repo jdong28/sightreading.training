@@ -2909,6 +2909,28 @@ describe("sight reading page", function() {
       expect(page.state.notes).toBe(notesBefore)
     })
 
+    it("asks Where? from the grade hotkey as from its pill, grading the bar chosen", async function() {
+      let el = await renderAcoustic({measuresPerCard: "2"})
+      click(buttonNamed(el, "Begin"))
+
+      // the hotkey "1" (Fell apart) on a two-bar card opens the question
+      flushSync(() => document.body.dispatchEvent(new KeyboardEvent("keydown", {keyCode: 49, bubbles: true})))
+      expect(el.querySelector("[data-self-grade-followup]")).not.toBe(null)
+      expect(await reviews()).toEqual([])
+
+      // another hotkey while it is up doesn't grade behind it
+      flushSync(() => document.body.dispatchEvent(new KeyboardEvent("keydown", {keyCode: 52, bubbles: true})))
+      expect(el.querySelector("[data-self-grade-followup]")).not.toBe(null)
+
+      click(exactButton(el, "Bar 1"))
+      await finished()
+      expect((await reviews()).map(r => [r.itemId, r.grade])).toEqual([
+        [`${piece.id}:both:1-1`, AGAIN],
+        [`${piece.id}:both:1-2`, AGAIN],
+      ])
+      expect(plateLabel(el)).toContain("measures 3–4")
+    })
+
     it("shows Elapsed, Passes and Clean instead of the live MIDI figures, and never a 'Next ·' status", async function() {
       let el = await renderAcoustic({measuresPerCard: "2"})
       click(buttonNamed(el, "Begin"))
