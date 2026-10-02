@@ -2909,6 +2909,30 @@ describe("sight reading page", function() {
       expect(page.state.notes).toBe(notesBefore)
     })
 
+    it("takes one grade a pass, so a repeated tap or key press grades nothing more", async function() {
+      let el = await renderAcoustic({measuresPerCard: "2"})
+      click(buttonNamed(el, "Begin"))
+
+      // the pill tapped twice before the staff is refilled: the card it moves
+      // on to was never played, so it takes no grade
+      let clean = buttonLike(el, "Clean")
+      flushSync(() => { clean.click(); clean.click() })
+      await finished()
+      expect((await reviews()).map(r => r.itemId)).toEqual([
+        `${piece.id}:both:1-1`, `${piece.id}:both:1-2`, `${piece.id}:both:2-2`,
+      ])
+      expect(plateLabel(el)).toContain("measures 3–4")
+
+      // and the hotkey likewise, while the card after it still takes its own
+      flushSync(() => {
+        document.body.dispatchEvent(new KeyboardEvent("keydown", {keyCode: 51, bubbles: true}))
+        document.body.dispatchEvent(new KeyboardEvent("keydown", {keyCode: 51, bubbles: true}))
+      })
+      await finished()
+      expect((await reviews()).length).toEqual(6)
+      expect(plateLabel(el)).toContain("measures 5–6")
+    })
+
     it("asks Where? from the grade hotkey as from its pill, grading the bar chosen", async function() {
       let el = await renderAcoustic({measuresPerCard: "2"})
       click(buttonNamed(el, "Begin"))

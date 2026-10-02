@@ -244,6 +244,9 @@ export default class SightReadingPage extends React.Component {
     // the grade row of acoustic mode, which the grade hotkeys go through
     this.selfGradeRow = React.createRef()
 
+    // set while a self grade is being written, see selfGrade
+    this.grading = false
+
     this.keyMap = {
       " ": e => this.skipCurrentNote(),
       "1": e => this.selfGradeHotkey(1),
@@ -1522,16 +1525,20 @@ export default class SightReadingPage extends React.Component {
 
   // Ends the pass with the player's own grade (SelfGradeRow), in place of
   // detection: tells the generator, the session stats, and refills the
-  // staff from the next card, the same path today's programme's ready uses
+  // staff from the next card, the same path today's programme's ready uses.
+  // A pass takes one grade: the deck moves on as it is written, so a second
+  // grade before the staff is refilled (a repeated tap or key press in the
+  // same update) would grade the next card unplayed, and is ignored.
   selfGrade(grade, opts={}) {
     let generator = this.currentNotesGenerator()
-    if (!this.selfGraded() || !generator) { return }
+    if (this.grading || !this.selfGraded() || !generator) { return }
 
+    this.grading = true
     let time = Date.now()
     generator.selfGrade(grade, {...opts, sessionId: this.state.stats.id, time})
     this.state.stats.selfGraded(grade, time)
     this.refreshNoteList(generator)
-    this.setState(state => ({cardSeq: state.cardSeq + 1}))
+    this.setState(state => ({cardSeq: state.cardSeq + 1}), () => { this.grading = false })
   }
 
   // Hotkeys "1"-"4", only while a session is running in acoustic mode: each
