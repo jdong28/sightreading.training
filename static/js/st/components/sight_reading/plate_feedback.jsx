@@ -4,23 +4,20 @@ import classNames from "classnames"
 
 import styles from "./plate_feedback.module.css"
 
-// How long the gilt wash and the ink smudge stay lit after the matcher's
-// latest judgement, before fading (see SightReadingPage#applyEvent and
-// #countMiss, which bump the wash/smudge props once per judgement)
-export const WASH_HOLD_MS = 300
+// How long the ink smudge stays lit after the matcher's latest judgement,
+// before fading (see SightReadingPage#countMiss, which bumps the smudge
+// prop once per judgement)
 export const SMUDGE_HOLD_MS = 900
 
-// The trainer's two gentle feedback states, drawn over the staff plate: a
-// gilt wash on every hit (including a chord hit), an ink smudge at the head
-// column on every wrong key (including a wrong chord). This component only
-// shows what the page's judgements already decided; it keeps no judgement of
-// its own. Rendered as the plate's last child, so it paints above the staff
-// (see SightReadingPage#renderStaffPlate)
+// The trainer's gentle feedback state, drawn over the staff plate: an ink
+// smudge at the head column on every wrong key (including a wrong chord).
+// This component only shows what the page's judgements already decided; it
+// keeps no judgement of its own. Rendered as the plate's last child, so it
+// paints above the staff (see SightReadingPage#renderStaffPlate)
 export default class PlateFeedback extends React.Component {
   static propTypes = {
     // bumped by the page once per judgement; a changed value re-lights the
     // state, restarting its hold rather than flickering
-    wash: types.number.isRequired,
     smudge: types.number.isRequired,
     // returns the drawn heads of the column at the head of the drill, so the
     // smudge can be centred on it (see st/components/staves#headElements and
@@ -32,16 +29,10 @@ export default class PlateFeedback extends React.Component {
   constructor(props) {
     super(props)
     this.rootRef = React.createRef()
-    this.state = {washing: false, smudging: false, x: null, y: null}
+    this.state = {smudging: false, x: null, y: null}
   }
 
   componentDidUpdate(prevProps) {
-    if (prevProps.wash != this.props.wash) {
-      this.setState({washing: true})
-      window.clearTimeout(this.washTimer)
-      this.washTimer = window.setTimeout(() => this.setState({washing: false}), WASH_HOLD_MS)
-    }
-
     if (prevProps.smudge != this.props.smudge) {
       // measured after the commit, not from applyEvent: in the middle of a
       // MIDI packet the DOM still shows the list from before the batch
@@ -53,7 +44,6 @@ export default class PlateFeedback extends React.Component {
   }
 
   componentWillUnmount() {
-    window.clearTimeout(this.washTimer)
     window.clearTimeout(this.smudgeTimer)
   }
 
@@ -80,12 +70,9 @@ export default class PlateFeedback extends React.Component {
   }
 
   render() {
-    let {washing, smudging, x, y} = this.state
+    let {smudging, x, y} = this.state
 
     return <div ref={this.rootRef} data-plate-feedback aria-hidden="true" className={styles.feedback}>
-      <span
-        data-wash={washing ? "on" : "off"}
-        className={classNames(styles.wash, {[styles.on]: washing})} />
       <span
         data-smudge={smudging ? "on" : "off"}
         style={x != null && y != null ? {left: x, top: y} : null}

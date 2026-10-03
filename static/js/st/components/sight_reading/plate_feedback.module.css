@@ -5,15 +5,6 @@
     overflow: hidden;
 }
 
-.wash {
-    position: absolute;
-    inset: 0;
-    opacity: 0;
-    transition: opacity .42s ease;
-    background: radial-gradient(70% 60% at 50% 45%,
-        color-mix(in srgb, var(--salon-gilt) 24%, transparent), transparent 72%);
-}
-
 .smudge {
     position: absolute;
     left: 50%;

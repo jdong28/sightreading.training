@@ -25,7 +25,7 @@ import {DEV_METRICS_KEY} from "st/dev_metrics"
 import {SELF_GRADE_DWELL_MS} from "st/srs/self_grade"
 import {scopeEvent} from "st/events"
 import {MARK_CLASSES} from "st/score_render/card_join"
-import {WASH_HOLD_MS, SMUDGE_HOLD_MS} from "st/components/sight_reading/plate_feedback"
+import {SMUDGE_HOLD_MS} from "st/components/sight_reading/plate_feedback"
 import NoteStats, {addNoteListener} from "st/note_stats"
 import {parseNote} from "st/music"
 import {KEYBOARD_MAP, SYMBOL_MAP_INVERSE} from "st/keyboard_input"
@@ -2091,28 +2091,12 @@ describe("sight reading page", function() {
   // the matcher is the only judge, these specs only check the plate reacts
   // to what it already decided
   describe("plate feedback", function() {
-    let wash = el => el.querySelector("[data-wash]")
     let smudge = el => el.querySelector("[data-smudge]")
     let press = note => flushSync(() => page.pressNote(note))
     let release = note => flushSync(() => page.releaseNote(note))
     // the smudge's inline left/top are relative to the feedback layer, not
     // the viewport, so a geometry check must subtract its own rect
     let layerRect = el => el.querySelector("[data-plate-feedback]").getBoundingClientRect()
-
-    it("washes the plate on a correct note, off after the hold", function() {
-      jasmine.clock().install()
-      clockInstalled = true
-
-      let el = renderPage()
-      click(buttonNamed(el, "Begin"))
-
-      play(page.state.notes.currentColumn())
-      expect(wash(el).dataset.wash).toEqual("on")
-      expect(statValue(el, "Notes read")).toEqual("1")
-
-      flushSync(() => jasmine.clock().tick(WASH_HOLD_MS))
-      expect(wash(el).dataset.wash).toEqual("off")
-    })
 
     it("smudges the plate at the head on a wrong note, without advancing the cursor", function() {
       jasmine.clock().install()
@@ -2176,19 +2160,17 @@ describe("sight reading page", function() {
 
       play([WRONG_NOTE])
       play(page.state.notes.currentColumn())
-      expect(wash(el).dataset.wash).toEqual("off")
       expect(smudge(el).dataset.smudge).toEqual("off")
-      expect(page.state.washes).toEqual(0)
       expect(page.state.smudges).toEqual(0)
     })
 
-    it("doesn't wash the plate on a skipped note", function() {
+    it("doesn't ink the plate on a skipped note", function() {
       let el = renderPage()
       click(buttonNamed(el, "Begin"))
 
       flushSync(() => page.skipCurrentNote())
-      expect(wash(el).dataset.wash).toEqual("off")
-      expect(page.state.washes).toEqual(0)
+      expect(smudge(el).dataset.smudge).toEqual("off")
+      expect(page.state.smudges).toEqual(0)
     })
 
     it("smudges in scroll mode too, without scrolling the head column past the hit line", function() {
@@ -2203,10 +2185,10 @@ describe("sight reading page", function() {
       expect(page.state.notes.currentColumn()).toEqual(column)
 
       play(page.state.notes.currentColumn())
-      expect(wash(el).dataset.wash).toEqual("on")
+      expect(page.state.notes.currentColumn()).not.toEqual(column)
     })
 
-    it("washes and smudges the chord staff", function() {
+    it("smudges the chord staff", function() {
       window.localStorage.setItem(DRILL_STORAGE_KEY, JSON.stringify({staff: "chord", generator: "random"}))
       let el = renderPage()
       click(buttonNamed(el, "Begin"))
@@ -2218,12 +2200,6 @@ describe("sight reading page", function() {
       let layer = layerRect(el)
       expect(Math.abs(parseFloat(smudge(el).style.left) -
         ((headRect.left + headRect.right) / 2 - layer.left))).toBeLessThan(1)
-
-      let chord = page.state.notes[0]
-      let keys = chord.getRange(4, 3)
-      flushSync(() => keys.forEach(note => page.pressNote(note)))
-      flushSync(() => keys.forEach(note => page.releaseNote(note)))
-      expect(wash(el).dataset.wash).toEqual("on")
     })
 
     it("smudges the grand staff at the same horizontal position on both staves", function() {

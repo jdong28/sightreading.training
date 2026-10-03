@@ -322,10 +322,8 @@ export default class SightReadingPage extends React.Component {
       // the refill puts up (see renderSelfGrade)
       cardSeq: 0,
 
-      // bumped once per judgement (a hit or chord hit, a wrong key or chord)
-      // to re-light the plate's gilt wash or ink smudge (see PlateFeedback,
-      // applyEvent and countMiss)
-      washes: 0,
+      // bumped once per judgement (a wrong key or chord) to re-light the
+      // plate's ink smudge (see PlateFeedback and countMiss)
       smudges: 0,
     }
   }
@@ -958,7 +956,6 @@ export default class SightReadingPage extends React.Component {
         // the column as the matcher removed it (see NoteList#shift)
         this.state.stats.hitNotes(event.hitNotes)
         update.notes = this.matcher.notes
-        update.washes = (update.washes ?? this.state.washes) + 1
         // the keys it credited, for the developer metrics panel
         if (this.devMetrics) { this.lastHit = event }
         // one column at a time: a hit may complete the next column too, from
@@ -975,7 +972,6 @@ export default class SightReadingPage extends React.Component {
         update.notes = this.matcher.notes
         this.advanceEngineMarks(event.from, this.matcher.notes)
         update.noteShaking = false
-        update.washes = (update.washes ?? this.state.washes) + 1
         this.state.slider.add(1)
         break
 
@@ -1764,14 +1760,13 @@ export default class SightReadingPage extends React.Component {
       }} />
   }
 
-  // the plate's gentle feedback states (see PlateFeedback): a gilt wash on
-  // every hit, an ink smudge at the head column on every wrong key. Hidden in
-  // acoustic mode, where nothing is detected to react to
+  // the plate's gentle feedback state (see PlateFeedback): an ink smudge at
+  // the head column on every wrong key. Hidden in acoustic mode, where
+  // nothing is detected to react to
   renderFeedback() {
     if (this.selfGraded()) { return null }
 
     return <PlateFeedback
-      wash={this.state.washes}
       smudge={this.state.smudges}
       locateHead={() => this.headElements()} />
   }
