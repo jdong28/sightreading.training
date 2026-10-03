@@ -44,7 +44,7 @@ def _row_energy(mask, angle_deg):
     if len(ys) == 0:
         return 0.0
     theta = np.deg2rad(angle_deg)
-    rotated_y = ys * np.cos(theta) - xs * np.sin(theta)
+    rotated_y = ys * np.cos(theta) + xs * np.sin(theta)
     h = mask.shape[0]
     bins = np.clip(np.round(rotated_y).astype(int), 0, h - 1)
     counts = np.bincount(bins, minlength=h)
