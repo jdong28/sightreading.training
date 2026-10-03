@@ -101,6 +101,13 @@ export default class NoteList extends Array {
         }
       }
 
+      // the column's annotation goes with the upper staff alone, where the
+      // legacy grand staff drew it (`showAnnotations={false}` on its lower
+      // staff, see components/staves.jsx)
+      if (column.annotation) {
+        tCol.annotation = column.annotation
+      }
+
       trebleNotes.push(tCol)
       bassNotes.push(bCol)
     })

@@ -831,6 +831,25 @@ describe("staff two parity", function() {
     expect(heldOn(instance.bassStaffRef.current).length).toBe(0)
   })
 
+  it("draws a grand staff column's annotation on the upper staff, wherever its notes went", function() {
+    let notes = new NoteList([["C5"], ["C2"]])
+    notes[0].annotation = "1"
+    notes[1].annotation = "2"
+
+    let instance = mount({
+      type: "grand",
+      range: ["C2", "C6"],
+      keySignature: new KeySignature(0),
+      notes,
+    })
+
+    let annotations = staff => staff.notesGroup.getByClassName("annotation")
+
+    expect(annotations(instance.trebleStaffRef.current).map(a => a.value).sort())
+      .toEqual(["1", "2"])
+    expect(annotations(instance.bassStaffRef.current).length).toBe(0)
+  })
+
   it("shakes the head column's shapes while noteShaking, settling back to x 0", function() {
     let instance = mount({
       type: "treble",

@@ -1021,8 +1021,6 @@ export class StaffTwo extends React.PureComponent {
     this.renderGroup.scale = scale
     this.renderGroup.translation.set(0, translateY)
 
-    const startTime = performance.now()
-
     let marginX = 0
 
     const getAsset = this._getAsset || this.getAsset.bind(this)
@@ -1102,8 +1100,6 @@ export class StaffTwo extends React.PureComponent {
 
   // this will return a fresh copy of the asset that can be mutated
   getAsset(name) {
-    const startTime = performance.now()
-
     this.assetCache ||= {}
 
     if (!this.assetCache[name]) {
@@ -1117,10 +1113,7 @@ export class StaffTwo extends React.PureComponent {
       this.assetCache[name] = loaded
     }
 
-    const asset = this.assetCache[name].clone()
-
-    console.log("Load Asset", name, performance.now() - startTime)
-    return asset
+    return this.assetCache[name].clone()
   }
 
   // the staff-local width of an asset's glyph: it only depends on the asset,
@@ -1168,7 +1161,6 @@ export class StaffTwo extends React.PureComponent {
         return
       }
 
-      console.log("flushing changes...")
       this.flushChanges = false
 
       // re-apply the stored scroll/hitX offset against whatever just
