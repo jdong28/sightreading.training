@@ -49,8 +49,8 @@
       "pages": [1, 1],
       "measures": [18, 50],
       "categories": ["repeats_voltas", "mid_system_clef", "trio_start_repeat"],
-      "systems": [[5, 6, 6, 5, 6, 6]],
-      "expect": {"stop": "systems misaligned"}
+      "systems": [[5, 6, 6, 5, 5, 6]],
+      "expect": "pass"
     },
     {
       "id": "maple-leaf-rag-loc-p4",

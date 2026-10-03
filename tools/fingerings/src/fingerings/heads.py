@@ -107,6 +107,53 @@ def _small_heads(filled, clean, core, space):
     return out
 
 
+MAX_CHORD_STACK = 6
+
+
+def _split_wide_cluster(filled, clean, sl, space):
+    """Two noteheads a second apart are always drawn side by side, offset
+    rather than stacked (notation avoids overlapping them directly), so
+    nothing separates them vertically the way a gap would -- they read as
+    one blob too wide for a single head. A fixed-radius re-opening only
+    splits the touching lobes apart when the two happen to overlap by
+    about that much; real engravings vary (ink spread, print wear), so
+    this finds each lobe's own centre instead, by the two farthest-apart
+    peaks of the blob's distance transform (each a lobe's deepest point,
+    the standard seed for splitting touching round shapes), then assigns
+    every pixel to its nearest peak. Returns [(head dict), ...], or None
+    when the blob doesn't have two such peaks or either half comes out
+    an implausible notehead size."""
+    sub_filled = filled[sl]
+    sub_clean = clean[sl]
+    dist = ndimage.distance_transform_edt(sub_filled)
+    p1 = np.unravel_index(np.argmax(dist), dist.shape)
+    yy, xx = np.ogrid[:dist.shape[0], :dist.shape[1]]
+    suppressed = (yy - p1[0]) ** 2 + (xx - p1[1]) ** 2 <= (0.35 * space) ** 2
+    d2 = np.where(suppressed, -1.0, dist)
+    p2 = np.unravel_index(np.argmax(d2), d2.shape)
+    if d2[p2] <= 0:
+        return None
+    markers = np.zeros(sub_filled.shape, dtype=np.int32)
+    markers[p1], markers[p2] = 1, 2
+    _, inds = ndimage.distance_transform_edt(markers == 0, return_indices=True)
+    nearest = markers[inds[0], inds[1]]
+    labels2 = np.where(sub_filled, nearest, 0)
+
+    out = []
+    for lab in (1, 2):
+        sub2 = labels2 == lab
+        ys, xs = np.nonzero(sub2)
+        if len(ys) == 0:
+            return None
+        hh, ww = int(ys.max() - ys.min()) + 1, int(xs.max() - xs.min()) + 1
+        if not (0.6 * space <= ww <= 2.0 * space and 0.5 * space <= hh <= 2.0 * space):
+            return None
+        hollow2 = (sub_filled[sub2] & ~sub_clean[sub2]).sum() > 0.15 * sub2.sum()
+        out.append(dict(x=float(xs.mean() + sl[1].start), y=float(ys.mean() + sl[0].start),
+                         w=ww, h=hh, hollow=bool(hollow2), stacked=1))
+    return out
+
+
 def noteheads(black, systems):
     space = float(np.median([st["space"] for s in systems for st in s["staves"]]))
     clean = erase_staff_lines(black, systems)
@@ -118,10 +165,21 @@ def noteheads(black, systems):
         sub = labels[sl] == i
         h = sl[0].stop - sl[0].start
         w = sl[1].stop - sl[1].start
+        if w > 2.0 * space and h <= 2.2 * space:
+            split = _split_wide_cluster(filled, clean, sl, space)
+            if split is not None:
+                heads += split
+            continue
         if w < 0.8 * space or w > 2.0 * space or h < 0.6 * space:
             continue
         hollow = (filled[sl] & ~clean[sl] & sub).sum() > 0.15 * sub.sum()
         k = max(1, int(round(h / space)))
+        if k > MAX_CHORD_STACK:
+            # no one-hand chord stacks six-plus notes a third apart (two
+            # octaves and then some): a blob this tall at a plausible
+            # chord's width is a thick bar line or repeat mark (its two
+            # strokes and dots opened into one blob), not a wide chord.
+            continue
         if k > 1 and h > 1.3 * space:
             # split a stack at whole spaces (heads a third apart touch)
             for j in range(k):

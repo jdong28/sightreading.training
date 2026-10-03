@@ -32,15 +32,18 @@ def vertical_run_lengths(black):
     return up + down - 1
 
 
-def staff_lines(black):
+def staff_lines(black, frac_thresh=0.25):
     """Candidate staff-line rows, from their *thin* pixels only (a beam
     lying along a line, or a row of ledger lines, is thicker and doesn't
     widen or shift the line's own centre): thickness is read from the
     rows that are mostly black (not the page-wide mode, which a page
     dominated by thick beams would give as the beam's own thickness), then
-    only pixels no taller than about twice that are kept as candidates."""
+    only pixels no taller than about twice that are kept as candidates.
+    `frac_thresh` is lowered by `_recover_missing_staff`'s second pass,
+    for a staff whose ink is suppressed below the normal floor by dense,
+    unrelated content on the same rows (ornaments, grace-note chords)."""
     h, w = black.shape
-    rows = np.where(black.sum(1) > 0.25 * w)[0]
+    rows = np.where(black.sum(1) > frac_thresh * w)[0]
     if len(rows) == 0:
         return []
     runs = vertical_run_lengths(black)
@@ -51,7 +54,7 @@ def staff_lines(black):
         return []
     t = int(np.bincount(thick_candidates).argmax())
     thin = black & (runs <= max(2, 2 * t + 1))
-    cand = np.where(thin.sum(1) > 0.25 * w)[0]
+    cand = np.where(thin.sum(1) > frac_thresh * w)[0]
     return [dict(y=(g[0] + g[-1]) / 2, thick=len(g), fill=int(black[g].any(axis=0).sum()))
             for g in _runs(cand)]
 
@@ -219,28 +222,172 @@ def barlines(black, system, heads_in_system=None, min_fill=0.9, min_gap_fill=0.9
             continue
         out.append(dict(x0=x0, x1=x1, x=float(np.mean(g)), is_full=is_full))
 
-    if len(out) >= 2:
-        a, b = out[0], out[1]
-        no_notes_between = not _real_content_between(heads_in_system, a["x1"], b["x0"], space)
-        b_width = b["x1"] - b["x0"] + 1
-        is_wide = b_width > 0.4 * space
-        # a header interval (clef, key signature, measure number) is
-        # reliably much narrower than this system's real measures, since
-        # it compresses notation metadata rather than laying out music by
-        # rhythm. Compared against the system's other, unambiguous
-        # measures when there are enough of them to average reliably:
-        # a key signature's accidentals (or a measure number) can read as
-        # noteheads and defeat the simpler no-notes check above, but they
-        # never widen the interval to a real measure's span.
-        header_by_width = False
-        if is_wide and len(out) >= 4:
-            other_widths = [out[i + 1]["x"] - out[i]["x"] for i in range(1, len(out) - 1)]
-            avg_other = sum(other_widths) / len(other_widths)
-            first_width = b["x"] - a["x"]
-            header_by_width = avg_other > 0 and first_width < 0.65 * avg_other
-        if is_wide and (no_notes_between or header_by_width):
-            out = out[1:]  # a's "bar" was really the header before a start-repeat
+    out = _drop_header(out, heads_in_system, space)
+
+    # rule 1 (above) says the opening line is always a bar line, but its
+    # own ink can be the one place on the page where that's locally
+    # broken or faint (worn print, a crease) rather than genuinely
+    # absent, failing full_ok's per-staff min_fill at every column even
+    # though it's still, by a wide margin, the strongest connecting
+    # stroke in the system's header region: real notehead content before
+    # the first bar actually found (never true of a genuine header) is
+    # the signal that one was missed, not just skipped as a header --
+    # except that the same key-signature accidentals that can fool
+    # `_real_content_before` fool this too, so the recovered candidate is
+    # run back through `_drop_header` exactly as a freshly-detected one
+    # would be, rather than trusted outright.
+    if len(staves) > 1 and out and _real_content_before(heads_in_system, out[0]["x0"], space):
+        bx, bf = _best_connecting_column(black, staves, 0, out[0]["x0"])
+        if bx is not None and bf >= 0.75:
+            candidate = [dict(x0=bx, x1=bx, x=float(bx), is_full=True)] + out
+            trimmed = _drop_header(candidate, heads_in_system, space)
+            if trimmed and trimmed[0]["x0"] == bx:
+                out = trimmed
     return out
+
+
+def _drop_header(out, heads_in_system, space):
+    """The system's header (clef, key, time before a start-repeat) is
+    never counted as a bar: when the interval after the first bar holds
+    no notehead, or ends at a wide (double/thick-plus-thin) group much
+    narrower than this system's real measures, that first bar is
+    dropped, since it isn't really separating a measure."""
+    if len(out) < 2:
+        return out
+    a, b = out[0], out[1]
+    no_notes_between = not _real_content_between(heads_in_system, a["x1"], b["x0"], space)
+    b_width = b["x1"] - b["x0"] + 1
+    is_wide = b_width > 0.4 * space
+    # a header interval (clef, key signature, measure number) is
+    # reliably much narrower than this system's real measures, since
+    # it compresses notation metadata rather than laying out music by
+    # rhythm. Compared against the system's other, unambiguous
+    # measures when there are enough of them to average reliably:
+    # a key signature's accidentals (or a measure number) can read as
+    # noteheads and defeat the simpler no-notes check above, but they
+    # never widen the interval to a real measure's span.
+    header_by_width = False
+    if is_wide and len(out) >= 4:
+        other_widths = [out[i + 1]["x"] - out[i]["x"] for i in range(1, len(out) - 1)]
+        avg_other = sum(other_widths) / len(other_widths)
+        first_width = b["x"] - a["x"]
+        header_by_width = avg_other > 0 and first_width < 0.65 * avg_other
+    if is_wide and (no_notes_between or header_by_width):
+        return out[1:]  # a's "bar" was really the header before a start-repeat
+    return out
+
+
+def _best_connecting_column(black, staves, x0, x1):
+    """The x in [x0, x1) whose column (one pixel of horizontal tolerance,
+    the same wobble `_connected` allows) is blackest continuously across
+    every staff and every inter-staff gap, with that fraction: the
+    strongest single candidate for a connecting stroke -- the system's
+    opening line -- in a narrow search band, for `barlines`' recovery
+    when the normal per-column rule just misses it."""
+    top, bot = staves[0]["lines"][0], staves[-1]["lines"][-1]
+    y0, y1 = int(round(top)), int(round(bot))
+    x0, x1 = max(0, int(x0)), min(black.shape[1], int(x1))
+    if x1 <= x0 or y1 <= y0:
+        return None, 0.0
+    band = black[y0:y1 + 1, x0:x1]
+    wob = band.copy()
+    wob[:, 1:] |= band[:, :-1]
+    wob[:, :-1] |= band[:, 1:]
+    col = wob.mean(axis=0)
+    i = int(np.argmax(col))
+    return i + x0, float(col[i])
+
+
+def _staff_in_band(black, y0, y1, expected_space, frac_thresh=0.15):
+    """A second, more tolerant line search confined to one y-band: used
+    only as `_recover_missing_staff`'s fallback, when a staff is
+    suspected missing there. Returns the found staff closest in space to
+    `expected_space`, or None when nothing within 20% of it turns up."""
+    h, w = black.shape
+    y0i, y1i = max(0, int(round(y0))), min(h, int(round(y1)))
+    if y1i - y0i < 4:
+        return None
+    band = black[y0i:y1i]
+    runs = vertical_run_lengths(band)
+    rows = np.where(band.sum(1) > frac_thresh * w)[0]
+    if len(rows) == 0:
+        return None
+    row_runs = runs[rows]
+    row_black = band[rows]
+    thick_candidates = row_runs[row_black]
+    if thick_candidates.size == 0:
+        return None
+    t = int(np.bincount(thick_candidates).argmax())
+    thin = band & (runs <= max(2, 2 * t + 1))
+    cand = np.where(thin.sum(1) > frac_thresh * w)[0]
+    if len(cand) == 0:
+        return None
+    lines_local = [dict(y=(g[0] + g[-1]) / 2 + y0i, thick=len(g), fill=int(band[g].any(axis=0).sum()))
+                   for g in _runs(cand)]
+    found = staves_from_lines(lines_local)
+    if not found:
+        return None
+    found.sort(key=lambda s: abs(s["space"] - expected_space))
+    best = found[0]
+    if abs(best["space"] - expected_space) > 0.2 * expected_space:
+        return None
+    return best
+
+
+def _recover_missing_staff(black, systems):
+    """A system can show fewer staves than the page's own typical count
+    when a staff's ink is suppressed below staff_lines' normal threshold
+    by dense, unrelated content on the same rows (grace-note chords,
+    ornaments crowding a trio's opening, for one measured case): a
+    second, lower-threshold search confined to the gap a sibling
+    system's own layout predicts recovers it, confirmed connected to the
+    staff already found (the same opening-line/bar-line test
+    systems_from_staves itself uses), rather than silently losing a
+    whole staff's notes to detection."""
+    counts = [len(s["staves"]) for s in systems]
+    if not counts:
+        return
+    mode_count = max(set(counts), key=counts.count)
+    if mode_count <= 1:
+        return
+    full = [s for s in systems if len(s["staves"]) == mode_count]
+    if not full:
+        return
+    gaps, spaces = [], []
+    for s in full:
+        for a, b in zip(s["staves"], s["staves"][1:]):
+            gaps.append(b["lines"][0] - a["lines"][-1])
+        spaces.extend(st["space"] for st in s["staves"])
+    if not gaps:
+        return
+    avg_gap = float(np.mean(gaps))
+    avg_space = float(np.mean(spaces))
+
+    for si, s in enumerate(systems):
+        if mode_count - len(s["staves"]) != 1:
+            continue
+        prev_bottom = systems[si - 1]["bottom"] if si > 0 else 0
+        next_top = systems[si + 1]["top"] if si + 1 < len(systems) else black.shape[0]
+
+        # try above the system's existing (topmost) staff first -- the
+        # overwhelmingly common case (a grand staff's right hand)
+        top_st = s["staves"][0]
+        pred_bottom = top_st["lines"][0] - avg_gap
+        band0 = max(prev_bottom, pred_bottom - 6 * avg_space)
+        found = _staff_in_band(black, band0, pred_bottom + 2 * avg_space, avg_space)
+        if found and found["lines"][-1] < top_st["lines"][0] and _connected(black, found, top_st):
+            s["staves"].insert(0, found)
+            s["top"] = found["lines"][0]
+            continue
+
+        # otherwise, below the system's existing (bottommost) staff
+        bot_st = s["staves"][-1]
+        pred_top = bot_st["lines"][-1] + avg_gap
+        band1 = min(next_top, pred_top + 6 * avg_space)
+        found2 = _staff_in_band(black, pred_top - 2 * avg_space, band1, avg_space)
+        if found2 and found2["lines"][0] > bot_st["lines"][-1] and _connected(black, bot_st, found2):
+            s["staves"].append(found2)
+            s["bottom"] = found2["lines"][-1]
 
 
 def from_black(black):
@@ -252,6 +399,7 @@ def from_black(black):
     for sys_ in systems:
         sys_["top"] = sys_["staves"][0]["lines"][0]
         sys_["bottom"] = sys_["staves"][-1]["lines"][-1]
+    _recover_missing_staff(black, systems)
     return dict(black=black, systems=systems)
 
 
