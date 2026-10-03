@@ -31,9 +31,10 @@
 // one doesn't complete within EARLY_KEY_WINDOW of it (the player wasn't
 // early, they were wrong), judged at the next key down — or, in tempo mode,
 // dropped uncredited as this column scrolls past (see scrollPast), which
-// counts its own miss on the column instead. A key of the column just
-// completed struck again within LATE_REPEAT_WINDOW of its completing (a
-// late duplicate, a key bounce) is ignored. Both windows are on the events'
+// counts its own miss on the column instead. A key of the column the head
+// has just moved on from, completed or scrolled past, struck again within
+// LATE_REPEAT_WINDOW of its going (a late duplicate, a key bounce, the note
+// the player was still reading) is ignored. Both windows are on the events'
 // timeStamps, so a press with none (the on-screen keyboard) is judged as if
 // outside them.
 //
@@ -495,7 +496,11 @@ export default class NoteMatcher {
   // to it as before, chaining a hit when they complete it — all but the
   // ones the head took longer than EARLY_KEY_WINDOW to scroll past, which
   // are dropped uncredited (dropStaleEarly), as rule 2.4 drops them at a
-  // key down, counting no miss beyond the scroll-past's own. Emits "scrolled"
+  // key down, counting no miss beyond the scroll-past's own. The column it
+  // took away is the one looked back to (previous, at the scroll-past), so
+  // rule 2.3 excuses the note the player was still reading struck just after
+  // it went by rather than slipping the column that took over: one miss for
+  // the one late note. Emits "scrolled"
   // after the miss (if any) and before any chained hit, so the miss reaches
   // the stats, and through them the generator's columnDone, before the
   // shift below calls it
@@ -525,6 +530,7 @@ export default class NoteMatcher {
     this.notes = advanced
 
     this.startHead(time)
+    this.previous = {column, at: time}
     this.restrikes = {}
 
     let next = advanced.currentColumn()
@@ -650,8 +656,8 @@ export default class NoteMatcher {
   }
 
   // whether a key down is one struck again rather than played: one of the
-  // column just completed (repeated), or held for the card's last column
-  // as it completed (see settleCardEnd)
+  // column the head just moved on from (repeated), or held for the card's
+  // last column as it completed (see settleCardEnd)
   struckAgain(note, timeStamp) {
     return !!this.restrikes[note] || this.repeated(note, timeStamp)
   }
@@ -666,8 +672,8 @@ export default class NoteMatcher {
     delete this.restrikes[note]
   }
 
-  // whether a key is one of the column just completed, struck again within
-  // LATE_REPEAT_WINDOW of its completing (rule 2.3)
+  // whether a key is one of the column the head has just moved on from,
+  // struck again within LATE_REPEAT_WINDOW of its going (rule 2.3)
   repeated(note, timeStamp) {
     let previous = this.previous
     return !!previous && previous.at != null && timeStamp != null &&

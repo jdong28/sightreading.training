@@ -612,6 +612,37 @@ describe("note matcher", function() {
       ])
     })
 
+    // rule 2.3, as after a hit: the player was reading the note the staff
+    // took away, so striking it just after counts once, as the scroll-past's
+    // own miss, and never again as a slip on the column that took over
+    it("excuses a key of the scrolled-past column struck again within the repeat window", function() {
+      let matcher = matcherFor([["C4"], ["E4"]], {scroll: true, tempo: true})
+      matcher.scrollPast(1000)
+      matcher.judged.length = 0
+
+      expect(run(matcher, [["on", "C4", 1000 + LATE_REPEAT_WINDOW]])).toEqual([])
+      expect(head(matcher)).toEqual(["E4"])
+      // the column that took over is still clean, and plays as it should
+      expect(run(matcher, [["on", "E4", 1300]])).toEqual(["hit E4"])
+    })
+
+    it("slips the column that took over for a key of the scrolled-past one struck later", function() {
+      let matcher = matcherFor([["C4"], ["E4"]], {scroll: true, tempo: true})
+      matcher.scrollPast(1000)
+      matcher.judged.length = 0
+
+      expect(run(matcher, [["on", "C4", 1001 + LATE_REPEAT_WINDOW]])).toEqual(["miss E4"])
+    })
+
+    it("plays the new head with a pitch the scrolled-past column had too", function() {
+      let matcher = matcherFor([["C4"], ["C4"]], {scroll: true, tempo: true})
+      matcher.scrollPast(1000)
+      matcher.judged.length = 0
+
+      expect(run(matcher, [["on", "C4", 1100]])).toEqual(["hit C4"])
+      expect(head(matcher)).toEqual([])
+    })
+
     it("is a hit, not a miss, when the keys held already complete the column (held credit, rule 1)", function() {
       let sustain = (column, ...notes) => Object.assign(column, {sustained: notes})
       let matcher = matcherFor([["Bb3"], sustain(["Bb3"], "Bb3")], {scroll: true, tempo: true})
