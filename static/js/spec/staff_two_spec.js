@@ -684,6 +684,22 @@ describe("staff two ledger lines", function() {
     expect(yB).toBe(yA)
   })
 
+  it("measures the fit once, not on every render", function() {
+    let instance = mount({
+      type: "treble",
+      notes: new NoteList([["C4"]]),
+    })
+
+    let loads = spyOn(instance, "getAsset").and.callThrough()
+
+    mount({
+      type: "treble",
+      notes: new NoteList([["D4"], ["E4"]]),
+    })
+
+    expect(loads.calls.allArgs().map(args => args[0])).not.toContain("gclef")
+  })
+
   it("spaces columns by noteWidth times scale in both modes, not the fixed legacy spacing", function() {
     let instance = mount({
       type: "treble",
@@ -795,6 +811,24 @@ describe("staff two parity", function() {
       .find(n => n.classList.includes("head"))
     expect(headNote.classList.includes("held")).toBe(true)
     expect(headNote.opacity).toBe(0.2)
+  })
+
+  it("draws a held key on the grand staff that holds its column, not the one middle C alone would pick", function() {
+    // splitForGrandStaff keeps B3 on the treble staff, following the C4
+    // before it, even though B3 is below middle C
+    let instance = mount({
+      type: "grand",
+      range: ["C2", "C6"],
+      keySignature: new KeySignature(0),
+      notes: new NoteList([["C4"], ["B3"]]),
+      heldNotes: {"B3": true},
+    })
+
+    let heldOn = staff => staff.notesGroup.getByClassName("note")
+      .filter(n => n.classList.includes("held"))
+
+    expect(heldOn(instance.trebleStaffRef.current).length).toBe(1)
+    expect(heldOn(instance.bassStaffRef.current).length).toBe(0)
   })
 
   it("shakes the head column's shapes while noteShaking, settling back to x 0", function() {

@@ -805,13 +805,13 @@ export class StaffTwo extends React.PureComponent {
     }
   }
 
-  updateWidth(width, force=false) {
+  updateWidth(width) {
     if (this._unmounted) return
 
     const {two} = this.state
     if (!two) return
 
-    if (force || (two && width != two.width)) {
+    if (width != two.width) {
       // setting dimensions is funky: https://github.com/jonobr1/two.js/issues/191
       two.width = width
 
@@ -932,6 +932,12 @@ export class StaffTwo extends React.PureComponent {
   // edge about StaffTwo not being usable for the exercises page yet)
   computeFit() {
     const {type, range, height, maxScale} = this.props
+    const cacheKey = [type, height, maxScale, ...range].join("/")
+
+    if (this.fitCache && this.fitCache.key == cacheKey) {
+      return this.fitCache.fit
+    }
+
     let top, bottom
 
     if (type == "grand") {
@@ -957,23 +963,9 @@ export class StaffTwo extends React.PureComponent {
     const scale = Math.min(maxScale, height / sourceHeight)
     const translateY = Math.floor(-(top * scale))
 
-    return {scale, translateY}
-  }
+    this.fitCache = {key: cacheKey, fit: {scale, translateY}}
 
-  fit() {
-    const {scale, translateY} = this.computeFit()
-    const origScale = this.renderGroup.scale
-
-    this.renderGroup.scale = scale
-    this.renderGroup.translation.set(0, translateY)
-
-    if (scale != origScale) {
-      // force update call to width since scale has changed
-      this.updateWidth(this.state.two.width, true)
-      return true
-    }
-
-    return false
+    return this.fitCache.fit
   }
 
   getRenderedStaves() {
@@ -994,26 +986,25 @@ export class StaffTwo extends React.PureComponent {
     return out
   }
 
-  // splits the held keys between the grand staff's two staves by the plain
-  // middle-C threshold (the held keys aren't a column of the drill, so the
-  // sticky splitForGrandStaff logic doesn't apply)
-  splitHeldForGrandStaff(heldNotes) {
+  // splits the keys held down between the grand staff's two staves by
+  // splitting them with the head column through NoteList#splitForGrandStaff,
+  // the same rule the drill's own columns use, so a held pitch is drawn on
+  // the staff of the column that holds it
+  splitHeldForGrandStaff(notes, heldNotes) {
     if (!heldNotes) { return [null, null] }
 
-    const middleC = noteStaffOffset("C4")
-    const treble = {}
-    const bass = {}
+    const held = Object.keys(heldNotes).filter(name => heldNotes[name])
+    const head = (notes && notes[0]) || []
 
-    for (const name of Object.keys(heldNotes)) {
-      if (!heldNotes[name]) { continue }
-      if (noteStaffOffset(name) >= middleC) {
-        treble[name] = true
-      } else {
-        bass[name] = true
-      }
+    const [treble, bass] = new NoteList([head, held]).splitForGrandStaff()
+
+    const asHeld = column => {
+      const out = {}
+      for (const name of column) { out[name] = true }
+      return out
     }
 
-    return [treble, bass]
+    return [asHeld(treble[1]), asHeld(bass[1])]
   }
 
   renderStaves() {
@@ -1029,12 +1020,11 @@ export class StaffTwo extends React.PureComponent {
       return
     }
 
-    // the range-based fit (step 3) only depends on props already available
-    // here (type/range/height/maxScale), not on the notes about to be laid
-    // out below, so it can run before them: this keeps makeNotes' column
-    // spacing (which reads renderGroup.scale through columnDx/dx) correct
-    // on the very first paint, rather than one render stale behind flush()'s
-    // own call to fit() (which still runs, idempotently, from flush())
+    // the one place the fit is applied: the range-based fit (step 3) only
+    // depends on props already available here (type/range/height/maxScale),
+    // not on the notes about to be laid out below, so it runs before them,
+    // which keeps makeNotes' column spacing (which reads renderGroup.scale
+    // through columnDx/dx) correct on the very first paint
     const {scale, translateY} = this.computeFit()
     this.renderGroup.scale = scale
     this.renderGroup.translation.set(0, translateY)
@@ -1065,7 +1055,7 @@ export class StaffTwo extends React.PureComponent {
           [trebleNotes, bassNotes] = this.props.notes.splitForGrandStaff()
         }
 
-        let [trebleHeld, bassHeld] = this.splitHeldForGrandStaff(this.props.heldNotes)
+        let [trebleHeld, bassHeld] = this.splitHeldForGrandStaff(this.props.notes, this.props.heldNotes)
 
         return <>
           <StaffGroup
@@ -1188,7 +1178,6 @@ export class StaffTwo extends React.PureComponent {
 
       console.log("flushing changes...")
       this.flushChanges = false
-      this.fit()
 
       // re-apply the stored scroll/hitX offset against whatever just
       // changed (the fit's scale, a staff's margin, the note list): see the
