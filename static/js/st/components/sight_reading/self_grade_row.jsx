@@ -28,7 +28,8 @@ export default class SelfGradeRow extends React.Component {
     // the "Where?" question for a failing grade on this card, from
     // generator.selfFollowUp, null for a one-measure card or Clean/Easy
     followUp: types.object,
-    // the optional "What slipped?" tags, SELF_ASPECTS when Q1's option C is on
+    // the optional "What slipped?" tags offered with the grades, SELF_ASPECTS
+    // (st/srs/records); left out to offer none
     aspects: types.array,
     onGrade: types.func.isRequired,
   }

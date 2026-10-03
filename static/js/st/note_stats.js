@@ -230,7 +230,8 @@ export default class NoteStats {
   }
 
   // The session record for the local store (see putSession in st/storage),
-  // or null before any note is played. The record keeps this object's id, so
+  // or null before any note is played and any pass graded (acoustic mode
+  // detects none, see selfGraded). The record keeps this object's id, so
   // writing it again as the session grows replaces the earlier one
   sessionRecord({staff, generator, settings}={}) {
     if (!this.hits && !this.misses && !this.passes) {

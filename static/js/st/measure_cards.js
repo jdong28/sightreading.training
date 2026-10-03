@@ -347,8 +347,9 @@ export class MeasureCardGenerator {
 
   /**
    * @param {function(): {mode: string, speed?: number}} drill the drill
-   * being played, "wait" or "scroll" mode at a scroll speed, which each
-   * attempt is graded and stored by
+   * being played, which each attempt is graded and stored by: "wait" or
+   * "scroll" mode at a scroll speed while notes are detected, or "self" with
+   * no speed in acoustic mode (see selfGrade)
    */
   setDrill(drill) {
     this.drill = drill

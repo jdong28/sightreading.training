@@ -15,7 +15,7 @@ This is a fork of [leafo/sightreading.training](https://github.com/leafo/sightre
 ## Requirements
 
 - Node.js 20+ (CI runs Node 22; developed and verified here on Node 24). `npm` comes with it.
-- A MIDI keyboard/controller for the actual practice (optional for just browsing the UI) via Web MIDI.
+- A MIDI keyboard/controller for the actual practice (optional for just browsing the UI) via Web MIDI. Sheet-music practice can also be played on an acoustic piano: pick *Acoustic piano* as the instrument in the device setup and grade each card yourself instead, with no MIDI at all (see [`static/guides/generators.md`](static/guides/generators.md)).
 - The full backend (Lua/[Lapis](https://leafo.net/lapis/), PostgreSQL, the [tup](https://gittup.org/tup/) build) is only needed for the legacy backend stats page; everything else, including this fork's sheet-music practice and spaced repetition, runs entirely in the browser.
 
 ## Install
