@@ -115,30 +115,18 @@ def test_beat_continues_across_split_bar():
     assert d4["beat"] == Fraction(2)  # but beat continues: bar 1's first half was 2 quarter notes
 
 
-def test_two_part_guard():
-    xml = f"""<?xml version="1.0"?>
-{NS}
-  <part id="P1">
-    <measure number="1"><note><pitch><step>C</step><octave>4</octave></pitch><duration>4</duration></note></measure>
-  </part>
-  <part id="P2">
-    <measure number="1"><note><pitch><step>C</step><octave>4</octave></pitch><duration>4</duration></note></measure>
-  </part>
-</score-partwise>"""
-    root = score.load_text(xml)
-    with pytest.raises(ValueError, match="one part"):
-        score.note_table(root)
-
-
-def test_three_staff_guard():
+def test_one_part_three_staves_allowed():
+    """A single part may hold up to 3 staves (§7): a one-part, three-staff
+    piano score geometry now supports fully."""
     xml = _score_xml("""
       <note><pitch><step>C</step><octave>4</octave></pitch><duration>4</duration><staff>1</staff></note>
       <note><pitch><step>C</step><octave>3</octave></pitch><duration>4</duration><staff>2</staff></note>
       <note><pitch><step>C</step><octave>2</octave></pitch><duration>4</duration><staff>3</staff></note>
     """, staves=3)
     root = score.load_text(xml)
-    with pytest.raises(ValueError, match="one part"):
-        score.note_table(root)
+    rows = score.note_table(root)
+    assert {r["staff"] for r in rows} == {1, 2, 3}
+    assert {r["part"] for r in rows} == {"P1"}
 
 
 def test_two_staves_allowed():
@@ -149,3 +137,130 @@ def test_two_staves_allowed():
     root = score.load_text(xml)
     rows = score.note_table(root)
     assert {r["staff"] for r in rows} == {1, 2}
+
+
+def test_multi_part_staves():
+    """A voice part (1 staff) plus a piano part (2 staves) gives global
+    staves 1, 2, 3, with `part`. Four staves in all are refused."""
+    xml = f"""<?xml version="1.0"?>
+{NS}
+  <part id="voice">
+    <measure number="1"><note><pitch><step>C</step><octave>5</octave></pitch><duration>4</duration></note></measure>
+  </part>
+  <part id="piano">
+    <measure number="1">
+      <attributes><divisions>4</divisions><staves>2</staves></attributes>
+      <note><pitch><step>C</step><octave>4</octave></pitch><duration>4</duration><staff>1</staff></note>
+      <note><pitch><step>C</step><octave>3</octave></pitch><duration>4</duration><staff>2</staff></note>
+    </measure>
+  </part>
+</score-partwise>"""
+    root = score.load_text(xml)
+    rows = score.note_table(root)
+    by_pitch = {(r["step"], r["octave"]): r for r in rows}
+    assert by_pitch[("C", 5)]["staff"] == 1 and by_pitch[("C", 5)]["part"] == "voice"
+    assert by_pitch[("C", 4)]["staff"] == 2 and by_pitch[("C", 4)]["part"] == "piano"
+    assert by_pitch[("C", 3)]["staff"] == 3 and by_pitch[("C", 3)]["part"] == "piano"
+
+    xml4 = f"""<?xml version="1.0"?>
+{NS}
+  <part id="voice"><measure number="1"><note><pitch><step>C</step><octave>5</octave></pitch><duration>4</duration></note></measure></part>
+  <part id="piano">
+    <measure number="1">
+      <attributes><divisions>4</divisions><staves>3</staves></attributes>
+      <note><pitch><step>C</step><octave>4</octave></pitch><duration>4</duration><staff>1</staff></note>
+    </measure>
+  </part>
+</score-partwise>"""
+    root4 = score.load_text(xml4)
+    with pytest.raises(ValueError, match="at most 3 staves"):
+        score.note_table(root4)
+
+
+def test_clef_by_onset():
+    """Staff 1 voice 1 has quarter notes on beats 1-4 with a clef change to
+    F before its beat-3 note; voice 2 (after <backup>) has a half note at
+    beat 1. The voice-2 note keeps G; beats 3-4 of voice 1 get F."""
+    xml = _score_xml("""
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>4</duration><voice>1</voice><staff>1</staff></note>
+      <note><pitch><step>D</step><octave>5</octave></pitch><duration>4</duration><voice>1</voice><staff>1</staff></note>
+      <attributes><clef number="1"><sign>F</sign><line>4</line></clef></attributes>
+      <note><pitch><step>E</step><octave>4</octave></pitch><duration>4</duration><voice>1</voice><staff>1</staff></note>
+      <note><pitch><step>F</step><octave>4</octave></pitch><duration>4</duration><voice>1</voice><staff>1</staff></note>
+      <backup><duration>16</duration></backup>
+      <note><pitch><step>G</step><octave>5</octave></pitch><duration>8</duration><voice>2</voice><staff>1</staff></note>
+    """)
+    root = score.load_text(xml)
+    rows = score.note_table(root)
+    by_pitch = {(r["step"], r["octave"]): r for r in rows}
+    assert by_pitch[("C", 5)]["clef"] == ("G", 2)
+    assert by_pitch[("D", 5)]["clef"] == ("G", 2)
+    assert by_pitch[("E", 4)]["clef"] == ("F", 4)
+    assert by_pitch[("F", 4)]["clef"] == ("F", 4)
+    assert by_pitch[("G", 5)]["clef"] == ("G", 2)
+
+
+def test_octave_shift_by_onset():
+    def _xml(shift_type="down", size="8"):
+        return f"""<?xml version="1.0"?>
+{NS}
+  <part id="P1">
+    <measure number="1">
+      <attributes><divisions>4</divisions></attributes>
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>4</duration><staff>1</staff></note>
+      <note><pitch><step>D</step><octave>5</octave></pitch><duration>4</duration><staff>1</staff></note>
+      <direction><direction-type><octave-shift type="{shift_type}" size="{size}" number="1"/></direction-type><staff>1</staff></direction>
+      <note><pitch><step>E</step><octave>5</octave></pitch><duration>4</duration><staff>1</staff></note>
+    </measure>
+    <measure number="2">
+      <note><pitch><step>F</step><octave>5</octave></pitch><duration>4</duration><staff>1</staff></note>
+      <direction><direction-type><octave-shift type="stop" size="{size}" number="1"/></direction-type><staff>1</staff></direction>
+      <note><pitch><step>G</step><octave>5</octave></pitch><duration>4</duration><staff>1</staff></note>
+    </measure>
+  </part>
+</score-partwise>"""
+    xml = _xml()
+    root = score.load_text(xml)
+    rows = score.note_table(root)
+    by_pitch = {(r["step"], r["octave"]): r for r in rows}
+    assert by_pitch[("C", 5)]["octave_shift"] == 0
+    assert by_pitch[("D", 5)]["octave_shift"] == 0
+    assert by_pitch[("E", 5)]["octave_shift"] == -1
+    assert by_pitch[("F", 5)]["octave_shift"] == -1
+    assert by_pitch[("G", 5)]["octave_shift"] == 0
+
+    root15 = score.load_text(_xml(size="15"))
+    rows15 = score.note_table(root15)
+    by_pitch15 = {(r["step"], r["octave"]): r for r in rows15}
+    assert by_pitch15[("E", 5)]["octave_shift"] == -2
+
+    rootup = score.load_text(_xml(shift_type="up"))
+    rowsup = score.note_table(rootup)
+    by_pitchup = {(r["step"], r["octave"]): r for r in rowsup}
+    assert by_pitchup[("E", 5)]["octave_shift"] == 1
+
+
+def test_hidden_notes_not_counted():
+    xml = _score_xml("""
+      <note print-object="no"><pitch><step>C</step><octave>5</octave></pitch><duration>4</duration></note>
+      <note><pitch><step>D</step><octave>5</octave></pitch><duration>4</duration></note>
+    """)
+    root = score.load_text(xml)
+    rows = score.note_table(root)
+    by_pitch = {(r["step"], r["octave"]): r for r in rows}
+    assert by_pitch[("C", 5)]["printed"] is False
+    assert by_pitch[("D", 5)]["printed"] is True
+
+
+def test_multirest_spans():
+    from lxml import etree
+    els = []
+    for i in range(1, 9):
+        m = _el("measure", number=str(i))
+        if i == 5:
+            attrs = etree.SubElement(m, "attributes")
+            ms = etree.SubElement(attrs, "measure-style")
+            mr = etree.SubElement(ms, "multiple-rest")
+            mr.text = "4"
+        els.append(m)
+    assert score.multirest_spans(els) == {4: 4}
