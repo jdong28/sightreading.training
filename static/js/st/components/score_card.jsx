@@ -131,32 +131,30 @@ export class ScoreCard extends React.Component {
     let count = ++this.drawCount
     let p = this.props
 
+    // a kept system belongs to the score it was drawn from; once that score
+    // moves on, so do they
+    this.systemCache = this.systemCache.filter(entry => entry.musicXML == p.musicXML)
+    let cached = p.system ? this.systemCache.find(entry => entry.key == systemKey(p)) : null
+
     // the drawn card stays up until the next is drawn, but no longer follows
     // the drill, whose columns are the next card's. A kept system's marks go
-    // with it, so it comes back with none of its old current/done/missed
-    // classes
-    if (this.cardJoin) {
+    // with it as another takes the plate at once, so it comes back with none
+    // of its old current/done/missed classes
+    if (cached && this.cardJoin) {
       markCard(this.cardJoin, {head: null, missed: []})
     }
     this.result = null
     this.cardJoin = null
     this.track = null
 
-    // a kept system belongs to the score it was drawn from; once that score
-    // moves on, so do they
-    this.systemCache = this.systemCache.filter(entry => entry.musicXML == p.musicXML)
-
-    if (p.system) {
-      let cached = this.systemCache.find(entry => entry.key == systemKey(p))
-      if (cached) {
-        this.systemCache = [cached, ...this.systemCache.filter(entry => entry != cached)]
-        this.result = cached.result
-        let strip = this.stripRef.current
-        if (strip) { strip.replaceChildren(cached.svg) }
-        this.setState({drawing: false})
-        this.join()
-        return Promise.resolve()
-      }
+    if (cached) {
+      this.systemCache = [cached, ...this.systemCache.filter(entry => entry != cached)]
+      this.result = cached.result
+      let strip = this.stripRef.current
+      if (strip) { strip.replaceChildren(cached.svg) }
+      this.setState({drawing: false})
+      this.join()
+      return Promise.resolve()
     }
 
     this.setState({drawing: true})

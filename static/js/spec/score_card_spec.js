@@ -1519,6 +1519,48 @@ describe("ScoreCard", function() {
     expect(busy()).toEqual("false")
   })
 
+  it("keeps a wait-mode card's marks up until the next card is drawn", async function() {
+    let letSecondDraw
+    let secondDrawing = new Promise(resolve => { letSecondDraw = resolve })
+    let draws = 0
+    let notesFor = {1: ["C4", "D4"], 2: ["E4"]}
+    let loadEngines = () => Promise.resolve({ENGINES: {osmd: {
+      renderCard: async ({fromMeasure}) => {
+        if (++draws > 1) { await secondDrawing }
+        let svg = document.createElementNS(SVG_NS, "svg")
+        let notes = notesFor[fromMeasure].map((name, idx) => {
+          let note = drawn(parseNote(name), idx)
+          svg.appendChild(note.el)
+          return note
+        })
+        return {svg, notes}
+      },
+    }}})
+    let base = {
+      musicXML: "<score-partwise/>", hand: "both", width: 600, system: false, loadEngines,
+    }
+    let withClass = (els, cls) => els.filter(el => el.classList.contains(cls))
+
+    mountCard({...base, fromMeasure: 1, toMeasure: 1, columns: columnsOf(notesFor[1]), head: 1})
+    await waitFor(() => card.cardJoin, {message: "the first card"})
+    let firstHeads = card.cardJoin.heads.flat()
+    expect(withClass(firstHeads, MARK_CLASSES.done).length).toEqual(1)
+    expect(withClass(firstHeads, MARK_CLASSES.current).length).toEqual(1)
+
+    // the finished card is still the one on the plate while the next is being
+    // drawn, so it keeps the marks it ended on
+    rerenderCard({...base, fromMeasure: 2, toMeasure: 2, columns: columnsOf(notesFor[2]), head: 0})
+    expect(container.querySelector("[data-score-card] svg").contains(firstHeads[0])).toBe(true)
+    expect(withClass(firstHeads, MARK_CLASSES.done).length).toEqual(1)
+    expect(withClass(firstHeads, MARK_CLASSES.current).length).toEqual(1)
+
+    letSecondDraw()
+    await waitFor(() => card.cardJoin && card.cardJoin.heads.flat()[0] != firstHeads[0],
+      {message: "the second card"})
+    expect(container.querySelector("[data-score-card] svg").contains(firstHeads[0])).toBe(false)
+    expect(card.cardJoin.heads[0].every(el => el.classList.contains(MARK_CLASSES.current))).toBe(true)
+  })
+
   it("draws a plate card afresh each time", async function() {
     let renders = 0
     let loadEngines = () => Promise.resolve({ENGINES: {osmd: {
