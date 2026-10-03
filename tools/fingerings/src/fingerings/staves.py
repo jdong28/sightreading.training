@@ -124,14 +124,12 @@ def _column_fill(black, y0, y1):
 
 def _head_touches(heads, x0, x1, space):
     """True when a notehead's edge sits within 3 px of this column's near
-    edge (a stem-up note's head just left of it, or a stem-down note's
-    just right of it); a blob spanning both edges is not a stem's head and
-    doesn't count."""
+    edge: a stem-up note's head just left of it (its right edge near the
+    column's right edge), or a stem-down note's just right of it (its left
+    edge near the column's left edge)."""
     for h in heads:
         hw = h.get("w", space)
         left, right = h["x"] - hw / 2, h["x"] + hw / 2
-        if left <= x0 and right >= x1:
-            continue
         if abs(right - x1) <= 3 or abs(left - x0) <= 3:
             return True
     return False
