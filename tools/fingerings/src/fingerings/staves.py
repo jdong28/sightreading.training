@@ -213,7 +213,7 @@ def barlines(black, system, heads_in_system=None, min_fill=0.9, min_gap_fill=0.9
         is_full = bool(full_ok[x0:x1 + 1].any())
         if not is_opening and not is_full and _head_touches(heads_in_system, x0, x1, space):
             continue
-        out.append(dict(x0=x0, x1=x1, x=float(np.mean(g))))
+        out.append(dict(x0=x0, x1=x1, x=float(np.mean(g)), is_full=is_full))
 
     if len(out) >= 2:
         a, b = out[0], out[1]
@@ -248,12 +248,15 @@ def assign_bars(black, systems, heads):
         heads_in_system = [h for h in heads if h["system"] == si]
         bars = barlines(black, sys_, heads_in_system)
         space = float(np.mean([s["space"] for s in sys_["staves"]]))
-        if bars and _real_content_before(heads_in_system, bars[0]["x0"], space):
+        if bars and not bars[0]["is_full"] and _real_content_before(heads_in_system, bars[0]["x0"], space):
             # no drawn opening stroke (a single-staff part's continuation
             # system commonly has none): synthesise one at the system's
             # own left edge, so the first measure -- otherwise unreachable,
             # since `measures` only spans between consecutive bars -- isn't
-            # lost.
+            # lost. Never second-guessed when bars[0] already passed the
+            # strict full-gap-fill rule: that is strong, reliable evidence
+            # of a true opening line, which a clef or a brace reading as a
+            # stray head or two must not override.
             bars = [dict(x0=0, x1=0, x=0.0)] + bars
         sys_["bars"] = bars
         sys_["measures"] = [dict(x0=bars[i]["x1"], x1=bars[i + 1]["x0"]) for i in range(len(bars) - 1)]
