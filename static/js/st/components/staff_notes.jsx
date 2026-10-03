@@ -186,6 +186,13 @@ export default class StaffNotes extends React.Component {
     return styles.staff_notes
   }
 
+  // the drawn heads of the column at the head of the drill, which the
+  // plate's ink smudge marks (see PlateFeedback): a column's own heads plus
+  // any held wrong key drawn on it, both at data-start="0"
+  headElements() {
+    return this.refs.notes ? [...this.refs.notes.querySelectorAll('[data-start="0"]')] : []
+  }
+
   setOffset(amount) {
     this.refs.notes.style.transform = `translate3d(${amount}px, 0, 0)`;
   }

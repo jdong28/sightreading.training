@@ -149,8 +149,13 @@ const STORES = {
  * @property {Object} settings summary of the generator settings
  * @property {number} notesRead
  * @property {number} misses
- * @property {number} bestStreak
+ * @property {number} bestStreak the longest run of columns read without a miss
  * @property {Object<string, {hits: number, misses: number}>} notes by note name without octave
+ * @property {Object<string, {hits: number, misses: number}>} [clefs] hits and
+ * misses by the clef sign the notes were read in
+ * @property {number} [elapsedSeconds] the session clock from Begin to Rest,
+ * or to when the page was left or the stats cleared, as the Elapsed card
+ * showed it; missing from sessions recorded before this field was added
  * @property {{passes: number, clean: number}} [selfGraded] the passes the
  * player graded themself in acoustic mode (st/srs/self_grade), kept once one
  * was graded in the session

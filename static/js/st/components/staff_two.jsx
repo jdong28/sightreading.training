@@ -1183,6 +1183,18 @@ export class StaffTwo extends React.PureComponent {
     return out
   }
 
+  // the drawn heads of the column at the head of the drill, which the
+  // plate's ink smudge marks (see PlateFeedback): Two.js's SVG renderer
+  // draws each staff's head column group as one <g>. A staff with nothing
+  // in that column is left out, so its empty group's zero-sized rect never
+  // pulls the smudge off the column (the grand staff draws a head column on
+  // one staff alone whenever the split sends it there)
+  headElements() {
+    return this.getFirstColumnGroups()
+      .map(group => group.children.length ? group.renderer.elem : null)
+      .filter(Boolean)
+  }
+
   render() {
     this.RefreshNotes ||= Object.assign(React.memo((props) => {
       if (this.renderGroup) {

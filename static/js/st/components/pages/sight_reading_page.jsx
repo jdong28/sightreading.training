@@ -7,6 +7,7 @@ import Keyboard, {KeyboardInput} from "st/components/keyboard"
 import StatsLightbox from "st/components/sight_reading/stats_lightbox"
 import DevMetricsPanel from "st/components/sight_reading/dev_metrics_panel"
 import SelfGradeRow from "st/components/sight_reading/self_grade_row"
+import PlateFeedback from "st/components/sight_reading/plate_feedback"
 import Hotkeys from "st/components/hotkeys"
 
 import styles from "./sight_reading_page.module.css"
@@ -334,6 +335,10 @@ export default class SightReadingPage extends React.Component {
       // drill does, so the grade row (keyed by it) starts fresh for the card
       // the refill puts up (see renderSelfGrade)
       cardSeq: 0,
+
+      // bumped once per judgement (a wrong key or chord) to re-light the
+      // plate's ink smudge (see PlateFeedback and countMiss)
+      smudges: 0,
     }
   }
 
@@ -918,6 +923,14 @@ export default class SightReadingPage extends React.Component {
     }
   }
 
+  // the drawn heads of the column at the head of the drill, which the
+  // plate's ink smudge marks: the staff's own, else the staff wrapper
+  // (mid-staff), see PlateFeedback
+  headElements() {
+    let heads = this.staff ? this.staff.headElements() : []
+    return heads.length ? heads : [this.staffWrapper].filter(Boolean)
+  }
+
   // the card (or whole section) of the imported piece whose columns are on
   // the staff, with its place in the deck, if any
   currentCard() {
@@ -1104,6 +1117,7 @@ export default class SightReadingPage extends React.Component {
         gaEvent("sight_reading", "chord", "miss")
         this.state.stats.missNotes([])
         update.noteShaking = true
+        update.smudges = (update.smudges ?? this.state.smudges) + 1
         setTimeout(() => this.setState({noteShaking: false}), 500);
         break
     }
@@ -1125,6 +1139,9 @@ export default class SightReadingPage extends React.Component {
     this.markMissedCard(this.cardHead(event.notes).index)
 
     update.noteShaking = true
+    // every wrong key gets ink, whatever event.counted is: the stats still
+    // count only what they count today (see PlateFeedback)
+    update.smudges = (update.smudges ?? this.state.smudges) + 1
     setTimeout(() => this.setState({noteShaking: false}), 500);
   }
 
@@ -1520,6 +1537,11 @@ export default class SightReadingPage extends React.Component {
       staff: this.state.currentStaff?.name,
       generator: this.state.currentGenerator?.name,
       settings,
+      // the session clock, Begin to now: activeSeconds leaves out pauses,
+      // and acoustic mode barely marks activity at all, so this is the only
+      // clock the summary card and progress screen can read (see the
+      // elapsedSeconds doc on SessionRecord in st/storage)
+      elapsedSeconds: Math.floor((Date.now() - this.state.sessionStartedAt) / 1000),
     })
 
     if (!session) {
@@ -1864,6 +1886,7 @@ export default class SightReadingPage extends React.Component {
       </div>
       {this.renderCaption()}
       {this.renderEngineSourceNote()}
+      {this.renderFeedback()}
     </Plate>
   }
 
@@ -1890,6 +1913,17 @@ export default class SightReadingPage extends React.Component {
         }
         this.setGenerator(generator, settings)
       }} />
+  }
+
+  // the plate's gentle feedback state (see PlateFeedback): an ink smudge at
+  // the head column on every wrong key. Hidden in acoustic mode, where
+  // nothing is detected to react to
+  renderFeedback() {
+    if (this.selfGraded()) { return null }
+
+    return <PlateFeedback
+      smudge={this.state.smudges}
+      locateHead={() => this.headElements()} />
   }
 
   // why a piece is drawn on the app's staff rather than from its score

@@ -1359,6 +1359,35 @@ describe("score page engine card", function() {
     expect(first).toHaveBeenCalled()
   })
 
+  // the drawn heads of the column at the head of the drill, which the
+  // plate's ink smudge marks (see PlateFeedback)
+  it("locates the head column's drawn heads, [] before the draw settles and with no head", async function() {
+    let svg = () => document.createElementNS(SVG_NS, "svg")
+    let notes = [drawn(parseNote("C4"), 0), drawn(parseNote("E4"), 1)]
+    let loadEngines = () => Promise.resolve({ENGINES: {osmd: {
+      renderCard: async () => ({svg: svg(), notes}),
+    }}})
+    let props = {
+      musicXML: "<score-partwise/>", fromMeasure: 1, toMeasure: 1, hand: "both", width: 600,
+      columns: [column(["C4"], 0), column(["E4"], 1)], head: 0, loadEngines,
+    }
+
+    let card
+    container = document.createElement("div")
+    document.body.appendChild(container)
+    root = createRoot(container)
+    flushSync(() => root.render(React.createElement(ScoreCard, {...props, ref: c => card = c})))
+
+    // nothing joined yet, while the engine is still drawing
+    expect(card.headElements()).toEqual([])
+
+    await waitFor(() => card.cardJoin, {message: "the card to draw"})
+    expect(card.headElements()).toEqual(card.cardJoin.heads[0])
+
+    flushSync(() => root.render(React.createElement(ScoreCard, {...props, head: null, ref: c => card = c})))
+    expect(card.headElements()).toEqual([])
+  })
+
   it("is the score page's own programme", function() {
     expect(SCORE_PROGRAMME.engine).toEqual("osmd")
   })

@@ -25,6 +25,8 @@ import {DRILL_STORAGE_KEY, SCORE_DRILL_STORAGE_KEY} from "st/generators"
 import {DEV_METRICS_KEY} from "st/dev_metrics"
 import {SELF_GRADE_DWELL_MS} from "st/srs/self_grade"
 import {scopeEvent} from "st/events"
+import {MARK_CLASSES} from "st/score_render/card_join"
+import {SMUDGE_HOLD_MS} from "st/components/sight_reading/plate_feedback"
 import NoteStats, {addNoteListener} from "st/note_stats"
 import {parseNote} from "st/music"
 import {KEYBOARD_MAP, SYMBOL_MAP_INVERSE} from "st/keyboard_input"
@@ -2625,6 +2627,246 @@ describe("sight reading page", function() {
     })
   })
 
+  // the trainer's gentle feedback states (st/components/sight_reading/plate_feedback):
+  // the matcher is the only judge, these specs only check the plate reacts
+  // to what it already decided
+  describe("plate feedback", function() {
+    let smudge = el => el.querySelector("[data-smudge]")
+    let press = note => flushSync(() => page.pressNote(note))
+    let release = note => flushSync(() => page.releaseNote(note))
+    // the smudge's inline left/top are relative to the feedback layer, not
+    // the viewport, so a geometry check must subtract its own rect
+    let layerRect = el => el.querySelector("[data-plate-feedback]").getBoundingClientRect()
+
+    it("smudges the plate at the head on a wrong note, without advancing the cursor", function() {
+      jasmine.clock().install()
+      clockInstalled = true
+
+      let el = renderPage()
+      click(buttonNamed(el, "Begin"))
+
+      let column = page.state.notes.currentColumn()
+      let status = plateStatus(el)
+
+      // measured with the wrong key still held, as PlateFeedback itself
+      // measured it (the held key is drawn too, and releasing it afterward
+      // doesn't re-measure, since only a further judgement moves the smudge)
+      flushSync(() => page.pressNote(WRONG_NOTE))
+      expect(smudge(el).dataset.smudge).toEqual("on")
+      expect(page.state.notes.currentColumn()).toEqual(column)
+      expect(plateStatus(el)).toEqual(status)
+      expect(page.state.stats.streak).toEqual(0)
+      expect(page.state.stats.misses).toEqual(1)
+
+      // the smudge is centred on the union of the head's own drawn elements,
+      // relative to the feedback layer
+      let rects = page.staff.headElements().map(e => e.getBoundingClientRect())
+      let layer = layerRect(el)
+      let left = Math.min(...rects.map(r => r.left))
+      let right = Math.max(...rects.map(r => r.right))
+      let top = Math.min(...rects.map(r => r.top))
+      let bottom = Math.max(...rects.map(r => r.bottom))
+      expect(Math.abs(parseFloat(smudge(el).style.left) - ((left + right) / 2 - layer.left)))
+        .toBeLessThan(1)
+      expect(Math.abs(parseFloat(smudge(el).style.top) - ((top + bottom) / 2 - layer.top)))
+        .toBeLessThan(1)
+
+      flushSync(() => page.releaseNote(WRONG_NOTE))
+      play(page.state.notes.currentColumn())
+      expect(statValue(el, "Best streak")).toEqual("1")
+
+      flushSync(() => jasmine.clock().tick(SMUDGE_HOLD_MS))
+      expect(smudge(el).dataset.smudge).toEqual("off")
+    })
+
+    it("inks every wrong key, counted once however many tries it takes", function() {
+      let el = renderPage()
+      click(buttonNamed(el, "Begin"))
+
+      let smudgesBefore = page.state.smudges
+      press(WRONG_NOTE)
+      release(WRONG_NOTE)
+      expect(page.state.smudges).toEqual(smudgesBefore + 1)
+      expect(page.state.stats.misses).toEqual(1)
+
+      press(WRONG_NOTE)
+      release(WRONG_NOTE)
+      expect(page.state.smudges).toEqual(smudgesBefore + 2)
+      expect(page.state.stats.misses).toEqual(1)
+    })
+
+    it("judges nothing at rest", function() {
+      let el = renderPage()
+
+      play([WRONG_NOTE])
+      play(page.state.notes.currentColumn())
+      expect(smudge(el).dataset.smudge).toEqual("off")
+      expect(page.state.smudges).toEqual(0)
+    })
+
+    it("doesn't ink the plate on a skipped note", function() {
+      let el = renderPage()
+      click(buttonNamed(el, "Begin"))
+
+      flushSync(() => page.skipCurrentNote())
+      expect(smudge(el).dataset.smudge).toEqual("off")
+      expect(page.state.smudges).toEqual(0)
+    })
+
+    it("smudges in scroll mode too, without scrolling the head column past the hit line", function() {
+      window.localStorage.setItem(DRILL_STORAGE_KEY, JSON.stringify({mode: "scroll"}))
+      let el = renderPage()
+      expect(page.state.mode).toEqual("scroll")
+      click(buttonNamed(el, "Begin"))
+
+      let column = page.state.notes.currentColumn()
+      play([WRONG_NOTE])
+      expect(smudge(el).dataset.smudge).toEqual("on")
+      expect(page.state.notes.currentColumn()).toEqual(column)
+
+      play(page.state.notes.currentColumn())
+      expect(page.state.notes.currentColumn()).not.toEqual(column)
+    })
+
+    it("smudges the chord staff", function() {
+      window.localStorage.setItem(DRILL_STORAGE_KEY, JSON.stringify({staff: "chord", generator: "random"}))
+      let el = renderPage()
+      click(buttonNamed(el, "Begin"))
+
+      press(WRONG_NOTE)
+      release(WRONG_NOTE)
+      expect(smudge(el).dataset.smudge).toEqual("on")
+      let headRect = page.staff.headElements()[0].getBoundingClientRect()
+      let layer = layerRect(el)
+      expect(Math.abs(parseFloat(smudge(el).style.left) -
+        ((headRect.left + headRect.right) / 2 - layer.left))).toBeLessThan(1)
+    })
+
+    it("smudges the grand staff at the same horizontal position on both staves", function() {
+      window.localStorage.setItem(DRILL_STORAGE_KEY, JSON.stringify({staff: "grand"}))
+      let el = renderPage()
+      click(buttonNamed(el, "Begin"))
+
+      play([WRONG_NOTE])
+      let heads = page.staff.headElements()
+      // located, so the same-position check below isn't vacuous: an empty
+      // return would leave the smudge on the staff wrapper instead
+      expect(heads.length).toBeGreaterThan(0)
+      let lefts = new Set(heads.map(h => h.getBoundingClientRect().left))
+      expect(lefts.size).toBeLessThan(2)
+      expect(smudge(el).dataset.smudge).toEqual("on")
+    })
+
+    it("smudges the engine card's head column on a wrong note, keeping its missed mark", async function() {
+      let {piece} = await importMusicXMLPiece("piece.musicxml", reverieOpening(), store)
+      window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+        piece: piece.id, startMeasure: 2, endMeasure: 4, hand: BOTH_HANDS, measuresPerCard: "all",
+      }))
+
+      let el = renderPage(ScorePage)
+      await waitFor(() => el.querySelector(`[data-score-card] .${MARK_CLASSES.current}`),
+        "the engine card")
+
+      click(buttonNamed(el, "Begin"))
+      let headBefore = [...el.querySelectorAll(`[data-score-card] .${MARK_CLASSES.current}`)]
+
+      press(WRONG_NOTE)
+      release(WRONG_NOTE)
+      expect(smudge(el).dataset.smudge).toEqual("on")
+      expect(headBefore.every(head => head.classList.contains(MARK_CLASSES.missed))).toBe(true)
+
+      let rects = headBefore.map(h => h.getBoundingClientRect())
+      let layer = layerRect(el)
+      let left = Math.min(...rects.map(r => r.left)) - layer.left
+      let right = Math.max(...rects.map(r => r.right)) - layer.left
+      let x = parseFloat(smudge(el).style.left)
+      expect(x).not.toBeLessThan(left)
+      expect(x).not.toBeGreaterThan(right)
+    })
+  })
+
+  // the session clock the summary card and progress screen will read, which
+  // activeSeconds can't stand in for (see NoteStats#sessionRecord)
+  describe("session summary record", function() {
+    it("carries the session clock from Begin to Rest", async function() {
+      jasmine.clock().install()
+      clockInstalled = true
+      jasmine.clock().mockDate(new Date(2026, 8, 14, 20))
+
+      let el = renderPage()
+      let tick = ms => flushSync(() => jasmine.clock().tick(ms))
+
+      click(buttonNamed(el, "Begin"))
+      play(page.state.notes.currentColumn())
+      tick(65000)
+      click(buttonNamed(el, "Rest"))
+
+      await waitFor(() => store.recentSessions().length == 1, "the session to be saved")
+      let record = store.recentSessions()[0]
+      expect(record.elapsedSeconds).toEqual(65)
+      expect(record.notesRead).toEqual(1)
+      expect(record.bestStreak).toEqual(1)
+    })
+
+    it("carries the clock of each session a mid-session Clear stats splits", async function() {
+      jasmine.clock().install()
+      clockInstalled = true
+      jasmine.clock().mockDate(new Date(2026, 8, 14, 20))
+
+      let el = renderPage()
+      let tick = ms => flushSync(() => jasmine.clock().tick(ms))
+
+      let lightbox
+      container.addEventListener(scopeEvent("showLightbox"), e => lightbox = e.detail[0])
+
+      click(buttonNamed(el, "Begin"))
+      play(page.state.notes.currentColumn())
+      tick(45000)
+
+      flushSync(() => el.querySelector("[role=button]").click())
+      let lightboxContainer = document.createElement("div")
+      document.body.appendChild(lightboxContainer)
+      let lightboxRoot = createRoot(lightboxContainer)
+      flushSync(() => lightboxRoot.render(lightbox))
+      click(buttonNamed(lightboxContainer, "Clear stats"))
+      flushSync(() => lightboxRoot.unmount())
+      lightboxContainer.remove()
+
+      tick(3000)
+      play(page.state.notes.currentColumn())
+      click(buttonNamed(el, "Rest"))
+
+      await waitFor(() => store.recentSessions().length == 2, "the two saved sessions")
+      expect(store.recentSessions().map(s => s.elapsedSeconds)).toEqual([45, 3])
+    })
+
+    it("carries the clock through a page hide while the session runs", async function() {
+      jasmine.clock().install()
+      clockInstalled = true
+      jasmine.clock().mockDate(new Date(2026, 8, 14, 20))
+
+      let el = renderPage()
+      let tick = ms => flushSync(() => jasmine.clock().tick(ms))
+
+      click(buttonNamed(el, "Begin"))
+      play(page.state.notes.currentColumn())
+      tick(10000)
+      let sessionId = page.state.stats.id
+      flushSync(() => window.dispatchEvent(new Event("pagehide")))
+      tick(20000)
+      click(buttonNamed(el, "Rest"))
+
+      // the page hide writes the session first and Rest writes over it, so
+      // waiting on the first write alone would race the second
+      await waitFor(() => store.recentSessions().some(session => session.elapsedSeconds == 30),
+        "the session Rest wrote over the page hide's")
+      let sessions = store.recentSessions()
+      expect(sessions.length).toEqual(1)
+      expect(sessions[0].id).toEqual(sessionId)
+      expect(sessions[0].elapsedSeconds).toEqual(30)
+    })
+  })
+
   describe("matching the notes played", function() {
     let press = note => flushSync(() => page.pressNote(note))
     let release = note => flushSync(() => page.releaseNote(note))
@@ -3427,6 +3669,40 @@ describe("sight reading page", function() {
       expect(page.state.stats.misses).toEqual(0)
       expect(page.state.notes).toBe(notesBefore)
       expect(await reviews()).toEqual([])
+    })
+
+    // nothing is detected here, so there is no judgement for the plate's
+    // gentle feedback states to react to (see PlateFeedback)
+    it("shows no plate feedback, at rest or running, and none on a self grade", async function() {
+      let el = await renderAcoustic({measuresPerCard: "2"})
+      expect(el.querySelector("[data-plate-feedback]")).toBe(null)
+
+      click(buttonNamed(el, "Begin"))
+      expect(el.querySelector("[data-plate-feedback]")).toBe(null)
+
+      played()
+      click(buttonLike(el, "Clean"))
+      await finished()
+      expect(el.querySelector("[data-plate-feedback]")).toBe(null)
+
+      for (let label of ["Elapsed", "Passes", "Clean"]) {
+        expect(statValue(el, label)).withContext(label).toBeDefined()
+      }
+    })
+
+    it("records the session clock through a graded acoustic pass", async function() {
+      let el = await renderAcoustic({measuresPerCard: "2"})
+      click(buttonNamed(el, "Begin"))
+
+      played(120000)
+      click(buttonLike(el, "Clean"))
+      await finished()
+
+      click(buttonNamed(el, "Rest"))
+      await waitFor(() => store.recentSessions().length == 1, "the session to be saved")
+      let record = store.recentSessions()[0]
+      expect(record.selfGraded).toEqual({passes: 1, clean: 1})
+      expect(record.elapsedSeconds).toEqual(120)
     })
 
     it("shows no grade row at rest, a note instead, and the four grade pills once Begin is pressed", async function() {
