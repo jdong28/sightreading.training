@@ -1474,6 +1474,47 @@ describe("ScoreCard", function() {
     await waitFor(() => renders == 3, {message: "a third draw of the first score"})
   })
 
+  it("settles the plate when a kept system overtakes a draw in flight", async function() {
+    let letCardDraw
+    let cardDrawing = new Promise(resolve => { letCardDraw = resolve })
+    let oneNote = () => {
+      let svg = document.createElementNS(SVG_NS, "svg")
+      let note = drawn(parseNote("C4"), 0)
+      svg.appendChild(note.el)
+      return {svg, notes: [note]}
+    }
+    let loadEngines = () => Promise.resolve({ENGINES: {osmd: {
+      renderSystem: async () => oneNote(),
+      renderCard: async () => {
+        await cardDrawing
+        return oneNote()
+      },
+    }}})
+    let base = {
+      musicXML: "<score-partwise/>", fromMeasure: 1, toMeasure: 1, hand: "both",
+      width: 600, columns: [column(["C4"], 0)], head: 0, loadEngines,
+    }
+    let busy = () => container.querySelector("[data-score-card]").getAttribute("aria-busy")
+
+    mountCard({...base, system: true})
+    await waitFor(() => card.result, {message: "the system"})
+    expect(busy()).toEqual("false")
+
+    // wait mode's card is still being drawn when scroll mode comes back to
+    // the kept system: the plate is settled by the drawing it hands back,
+    // not left waiting on the draw its own re-join overtook
+    rerenderCard({...base, system: false})
+    await waitFor(() => busy() == "true", {message: "the card's draw in flight"})
+
+    rerenderCard({...base, system: true})
+    expect(card.result).toBeTruthy()
+    expect(busy()).toEqual("false")
+
+    letCardDraw()
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(busy()).toEqual("false")
+  })
+
   it("draws a plate card afresh each time", async function() {
     let renders = 0
     let loadEngines = () => Promise.resolve({ENGINES: {osmd: {

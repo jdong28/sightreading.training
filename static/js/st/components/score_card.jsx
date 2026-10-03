@@ -30,10 +30,12 @@ let drawing = Promise.resolve()
 const KEPT_SYSTEMS = 3
 
 // what a system is drawn from, keyed so an equal-by-value staves array (the
-// page's handStaves cache hands back new arrays) still matches a kept one
+// page's handStaves cache hands back new arrays) still matches a kept one.
+// The score itself is left out: a kept system is only ever looked up or
+// inserted after the cache is filtered to the score it was drawn from
 function systemKey(props) {
-  let {engine, musicXML, measureStarts, fromMeasure, toMeasure, hand, staves} = props
-  return JSON.stringify({engine, musicXML, measureStarts, fromMeasure, toMeasure, hand, staves: staves ?? null})
+  let {engine, measureStarts, fromMeasure, toMeasure, hand, staves} = props
+  return JSON.stringify({engine, measureStarts, fromMeasure, toMeasure, hand, staves: staves ?? null})
 }
 
 // A deep, independent copy of a drawn system: OSMD's own "system" display is
@@ -147,9 +149,11 @@ export class ScoreCard extends React.Component {
     if (p.system) {
       let cached = this.systemCache.find(entry => entry.key == systemKey(p))
       if (cached) {
+        this.systemCache = [cached, ...this.systemCache.filter(entry => entry != cached)]
         this.result = cached.result
         let strip = this.stripRef.current
         if (strip) { strip.replaceChildren(cached.svg) }
+        this.setState({drawing: false})
         this.join()
         return Promise.resolve()
       }

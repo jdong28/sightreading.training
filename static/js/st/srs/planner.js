@@ -44,7 +44,7 @@
 // neither staff enough and the bar stays together. A piece without a staff per
 // hand never splits (handMeasures), nor does a session played with one hand,
 // nor a bar only one hand has notes in: taking the other off it would leave
-// the very same card. A drill that doesn't wait at each column doesn't split
+// the very same card. A drill the player grades themselves doesn't split
 // either (split), though the hands' items still tell the rest rule and the
 // sitting how the bar has gone.
 // The scaffold is the planner's alone: it is worked out from the items and
