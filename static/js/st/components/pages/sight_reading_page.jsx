@@ -7,6 +7,7 @@ import Keyboard, {KeyboardInput} from "st/components/keyboard"
 import StatsLightbox from "st/components/sight_reading/stats_lightbox"
 import DevMetricsPanel from "st/components/sight_reading/dev_metrics_panel"
 import SelfGradeRow from "st/components/sight_reading/self_grade_row"
+import SelfGradeReceipt from "st/components/sight_reading/self_grade_receipt"
 import PlateFeedback from "st/components/sight_reading/plate_feedback"
 import Hotkeys from "st/components/hotkeys"
 
@@ -37,7 +38,7 @@ import {
   currentKeySignature, currentDrillMode, currentScrollSpeed, currentScrollTempo, scoreKeySignature,
   storeGeneratorSettings, DRILL_STORAGE_KEY
 } from "st/generators"
-import {SELF_GRADES} from "st/srs/self_grade"
+import {SELF_GRADES, SELF_GRADE_FLASH_MS} from "st/srs/self_grade"
 import {SELF_ASPECTS} from "st/srs/records"
 import {AGAIN} from "st/srs/grade"
 
@@ -176,7 +177,9 @@ export const EXERCISES_PROGRAMME = {
   // A generator may also name what it plays (all optional): sectionLabel(),
   // the title's words for its measures; cardLabel(), the plate's for its
   // card; statusLine(), the status line while the session runs; caption(), a
-  // line under the staff after a pass through its card.
+  // line under the staff after a pass through its card; selfReceipt(), what
+  // a self-graded pass recorded (st/srs/self_grade), which replaces caption()
+  // in acoustic mode.
   // selfGrading, true to opt into acoustic mode (st/srs/self_grade) while the
   // instrument setting is acoustic: nothing is detected, the player plays
   // the card and grades the pass themself. This page ignores it.
@@ -251,7 +254,10 @@ export default class SightReadingPage extends React.Component {
     // the grade row of acoustic mode, which the grade hotkeys go through
     this.selfGradeRow = React.createRef()
 
-    // set while a self grade is being applied, see selfGrade
+    // the grade tapped, flashed for SELF_GRADE_FLASH_MS before it is written
+    // (see selfGrade/writeSelfGrade): {grade, opts, time, generator, timer}
+    this.pendingSelfGrade = null
+    // set while a self grade is being written, see writeSelfGrade
     this.grading = false
 
     // D4(c), the "Keep tempo" setting: whether anything has been played
@@ -335,6 +341,12 @@ export default class SightReadingPage extends React.Component {
       // drill does, so the grade row (keyed by it) starts fresh for the card
       // the refill puts up (see renderSelfGrade)
       cardSeq: 0,
+      // acoustic mode: the failing grade whose "Where?" the row has open, or
+      // null for the grade pills (see selfAsk)
+      selfAsking: null,
+      // acoustic mode: {grade, bars} being flashed before it is written (see
+      // selfGrade/writeSelfGrade), or null
+      selfRecorded: null,
 
       // bumped once per judgement (a wrong key or chord) to re-light the
       // plate's ink smudge (see PlateFeedback and countMiss)
@@ -697,7 +709,30 @@ export default class SightReadingPage extends React.Component {
       columns: card.columns,
       head,
       missed: self ? [] : this.state.engineMissed,
+      badges: self ? this.selfGradeBadges(card) : null,
     }
+  }
+
+  // Bar badges over the engine card while acoustic mode's "Where?" is open
+  // or its answer is being flashed (st/score_render/card_badges): one per
+  // bar the follow-up names, lit once the grade going to it is known
+  // (chosen, or every bar for Throughout). Null otherwise, including on the
+  // app staff's fallback, which never draws them (Q1 of the design report)
+  selfGradeBadges(card) {
+    let {selfAsking, selfRecorded} = this.state
+    if (selfAsking == null && selfRecorded?.bars === undefined) { return null }
+
+    let generator = this.currentNotesGenerator()
+    let followUp = generator.selfFollowUp && generator.selfFollowUp(AGAIN)
+    if (!followUp) { return null }
+
+    let chosen = selfRecorded ? selfRecorded.bars : undefined
+
+    return followUp.choices.filter(choice => choice.value).map(({value: [n]}) => ({
+      column: card.columnMeasures.findIndex(i => card.measures[i] == n),
+      label: `Bar ${n}`,
+      on: chosen === undefined ? false : (chosen ? chosen.includes(n) : true),
+    }))
   }
 
   componentDidMount() {
@@ -808,6 +843,13 @@ export default class SightReadingPage extends React.Component {
   // staff to fill it again from that same drill rather than build it afresh,
   // eg. once today's programme has a card to show
   refreshNoteList(keepGenerator=null) {
+    // a pending self grade would otherwise be lost: the generator it belongs
+    // to is about to be rebuilt (never the soft refresh after a grade or
+    // today's programme's own replan, which pass keepGenerator)
+    if (!keepGenerator) {
+      this.writeSelfGrade()
+    }
+
     let generator = this.state.currentGenerator
 
     let generatorSettings = {
@@ -883,8 +925,12 @@ export default class SightReadingPage extends React.Component {
     this.followHead()
 
     // the grade row of acoustic mode is keyed by this, so a rebuilt drill
-    // starts it fresh, as a graded pass does
-    return this.setState(state => ({ notes, droppedPitches, cardSeq: state.cardSeq + 1 }))
+    // starts it fresh, as a graded pass does; selfAsking/selfRecorded go with
+    // it, since the card they described is gone
+    return this.setState(state => ({
+      notes, droppedPitches, cardSeq: state.cardSeq + 1,
+      selfAsking: null, selfRecorded: null,
+    }))
   }
 
   // keeps the measurements of the staff wrapper up to date: its width,
@@ -1518,6 +1564,17 @@ export default class SightReadingPage extends React.Component {
   // before a note is played. Returns a promise settling once written, or
   // nothing when there was nothing to write
   recordSession() {
+    // a grade still flashing has to land before takePractice abandons the
+    // pass it belongs to, and before stats.sessionRecord counts the passes
+    this.writeSelfGrade()
+
+    // the pass a "Where?" question was asked of is abandoned below, so the
+    // question goes with it: Rest, Begin and Clear stats all leave the next
+    // sitting on the grade pills rather than a question nobody answered
+    if (!this.unmounted && this.state.selfAsking != null) {
+      this.setState({selfAsking: null, selfRecorded: null})
+    }
+
     let sectionPractice = this.takePractice()
 
     // a session already recorded at rest is left alone: recording it again
@@ -1703,27 +1760,59 @@ export default class SightReadingPage extends React.Component {
       generator && generator.selfGrade)
   }
 
-  // Ends the pass with the player's own grade (SelfGradeRow), in place of
-  // detection: tells the generator, the session stats, and refills the
-  // staff from the next card, the same path today's programme's ready uses.
-  // A pass takes one grade, and the deck moves on as it is written. That is
-  // kept by the row rather than here: the refill below remounts it (keyed by
-  // cardSeq), and it waits out SELF_GRADE_DWELL_MS after every change of what
-  // it shows, so a repeated tap or key press can't grade the card it moved on
-  // to. The flag only stops a call made while a grade is being applied, which
-  // nothing here does and only a caller of this method could.
+  // Opens ("Where?") or closes (change grade, grade null) the follow-up
+  // question for a failing grade, which SelfGradeRow asks before ending the
+  // pass: nothing is written or graded here, only what the row and the
+  // engine card's badges (see selfGradeBadges) show
+  selfAsk(grade) {
+    this.setState({selfAsking: grade})
+  }
+
+  // Begins ending the pass with the player's own grade (SelfGradeRow), in
+  // place of detection: shows the tapped pill recorded, with every other
+  // pill and tag disabled (the row's own doing, from state.selfRecorded),
+  // for SELF_GRADE_FLASH_MS, today's double-tap guard made visible. Only
+  // then does writeSelfGrade tell the generator and the session stats, and
+  // refill the staff from the next card, stamped with this tap's time. A
+  // pass takes one grade, and the deck moves on only as it is written, so a
+  // repeated tap or key press during the flash is dropped by the guard
+  // below, and once it before that by the row's own dwell.
   selfGrade(grade, opts={}) {
     let generator = this.currentNotesGenerator()
-    if (this.grading || !this.selfGraded() || !generator) { return }
+    if (this.pendingSelfGrade || !this.selfGraded() || !generator) { return }
 
+    let time = Date.now()
+    let timer = window.setTimeout(() => this.writeSelfGrade(), SELF_GRADE_FLASH_MS)
+    this.pendingSelfGrade = {grade, opts, time, generator, timer}
+    this.setState({selfRecorded: {grade, bars: opts.bars}})
+  }
+
+  // Writes the grade flashing, if any, through to the generator it belongs
+  // to and the session stats, then refills the staff from the next card.
+  // Called by the flash timer, and by every path that would otherwise lose a
+  // grade already given: recordSession (Rest, page leave, Clear stats and
+  // Begin) and a rebuilt drill (refreshNoteList, keepGenerator null). Drops
+  // the grade instead when the generator it belongs to is no longer the one
+  // on the staff, or acoustic mode has been switched off mid-flash: its
+  // practice goes through the usual abandoned-pass path (flushPractice)
+  // rather than being written as a detected pass.
+  writeSelfGrade() {
+    let pending = this.pendingSelfGrade
+    if (!pending || this.grading) { return }
+
+    window.clearTimeout(pending.timer)
     this.grading = true
     try {
-      let time = Date.now()
-      generator.selfGrade(grade, {...opts, sessionId: this.state.stats.id, time})
-      this.state.stats.selfGraded(grade, time)
-      this.refreshNoteList(generator)
+      this.pendingSelfGrade = null
+      if (pending.generator != this.currentNotesGenerator() || !this.selfGraded()) { return }
+
+      let time = pending.time
+      pending.generator.selfGrade(pending.grade, {...pending.opts, sessionId: this.state.stats.id, time})
+      this.state.stats.selfGraded(pending.grade, time)
+      if (!this.unmounted) { this.refreshNoteList(pending.generator) }
     } finally {
       this.grading = false
+      if (!this.unmounted) { this.setState({selfAsking: null, selfRecorded: null}) }
     }
   }
 
@@ -1890,8 +1979,11 @@ export default class SightReadingPage extends React.Component {
     </Plate>
   }
 
-  // the generator's word on the card just played, eg. when it comes back
+  // the generator's word on the card just played, eg. when it comes back;
+  // null in acoustic mode, where the receipt (renderSelfGrade) says it instead
   renderCaption() {
+    if (this.selfGraded()) { return null }
+
     let generator = this.currentNotesGenerator()
     let caption = this.state.session && generator && generator.caption && generator.caption()
     return caption ? <p className={styles.plate_note} data-caption>{caption}</p> : null
@@ -1935,10 +2027,12 @@ export default class SightReadingPage extends React.Component {
     return note ? <p className={styles.plate_note} data-engine-note>{note}</p> : null
   }
 
-  // the grade row (acoustic mode) between the staff plate and the transport,
-  // shown only while a card is up for grading, else the at-rest note. Keyed
-  // by cardSeq so it starts fresh (no stale "What slipped?" tags or a
-  // pending "Where?" question) for every new pass, including a looping card
+  // the receipt and the grade row (acoustic mode) between the staff plate
+  // and the transport, else the at-rest note. The receipt is up for the
+  // whole session, even once the programme has no more cards, so the last
+  // pass's receipt stays visible; the row (keyed by cardSeq, so it starts
+  // fresh for every new pass, including a looping card: no stale "What
+  // slipped?" tags or a pending "Where?" question) only while there is one
   renderSelfGrade() {
     if (!this.selfGraded()) { return null }
 
@@ -1949,18 +2043,22 @@ export default class SightReadingPage extends React.Component {
     }
 
     let generator = this.currentNotesGenerator()
-    if (!generator.currentCard()) { return null }
-
     let followUp = generator.selfFollowUp ? generator.selfFollowUp(AGAIN) : null
 
-    return <SelfGradeRow
-      ref={this.selfGradeRow}
-      key={this.state.cardSeq}
-      grades={SELF_GRADES}
-      followUp={followUp}
-      aspects={SELF_ASPECTS}
-      onGrade={this._onSelfGrade ||= (grade, opts) => this.selfGrade(grade, opts)}
-    />
+    return <>
+      <SelfGradeReceipt receipt={generator.selfReceipt ? generator.selfReceipt() : null} />
+      {generator.currentCard() && <SelfGradeRow
+        ref={this.selfGradeRow}
+        key={this.state.cardSeq}
+        grades={SELF_GRADES}
+        followUp={followUp}
+        aspects={SELF_ASPECTS}
+        asking={this.state.selfAsking}
+        recorded={this.state.selfRecorded}
+        onAsk={this._onSelfAsk ||= grade => this.selfAsk(grade)}
+        onGrade={this._onSelfGrade ||= (grade, opts) => this.selfGrade(grade, opts)}
+      />}
+    </>
   }
 
   renderTransport() {

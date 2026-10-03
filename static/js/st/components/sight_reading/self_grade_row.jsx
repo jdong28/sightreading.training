@@ -1,9 +1,10 @@
 import * as React from "react"
 import * as types from "prop-types"
+import classNames from "classnames"
 
 import {Pill} from "st/components/salon"
 import {AGAIN, HARD} from "st/srs/grade"
-import {SELF_GRADE_DWELL_MS} from "st/srs/self_grade"
+import {SELF_GRADE_DWELL_MS, selfWord} from "st/srs/self_grade"
 
 import styles from "./self_grade_row.module.css"
 
@@ -18,10 +19,19 @@ import styles from "./self_grade_row.module.css"
 // every pass, so this component keeps no state across one (see its key in
 // SightReadingPage#renderSelfGrade).
 //
+// The row is controlled: the page is the authority on whether "Where?" is
+// open (asking) and on the grade being flashed before it is written
+// (recorded), since it needs both to draw the card's bar badges and to write
+// the grade once the flash ends. A grade() or chooseWhere() while recorded is
+// set is ignored outright (the pass has already ended), and so is a grade
+// given while the question is open, which only its own chips answer.
+//
 // Nothing is graded within SELF_GRADE_DWELL_MS of the row changing what it
 // shows: a pass can't have been played in that time, and the second tap of a
 // double tap would otherwise answer for whatever took the place of what was
-// tapped (the next card's pills, or the chip the question put under the pill).
+// tapped (the next card's pills, or the chip the question put under the
+// pill). Change grade re-arms the dwell rather than answering for whatever
+// the pills showed before it.
 export default class SelfGradeRow extends React.Component {
   static propTypes = {
     grades: types.array.isRequired,
@@ -31,15 +41,21 @@ export default class SelfGradeRow extends React.Component {
     // the optional "What slipped?" tags offered with the grades, SELF_ASPECTS
     // (st/srs/records); left out to offer none
     aspects: types.array,
+    // the failing grade whose "Where?" is open, or null for the grade pills
+    asking: types.number,
+    // {grade, bars} being flashed before it is written, or null
+    recorded: types.object,
+    onAsk: types.func.isRequired,
     onGrade: types.func.isRequired,
   }
 
   constructor(props) {
     super(props)
-    this.state = {pendingGrade: null, slipped: []}
+    this.state = {slipped: []}
     // when the row last changed what it shows: mounted with the card (it is
     // keyed by it) and set again as the "Where?" question takes the pills'
-    // place, the one time every way in is measured from
+    // place, or change grade takes it back, the one time every way in is
+    // measured from
     this.shownAt = Date.now()
   }
 
@@ -57,13 +73,15 @@ export default class SelfGradeRow extends React.Component {
   }
 
   // the one path a grade takes, from a pill or the page's hotkeys: a grade
-  // with a "Where?" question waits for the answer rather than ending the pass
+  // with a "Where?" question asks it rather than ending the pass. The
+  // question's own chips answer it from there, so a grade given while it is
+  // open (only a hotkey can, the pills are gone) is ignored
   grade(grade) {
-    if (this.state.pendingGrade != null || !this.settled()) { return }
+    if (this.props.recorded || this.props.asking != null || !this.settled()) { return }
 
     if (this.props.followUp && (grade == AGAIN || grade == HARD)) {
       this.shownAt = Date.now()
-      this.setState({pendingGrade: grade})
+      this.props.onAsk(grade)
       return
     }
 
@@ -72,49 +90,72 @@ export default class SelfGradeRow extends React.Component {
 
   chooseWhere(value) {
     if (!this.settled()) { return }
+    this.props.onGrade(this.props.asking, {bars: value, slipped: this.state.slipped})
+  }
 
-    this.props.onGrade(this.state.pendingGrade, {bars: value, slipped: this.state.slipped})
+  // back to the pills, nothing graded, the tags kept: the question's own
+  // "‹ change grade" link, the one way out of it
+  changeGrade() {
+    if (this.props.recorded) { return }
+    this.props.onAsk(null)
+    this.shownAt = Date.now()
   }
 
   render() {
-    let {followUp, aspects} = this.props
-    let {pendingGrade} = this.state
+    let {asking, followUp, aspects, recorded} = this.props
 
-    if (pendingGrade != null && followUp) {
-      return this.renderFollowUp(followUp)
+    if (asking != null && followUp) {
+      return this.renderFollowUp(asking, followUp, recorded)
     }
 
     return <div className={styles.row} data-self-grade>
+      {aspects && aspects.length > 0 && this.renderAspects(aspects, recorded)}
       <div className={styles.grades}>
-        {this.props.grades.map(grade => this.renderGrade(grade))}
+        {this.props.grades.map(grade => this.renderGrade(grade, recorded))}
       </div>
-      {aspects && aspects.length > 0 && this.renderAspects(aspects)}
     </div>
   }
 
-  renderGrade({key, word, grade, definition}) {
+  renderGrade({key, word, grade, definition}, recorded) {
+    let isRecorded = !!recorded && recorded.grade == grade
     return <Pill
       key={grade}
       variant="choice"
-      className={styles.grade_pill}
+      selected={isRecorded}
+      disabled={!!recorded}
+      className={classNames(styles.grade_pill, {[styles.recorded]: isRecorded})}
       onClick={e => {
         e.currentTarget.blur()
         this.grade(grade)
       }}>
       <span className={styles.grade_key} aria-hidden="true">{key}</span>
-      <span className={styles.grade_word}>{word}</span>
+      <span className={styles.grade_word}>{isRecorded ? "✓ " : ""}{word}</span>
       <span className={styles.grade_definition}>{definition}</span>
     </Pill>
   }
 
-  renderFollowUp({prompt, choices}) {
+  renderFollowUp(asking, followUp, recorded) {
+    let chosen = value => !!recorded && JSON.stringify(value) === JSON.stringify(recorded.bars ?? null)
+
     return <div className={styles.row} data-self-grade-followup>
-      <p className={styles.prompt}>{prompt}</p>
+      <p className={styles.prompt}>{selfWord(asking)} — where did it go wrong?</p>
+      <button
+        type="button"
+        className={styles.change_grade}
+        disabled={!!recorded}
+        onClick={e => {
+          e.currentTarget.blur()
+          this.changeGrade()
+        }}>
+        ‹ change grade
+      </button>
       <div className={styles.chips}>
-        {choices.map(choice =>
+        {followUp.choices.map(choice =>
           <Pill
             key={choice.label}
             variant="choice"
+            selected={chosen(choice.value)}
+            disabled={!!recorded}
             className={styles.chip}
             onClick={e => {
               e.currentTarget.blur()
@@ -126,16 +167,17 @@ export default class SelfGradeRow extends React.Component {
     </div>
   }
 
-  renderAspects(aspects) {
+  renderAspects(aspects, recorded) {
     let {slipped} = this.state
     return <div className={styles.aspects}>
-      <span className={styles.aspects_label}>What slipped?</span>
+      <span className={styles.aspects_label}>Before you grade, anything slip? (optional)</span>
       <div className={styles.chips}>
         {aspects.map(aspect =>
           <Pill
             key={aspect}
             variant="choice"
             selected={slipped.includes(aspect)}
+            disabled={!!recorded}
             className={styles.chip}
             onClick={e => {
               e.currentTarget.blur()

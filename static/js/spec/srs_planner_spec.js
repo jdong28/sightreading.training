@@ -1383,7 +1383,7 @@ describe("today's programme on the staff", function() {
   // acoustic mode (st/srs/self_grade): the hand scaffold is turned off
   // outright while it is on (Q3), rather than left active like scroll mode
   describe("self-graded passes", function() {
-    it("plans the next entry from a self grade, captioned with the grade's word", async function() {
+    it("plans the next entry from a self grade, with no caption but a receipt of when the bar returns", async function() {
       let {deck, generator} = await generatorFor(1)
       expect(deck.entry).toEqual(jasmine.objectContaining({measure: 0, hand: "both"}))
 
@@ -1395,8 +1395,79 @@ describe("today's programme on the staff", function() {
 
       // planned from the item the self grade wrote
       expect(deck.entry).toEqual(jasmine.objectContaining({measure: 1}))
-      expect(store.item(`${piece.id}:both:0-0`).lastGrade).toEqual(GOOD)
-      expect(generator.caption()).toMatch(/^Clean · /)
+      let item = store.item(`${piece.id}:both:0-0`)
+      expect(item.lastGrade).toEqual(GOOD)
+      expect(generator.caption()).toBe(null)
+      expect(generator.selfReceipt().when).toEqual({measure: 0, words: entryCaption(item, time)})
+    })
+
+    it("names the bar Where? named, not the entry bar's own schedule", async function() {
+      await writeLadderBar(ladderBar(1, [AGAIN], time - 30 * MINUTE))
+      await writeLadderBar(ladderBar(2, [GOOD], time - 3 * DAY, {state: "review", due: time + 20 * DAY, s: 30}))
+
+      let {deck, generator} = await generatorFor(2)
+      expect(deck.entry).toEqual(jasmine.objectContaining({measure: 1}))
+      expect(generator.currentCard().measures).toEqual([1, 2])
+
+      generator.setDrill(() => ({mode: "self"}))
+      time += 1000
+      generator.selfGrade(HARD, {bars: [2]})
+      await generator.finishing
+
+      let bar2 = store.item(`${piece.id}:both:2-2`)
+      let words = entryCaption(bar2, time)
+      expect(words).not.toEqual("again in a moment")
+      expect(generator.selfReceipt().when).toEqual({measure: 2, words})
+    })
+
+    // the receipt keeps to the grade: a bar the off-schedule rule left to the
+    // totals alone has no schedule this grade set, so it is named without one
+    it("says nothing of the schedule of a bar the grade only practised", async function() {
+      // bar 1 is a rung come due, the entry; bar 2, on its ladder a minute
+      // ago, is the rest of its card and its next rung isn't due yet
+      await writeLadderBar(ladderBar(1, [AGAIN], time - 30 * MINUTE))
+      await writeLadderBar(ladderBar(2, [GOOD], time - MINUTE))
+
+      let {deck, generator} = await generatorFor(2)
+      expect(deck.entry).toEqual(jasmine.objectContaining({measure: 1}))
+      expect(generator.currentCard().measures).toEqual([1, 2])
+
+      generator.setDrill(() => ({mode: "self"}))
+      let before = store.item(`${piece.id}:both:2-2`)
+      expect(before.state).toEqual("learning")
+      expect(before.due).toBeGreaterThan(time)
+
+      time += 1000
+      generator.selfGrade(HARD, {bars: [2]})
+      await generator.finishing
+
+      // bar 2's rung isn't due and the pass didn't fail it, so it took the
+      // practice alone: its ladder is untouched, and the receipt says nothing
+      // of a schedule the grade never set
+      let after = store.item(`${piece.id}:both:2-2`)
+      expect([after.due, after.state, after.lastGrade])
+        .toEqual([before.due, before.state, before.lastGrade])
+      expect(after.attempts).toEqual(before.attempts + 1)
+      expect(generator.selfReceipt()).toEqual(jasmine.objectContaining({bars: [2], when: null}))
+    })
+
+    it("names a bar resting once the grade rests it, not when it returns", async function() {
+      let at = time - MINUTE
+      await writeLadderBar(ladderBar(0, [GOOD], at, {state: "review", due: time + 20 * DAY}))
+      await writeLadderBar(ladderBar(1, [GOOD], at))
+      await writeLadderBar(ladderBar(2, [AGAIN, AGAIN], at))
+      time += 2 * MINUTE
+
+      let {deck, generator} = await generatorFor(2)
+      generator.setDrill(() => ({mode: "self"}))
+      expect(generator.currentCard().measures).toEqual([1, 2])
+
+      time += 1000
+      generator.selfGrade(AGAIN, {bars: [2]})
+      await generator.finishing
+
+      expect(planState(deck.planInput()).resting.has(2)).toBe(true)
+      expect(generator.selfReceipt().when).toEqual({measure: 2, words: "rests until your next sitting"})
     })
 
     it("never splits a bar from self-graded failures, which stay on its hands-together ladder", async function() {

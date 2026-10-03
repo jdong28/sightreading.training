@@ -11,6 +11,7 @@ import {
   scrollTrack, trackX, scrollAdvance, scrollOffset, SCROLL_WAIT, MIN_SCROLL_ADVANCE, JUMP_LEAD_IN,
 } from "st/score_render/card_scroll"
 import {prepareCard} from "st/score_render/card_source"
+import {placeBadges} from "st/score_render/card_badges"
 import {loadScoreEngines} from "st/score_render/load"
 import {STAVES, pieceSectionMeasures, BOTH_HANDS, RIGHT_HAND, LEFT_HAND, SHEET_MUSIC_STORAGE_KEY} from "st/data"
 import {sectionCard} from "st/measure_cards"
@@ -53,6 +54,102 @@ let waitFor = async (test, {timeout=15000, message="the condition"}={}) => {
     await new Promise(resolve => setTimeout(resolve, 20))
   }
 }
+
+describe("card badges", function() {
+  let rect = (left, top, right, bottom) => ({left, top, right, bottom})
+
+  it("places a badge over each bar, left to right, tinted over its span", function() {
+    let badges = [{column: 0, label: "Bar 1", on: false}, {column: 2, label: "Bar 2", on: true}]
+    let columnRects = [
+      [rect(0, 10, 20, 30)],
+      [],
+      [rect(100, 5, 120, 30)],
+      [rect(140, 10, 160, 35)],
+    ]
+
+    let placements = placeBadges(badges, columnRects)
+    expect(placements).toEqual([
+      {
+        label: "Bar 1", on: false, left: 0, top: 0,
+        tint: {left: 0, top: -1, width: 24, height: 42},
+      },
+      {
+        label: "Bar 2", on: true, left: 96, top: 0,
+        tint: {left: 96, top: -1, width: 68, height: 42},
+      },
+    ])
+  })
+
+  // joinCard leaves a column the engine didn't draw without heads, so a bar
+  // is spanned by the heads it has, not by the slots of its first and last
+  // columns
+  it("spans a bar by its own drawn heads, whichever of its columns were joined", function() {
+    let badges = [{column: 0, label: "Bar 1", on: false}, {column: 2, label: "Bar 2", on: true}]
+    let columnRects = [
+      [rect(0, 10, 20, 30)],
+      [rect(40, 10, 60, 30)],
+      [],
+      [rect(140, 10, 160, 30)],
+    ]
+
+    let placements = placeBadges(badges, columnRects)
+    expect(placements.map(p => [p.left, p.tint.left, p.tint.width])).toEqual([
+      [0, 0, 64],
+      [136, 136, 28],
+    ])
+  })
+
+  // a bar the engine drew nothing of has no span of its own, and must not
+  // land at the card's left edge nor read as the start of a new row
+  it("sits a bar without drawn heads at the end of the bar before it, in the same row", function() {
+    let badges = [{column: 0, label: "Bar 3", on: false}, {column: 2, label: "Bar 4", on: true}]
+    let columnRects = [
+      [rect(100, 10, 120, 30)],
+      [rect(140, 10, 160, 30)],
+      [],
+      [],
+    ]
+
+    let placements = placeBadges(badges, columnRects)
+    expect(placements.map(p => [p.left, p.top, p.tint.left, p.tint.width])).toEqual([
+      [96, 0, 96, 68],
+      [164, 0, 164, 0],
+    ])
+  })
+
+  it("wraps to a new row once a bar's left is less than the previous bar's, its own top below the first row's bottom", function() {
+    let badges = [
+      {column: 0, label: "Bar 1", on: false},
+      {column: 1, label: "Bar 2", on: false},
+      {column: 2, label: "Bar 3", on: false},
+    ]
+    let columnRects = [
+      [rect(500, 10, 520, 30)],
+      [rect(0, 100, 20, 120)],
+      [rect(50, 100, 70, 120)],
+    ]
+
+    let placements = placeBadges(badges, columnRects)
+    expect(placements).toEqual([
+      {
+        label: "Bar 1", on: false, left: 496, top: 0,
+        tint: {left: 496, top: 4, width: 28, height: 32},
+      },
+      {
+        label: "Bar 2", on: false, left: 0, top: 54,
+        tint: {left: 0, top: 94, width: 24, height: 32},
+      },
+      {
+        label: "Bar 3", on: false, left: 46, top: 54,
+        tint: {left: 46, top: 94, width: 28, height: 32},
+      },
+    ])
+  })
+
+  it("places nothing without any badges", function() {
+    expect(placeBadges([], [[rect(0, 0, 10, 10)]])).toEqual([])
+  })
+})
 
 describe("card join", function() {
   it("finds each column's notes among the drawn notes by onset and pitch", function() {
@@ -1390,6 +1487,95 @@ describe("score page engine card", function() {
 
   it("is the score page's own programme", function() {
     expect(SCORE_PROGRAMME.engine).toEqual("osmd")
+  })
+
+  // acoustic mode's "Where?" (SelfGradeRow, st/srs/self_grade): bar badges
+  // over the engine-drawn card, see st/score_render/card_badges
+  describe("acoustic mode's bar badges", function() {
+    let click = button => flushSync(() => button.click())
+    let buttonLike = (el, text) => [...el.querySelectorAll("button")].find(b => b.textContent.includes(text))
+    let exactButton = (el, text) => [...el.querySelectorAll("button")].find(b => b.textContent.trim() == text)
+    let engineDrawn = () => waitFor(() => container.querySelector("[data-score-card] svg"),
+      {message: "the engine card"})
+    let badges = () => [...container.querySelectorAll("[data-bar-badge]")]
+    let tints = () => [...container.querySelectorAll("[data-bar-tint]")]
+    // the grade row's own dwell (SELF_GRADE_DWELL_MS) guards a tap or chip
+    // choice sooner than this after it last changed what it shows; this file
+    // uses no fake clock, so a real wait stands in for st/srs/self_grade's played()
+    let wait = ms => new Promise(resolve => setTimeout(resolve, ms))
+
+    it("shows a badge per bar while Where? is open, lights and tints the chosen one alone, and clears once the grade is written", async function() {
+      await drillPiece(reverieOpening(), {startMeasure: 2, endMeasure: 3, measuresPerCard: "2"})
+      let el = renderScorePage({acoustic: true})
+      await engineDrawn()
+
+      flushSync(() => page.beginSession())
+      await wait(600)
+      click(buttonLike(el, "Stumbled"))
+
+      let shown = badges()
+      expect(shown.map(b => b.textContent)).toEqual(["Bar 2", "Bar 3"])
+      expect(shown.every(b => b.closest("[aria-hidden]"))).toBe(true)
+      expect(shown[0].getBoundingClientRect().left).toBeLessThan(shown[1].getBoundingClientRect().left)
+      expect(shown.some(b => b.className.includes("bar_badge_on"))).toBe(false)
+      // nothing is tinted while no bar has the grade yet
+      expect(tints().length).toEqual(0)
+
+      await wait(600)
+      click(exactButton(el, "Bar 3"))
+      let chosen = badges()
+      expect(chosen[1].className).toContain("bar_badge_on")
+      expect(chosen[0].className).not.toContain("bar_badge_on")
+
+      // only the chosen bar is tinted, over its own span
+      let tinted = tints()
+      expect(tinted.length).toEqual(1)
+      expect(tinted[0].getAttribute("data-bar-tint")).toEqual("1")
+      expect(parseFloat(tinted[0].style.left)).toBeCloseTo(parseFloat(chosen[1].style.left), 3)
+      expect(parseFloat(tinted[0].style.width)).toBeGreaterThan(0)
+
+      flushSync(() => page.writeSelfGrade())
+      await page.state.notes.generator.finishing
+      flushSync(() => {})
+      expect(badges().length).toEqual(0)
+      expect(tints().length).toEqual(0)
+    })
+
+    // the overlay is placed from the drawn heads, so a redraw (a resize,
+    // fullscreen) must place it again rather than leave it hidden
+    it("places the badges again once the card has been redrawn under the question", async function() {
+      await drillPiece(reverieOpening(), {startMeasure: 2, endMeasure: 3, measuresPerCard: "2"})
+      let el = renderScorePage({acoustic: true})
+      await engineDrawn()
+
+      flushSync(() => page.beginSession())
+      await wait(600)
+      click(buttonLike(el, "Stumbled"))
+
+      let overlay = badges()[0].closest("[aria-hidden]")
+      expect(overlay.style.display).toEqual("block")
+
+      // the plate narrows (fullscreen, a rotation: the page's only width
+      // input, see SightReadingPage#measureStaffWrapper), so the card is
+      // drawn again under the question
+      flushSync(() => page.setState({staffWidth: page.state.staffWidth - 140}))
+      expect(overlay.style.display).toEqual("none")
+
+      await waitFor(() => overlay.style.display == "block", {timeout: 2000, message: "the badges placed again"})
+      expect(badges().map(b => b.textContent)).toEqual(["Bar 2", "Bar 3"])
+      expect(badges().every(b => parseFloat(b.style.left) >= 0)).toBe(true)
+      expect(badges()[0].getBoundingClientRect().left)
+        .toBeLessThan(badges()[1].getBoundingClientRect().left)
+    })
+
+    it("shows no badges on the app staff's fallback", async function() {
+      await drillPiece(reverieOpening(), {startMeasure: 2, endMeasure: 3, measuresPerCard: "2"})
+      let el = renderScorePage({acoustic: true, programme: {...SCORE_PROGRAMME, engine: null}})
+      flushSync(() => page.beginSession())
+      await wait(600)
+      click(buttonLike(el, "Stumbled"))
+      expect(badges().length).toEqual(0)
+    })
   })
 })
 
