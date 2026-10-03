@@ -122,14 +122,18 @@ def _column_fill(black, y0, y1):
     return wob.mean(axis=0)
 
 
-def _real_content_before(heads, x, space):
-    """True when the heads positioned before x are spread wide enough to
-    be genuine, separate notes rather than one clef glyph's artifacts (a
-    treble clef's loops can read as one or two small blobs, but they
-    cluster within about a space of each other, far narrower than
-    distinct notes a measure wide)."""
-    xs = [h["x"] for h in heads if h["x"] < x]
+def _real_content_between(heads, lo, hi, space):
+    """True when the heads positioned in (lo, hi) are spread wide enough
+    to be genuine, separate notes rather than one glyph's artifacts (a
+    clef's loops, a key signature's accidentals, or a brace's curve can
+    each read as a stray small blob, clustering within about a space of
+    each other -- far narrower than distinct notes a measure wide)."""
+    xs = [h["x"] for h in heads if lo < h["x"] < hi]
     return len(xs) >= 2 and (max(xs) - min(xs)) > 1.5 * space
+
+
+def _real_content_before(heads, x, space):
+    return _real_content_between(heads, float("-inf"), x, space)
 
 
 def _head_touches(heads, x0, x1, space):
@@ -217,9 +221,9 @@ def barlines(black, system, heads_in_system=None, min_fill=0.9, min_gap_fill=0.9
 
     if len(out) >= 2:
         a, b = out[0], out[1]
-        no_heads_between = not any(a["x1"] < h["x"] < b["x0"] for h in heads_in_system)
+        no_notes_between = not _real_content_between(heads_in_system, a["x1"], b["x0"], space)
         b_width = b["x1"] - b["x0"] + 1
-        if no_heads_between and b_width > 0.4 * space:
+        if no_notes_between and b_width > 0.4 * space:
             out = out[1:]  # a's "bar" was really the header before a start-repeat
     return out
 

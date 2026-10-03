@@ -98,7 +98,7 @@ def _small_heads(filled, clean, core, space):
         sub = labels[sl] == i
         h = sl[0].stop - sl[0].start
         w = sl[1].stop - sl[1].start
-        if not (0.5 * space <= w <= 0.8 * space and 0.4 * space <= h <= 0.65 * space):
+        if not (0.5 * space <= w <= 1.0 * space and 0.4 * space <= h <= 0.85 * space):
             continue
         hollow = (filled[sl] & ~clean[sl] & sub).sum() > 0.15 * sub.sum()
         ys, xs = np.nonzero(sub)
