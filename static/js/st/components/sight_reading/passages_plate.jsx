@@ -272,7 +272,7 @@ export class PassagesPlate extends React.Component {
                 {romanNumeral(flag.num)}
               </span>
               <span className={styles.list_title}>{flag.title}</span>
-              <span className={styles.list_bars}>{`${flag.start}–${flag.end}`}</span>
+              <span className={styles.list_bars}>{barsHeading(flag.start, flag.end)}</span>
             </button>
           </li>)}
       </ul>

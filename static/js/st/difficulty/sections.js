@@ -316,7 +316,7 @@ function buildRuns(scored, threshold) {
 
 // finds the flagged passages of an already-scored piece (see scoreBars).
 // {repeats}: fingerprints.exactRepeats(fingerprint(song)), measure index ->
-// earlier measure index, for merging exact repeats (decision 7).
+// earlier measure index, for merging exact repeats.
 export function findPassages(scored, {repeats} = {}) {
   let notedBars = scored.filter(bar => bar.density.notes > 0)
   if (notedBars.length < MIN_ANALYSIS_BARS) { return [] }
@@ -379,7 +379,7 @@ function materialKey(passage, repeats) {
   return out.join(",")
 }
 
-// repeated material is flagged once (decision 7): a flagged passage that is
+// repeated material is flagged once: a flagged passage that is
 // an exact copy of an earlier flagged one — the same bars, in the same order
 // — is dropped and its range kept on that passage as alsoAt. The match is on
 // the material, never on where it was first written, so the first statement

@@ -1803,6 +1803,48 @@ describe("ScoreCard", function() {
     expect(marks()).toEqual([[MARK_CLASSES.current], [], [], []])
   })
 
+  it("shades a kept system it re-attaches rather than drawing again", async function() {
+    let renders = 0
+    let measuresFor = {
+      "1-2": [
+        {index: 0, number: 1, box: {x: 0, y: 0, width: 50, height: 40}},
+        {index: 1, number: 2, box: {x: 50, y: 0, width: 50, height: 40}},
+      ],
+      "3-3": [{index: 2, number: 3, box: {x: 0, y: 0, width: 50, height: 40}}],
+    }
+    let loadEngines = () => Promise.resolve({ENGINES: {osmd: {
+      renderSystem: async ({fromMeasure, toMeasure}) => {
+        renders++
+        let svg = document.createElementNS(SVG_NS, "svg")
+        svg.appendChild(document.createElementNS(SVG_NS, "rect"))
+        let note = drawn(parseNote("C4"), 0)
+        svg.appendChild(note.el)
+        return {svg, notes: [note], measures: measuresFor[`${fromMeasure}-${toMeasure}`]}
+      },
+    }}})
+    let base = {
+      musicXML: "<score-partwise/>", measureStarts: [0, 4, 8], hand: "both", width: 600,
+      system: true, overview: true, loadEngines,
+    }
+    let shade = on => [{id: "a", from: 1, to: 2, level: 3, on, label: "I"}]
+    let shaded = () => [...container.querySelectorAll("rect[data-shade]")]
+      .map(el => el.getAttribute("data-shade"))
+
+    mountCard({...base, fromMeasure: 1, toMeasure: 2, shades: shade(false)})
+    await waitFor(() => shaded().length, {message: "the first system's shade"})
+
+    rerenderCard({...base, fromMeasure: 3, toMeasure: 3, shades: shade(false)})
+    await waitFor(() => renders == 2, {message: "the second system"})
+
+    // back to the kept system, then restyled: its measures came with the
+    // copy, so the shade is laid out over them without a redraw
+    rerenderCard({...base, fromMeasure: 1, toMeasure: 2, shades: shade(false)})
+    expect(renders).toEqual(2)
+    rerenderCard({...base, fromMeasure: 1, toMeasure: 2, shades: shade(true)})
+    expect(renders).toEqual(2)
+    expect(shaded()).toEqual(["a"])
+  })
+
   it("draws a system again once its score changes", async function() {
     let renders = 0
     let loadEngines = () => Promise.resolve({ENGINES: {osmd: {

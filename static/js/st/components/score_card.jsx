@@ -49,12 +49,12 @@ function systemKey(props) {
 // elements a render hands back are only good until the engine draws again,
 // even for an unrelated card. A kept system must own a copy nothing later
 // reuses or mutates
-function cloneResult({svg, notes}) {
+function cloneResult({svg, notes, measures}) {
   let originals = [...svg.querySelectorAll("*")]
   let clone = svg.cloneNode(true)
   let copies = clone.querySelectorAll("*")
   let indexOf = new Map(originals.map((el, idx) => [el, idx]))
-  return {svg: clone, notes: notes.map(note => ({...note, el: copies[indexOf.get(note.el)]}))}
+  return {svg: clone, notes: notes.map(note => ({...note, el: copies[indexOf.get(note.el)]})), measures}
 }
 
 const SVG_NS = "http://www.w3.org/2000/svg"
@@ -64,14 +64,12 @@ const SVG_NS = "http://www.w3.org/2000/svg"
 const DATA_SHADE = "data-shade"
 
 // the drawn svg's own size in CSS pixels, the space CardMeasure boxes are
-// measured in: its width/height attributes when it has them (both engines
-// set them), else its current rendered size
+// measured in: its width/height attributes, which both engines set
 function naturalSize(svg) {
-  let width = svg.width && svg.width.baseVal && svg.width.baseVal.value
-  let height = svg.height && svg.height.baseVal && svg.height.baseVal.value
-  if (width && height) { return {width, height} }
-  let rect = svg.getBoundingClientRect()
-  return {width: rect.width, height: rect.height}
+  return {
+    width: svg.width && svg.width.baseVal && svg.width.baseVal.value,
+    height: svg.height && svg.height.baseVal && svg.height.baseVal.value,
+  }
 }
 
 // a box in CSS pixels -> the svg's own user units (OSMD's root viewBox

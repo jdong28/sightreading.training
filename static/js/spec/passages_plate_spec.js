@@ -21,7 +21,7 @@ const DENSE = {
 }
 
 // a second dense run that is no repeat of DENSE, so the two are flagged as
-// two passages rather than merged (st/difficulty decision 7)
+// two passages rather than merged
 const DENSE_HIGH = {
   upper: ["G5", "F5", "E5", "D5", "C5", "D5", "E5", "F5", "G5", "F5", "E5", "D5", "C5", "D5", "E5", "F5"],
   lower: ["G3", "F3", "E3", "D3", "C3", "D3", "E3", "F3", "G3", "F3", "E3", "D3", "C3", "D3", "E3", "F3"],
@@ -226,6 +226,11 @@ describe("the passages view (st/difficulty)", function() {
       {message: "the score plate"})
     expect(score.textContent).toContain("Bar 12")
     expect(score.textContent).not.toContain("Bars 12–12")
+
+    // and the Flagged passages list row for the same passage
+    expect(plate().querySelector("[class*=\"flag_list\"] [class*=\"list_bars\"]").textContent)
+      .toEqual("Bar 12")
+    expect(plate().textContent).not.toContain("12–12")
 
     // and the drawer's quick pick for the same passage
     let programme = [...container.querySelectorAll("button")]
