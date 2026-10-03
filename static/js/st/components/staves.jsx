@@ -147,6 +147,12 @@ export class Staff extends React.PureComponent {
     this.refs.notes.setOffset(amount * noteWidth * scale)
   }
 
+  // the drawn heads of the column at the head of the drill (see
+  // StaffNotes#headElements), or [] without a StaffNotes drawn yet
+  headElements() {
+    return this.refs.notes && this.refs.notes.headElements ? this.refs.notes.headElements() : []
+  }
+
   // The margin that keeps something reaching that far past the staff's lines
   // inside the plate, with a note head's room to spare, or null when the
   // stylesheet's own margin already does
@@ -278,6 +284,14 @@ export class GrandStaff extends React.PureComponent {
     }
   }
 
+  // the column-0 heads of both staves
+  headElements() {
+    return [
+      ...(this.gstaff.current ? this.gstaff.current.headElements() : []),
+      ...(this.fstaff.current ? this.fstaff.current.headElements() : []),
+    ]
+  }
+
   // The staff a note goes on: the one whose clef leaves it fewest ledger
   // steps from the five lines, so it is always drawn near a staff. A note
   // below both staves goes on the lower one, any other tie on the upper,
@@ -346,6 +360,12 @@ export class ChordStaff extends React.PureComponent {
 
   setOffset(amount) {
     this.refs.chordScrolling.style.transform = `translate3d(${amount}px, 0, 0)`;
+  }
+
+  // the head chord, the only element the plate's ink smudge can mark here
+  headElements() {
+    let el = this.refs.chordScrolling?.firstElementChild
+    return el ? [el] : []
   }
 
   render() {
