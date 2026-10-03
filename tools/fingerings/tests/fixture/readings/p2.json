@@ -1,0 +1,33 @@
+{
+ "marks": {
+  "p2-01": {
+   "kind": "finger",
+   "text": "1"
+  },
+  "p2-02": {
+   "kind": "finger",
+   "text": "3"
+  },
+  "p2-03": {
+   "kind": "other",
+   "mark": "UC (una corda)",
+   "text": "C"
+  },
+  "p2-04": {
+   "kind": "other",
+   "mark": "circle round a note"
+  },
+  "p2-05": {
+   "kind": "other",
+   "mark": "rit."
+  },
+  "p2-06": {
+   "kind": "ambiguous",
+   "text": "4",
+   "why": "tentative, marked 'try'"
+  }
+ },
+ "page": 2,
+ "reader": "make_fixture.py",
+ "sheet": "783c6e4e45c9"
+}

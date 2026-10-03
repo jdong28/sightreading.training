@@ -1,0 +1,106 @@
+{
+ "piece": "fixture",
+ "musicxml_sha1": "8a979efa528a54e6c64b6c3561d77c1a7daa0fbf",
+ "source": {
+  "kind": "handwritten markup",
+  "pdf_sha1": "20d38809b4b855021ef556aa3dbc822915d0885e",
+  "pages": [
+   1,
+   2
+  ]
+ },
+ "extractor": "tools/fingerings 0.1.0",
+ "barMap": {},
+ "entries": [
+  {
+   "measure": 2,
+   "staff": 1,
+   "beat": 0.0,
+   "pitch": "G5",
+   "finger": "1",
+   "placement": "above",
+   "mark": "p1-01"
+  },
+  {
+   "measure": 2,
+   "staff": 1,
+   "beat": 1.0,
+   "pitch": "G5",
+   "finger": "2",
+   "placement": "above",
+   "mark": "p1-02"
+  },
+  {
+   "measure": 3,
+   "staff": 2,
+   "beat": 2.0,
+   "pitch": "E3",
+   "finger": "3",
+   "placement": "below",
+   "mark": "p1-03"
+  },
+  {
+   "measure": 3,
+   "staff": 2,
+   "beat": 0.0,
+   "pitch": "C3",
+   "finger": "5",
+   "placement": "below",
+   "mark": "p1-04"
+  },
+  {
+   "measure": 5,
+   "staff": 1,
+   "beat": 0.0,
+   "pitch": "G5",
+   "finger": "5",
+   "placement": "above",
+   "mark": "p1-05+p1-07+p1-09"
+  },
+  {
+   "measure": 5,
+   "staff": 1,
+   "beat": 0.0,
+   "pitch": "E5",
+   "finger": "3",
+   "placement": "above",
+   "mark": "p1-05+p1-07+p1-09"
+  },
+  {
+   "measure": 5,
+   "staff": 1,
+   "beat": 0.0,
+   "pitch": "C5",
+   "finger": "1",
+   "placement": "above",
+   "mark": "p1-05+p1-07+p1-09"
+  },
+  {
+   "measure": 7,
+   "staff": 1,
+   "beat": 0.0,
+   "pitch": "G5",
+   "finger": "2-3",
+   "placement": "above",
+   "mark": "p1-06+p1-08+p1-10"
+  },
+  {
+   "measure": 6,
+   "staff": 1,
+   "beat": 0.0,
+   "pitch": "E5",
+   "finger": "2",
+   "placement": "above",
+   "mark": "p1-11"
+  },
+  {
+   "measure": 6,
+   "staff": 1,
+   "beat": 0.0,
+   "pitch": "C5",
+   "finger": "4",
+   "placement": "above",
+   "mark": "p1-11"
+  }
+ ]
+}
