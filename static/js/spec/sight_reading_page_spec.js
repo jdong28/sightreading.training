@@ -2941,6 +2941,27 @@ describe("sight reading page", function() {
       expect(sessions[0].id).toEqual(sessionId)
       expect(sessions[0].elapsedSeconds).toEqual(30)
     })
+
+    // a clefless column (every exercises session, and a grand-staff score
+    // session before #28) is counted by staff (staffClefs), complementary to
+    // a score column's own clefs (see the "no double count" spec below)
+    it("counts a grand-staff hit and a counted miss by clef", async function() {
+      window.localStorage.setItem(DRILL_STORAGE_KEY, JSON.stringify({staff: "grand", generator: "random"}))
+      let el = renderPage()
+      expect(page.state.currentStaff.name).toEqual("grand")
+
+      click(buttonNamed(el, "Begin"))
+      flushSync(() => page.setState({
+        notes: new NoteList([["D4"], ["A3"]], {generator: page.state.notes.generator}),
+      }))
+
+      play(["D4"]) // above middle C: a hit counted for g
+      play([WRONG_NOTE]) // a wrong key on the column below middle C: a counted miss for f
+      click(buttonNamed(el, "Rest"))
+
+      await waitFor(() => store.recentSessions().length == 1, "the session to be saved")
+      expect(store.recentSessions()[0].clefs).toEqual({g: {hits: 1, misses: 0}, f: {hits: 0, misses: 1}})
+    })
   })
 
   describe("matching the notes played", function() {

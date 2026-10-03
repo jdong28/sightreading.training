@@ -111,7 +111,7 @@ function parseNoteAccidentals(note) {
 }
 
 // get the octave independent offset in halfsteps (from C), used for comparison
-function parseNoteOffset(note) {
+export function parseNoteOffset(note) {
   let [, letter, accidental] = note.match(/^([A-G])(#|b)?/);
 
   if (OFFSETS[letter] == undefined) {
