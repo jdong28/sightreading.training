@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pikepdf
 
-from . import __version__, align, cluster, extract, heads, insert, layer, manifest, proof, readings, score, scoreio, sheet, staves, verify
+from . import __version__, align, cluster, extract, geometry, insert, layer, manifest, proof, readings, score, scoreio, sheet, verify
 
 EXIT_OK = 0
 EXIT_FAILED = 1
@@ -68,6 +68,10 @@ def run(run_dir):
     by = align.xml_by_measure(rows)
     measure_els = score.measures(root)
     numbers = score.app_numbers(measure_els)
+    multirest = score.multirest_spans(measure_els)
+    part_counts = score.part_staff_counts(root)
+    score_staff_count = sum(c for _p, c in part_counts)
+    two_hand_ok = len(part_counts) == 1 and part_counts[0][1] <= 2
 
     first_page, last_page = man["pages"]
     report = dict(
@@ -78,11 +82,15 @@ def run(run_dir):
     )
 
     with pikepdf.open(man["pdf_path"]) as pdf:
-        geoms, layers = [], {}
+        geoms, layers, page_heads = [], {}, {}
         for pno in range(first_page, last_page + 1):
             L = extract.page_layers(pdf, pno - 1, render_scale=man["render_scale"])
             layers[pno] = L
-            geoms.append((pno, staves.page_geometry(L["scan"]["gray"])))
+            G, hs, space = geometry.analyze_page(L["scan"]["gray"])
+            for h in hs:
+                h["page"] = pno
+            geoms.append((pno, G))
+            page_heads[pno] = (hs, space)
 
         if man["measures"]:
             want_from, want_to = man["measures"]
@@ -96,11 +104,16 @@ def run(run_dir):
             first_index = 0
             nmeas = len(measure_els)
 
-        measures_geo, total = align.page_measures(geoms, first_index=first_index)
+        measures_geo, total = align.page_measures(geoms, first_index=first_index, multirest=multirest)
         gate = total == nmeas
-        report["checks"].append(_check(
-            "bar lines: the pages' measures add up to the MusicXML's", gate,
-            f"{total} on pages {first_page}-{last_page}, {nmeas} in the MusicXML"))
+        n_spans = sum(1 for idx in multirest if first_index <= idx < first_index + nmeas)
+        if n_spans:
+            expected_printed = align.expected_printed_count(nmeas, multirest, first_index)
+            detail = (f"{len(measures_geo)} on pages {first_page}-{last_page}, {expected_printed} printed "
+                      f"({nmeas} measures, {n_spans} multi-bar rests)")
+        else:
+            detail = f"{total} on pages {first_page}-{last_page}, {nmeas} in the MusicXML"
+        report["checks"].append(_check("bar lines: the pages' measures add up to the MusicXML's", gate, detail))
         if not gate:
             return _finish(run_path, report, t0)
 
@@ -132,20 +145,20 @@ def run(run_dir):
                     report["checks"].append(_check(f"p{pno}: has markup ink", False, "no markup ink found"))
                 continue
 
-            hs, space = heads.noteheads(G["black"], G["systems"])
-            hs = heads.place(hs, G["systems"])
-            for h in hs:
-                h["page"] = pno
-            shifts = align.print_shifts(hs, measures_geo, by)
-            matched = {id(n["el"]) for h in hs
-                       for n in [align.head_match(h, pno, measures_geo, by, hs, shifts)[0]] if n is not None}
-            xml_notes = [n for m in measures_geo if m["page"] == pno for st in (1, 2) for n in by.get((m["mindex"], st), [])]
-            n_matched = sum(1 for n in xml_notes if id(n["el"]) in matched)
-            rate = (n_matched / len(xml_notes)) if xml_notes else 1.0
-            page_stat["heads_matched"] = f"{n_matched}/{len(xml_notes)}"
-            page_stat["clef_shifts"] = sorted({(numbers[k[3]], k[2], v) for k, v in shifts.items() if k[0] == pno and v})
-            report["checks"].append(_check(f"p{pno}: noteheads matched a MusicXML note", rate >= man["min_head_match"],
-                                            f"{page_stat['heads_matched']} ({rate:.0%}, need {man['min_head_match']:.0%})"))
+            hs, space = page_heads[pno]
+            hs, stop_reason = geometry.apply_staff_mapping(pno, G, hs, measures_geo, by, score_staff_count)
+            if stop_reason:
+                report["checks"].append(_check(f"p{pno}: staff mapping", False, stop_reason))
+                continue
+            result = geometry.match_page(pno, hs, measures_geo, by, numbers, man["min_head_match"])
+            hs = result["heads"]
+            shifts = result["shifts"]
+            page_stat["heads_matched"] = f"{result['n_matched']}/{result['n_total']}"
+            page_stat["clef_shifts"] = result["clef_shifts"]
+            report["checks"] += result["checks"]
+
+            if not two_hand_ok:
+                continue
 
             marks = cluster.clusters(mask, L["px_per_pt"][0], join_pt=man["join_pt"])
             for i, c in enumerate(marks):
@@ -241,6 +254,14 @@ def run(run_dir):
                                        measure=f["measure"], staff=f["staff"], onset=f["onset"],
                                        beat=f["note"]["beat"], pitch=f["pitch"], mark=mark_id,
                                        voice=f["note"]["voice"]))
+
+        if not two_hand_ok:
+            parts_desc = ", ".join(f"{pid} ({c} staff{'ves' if c != 1 else ''})" for pid, c in part_counts)
+            report["checks"].append(_check(
+                "placement: one part with one or two staves",
+                False, f"placing fingerings needs one part with one or two staves; this score has {parts_desc}: "
+                       "geometry checked, placement not supported yet"))
+            return _finish(run_path, report, t0)
 
         if read_pages is None:
             report["checks"].append(_check("markup: at least one page has ink", bool(ink_pages),
