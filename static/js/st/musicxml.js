@@ -14,10 +14,12 @@
 //   - repeats, endings, and transposition are ignored
 //   - grace notes aren't notes of their own: they are kept, with the
 //     neighbours of a trill, turn or mordent, as the ornaments of the note
-//     they are played with (see addOrnaments). A trill's <wavy-line> gives
-//     those same neighbours to every other note of its voice and staff it
-//     runs over, from its explicit start to its explicit stop (see
-//     trillLines in walkPart)
+//     they are played with (see addOrnaments). A trill's <wavy-line> also
+//     gives every other note of its voice and staff it runs over, from its
+//     explicit start to its explicit stop, an upper neighbour of its own,
+//     spelled from that note's pitch and the accidental in force -- save a
+//     re-struck note of the marked note's pitch, which takes the marked
+//     note's own spelled neighbours (see trillLines in walkPart)
 //   - ties are merged into one note for detection,
 //     with the notes they are tied to kept as the merged note's notation.ties
 //     so an engine's drawn tied heads join the note (st/score_render)
@@ -675,13 +677,15 @@ function walkPart(measures, partName) {
     part.fifthsAt[measureIdx] = fifths
   })
 
-  // A closed trill line gives its upper neighbour to every event of its
-  // voice and staff from its start to its stop, inclusive (positions ordered
-  // as [measureIdx, offset], EPSILON apart counting as equal). Applied only
-  // now, after the whole part is walked and every line that ever opened is
-  // either closed or discarded, so an unpaired start (dropped when its key
-  // reopened, or never stopped at all) can never leak an allowance past the
-  // marked note's own trill.
+  // A closed trill line gives every event of its voice and staff from its
+  // start to its stop, inclusive (positions ordered as [measureIdx, offset],
+  // EPSILON apart counting as equal), an upper neighbour spelled from that
+  // event's own pitch and the accidental in force -- save a re-struck note
+  // of the marked note's pitch, which takes the marked note's own spelled
+  // neighbours instead. Applied only now, after the whole part is walked and
+  // every line that ever opened is either closed or discarded, so an unpaired
+  // start (dropped when its key reopened, or never stopped at all) can never
+  // leak an allowance past the marked note's own trill.
   let order = ([m1, o1], [m2, o2]) => m1 - m2 || (Math.abs(o1 - o2) < EPSILON ? 0 : o1 - o2)
 
   for (let line of trillLines) {
@@ -772,11 +776,13 @@ function scoreTitle(root) {
 // tied note gathers those of the notes it is tied to): note.ornaments.graces,
 // the grace notes leading into it, and note.ornaments.neighbours, the notes
 // its trill, turn or mordent alternates it with -- or, for a note under a
-// trill line but carrying no mark of its own, the same neighbours the line's
-// marked note gives (see trillLines in walkPart). Neither is played for the
-// note, so neither is required, but a player playing them as written doesn't
-// slip (see column.allowed in st/song_sections). An ornament written on a
-// tie's continuation, at, sounds from there on rather than over the whole
+// trill line but carrying no mark of its own, its own upper neighbour,
+// spelled from its pitch and the accidental in force, or the marked note's
+// spelled neighbours when it re-strikes that note's pitch (see trillLines in
+// walkPart). Neither is played for the note, so neither is required, but a
+// player playing them as written doesn't slip (see column.allowed in
+// st/song_sections). An ornament written on a tie's continuation, at, sounds
+// from there on rather than over the whole
 // merged note: note.ornaments.at, the beat its neighbours start at, kept only
 // when no segment before it carried an ornament of its own
 function addOrnaments(note, event, at) {
