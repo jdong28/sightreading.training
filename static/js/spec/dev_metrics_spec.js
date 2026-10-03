@@ -23,6 +23,15 @@ const col = (beat, ...names) => {
   return column
 }
 
+// a column of notes with no score rhythm, as a piece stored before song
+// format 2 has: its pace is per column, never per beat
+const beatless = (...names) => {
+  let column = [...names]
+  column.staves = names.map(() => "upper")
+  column.clefs = {upper: "g"}
+  return column
+}
+
 // bar 1: three quarter notes, bar 2: one
 const twoBars = () => sectionCard([
   {number: 1, columns: [col(0, "G4"), col(1, "A4"), col(2, "B4")]},
@@ -379,6 +388,49 @@ describe("dev metrics", function() {
         await waitFor(() => container.textContent.includes("self-graded"))
         expect(container.textContent).toContain("self-graded")
         expect(container.textContent).not.toMatch(/clean \d+\/\d+/)
+      } finally {
+        flushSync(() => root.unmount())
+        container.remove()
+        generator.stop()
+      }
+    })
+
+    // a piece whose columns carry no score rhythm paces by column, and the
+    // deck's card list says so whether or not a card is being shown
+    it("paces a beatless piece by column with no card loaded", async function() {
+      await store.putPiece({id: "p", title: "P", importedAt: 1000, song: {tracks: [], metadata: {}}})
+      let item = {...newItem({pieceId: "p", startMeasure: 1, endMeasure: 1}, 1000), paceMs: 480}
+      await store.recordAttempt({
+        item,
+        review: {
+          itemId: item.id, at: 2000, pieceId: "p", kind: "attempt", mode: "self",
+          grade: GOOD, was: "new", elapsedMs: 4000,
+        },
+      })
+
+      let deck = new MeasureCardDeck([sectionCard([{number: 1, columns: [beatless("G4")]}])], {
+        pieceId: "p", order: IN_ORDER, store,
+      })
+      let generator = new MeasureCardGenerator(deck)
+      deck.index = null
+      generator.startCard()
+      expect(deck.card).toBe(null)
+
+      let container = document.createElement("div")
+      document.body.appendChild(container)
+      let root = createRoot(container)
+      try {
+        flushSync(() => root.render(React.createElement(DevMetricsPanel, {
+          generator, matcher, session: true, close: () => {},
+        })))
+
+        let historyTab = [...container.querySelectorAll("[role=tab]")].find(b => b.textContent == "History")
+        flushSync(() => historyTab.click())
+
+        await waitFor(() => container.textContent.includes("480 ms per"))
+        expect(container.textContent).toContain("480 ms per column")
+        expect(container.textContent).not.toContain("per beat")
+        expect(container.textContent).not.toContain(`= ${tempoOf(480)}`)
       } finally {
         flushSync(() => root.unmount())
         container.remove()
