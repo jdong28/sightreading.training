@@ -133,6 +133,13 @@ Main: `max-width: 1060px`, `grid-template-columns: minmax(0,1fr) 260px`, `gap: 2
   transparent 78%)`, `filter: blur(1.5px)`, fades over `.55s`, cleared after 900ms. The cursor does
   **not** advance, no sound penalty, streak resets to 0, miss count increments. Nothing else changes.
 - Reaching the end of a passage regenerates a new one after 280ms.
+- Both states are implemented by `PlateFeedback`
+  (`static/js/st/components/sight_reading/plate_feedback.jsx`), which owns their holds and the
+  smudge's placement: the page bumps one counter per judgement, so a chord hit washes and a wrong
+  chord inks as a single note does, and every wrong key inks whether or not the stats counted it.
+  The implementation centres the smudge on the drawn heads of the head column vertically as well as
+  horizontally, clamped inside the plate, and falls back to the centre of the staff when no head is
+  drawn. Neither state is drawn in acoustic mode, where nothing is detected to react to.
 
 **State:** `notes` (NoteList), `keySignature`, `held` (map), `clef`, `tempo`, `session` (bool),
 `cursor` (index into columns), `readCount`, `misses`, `streak`, `best`, `secs`.
