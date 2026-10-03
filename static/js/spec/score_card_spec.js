@@ -1440,12 +1440,16 @@ describe("ScoreCard", function() {
       !el.classList.contains(MARK_CLASSES.done) &&
       !el.classList.contains(MARK_CLASSES.missed)))).toBe(true)
 
-    // an equal but new staves array still matches the kept system
+    // an equal but new staves array still matches the kept system: its
+    // drawing is on the plate at once, before any render could have run
     rerenderCard({
       ...base, fromMeasure: 2, toMeasure: 2, staves: [{part: "P1", staff: 2}],
       columns: columnsOf(notesFor["2-2"]), head: 0,
     })
     expect(renders).toEqual(2)
+    expect(card.result).toBeTruthy()
+    expect(container.querySelector("[data-score-card] svg")).toBe(card.result.svg)
+    expect(card.result.notes.map(note => note.pitch)).toEqual([parseNote("G4")])
   })
 
   it("draws a system again once its score changes", async function() {
