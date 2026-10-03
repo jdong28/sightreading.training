@@ -991,9 +991,10 @@ export class GeneratorSettings extends React.PureComponent {
 
   renderToggles(input, idx) {
     let currentValue = this.cachedSettings[input.name] || {}
+    let options = typeof input.options == "function" ? input.options(this.cachedSettings) : input.options
 
     return <div className={this.styles.pills} role="group" aria-label={input.label || input.name}>
-      {input.options.map(subName =>
+      {options.map(subName =>
         <Pill
           variant="choice"
           key={subName}
