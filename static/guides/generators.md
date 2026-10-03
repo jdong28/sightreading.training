@@ -80,10 +80,12 @@ Self-graded practice is always card by card, so there is no tempo setting and no
 
 ## How notes are judged
 
-A column of notes completes once every one of its keys has gone down since it appeared — however far apart in time, in whatever order, and across as many hands as it takes to play them.
+On the treble, bass and grand staves, a column of notes completes once every one of its keys has gone down since it appeared — however far apart in time, in whatever order, and across as many hands as it takes to play them. The chord staff instead judges a chord when you let go of it.
 
 *   **Letting go never counts against you.** Only pressing a key down is judged; releasing a key, however early, never causes a miss or resets the column. Hold a chord down, release it the moment you've struck it, or let one hand finish well before the other arrives — none of it matters.
 *   **Playing ahead is rewarded, not punished.** On a MIDI keyboard, if you reach a key of the next column before you've finished the current one, it's remembered and counted the moment you do finish, completing the next column right away if that was all it needed. Only taking too long to finish the current column turns an early key into a mistake on that column instead.
 *   **A quick repeat is excused.** On a MIDI keyboard, striking the same key again right after a column completes — the note repeating, or your hand still resting on it — isn't held against you. Both rules go by the keyboard's own timing, so the on-screen keyboard gets neither.
 *   **Ornaments are free.** Grace notes and the extra notes of a trill, turn, or mordent are never required and never a wrong note: play them along with the music or leave them out, they're not judged either way.
 *   **A note carried over from before counts without restriking it.** In a piece imported from its score, when the score keeps a note sounding into the next column — a pitch another part is still sounding — keeping the key held down already satisfies it there too; you don't need to lift and press it again, though you're free to.
+
+The ornament and held-note allowances go by the piece's notes as they are imported now; a piece imported earlier gets them once you import the file again.
