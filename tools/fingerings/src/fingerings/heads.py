@@ -83,6 +83,30 @@ def disc(r):
     return x * x + y * y <= r * r
 
 
+def _small_heads(filled, clean, core, space):
+    """A second pass over what the normal opening left behind: grace and
+    cue-size heads, too small for the normal disc to keep whole. Opened
+    with a smaller disc over the remainder (filled minus the normal
+    heads' own footprint, dilated so a grace head touching a normal one
+    isn't claimed twice); kept only at a cue head's size."""
+    margin = max(1, int(round(space * 0.15)))
+    remainder = filled & ~ndimage.binary_dilation(core, structure=disc(margin))
+    small_core = ndimage.binary_opening(remainder, structure=disc(max(1, int(round(space * 0.22)))))
+    labels, n = ndimage.label(small_core)
+    out = []
+    for i, sl in enumerate(ndimage.find_objects(labels), start=1):
+        sub = labels[sl] == i
+        h = sl[0].stop - sl[0].start
+        w = sl[1].stop - sl[1].start
+        if not (0.5 * space <= w <= 1.0 * space and 0.4 * space <= h <= 0.85 * space):
+            continue
+        hollow = (filled[sl] & ~clean[sl] & sub).sum() > 0.15 * sub.sum()
+        ys, xs = np.nonzero(sub)
+        out.append(dict(x=float(xs.mean() + sl[1].start), y=float(ys.mean() + sl[0].start), w=w, h=h,
+                        hollow=bool(hollow), stacked=1, small=True))
+    return out
+
+
 def noteheads(black, systems):
     space = float(np.median([st["space"] for s in systems for st in s["staves"]]))
     clean = erase_staff_lines(black, systems)
@@ -106,6 +130,7 @@ def noteheads(black, systems):
         else:
             ys, xs = np.nonzero(sub)
             heads.append(dict(x=float(xs.mean() + sl[1].start), y=float(ys.mean() + sl[0].start), w=w, h=h, hollow=bool(hollow), stacked=1))
+    heads += _small_heads(filled, clean, core, space)
     return heads, space
 
 
