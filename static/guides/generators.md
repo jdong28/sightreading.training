@@ -77,3 +77,15 @@ If you play an acoustic piano, there is nothing for the app to listen to. Open t
 The grades are the same four the app works out for itself when it is listening, so a card you grade is scheduled for its next review exactly as a detected one would be. **What slipped?** optionally tags the pass with notes, rhythm, tempo, fingering or musicality; those tags are kept with the attempt but never change the schedule. **Fell apart** or **Stumbled** on a card of more than one bar asks **Where?** first, so the grade reaches the bar it belongs to rather than the whole card; **Throughout** grades every bar of it.
 
 Self-graded practice is always card by card, so there is no tempo setting and no scrolling, and today's programme stops offering a bar as one hand alone. The cards beside the staff count the passes graded and how many were clean, in place of accuracy, notes read and best streak. Pasted song notation has no cards to grade, so it keeps listening for notes even with the instrument set to acoustic.
+
+## How notes are judged
+
+On the treble, bass and grand staves, a column of notes completes once every one of its keys has gone down since it appeared — however far apart in time, in whatever order, and across as many hands as it takes to play them. The chord staff instead judges a chord when you let go of it.
+
+*   **Letting go never counts against you.** Only pressing a key down is judged; releasing a key, however early, never causes a miss or resets the column. Hold a chord down, release it the moment you've struck it, or let one hand finish well before the other arrives — none of it matters.
+*   **Playing ahead is rewarded, not punished.** On a MIDI keyboard, if you reach a key of the next column before you've finished the current one, it's remembered and counted the moment you do finish, completing the next column right away if that was all it needed. Only taking too long to finish the current column turns an early key into a mistake on that column instead.
+*   **A quick repeat is excused.** On a MIDI keyboard, striking the same key again right after a column completes — the note repeating, or your hand still resting on it — isn't held against you. Both rules go by the keyboard's own timing, so the on-screen keyboard gets neither.
+*   **Ornaments are free.** Grace notes and the extra notes of a trill, turn, or mordent are never required and never a wrong note: play them along with the music or leave them out, they're not judged either way.
+*   **A note carried over from before counts without restriking it.** In a piece imported from its score, when the score keeps a note sounding into the next column — a pitch another part is still sounding — keeping the key held down already satisfies it there too; you don't need to lift and press it again, though you're free to.
+
+The ornament and held-note allowances go by the piece's notes as they are imported now; a piece imported earlier gets them once you import the file again.
