@@ -122,6 +122,16 @@ def _column_fill(black, y0, y1):
     return wob.mean(axis=0)
 
 
+def _real_content_before(heads, x, space):
+    """True when the heads positioned before x are spread wide enough to
+    be genuine, separate notes rather than one clef glyph's artifacts (a
+    treble clef's loops can read as one or two small blobs, but they
+    cluster within about a space of each other, far narrower than
+    distinct notes a measure wide)."""
+    xs = [h["x"] for h in heads if h["x"] < x]
+    return len(xs) >= 2 and (max(xs) - min(xs)) > 1.5 * space
+
+
 def _head_touches(heads, x0, x1, space):
     """True when a notehead's edge sits within 3 px of this column's near
     edge: a stem-up note's head just left of it (its right edge near the
@@ -191,7 +201,15 @@ def barlines(black, system, heads_in_system=None, min_fill=0.9, min_gap_fill=0.9
     out = []
     for i, g in enumerate(groups):
         x0, x1 = int(g[0]), int(g[-1])
-        is_opening = i == 0
+        # the opening-line exemption only applies to a candidate genuinely
+        # at the system's left end: a system with no drawn opening stroke
+        # (common for a single-staff part's continuation systems) must
+        # not have its first real candidate -- which may be an ordinary
+        # stem -- wrongly exempted from the head-touch check just for
+        # being first in the list
+        # (a stray head before it -- a clef loop's round bowl can read as
+        # one or two -- shouldn't disqualify a genuine opening line)
+        is_opening = i == 0 and not _real_content_before(heads_in_system, x0, space)
         is_full = bool(full_ok[x0:x1 + 1].any())
         if not is_opening and not is_full and _head_touches(heads_in_system, x0, x1, space):
             continue
@@ -229,5 +247,13 @@ def assign_bars(black, systems, heads):
     for si, sys_ in enumerate(systems):
         heads_in_system = [h for h in heads if h["system"] == si]
         bars = barlines(black, sys_, heads_in_system)
+        space = float(np.mean([s["space"] for s in sys_["staves"]]))
+        if bars and _real_content_before(heads_in_system, bars[0]["x0"], space):
+            # no drawn opening stroke (a single-staff part's continuation
+            # system commonly has none): synthesise one at the system's
+            # own left edge, so the first measure -- otherwise unreachable,
+            # since `measures` only spans between consecutive bars -- isn't
+            # lost.
+            bars = [dict(x0=0, x1=0, x=0.0)] + bars
         sys_["bars"] = bars
         sys_["measures"] = [dict(x0=bars[i]["x1"], x1=bars[i + 1]["x0"]) for i in range(len(bars) - 1)]

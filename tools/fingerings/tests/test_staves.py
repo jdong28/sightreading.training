@@ -217,3 +217,91 @@ def test_system_header_before_start_repeat():
     assert len(bars) == 3
     measures = [dict(x0=bars[i]["x1"], x1=bars[i + 1]["x0"]) for i in range(len(bars) - 1)]
     assert len(measures) == 2
+
+
+def test_assign_bars_no_opening_line():
+    """A system with no drawn opening stroke (common for a single-staff
+    part's continuation system): its first measure's notes sit before
+    the first real bar line, which must not be lost."""
+    black = _canvas()
+    ys = _draw_staff(black, 300)
+    space = SPACE
+    top, bot = ys[0], ys[-1]
+    sys_ = _one_system([ys])
+    systems = [sys_]
+
+    n1x, n2x = 200, 600  # two notes of the "missing" first measure
+    mid_x = 900  # the true bar line between the two measures
+    final_x = 1400
+    black[int(top):int(bot) + 1, mid_x:mid_x + 2] = True
+    black[int(top):int(bot) + 1, final_x:final_x + 2] = True
+
+    heads = [
+        dict(x=n1x, y=ys[2], w=space, system=0, staff=1),
+        dict(x=n2x, y=ys[2], w=space, system=0, staff=1),
+        dict(x=1100, y=ys[2], w=space, system=0, staff=1),
+    ]
+    staves.assign_bars(black, systems, heads)
+    bars = sys_["bars"]
+    xs = sorted(round(b["x"]) for b in bars)
+    assert any(abs(x - mid_x) <= 2 for x in xs)
+    assert any(abs(x - final_x) <= 2 for x in xs)
+    measures = sys_["measures"]
+    assert len(measures) == 2  # the implicit first measure is not lost
+    assert measures[0]["x0"] <= n1x <= measures[0]["x1"]
+    assert measures[0]["x0"] <= n2x <= measures[0]["x1"]
+    assert measures[1]["x0"] <= 1100 <= measures[1]["x1"]
+
+
+def test_assign_bars_no_opening_line_stem_not_mistaken():
+    """Without a drawn opening line, the first real candidate (which may
+    just be an ordinary stem spanning the staff, not a bar line at all)
+    is not exempted from the head-touch check merely for being first."""
+    black = _canvas()
+    ys = _draw_staff(black, 300)
+    space = SPACE
+    top, bot = ys[0], ys[-1]
+    sys_ = _one_system([ys])
+    systems = [sys_]
+
+    n1x, n2x = 200, 600
+    stem_x = 900  # a stem-down note's stem spans the whole staff height
+    black[int(top):int(bot) + 1, stem_x:stem_x + 2] = True
+    stem_head_x = stem_x - space / 2
+    final_x = 1400
+    black[int(top):int(bot) + 1, final_x:final_x + 2] = True
+
+    heads = [
+        dict(x=n1x, y=ys[2], w=space, system=0, staff=1),
+        dict(x=n2x, y=ys[2], w=space, system=0, staff=1),
+        dict(x=stem_head_x, y=ys[2], w=space, system=0, staff=1),
+    ]
+    staves.assign_bars(black, systems, heads)
+    xs = sorted(round(b["x"]) for b in sys_["bars"])
+    assert stem_x not in xs
+    assert any(abs(x - final_x) <= 2 for x in xs)
+
+
+def test_assign_bars_clef_artifact_not_mistaken_for_missing_opening():
+    """A single stray blob near the system's start (a clef loop's round
+    bowl, read as a false notehead) must not be mistaken for "no opening
+    line drawn": the real opening line is kept as the system's start."""
+    black = _canvas()
+    ys = _draw_staff(black, 300)
+    space = SPACE
+    top, bot = ys[0], ys[-1]
+    sys_ = _one_system([ys])
+    systems = [sys_]
+
+    opening_x = 100
+    black[int(top):int(bot) + 1, opening_x:opening_x + 2] = True
+    final_x = 900
+    black[int(top):int(bot) + 1, final_x:final_x + 2] = True
+
+    # one stray blob (the clef artifact), close to the opening line
+    heads = [dict(x=opening_x - 10, y=ys[0] - space, w=space, system=0, staff=1)]
+    staves.assign_bars(black, systems, heads)
+    bars = sys_["bars"]
+    xs = sorted(round(b["x"]) for b in bars)
+    assert any(abs(x - opening_x) <= 2 for x in xs)
+    assert len(sys_["measures"]) == 1
