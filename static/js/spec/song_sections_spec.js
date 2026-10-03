@@ -255,11 +255,11 @@ describe("song sections", function() {
   <part id="P1">
     <measure number="1">
       <attributes><divisions>1</divisions><key><fifths>0</fifths></key><time><beats>3</beats><beat-type>4</beat-type></time></attributes>
-      ${noteXML("C", 5, 1, 1, `<notations><ornaments><trill-mark/><wavy-line type="start" number="1"/></ornaments></notations>`)}
+      ${noteXML("C", 5, 1, 1, "<notations><ornaments><trill-mark/><wavy-line type=\"start\" number=\"1\"/></ornaments></notations>")}
       ${noteXML("E", 5, 1, 1, "<chord/>")}
       ${noteXML("D", 5, 1, 1)}
       ${noteXML("F", 5, 1, 1, "<chord/>")}
-      ${noteXML("G", 5, 1, 1, `<notations><ornaments><wavy-line type="stop" number="1"/></ornaments></notations>`)}
+      ${noteXML("G", 5, 1, 1, "<notations><ornaments><wavy-line type=\"stop\" number=\"1\"/></ornaments></notations>")}
     </measure>
   </part>
 </score-partwise>`)
