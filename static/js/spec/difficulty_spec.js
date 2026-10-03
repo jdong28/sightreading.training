@@ -387,10 +387,10 @@ describe("st/difficulty", () => {
       let repeats = exactRepeats(fingerprint(song))
       let passages = findPassages(scored, {repeats})
       expect(passages.map(p => [p.start, p.end])).toEqual([[5, 7]])
-      expect(passages[0].alsoAt).toEqual([{bars: [17, 19], of: [5, 7]}])
+      expect(passages[0].alsoAt).toEqual([[17, 19]])
 
       let proposals = analyzePiece({song, source: null, at: 1}).proposals
-      expect(proposals.map(p => p.alsoAt)).toEqual([[{bars: [17, 19], of: [5, 7]}]])
+      expect(proposals.map(p => p.alsoAt)).toEqual([[[17, 19]]])
     })
 
     it("merges a repeat into the earliest flagged copy, the first copy unflagged", () => {
@@ -406,28 +406,28 @@ describe("st/difficulty", () => {
 
       let passages = findPassages(scored, {repeats})
       expect(passages.map(p => [p.start, p.end])).toEqual([[6, 7]])
-      expect(passages[0].alsoAt).toEqual([{bars: [10, 11], of: [6, 7]}])
-
-      // the whole passage recurs, so it is named as the passage over again
+      expect(passages[0].alsoAt).toEqual([[10, 11]])
       expect(passageReasons(passages[0], {bars: scored}).reasons)
         .toContain("Also at bars 10–11.")
     })
 
-    it("records the part of a passage that recurs, when only part of it does", () => {
-      // bars 1-4 are the passage; bars 7-8 repeat its bars 2-3 note for note
+    it("keeps a passage that repeats only part of another as its own flag", () => {
+      // bars 1-4 are the passage; bars 7-8 repeat its bars 2-3 note for note,
+      // which is a part of it, not a copy of it
       let scores = [4, 4, 4, 4, 0.2, 0.2, 3.5, 3.5, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2]
       let scored = scores.map((score, i) => scoredBar(i + 1, score))
       let repeats = new Map([[6, 1], [7, 2]])
 
-      expect(findPassages(scored, {repeats: new Map()}).map(p => [p.start, p.end]))
-        .toEqual([[1, 4], [7, 8]])
-
       let passages = findPassages(scored, {repeats})
-      expect(passages.map(p => [p.start, p.end])).toEqual([[1, 4]])
-      expect(passages[0].alsoAt).toEqual([{bars: [7, 8], of: [2, 3]}])
+      expect(passages.map(p => [p.start, p.end]).sort((a, b) => a[0] - b[0]))
+        .toEqual([[1, 4], [7, 8]])
+      for (let p of passages) { expect(p.alsoAt).toBeUndefined() }
 
-      expect(passageReasons(passages[0], {bars: scored}).reasons)
-        .toContain("Bars 2–3 recur at bars 7–8.")
+      for (let p of passages) {
+        for (let reason of passageReasons(p, {bars: scored}).reasons) {
+          expect(reason).not.toMatch(/Also at|recur/)
+        }
+      }
     })
 
     it("gives the same proposals and ids for the same song", () => {
@@ -551,13 +551,12 @@ describe("st/difficulty", () => {
       })
 
       expect(validAnnotation(record)).toBeTruthy()
-      expect(validAnnotation(withFields({alsoAt: [{bars: [9, 11], of: [1, 3]}]}))).toBeTruthy()
+      expect(validAnnotation(withFields({alsoAt: [[9, 11]]}))).toBeTruthy()
       expect(validAnnotation(withFields({alsoAt: []}))).toBeTruthy()
 
-      // a recurrence is two bar ranges, never a bare range or a loose number
-      for (let bad of [5, "9-11", ["9-11"], [null], [[9, 11]], [{bars: [9, 11]}],
-        [{bars: [9], of: [1, 3]}], [{bars: [11, 9], of: [1, 3]}],
-        [{bars: [9, 11.5], of: [1, 3]}]]) {
+      // alsoAt is where the passage recurs: bar ranges, whole and in order
+      for (let bad of [5, "9-11", ["9-11"], [null], [[9]], [[9, 11, 13]],
+        [[9, "11"]], [[11, 9]], [[9, 11.5]]]) {
         expect(validAnnotation(withFields({alsoAt: bad}))).toBeFalsy()
       }
 

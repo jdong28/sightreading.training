@@ -14,15 +14,10 @@ import styles from "./bar_strip.module.css"
 
 const LEVEL_CLASS = {1: styles.level_1, 2: styles.level_2, 3: styles.level_3}
 
-// the index in numbers (score order) of a printed number, the last index
-// when more than one position shares it (a bar split round a repeat)
-function lastIndexOfNumber(numbers, number) {
-  let idx = -1
-  numbers.forEach((n, i) => { if (n == number) { idx = i } })
-  return idx
-}
-
-function firstIndexOfNumber(numbers, number) {
+// the cell index of a printed bar number. numbers is measureNumberList's
+// list, one entry per printed number (a bar split round a repeat is one
+// number there), so a number is at one index or at none
+function indexOfNumber(numbers, number) {
   return numbers.findIndex(n => n == number)
 }
 
@@ -44,8 +39,8 @@ export function BarStrip({numbers, heat, flags, selectedId, onSelect}) {
   return <div className={styles.strip}>
     <div className={styles.brackets}>
       {flags.map((flag, flagIdx) => {
-        let from = firstIndexOfNumber(numbers, flag.start)
-        let to = lastIndexOfNumber(numbers, flag.end)
+        let from = indexOfNumber(numbers, flag.start)
+        let to = indexOfNumber(numbers, flag.end)
         if (from < 0 || to < 0) { return null }
 
         let bars = barsLabel(flag.start, flag.end)

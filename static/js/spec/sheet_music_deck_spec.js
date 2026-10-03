@@ -34,7 +34,7 @@ const treble = {name: "treble", range: ["A3", "C6"]}
 // a piece with a dense run of sixteenths at bars 9-11, long enough for
 // st/difficulty to flag passages. A different barCount makes a different
 // score (fewer/more measures) under the same (score-given) title.
-function workhorseScore({leadNote="C4", barCount=16}={}) {
+function workhorseScore({leadNote="C4", barCount=16, directions=null}={}) {
   let quiet = {upper: ["C4", "D4", "E4", "F4"], lower: ["C3", "D3", "E3", "F3"]}
   let dense = {
     upper: ["C4", "D4", "E4", "F4", "G4", "F4", "E4", "D4", "C4", "D4", "E4", "F4", "G4", "F4", "E4", "D4"],
@@ -47,6 +47,7 @@ function workhorseScore({leadNote="C4", barCount=16}={}) {
     {upper: quiet.upper.map(name => ({name})), lower: quiet.lower.map(name => ({name}))})
 
   bars[0].upper[0] = {name: leadNote}
+  if (directions) { bars[0] = {...bars[0], directions} }
   return pianoScore({title: "Workhorse", bars})
 }
 
@@ -775,6 +776,27 @@ describe("sheet music deck", function() {
       let again = await ensureAnnotation(piece.id, store)
       expect(again).toEqual(record)
       expect(store.putAnnotation).not.toHaveBeenCalled()
+    })
+
+    it("ensureAnnotation analyses the source text its caller already holds", async function() {
+      // the metronome mark lives only in the source text, so the stored run
+      // shows which copy of it was analysed
+      let xml = workhorseScore({directions: [{metronome: {unit: "quarter", perMinute: 90}}]})
+      let song = parseMusicXML(xml)
+      let piece = await store.putPiece({
+        id: "held", title: "Workhorse", importedAt: 1000, song: songToJSON(song),
+      })
+      spyOn(store, "pieceSource").and.callThrough()
+
+      let record = await ensureAnnotation(piece.id, store, {source: xml})
+      expect(store.pieceSource).not.toHaveBeenCalled()
+      expect(record.runs.score.source).toBe(true)
+      expect(record.runs.score.tempo).toEqual({bpm: 90, from: "metronome", word: null})
+
+      // with no text handed over it still reads the store's copy
+      let again = await ensureAnnotation(piece.id, store)
+      expect(store.pieceSource).toHaveBeenCalled()
+      expect(again).toEqual(record)
     })
   })
 

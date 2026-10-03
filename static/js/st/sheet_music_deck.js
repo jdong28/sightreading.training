@@ -290,15 +290,19 @@ async function annotatePiece(piece, {source}, store) {
  * throws.
  * @param {string} pieceId
  * @param {LocalStore} [store]
+ * @param {Object} [opts]
+ * @param {string} [opts.source] the piece's source MusicXML, when the caller
+ *   has already read it: the store's copy is gzipped, so a caller holding the
+ *   text (the passages plate holds the page's) saves decompressing it again
  * @returns {Promise<AnnotationRecord|null>}
  */
-export async function ensureAnnotation(pieceId, store=getAppStore()) {
+export async function ensureAnnotation(pieceId, store=getAppStore(), {source: given}={}) {
   try {
     let piece = store.piece(pieceId)
     let song = piece && pieceSong(piece)
     if (!song) { return null }
 
-    let source = await store.pieceSource(pieceId)
+    let source = given != null ? given : await store.pieceSource(pieceId)
     let current = store.annotation(pieceId)
     if (!annotationStale(current, song, {hasSource: !!source})) {
       return current

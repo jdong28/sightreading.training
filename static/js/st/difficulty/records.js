@@ -12,10 +12,6 @@ function validRange(range) {
     range.every(Number.isInteger) && range[0] <= range[1]
 }
 
-function validRecurrence(r) {
-  return !!r && validRange(r.bars) && validRange(r.of)
-}
-
 function validProposal(p) {
   return !!p && typeof p.id == "string" &&
     typeof p.source == "string" &&
@@ -24,7 +20,7 @@ function validProposal(p) {
     (p.hand == "upper" || p.hand == "lower" || p.hand == "both") &&
     (p.level == 1 || p.level == 2 || p.level == 3) &&
     Array.isArray(p.kinds) &&
-    (p.alsoAt == null || (Array.isArray(p.alsoAt) && p.alsoAt.every(validRecurrence))) &&
+    (p.alsoAt == null || (Array.isArray(p.alsoAt) && p.alsoAt.every(validRange))) &&
     typeof p.title == "string" &&
     typeof p.reason == "string" &&
     Array.isArray(p.reasons) && p.reasons.every(r => typeof r == "string") &&

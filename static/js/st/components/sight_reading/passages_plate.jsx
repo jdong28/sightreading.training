@@ -108,7 +108,11 @@ export class PassagesPlate extends React.Component {
     let piece = sheetMusicPiece(this.props.settings)
     if (!piece) { return }
 
-    ensureAnnotation(piece.id, this.getStore()).then(() => {
+    let source = this.props.source
+    let own = source && source.piece && source.piece.id == piece.id &&
+      source.status == "ready" && source.musicXML
+
+    ensureAnnotation(piece.id, this.getStore(), {source: own || undefined}).then(() => {
       if (!this.unmounted) { this.forceUpdate() }
     })
   }
@@ -332,9 +336,8 @@ export class PassagesPlate extends React.Component {
 
     let inFlag = (flag, number) =>
       (number >= flag.start && number <= flag.end) ||
-      (flag.alsoAt || []).some(({bars}) => number >= bars[0] && number <= bars[1])
-    let coveredCount = [...new Set(numbers)]
-      .filter(number => flags.some(flag => inFlag(flag, number))).length
+      (flag.alsoAt || []).some(([from, to]) => number >= from && number <= to)
+    let coveredCount = numbers.filter(number => flags.some(flag => inFlag(flag, number))).length
 
     let selected = this.selectedFlag(flags)
 
