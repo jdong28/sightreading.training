@@ -17,7 +17,7 @@ import {
   GENERATORS, SHEET_MUSIC_STORAGE_KEY, BOTH_HANDS, RIGHT_HAND, WHOLE_SECTION, FREE_PRACTICE
 } from "st/data"
 import {PlanGenerator} from "st/plan_cards"
-import {SITTING_GAP_MS} from "st/srs/planner"
+import {SITTING_GAP_MS, entryCaption} from "st/srs/planner"
 import {AGAIN, HARD, GOOD, EASY} from "st/srs/grade"
 import {IN_ORDER, RANDOM_ORDER, MeasureCardGenerator} from "st/measure_cards"
 import {DRILL_STORAGE_KEY, SCORE_DRILL_STORAGE_KEY} from "st/generators"
@@ -3207,6 +3207,59 @@ describe("sight reading page", function() {
       expect(el.textContent).toContain("Where?")
       click(buttonNamed(el, "Rest"))
       expect((await reviews()).length).toEqual(written.length)
+    })
+
+    // the word back on a self grade in today's programme says when the bar
+    // the grade went to returns: the bar "Where?" named, never the entry bar
+    // its card was anchored on, which took the practice alone
+    it("says when the bar Where? named returns in today's programme, not the entry bar's schedule", async function() {
+      piece = (await importMusicXMLPiece("salon_octet.musicxml", octetXML, store)).piece
+      await store.putStudy({pieceId: piece.id, status: "learning", startedAt: now})
+
+      let barId = measure => `${piece.id}:both:${measure}-${measure}`
+      let write = (measure, at, extra) => store.recordAttempt({
+        item: {
+          id: barId(measure), pieceId: piece.id, hand: "both", startMeasure: measure, endMeasure: measure,
+          level: "bar", state: "learning", step: 0, due: at, last: at, s: 1, d: 5,
+          reps: 1, lapses: 0, streak: 1, lastGrade: GOOD, hits: 1, misses: 0, attempts: 1,
+          lastPracticed: at, algo: 1, createdAt: at - 60000, recent: [[at, 1, 0, GOOD]],
+          ...extra,
+        },
+        review: {itemId: barId(measure), pieceId: piece.id, at, kind: "attempt", mode: "self", grade: GOOD, was: "new"},
+      })
+
+      // bar 3, a ladder rung come due in an earlier sitting, is the entry,
+      // and its card plays bar 4 with it; bar 4 is in review, back in twenty
+      // days
+      await write(3, now - 30 * 60000)
+      await write(4, now - 3 * 24 * 3600000, {state: "review", due: now + 20 * 24 * 3600000, s: 30})
+
+      window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+        piece: piece.id, startMeasure: 1, endMeasure: 8, hand: BOTH_HANDS, measuresPerCard: "2",
+      }))
+      let el = renderPage(ScorePage, {programme: {...SCORE_PROGRAMME, engine: null}, acoustic: true})
+      await page.state.notes?.generator?.ready
+      flushSync(() => {})
+
+      click(buttonNamed(el, "Begin"))
+      expect(plateStatus(el)).toContain("bar 3")
+      expect(plateLabel(el)).toContain("measures 3–4")
+
+      // Stumbled, in bar 4: bar 3 takes the practice alone
+      let before = store.item(barId(4))
+      played()
+      click(buttonLike(el, "Stumbled"))
+      played()
+      click(exactButton(el, "Bar 4"))
+      await waitFor(() => store.item(barId(4)).reps > before.reps, "bar 4's review")
+      await page.state.notes.generator.finishing
+      flushSync(() => page.forceUpdate())
+
+      let words = entryCaption(store.item(barId(4)), now)
+      expect(words).not.toEqual("again in a moment")
+      expect(el.textContent).toContain(`bar 4 ${words}`)
+      // bar 3's own schedule, which the grade never reached
+      expect(el.textContent).not.toContain("again in a moment")
     })
 
     it("stores toggled 'What slipped?' tags on every review of the pass, cleared for the next", async function() {
