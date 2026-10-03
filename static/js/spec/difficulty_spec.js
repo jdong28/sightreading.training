@@ -320,8 +320,10 @@ describe("st/difficulty", () => {
       let scored = scores.map((score, i) => scoredBar(i + 1, score))
       let passages = findPassages(scored, {repeats: new Map()})
 
-      expect(passages.map(p => [p.start, p.end])).toEqual([[3, 6]])
-      expect(passages[0].run.length).toEqual(4)
+      // bars 3-5, never 3-6: bar 6 is only bridged into the run, so a
+      // passage never opens or closes on it
+      expect(passages.map(p => [p.start, p.end])).toEqual([[3, 5]])
+      expect(passages[0].run.length).toEqual(3)
 
       // and a piece whose looser thresholds bridge nearly everything into
       // one run still flags within its budget of six bars
@@ -343,40 +345,52 @@ describe("st/difficulty", () => {
         {kind: "leap", hand: "upper", contribution: score / 2, detail: {semitones: 20, from: "C4", to: "G5"}},
       ]))
       expect(findPassages(twoSignals, {repeats: new Map()}).map(p => [p.start, p.end, p.level]))
-        .toEqual([[4, 7, 2]])
+        .toEqual([[4, 7, 3]])
     })
 
     it("ranks the heat strip over the bars that strike a note only", () => {
-      let bars = Array.from({length: 16}, (_, i) =>
-        (i >= 8 && i <= 10) ? denseBar() : ((i == 12 || i == 13) ? uniformBlank() : quietBar()))
-      let song = parseMusicXML(pianoScore({bars}))
-      let heatPct = analyzePiece({song, source: null, at: 1}).runs.score.heat
+      // a bar of sixteenths in one hand only, between the quiet bars and the
+      // dense ones, so its rank moves if anything is added to the ranking
+      let halfDense = {
+        upper: DENSE_UPPER.map(name => ({name, duration: 0.25, type: "16th"})),
+        lower: QUIET_LOWER.map(name => ({name})),
+      }
+      let bars = [
+        ...Array.from({length: 8}, () => quietBar()),
+        denseBar(), denseBar(), denseBar(),
+        halfDense,
+        quietBar(), quietBar(),
+      ]
+      let heatOf = songBars =>
+        analyzePiece({song: parseMusicXML(pianoScore({bars: songBars})), source: null, at: 1})
+          .runs.score.heat
 
-      expect(heatPct.length).toEqual(16)
-      expect([heatPct[12], heatPct[13]]).toEqual([0, 0])
-      expect(heatPct.filter(pct => pct == 0).length).toEqual(2)
-      expect(heatPct[8]).toEqual(Math.max(...heatPct))
-      expect(heatPct[0]).toBeGreaterThan(0)
-      expect(heatPct[0]).toBeLessThan(heatPct[8])
+      let noted = heatOf(bars)
+      let withBlanks = heatOf([...bars, uniformBlank(), uniformBlank()])
+
+      expect(withBlanks.length).toEqual(16)
+      expect([withBlanks[14], withBlanks[15]]).toEqual([0, 0])
+      expect(withBlanks[11]).toBeGreaterThan(0)
+      expect(withBlanks[11]).toBeLessThan(withBlanks[8])
+
+      // the blank bars are no part of the ranking: every bar that strikes a
+      // note reads just as it does in the same piece without them
+      expect(withBlanks.slice(0, 14)).toEqual(noted)
     })
 
-    it("ranks bars that score alike at the middle of their tie", () => {
-      // the workhorse's 13 quiet bars all score the same, so they share one
-      // rank: the easiest bars must not read as the hardest of the tie
-      let analysis = analyzePiece({song: workhorseSong(), source: null, at: 1})
+    it("ranks a piece's hardest bars at the top of the strip, however many tie", () => {
+      // four bars of the same dense writing: they are the hardest thing in
+      // the piece and must read as that, not as a notch below it
+      let analysis = analyzePiece({song: workhorseSong({denseAt: [9, 10, 11, 12]}), source: null, at: 1})
       let heatPct = analysis.runs.score.heat
 
-      let flagged = new Set()
-      for (let p of analysis.proposals) {
-        for (let n = p.start; n <= p.end; n++) { flagged.add(n) }
-      }
-      expect([...flagged].sort((a, b) => a - b)).toEqual([9, 10, 11])
+      expect(analysis.proposals.map(p => [p.start, p.end, p.level])).toEqual([[9, 12, 3]])
 
-      for (let number of [9, 10, 11]) {
+      for (let number of [9, 10, 11, 12]) {
         expect(heat(heatPct[number - 1])).toEqual(4)
       }
-      for (let number of [1, 2, 3, 4, 5, 6, 7, 8, 12, 13, 14, 15, 16]) {
-        expect(heat(heatPct[number - 1])).toBeLessThanOrEqual(1)
+      for (let number of [1, 2, 3, 4, 5, 6, 7, 8, 13, 14, 15, 16]) {
+        expect(heat(heatPct[number - 1])).toEqual(0)
       }
     })
 
@@ -422,6 +436,11 @@ describe("st/difficulty", () => {
 
       let proposals = analyzePiece({song, source: null, at: 1}).proposals
       expect(proposals.map(p => p.alsoAt)).toEqual([[[17, 19]]])
+
+      // the passage's own reasons give way to where it recurs, which is
+      // always the last thing it says
+      expect(proposals[0].reasons.length).toEqual(3)
+      expect(proposals[0].reasons[2]).toEqual("Also at bars 17–19.")
     })
 
     it("merges a repeat into the earliest flagged copy, the first copy unflagged", () => {

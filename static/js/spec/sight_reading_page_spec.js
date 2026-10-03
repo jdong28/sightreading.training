@@ -407,6 +407,8 @@ describe("sight reading page", function() {
     expect(accuracyPercent(0, 0)).toBe(null)
     expect(accuracyPercent(3, 1)).toEqual(75)
     expect(["I", "II", "III", "IV", "IX"]).toEqual([1, 2, 3, 4, 9].map(romanNumeral))
+    expect([40, 41, 49, 50, 90, 99, 100, 400, 1984].map(romanNumeral))
+      .toEqual(["XL", "XLI", "XLIX", "L", "XC", "XCIX", "C", "CD", "MCMLXXXIV"])
   })
 
   it("titles the score page by what it drills", function() {

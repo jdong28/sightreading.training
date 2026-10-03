@@ -1,10 +1,10 @@
 // Turns st/difficulty/features.js's per-bar measurements into scores and
-// groups the hardest bars into passages. The numbers here (ANALYZER_ALGO 6)
+// groups the hardest bars into passages. The numbers here (ANALYZER_ALGO 7)
 // are a first guess (report section 9): tune them freely, but bump
 // ANALYZER_ALGO whenever a change would relabel an existing piece's flags,
 // so a stale record is recomputed rather than silently kept.
 
-export const ANALYZER_ALGO = 6
+export const ANALYZER_ALGO = 7
 
 const MIN_ANALYSIS_BARS = 8
 
@@ -268,25 +268,30 @@ function runRestsOnOneSignal(run) {
   return [...signals].every(kind => READING_KINDS.has(kind))
 }
 
-// a score's percentile rank among scores, the one rank the strip's heat and
-// a passage's level are both read from: the middle of its tie block (the
-// scores below it, plus half the ones equal to it), so bars that score the
-// same share a rank and the easiest of them is never reported as the
-// hardest of them
+// a score's rank among scores, the one rank the strip's heat and a
+// passage's level are both read from: how far it stands between the scores
+// below it and the ones above it, so bars that score the same share a rank,
+// the easiest of a piece sit at 0 and its hardest reach 1 however many of
+// them there are
 export function percentileRank(score, scores) {
-  if (!scores.length) { return 0 }
-
   let below = 0
-  let equal = 0
+  let above = 0
   for (let v of scores) {
-    if (v < score) { below += 1 } else if (v == score) { equal += 1 }
+    if (v < score) { below += 1 } else if (v > score) { above += 1 }
   }
 
-  return (below + equal / 2) / scores.length
+  if (!(below + above)) { return 0 }
+
+  return below / (below + above)
+}
+
+// a bar the threshold admits, as against one buildRuns only bridges
+function isHot(bar, threshold) {
+  return bar.score >= threshold && bar.score > 0
 }
 
 function buildRuns(scored, threshold) {
-  let hot = scored.map(bar => bar.score >= threshold && bar.score > 0)
+  let hot = scored.map(bar => isHot(bar, threshold))
   let runs = []
   let current = null
 
@@ -422,18 +427,29 @@ function passageOf(run, notedScores) {
   }
 }
 
-// the contiguous window of size bars whose strength is the greatest, the
-// earliest of them when two are equally strong
-function strongestWindow(run, size) {
-  let best = run.slice(0, size)
-  let bestStrength = strength(best)
+// the strongest window of at most size bars of a run that begins and ends
+// on a bar the threshold admits, the earliest of them when two are equally
+// strong: a passage never opens or closes on a bar only bridged into it, as
+// buildRuns' own runs never do. null when the room leaves no such window.
+function strongestWindow(run, size, threshold) {
+  let best = null
+  let bestStrength = -Infinity
 
-  for (let i = 1; i + size <= run.length; i++) {
-    let window = run.slice(i, i + size)
-    let str = strength(window)
-    if (str > bestStrength) {
-      bestStrength = str
-      best = window
+  for (let i = 0; i < run.length; i++) {
+    if (!isHot(run[i], threshold)) { continue }
+
+    // the longest window from here holds every bar a shorter one does, so
+    // it is the strongest of them
+    for (let len = Math.min(size, run.length - i); len >= 2; len--) {
+      if (!isHot(run[i + len - 1], threshold)) { continue }
+
+      let window = run.slice(i, i + len)
+      let str = strength(window)
+      if (str > bestStrength) {
+        bestStrength = str
+        best = window
+      }
+      break
     }
   }
 
@@ -464,7 +480,9 @@ function passagesAtThreshold(scored, notedScores, threshold, budget) {
     let fitted = candidate
     if (candidate.run.length > room) {
       if (room < 2) { continue }
-      fitted = passageOf(strongestWindow(candidate.run, room), notedScores)
+      let window = strongestWindow(candidate.run, room, threshold)
+      if (!window) { continue }
+      fitted = passageOf(window, notedScores)
     }
 
     budgeted.push(fitted)

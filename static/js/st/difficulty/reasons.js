@@ -7,6 +7,8 @@ import {parseNote, noteStaffOffset, displayNoteName, barsLabel} from "st/music"
 
 const HAND_WORD = {upper: "right", lower: "left"}
 
+const MAX_REASONS = 3
+
 function capitalize(text) {
   return text.charAt(0).toUpperCase() + text.slice(1)
 }
@@ -312,11 +314,16 @@ export function passageReasons(passage, {tempo, bars} = {}) {
   let maxDensity = Math.max(0, ...bars.map(b =>
     tempo ? (b.density.perSecond || 0) : (b.density.perBeat || 0)))
 
+  // up to three sentences, and a passage that recurs always ends with where
+  // it does, so its own reasons give way to that rather than crowd it out
+  let recurrences = (passage.alsoAt || []).map(([from, to]) => `Also at ${barsLabel(from, to)}.`)
+  let maxSignals = recurrences.length ? MAX_REASONS - 1 : MAX_REASONS
+
   let reasons = []
   let leadDetail = null
 
   for (let signal of signals) {
-    if (reasons.length >= 3) { break }
+    if (reasons.length >= maxSignals) { break }
 
     let sentenceFn = SENTENCES[signal.kind]
     if (!sentenceFn) { continue }
@@ -343,11 +350,9 @@ export function passageReasons(passage, {tempo, bars} = {}) {
     (TITLES[leadDetail.kind] ? TITLES[leadDetail.kind](leadDetail.hand, ctx) : "A difficult passage") :
     "A difficult passage"
 
-  if (passage.alsoAt && passage.alsoAt.length) {
-    for (let [from, to] of passage.alsoAt) {
-      if (reasons.length >= 3) { break }
-      reasons.push(`Also at ${barsLabel(from, to)}.`)
-    }
+  for (let recurrence of recurrences) {
+    if (reasons.length >= MAX_REASONS) { break }
+    reasons.push(recurrence)
   }
 
   let leadKind = passage.kinds[0]
