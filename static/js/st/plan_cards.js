@@ -420,10 +420,11 @@ export class PlanGenerator extends MeasureCardGenerator {
   /**
    * As MeasureCardGenerator#practiceOnly, save that a hand alone the scaffold
    * offers climbs its own ladder from the bar's failure, so it is on schedule
-   * unless it was played waiting, where the rule for any other card applies,
-   * and that a bar resting until the next sitting is left as it is wherever
-   * it is played, so a card anchored on a neighbour writes it as practice
-   * alone however the pass went
+   * unless the queue offered its rung before it came due (the WAIT reason of
+   * st/srs/planner, whatever drill mode it is played in), where the rule for
+   * any other card applies, and that a bar resting until the next sitting is
+   * left as it is wherever it is played, so a card anchored on a neighbour
+   * writes it as practice alone however the pass went
    * @param {AttemptPass} pass complete
    * @param {Object} opts as for passAttempts
    * @returns {string[]}
