@@ -1,6 +1,6 @@
 import {
   ShapeGenerator, Generator, generatorDefaultSettings, currentScrollTempo, storeCurrentDrill,
-  DRILL_STORAGE_KEY, SCORE_DRILL_STORAGE_KEY,
+  DRILL_STORAGE_KEY, SCORE_DRILL_STORAGE_KEY, focusPool,
 } from "st/generators"
 import {ChordGenerator, MultiKeyChordGenerator} from "st/chord_generators"
 import {
@@ -265,5 +265,97 @@ describe("octave numbering", function() {
       storeCurrentDrill({tempo: false})
       expect(currentScrollTempo()).toBe(false)
     })
+  })
+})
+
+// the session summary card's "Practise these notes" (st/session_summary)
+// seeds Random notes with the weak notes shown
+describe("a focused pool of notes", function() {
+  it("spells every pitch in range as the focused name, sorted low to high", function() {
+    expect(focusPool(["A3", "C6"], ["F#", "Bb"])).toEqual(["Bb3", "F#4", "Bb4", "F#5", "Bb5"])
+  })
+
+  it("is empty when nothing in range matches", function() {
+    expect(focusPool(["C4", "E4"], ["G"])).toEqual([])
+  })
+
+  it("skips a name parseNote can't read", function() {
+    expect(focusPool(["C4", "C6"], ["H", "C##"])).toEqual([])
+  })
+})
+
+describe("random notes created with a focus", function() {
+  let random = GENERATORS.find(g => g.name == "random")
+  let treble = STAVES.find(s => s.name == "treble")
+  let grand = STAVES.find(s => s.name == "grand")
+  let key = new KeySignature(0)
+
+  // RandomNotes#handSize: the halfsteps one hand reaches, so the pitches of
+  // one hand span at most handSize - 1
+  let HAND_SIZE = 11
+
+  // the fewest hands the column needs, walking its pitches low to high and
+  // starting a new hand whenever the next note is out of the current one's
+  // reach (greedy is optimal for covering a line with fixed-width windows)
+  let handsNeeded = column => {
+    let pitches = column.map(parseNote).sort((a, b) => a - b)
+    let hands = 1
+    let lowest = pitches[0]
+
+    for (let pitch of pitches) {
+      if (pitch - lowest >= HAND_SIZE) {
+        hands += 1
+        lowest = pitch
+      }
+    }
+
+    return hands
+  }
+
+  // C over a staff gives one note per octave (C2-C6 on the grand staff, C4-C6
+  // on the treble): a pool wider than one hand and sparser than one hand's
+  // reach, so the hand windows handGroups draws can miss every note of it
+  for (let staff of [grand, treble]) {
+    it(`keeps every column of a sparse focus pool playable on the ${staff.name} staff`, function() {
+      for (let notes = 1; notes <= 5; notes++) {
+        for (let hands = 1; hands <= 2; hands++) {
+          let generator = random.create(staff, key, {notes, hands, focus: {C: true}})
+          let context = `notes ${notes}, hands ${hands}`
+
+          for (let i = 0; i < 200; i++) {
+            let column = generator.nextNote()
+            expect(column.length).withContext(context).toBeGreaterThan(0)
+            for (let note of column) {
+              expect(note).withContext(context).toMatch(/^C\d+$/)
+            }
+            expect(handsNeeded(column)).withContext(context).not.toBeGreaterThan(hands)
+            expect(new Set(column).size).withContext(context).toEqual(column.length)
+          }
+        }
+      }
+    })
+  }
+
+  it("falls back to the unfocused pool with every note off, or none in range", function() {
+    let allOff = random.create(treble, key, {notes: 3, hands: 1, focus: {"F#": false}})
+    expect(allOff.notes.length).toBeGreaterThan(2)
+
+    let narrowed = random.create(treble, key, {
+      notes: 3, hands: 1, focus: {"G#": true},
+      noteRange: [parseNote("C4"), parseNote("E4")],
+    })
+    expect(narrowed.notes.length).toBeGreaterThan(0)
+    expect(narrowed.notes.every(note => note[0] != "G")).toBe(true)
+  })
+
+  it("ignores the chord-based (musical) filter while focused", function() {
+    let generator = random.create(treble, key, {notes: 3, hands: 1, musical: true, focus: {"F#": true}})
+    expect(generator.scale).toBeUndefined()
+
+    for (let i = 0; i < 20; i++) {
+      for (let note of generator.nextNote()) {
+        expect(note).toMatch(/^F#\d+$/)
+      }
+    }
   })
 })

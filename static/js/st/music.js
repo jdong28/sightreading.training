@@ -111,7 +111,7 @@ function parseNoteAccidentals(note) {
 }
 
 // get the octave independent offset in halfsteps (from C), used for comparison
-function parseNoteOffset(note) {
+export function parseNoteOffset(note) {
   let [, letter, accidental] = note.match(/^([A-G])(#|b)?/);
 
   if (OFFSETS[letter] == undefined) {
@@ -180,6 +180,13 @@ export function notesSame(a, b) {
 
 export function addInterval(note, halfSteps) {
   return noteName(parseNote(note) + halfSteps);
+}
+
+// eg. "C#4" -> "C♯4", swapping the accidental for its glyph and leaving
+// the rest of the name alone. The one definition: the pages and
+// st/session_summary all draw note names through it
+export function displayNoteName(note) {
+  return String(note).replace("#", "♯").replace(/^([A-G])b/, "$1♭")
 }
 
 

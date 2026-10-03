@@ -7,7 +7,7 @@ import {shiftNotationOctaves} from "st/song_parser"
 import {
   RandomNotes, SweepRangeNotes, MiniSteps, TriadNotes, SevenOpenNotes,
   ProgressionGenerator, PositionGenerator, IntervalGenerator, SheetMusicGenerator,
-  allKeySignatures
+  allKeySignatures, focusPool
 } from "st/generators"
 
 import {
@@ -609,11 +609,35 @@ const ALL_GENERATORS = [
         name: "musical",
         type: "bool",
         hint: "Column fits random chord",
-      }
+      },
+      // the session summary card's "Practise these notes" seeds this: every
+      // seeded name stays an option while the row shows, and the row hides
+      // itself again once the player has switched them all off
+      {
+        name: "focus",
+        label: "focus notes",
+        type: "toggles",
+        options: settings => Object.keys(settings.focus || {}),
+        visible: settings => Object.values(settings.focus || {}).some(Boolean),
+      },
     ],
     create: function(staff, keySignature, options) {
       let scale = keySignature.defaultScale()
-      let notes = scale.getLooseRange(...staffRange(staff, options.noteRange))
+      let range = staffRange(staff, options.noteRange)
+
+      let on = options.focus && Object.keys(options.focus).filter(name => options.focus[name])
+      let notes = on && on.length ? focusPool(range, on) : null
+
+      // a focus narrowed by the note range can come back empty; fall back
+      // to the unfocused pool rather than drill nothing
+      if (notes && notes.length) {
+        // returning here skips the musical block below, which is the only
+        // thing that attaches the scale: a chord filter on top of an
+        // already-narrow focus pool could empty it
+        return new RandomNotes(notes, options)
+      }
+
+      notes = scale.getLooseRange(...range)
 
       // send the scale
       if (options.musical) {
