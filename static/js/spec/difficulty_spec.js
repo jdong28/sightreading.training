@@ -334,6 +334,21 @@ describe("st/difficulty", () => {
       expect(widePassages.reduce((sum, p) => sum + p.run.length, 0)).toBeLessThanOrEqual(6)
     })
 
+    it("splits a run wider than eight bars without leaving a bridged bar at an edge", () => {
+      // bar 2 is only bridged between bars 1 and 3, and the ten-bar run's
+      // weakest interior bar is bar 3, so the split lands beside it
+      let scores = [20, 0, 10, 20, 20, 20, 20, 20, 20, 20, ...new Array(18).fill(0)]
+      let scored = scores.map((score, i) => scoredBar(i + 1, score))
+      let passages = findPassages(scored, {repeats: new Map()})
+
+      // the left half of the split is bars 1-2, so it keeps bar 1 alone
+      expect(passages.map(p => [p.start, p.end])).toEqual([[1, 1], [4, 10]])
+      for (let p of passages) {
+        expect(p.run[0].score).toBeGreaterThan(0)
+        expect(p.run[p.run.length - 1].score).toBeGreaterThan(0)
+      }
+    })
+
     it("a run resting on one signal stays Worth a look however high it scores", () => {
       let scores = [0.2, 0.2, 0.2, 0.2, 9, 9, 9, 0.2, 0.2, 0.2, 0.2, 0.2]
       let oneSignal = scores.map((score, i) => scoredBar(i + 1, score))

@@ -1,10 +1,10 @@
 // Turns st/difficulty/features.js's per-bar measurements into scores and
-// groups the hardest bars into passages. The numbers here (ANALYZER_ALGO 8)
+// groups the hardest bars into passages. The numbers here (ANALYZER_ALGO 9)
 // are a first guess (report section 9): tune them freely, but bump
 // ANALYZER_ALGO whenever a change would relabel an existing piece's flags,
 // so a stale record is recomputed rather than silently kept.
 
-export const ANALYZER_ALGO = 8
+export const ANALYZER_ALGO = 9
 
 const MIN_ANALYSIS_BARS = 8
 
@@ -456,10 +456,24 @@ function strongestWindow(run, size, threshold) {
   return best
 }
 
+// a run's bars from its first bar the threshold admits to its last, so a
+// bar only bridged into the run is never its edge: splitRun can leave one
+// there, as the weakest bar it splits at is always two bars from either end
+function trimBridged(run, threshold) {
+  let first = 0
+  while (first < run.length && !isHot(run[first], threshold)) { first += 1 }
+
+  let last = run.length - 1
+  while (last > first && !isHot(run[last], threshold)) { last -= 1 }
+
+  return run.slice(first, last + 1)
+}
+
 function passagesAtThreshold(scored, notedScores, threshold, budget) {
   let runs = buildRuns(scored, threshold)
     .flatMap(splitRun)
-    .filter(run => run.length > 1 || percentileRank(run[0].score, notedScores) >= 0.9)
+    .map(run => trimBridged(run, threshold))
+    .filter(run => run.length > 1 || (run.length == 1 && percentileRank(run[0].score, notedScores) >= 0.9))
 
   // the strongest passages first; Worth a look ones are the first to lose
   // their room in the budget
