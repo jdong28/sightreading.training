@@ -75,10 +75,9 @@ export const LIBRARY_FORMAT = "sightreading-library"
 // libraries hold none and import as they are
 // 8: carries the annotations of the pieces (st/difficulty); older libraries
 // have none, and their pieces are analysed on first open
-// 9: pieces carry song format 4 (a trill line's neighbours on every note it
-// runs over, see st/sheet_music_deck); older pieces are read as they are,
-// with a trill line trilling only its marked note until their score is
-// imported again
+// 9: pieces carry song format 4 (a trill line trills every note it runs over,
+// see st/sheet_music_deck); older pieces are read as they are, with a trill
+// line trilling only its marked note until their score is imported again
 export const LIBRARY_VERSION = 9
 
 // sessions started within this many days are loaded into the cache
