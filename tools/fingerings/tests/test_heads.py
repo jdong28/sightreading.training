@@ -116,6 +116,68 @@ def test_place_tries_next_closest_staff_when_the_closest_fails_ledger_check():
     assert round(placed[0]["pos"]) == 17
 
 
+def test_noteheads_caps_a_thick_bar_line_from_becoming_a_chord_stack():
+    """A thick double bar line (or a repeat sign's dots, merged into one
+    blob by the opening disc) spans far more than any one-hand chord
+    could: capped at MAX_CHORD_STACK rather than opened into a column of
+    fake notes, as a chord's own height-based split would otherwise do
+    to any tall, plausible-width blob."""
+    black = _canvas()
+    ys = _draw_staff(black, 300)
+    space = SPACE
+    top, bot = ys[0], ys[-1]
+    x = 400
+    # a solid block, a plausible chord's width but ~8 spaces tall: taller
+    # than six notes a third apart (MAX_CHORD_STACK) allows
+    black[int(top - 2 * space):int(bot + 2 * space), x:x + int(1.2 * space)] = True
+    systems = [_system(ys)]
+    out, _ = heads.noteheads(black, systems)
+    assert out == []
+
+
+def test_split_wide_cluster_recovers_two_noteheads_a_second_apart():
+    """Two noteheads a second apart are drawn side by side (offset, never
+    stacked directly), so a chord with one can read as a single blob too
+    wide for one head: split at the two farthest-apart peaks of its
+    distance transform, each a lobe's own deepest point."""
+    space = SPACE
+    h, w = 40, 60
+    filled = np.zeros((h, w), dtype=bool)
+    yy, xx = np.ogrid[:h, :w]
+    disc1 = (xx - 15) ** 2 + (yy - 20) ** 2 <= 10 ** 2
+    disc2 = (xx - 45) ** 2 + (yy - 20) ** 2 <= 10 ** 2
+    filled |= disc1 | disc2
+    filled[18:23, 15:45] = True  # the touching bridge between them
+    clean = filled.copy()
+    sl = (slice(0, h), slice(0, w))
+
+    out = heads._split_wide_cluster(filled, clean, sl, space)
+    assert out is not None and len(out) == 2
+    xs = sorted(h["x"] for h in out)
+    assert abs(xs[0] - 15) <= 2
+    assert abs(xs[1] - 45) <= 2
+    for h in out:
+        assert h["stacked"] == 1
+
+
+def test_split_wide_cluster_rejects_implausible_halves():
+    """A wide blob with two peaks doesn't always mean two noteheads: when
+    either half comes out an implausible notehead size, the whole blob is
+    left alone rather than guessed at."""
+    space = SPACE
+    h, w = 40, 90
+    filled = np.zeros((h, w), dtype=bool)
+    yy, xx = np.ogrid[:h, :w]
+    tiny = (xx - 10) ** 2 + (yy - 20) ** 2 <= 3 ** 2
+    giant = (xx - 60) ** 2 / (25 ** 2) + (yy - 20) ** 2 / (18 ** 2) <= 1
+    filled |= tiny | giant
+    filled[18:23, 10:60] = True
+    clean = filled.copy()
+    sl = (slice(0, h), slice(0, w))
+
+    assert heads._split_wide_cluster(filled, clean, sl, space) is None
+
+
 def test_place_without_black_skips_ledger_check():
     """Backward compatible: when black isn't given (as in a few
     diagnostic/test call sites), every head within max_ledger is kept,

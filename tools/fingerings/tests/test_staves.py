@@ -349,6 +349,188 @@ def test_assign_bars_clef_artifact_not_mistaken_for_missing_opening():
     assert len(sys_["measures"]) == 1
 
 
+def _draw_sparse_staff(black, top_y, space=SPACE, thickness=THICK, seg=15, gap=55):
+    """A staff drawn thin enough (~0.2 row fill) to pass `_staff_in_band`'s
+    lowered threshold but miss `staff_lines`' normal one, standing in for
+    ink suppressed by dense, unrelated content on the same rows."""
+    ys = [top_y + i * space for i in range(5)]
+    for y in ys:
+        x = 0
+        while x < black.shape[1]:
+            _draw_line(black, y, x0=x, x1=min(black.shape[1], x + seg), thickness=thickness)
+            x += seg + gap
+    return ys
+
+
+def test_recover_missing_staff():
+    """A system whose top staff is suppressed below staff_lines' usual
+    floor (dense content on the same rows, here just stood in for by thin
+    ink) still comes back with both staves, found in the gap the other,
+    complete systems' own layout predicts and confirmed connected."""
+    black = np.zeros((1500, W), dtype=bool)  # three systems need more height than _canvas()
+    ys0a = _draw_staff(black, 100)
+    ys0b = _draw_staff(black, 350)
+    black[int(ys0a[0]):int(ys0b[-1]) + 1, 10:10 + THICK] = True
+    ys1a = _draw_sparse_staff(black, 600)
+    ys1b = _draw_staff(black, 850)
+    black[int(ys1a[0]):int(ys1b[-1]) + 1, 10:10 + THICK] = True
+    ys2a = _draw_staff(black, 1100)
+    ys2b = _draw_staff(black, 1350)
+    black[int(ys2a[0]):int(ys2b[-1]) + 1, 10:10 + THICK] = True
+
+    G = staves.from_black(black)
+    assert len(G["systems"]) == 3
+    assert [len(s["staves"]) for s in G["systems"]] == [2, 2, 2]
+    recovered = G["systems"][1]["staves"][0]
+    assert abs(recovered["lines"][0] - ys1a[0]) <= 2
+
+
+def test_recover_missing_staff_mode_tie_prefers_the_larger_count():
+    """With only two systems on the page, one complete and one deficient,
+    the vote for the page's own typical staff count is a tie: it must
+    still favour the larger side (the deficient system is the one being
+    searched for, never the page's mode)."""
+    black = np.zeros((1000, W), dtype=bool)  # two systems need more height than _canvas()
+    ys0a = _draw_staff(black, 100)
+    ys0b = _draw_staff(black, 350)
+    black[int(ys0a[0]):int(ys0b[-1]) + 1, 10:10 + THICK] = True
+    ys1a = _draw_sparse_staff(black, 600)
+    ys1b = _draw_staff(black, 850)
+    black[int(ys1a[0]):int(ys1b[-1]) + 1, 10:10 + THICK] = True
+
+    G = staves.from_black(black)
+    assert len(G["systems"]) == 2
+    assert [len(s["staves"]) for s in G["systems"]] == [2, 2]
+
+
+def test_barlines_recovers_a_worn_opening_line():
+    """The opening line is always a bar line (rule 1), but worn print can
+    break it up enough that no column passes the strict per-staff
+    min_fill test: real content before the first bar actually found (not
+    just a key signature's accidentals, which the width check below
+    still screens out) is the signal that one was missed."""
+    black = _canvas()
+    ys_a = _draw_staff(black, 100)
+    ys_b = _draw_staff(black, 300)
+    space = SPACE
+    top, bot = ys_a[0], ys_b[-1]
+    sys_ = _one_system([ys_a, ys_b])
+
+    # the real opening line, worn: short gaps every 15px (85% solid)
+    opening_x = 50
+    black[int(top):int(bot) + 1, opening_x:opening_x + 2] = True
+    for gy in range(int(top), int(bot) + 1, 15):
+        black[gy:gy + 2, opening_x:opening_x + 2] = False
+
+    # a key signature's accidentals in the header, wide enough that the
+    # header-vs-measure width check (calibrated on real measures) still
+    # lets it through rather than reading it as a header
+    heads_in_system = [
+        dict(x=opening_x + int(0.5 * space), y=ys_a[2], w=space, system=0, staff=1),
+        dict(x=opening_x + int(2.5 * space), y=ys_b[2], w=space, system=0, staff=2),
+    ]
+    b0x = opening_x + 6 * space
+    black[int(top):int(bot) + 1, b0x:b0x + 2] = True
+    black[int(top):int(bot) + 1, b0x + int(0.5 * space):b0x + int(0.5 * space) + 2] = True
+    rx = b0x + int(0.5 * space)
+    bar_xs = [rx + 8 * space, rx + 16 * space, rx + 24 * space]
+    for bx in bar_xs:
+        black[int(top):int(bot) + 1, bx:bx + 2] = True
+    for bx in (rx,) + tuple(bar_xs[:-1]):
+        hx = bx + 4 * space
+        _draw_head(black, hx, ys_a[2])
+        heads_in_system.append(dict(x=hx, y=ys_a[2], w=space, system=0, staff=1))
+
+    bars = staves.barlines(black, sys_, heads_in_system=heads_in_system)
+    xs = sorted(round(b["x"]) for b in bars)
+    assert any(abs(x - opening_x) <= 3 for x in xs)
+    assert len(bars) == 5  # the recovered opening plus 4 real bars
+
+
+def test_barlines_recovers_a_worn_opening_line_still_drops_a_real_header():
+    """The same recovery, re-validated through the header-drop check
+    exactly as a freshly-detected candidate would be: a key signature
+    alone (narrow header, no start-repeat to widen it) is still dropped,
+    not trusted just for having been recovered."""
+    black = _canvas()
+    ys_a = _draw_staff(black, 100)
+    ys_b = _draw_staff(black, 300)
+    space = SPACE
+    top, bot = ys_a[0], ys_b[-1]
+    sys_ = _one_system([ys_a, ys_b])
+
+    opening_x = 50
+    black[int(top):int(bot) + 1, opening_x:opening_x + 2] = True
+    for gy in range(int(top), int(bot) + 1, 15):
+        black[gy:gy + 2, opening_x:opening_x + 2] = False
+    heads_in_system = [
+        dict(x=opening_x + int(0.5 * space), y=ys_a[2], w=space, system=0, staff=1),
+        dict(x=opening_x + int(2.5 * space), y=ys_b[2], w=space, system=0, staff=2),
+    ]
+    # the same thick start-repeat group as the test above, but only 4
+    # spaces after the opening (not 6): narrow enough, relative to the
+    # real measures that follow, to still read as a header
+    b0x = opening_x + 4 * space
+    black[int(top):int(bot) + 1, b0x:b0x + 2] = True
+    black[int(top):int(bot) + 1, b0x + int(0.5 * space):b0x + int(0.5 * space) + 2] = True
+    rx = b0x + int(0.5 * space)
+    bar_xs = [rx + 8 * space, rx + 16 * space, rx + 24 * space]
+    for bx in bar_xs:
+        black[int(top):int(bot) + 1, bx:bx + 2] = True
+    for bx in (rx,) + tuple(bar_xs[:-1]):
+        hx = bx + 4 * space
+        _draw_head(black, hx, ys_a[2])
+        heads_in_system.append(dict(x=hx, y=ys_a[2], w=space, system=0, staff=1))
+
+    bars = staves.barlines(black, sys_, heads_in_system=heads_in_system)
+    xs = sorted(round(b["x"]) for b in bars)
+    assert not any(abs(x - opening_x) <= 3 for x in xs)
+    assert len(bars) == 4
+
+
+def test_barlines_drops_a_stem_mistaken_for_a_bar_line():
+    """A column can fill both staves solidly without being a bar line:
+    two separate notes' stems, one in each staff, happening to line up.
+    Real bar lines here are themselves print-worn enough (a small gap at
+    the middle of the inter-staff gap) that the gap isn't reliably
+    "barred" system-wide, so the per-staff-only rule -- which the stem
+    also passes -- is what's in play; the stem is told apart by never
+    carrying ink through the gap's own middle, and by crowding its
+    neighbour into an implausibly narrow "measure"."""
+    black = _canvas()
+    ys_a = _draw_staff(black, 100)
+    ys_b = _draw_staff(black, 300)
+    space = SPACE
+    top, bot = ys_a[0], ys_b[-1]
+    gap_y0, gap_y1 = ys_a[-1], ys_b[0]
+    sys_ = _one_system([ys_a, ys_b])
+    black[int(top):int(bot) + 1, 10:10 + THICK] = True
+
+    def draw_worn_bar(x):
+        black[int(top):int(bot) + 1, x:x + 2] = True
+        midy = int((gap_y0 + gap_y1) / 2)
+        black[midy - 5:midy + 5, x:x + 2] = False
+
+    real_xs = [10 + 8 * space, 10 + 16 * space, 10 + 24 * space, 10 + 32 * space]
+    for x in real_xs:
+        draw_worn_bar(x)
+
+    # the fake "stem" bar: both staves solidly filled, but the whole
+    # middle of the gap is untouched, and it's well short of a measure
+    # away from its neighbour
+    stem_x = real_xs[1] + int(2 * space)
+    black[int(ys_a[0]):int(ys_a[-1]) + 1, stem_x:stem_x + 2] = True
+    black[int(ys_b[0]):int(ys_b[-1]) + 1, stem_x:stem_x + 2] = True
+    black[int(gap_y0):int(gap_y0) + 4, stem_x:stem_x + 2] = True
+    black[int(gap_y1) - 4:int(gap_y1), stem_x:stem_x + 2] = True
+
+    bars = staves.barlines(black, sys_, heads_in_system=[])
+    xs = sorted(round(b["x"]) for b in bars)
+    assert not any(abs(x - stem_x) <= 2 for x in xs)
+    for x in real_xs:
+        assert any(abs(xx - x) <= 2 for xx in xs)
+
+
 def test_assign_bars_rest_only_system_no_heads():
     """A system holding only a printed multi-bar rest has no notehead at
     all to detect, so the head-based "no drawn opening line" signal can

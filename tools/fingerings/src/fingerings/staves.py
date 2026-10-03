@@ -394,7 +394,10 @@ def _recover_missing_staff(black, systems):
     counts = [len(s["staves"]) for s in systems]
     if not counts:
         return
-    mode_count = max(set(counts), key=counts.count)
+    # ties (plausible on a short page: as few as one full system against
+    # one deficient one) favour the larger count -- a deficient system
+    # is what this function looks for, never the page's own mode.
+    mode_count = max(set(counts), key=lambda c: (counts.count(c), c))
     if mode_count <= 1:
         return
     full = [s for s in systems if len(s["staves"]) == mode_count]
