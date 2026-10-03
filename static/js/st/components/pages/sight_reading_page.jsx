@@ -70,7 +70,8 @@ const STAFF_TWO_HEIGHT = 150
 // both renderers draw the staff this much smaller inside the staff plate
 export const PLATE_STAFF_SCALE = 0.8
 
-// the legacy renderer's scale for the window's width
+// the staff's scale for the window's width: the legacy renderer draws at
+// it, and StaffTwo spaces its columns by it too (see its columnDx)
 function staffScale() {
   return (window.innerWidth < 1000 ? 0.8 : 1) * PLATE_STAFF_SCALE
 }
@@ -152,6 +153,10 @@ export const EXERCISES_PROGRAMME = {
   initialStaff: () => currentStaffFor(STAVES),
   // the key drawn when the generator doesn't draw in its own
   userKey: () => currentKeySignature(),
+  // draws the staff with StaffTwo (at height 150 inside the plate) rather
+  // than the legacy renderer; the score page leaves this unset, so its
+  // engine cards and app-staff fallback are unaffected
+  staffTwo: true,
 
   // Optional:
   // idleTitle, the page title's {title, italic} while no piece is drilled, in
@@ -275,7 +280,7 @@ export default class SightReadingPage extends React.Component {
     }
 
     this.state = {
-      newRenderer: props.useStaffTwo || false,
+      newRenderer: props.useStaffTwo || !!this.programme.staffTwo,
       noteShaking: false,
       anyOctave: false,
 
@@ -770,8 +775,9 @@ export default class SightReadingPage extends React.Component {
     return this.setState(state => ({ notes, droppedPitches, cardSeq: state.cardSeq + 1 }))
   }
 
-  // keeps state.staffWidth up to date with the staff wrapper's width, which
-  // an engine draws a piece's card to
+  // keeps the measurements of the staff wrapper up to date: its width,
+  // which an engine draws a piece's card to, and the scroll-mode hit
+  // band's centre (see measureStaffWrapper)
   observeStaffWrapper(el) {
     if (this.staffResizeObserver) {
       this.staffResizeObserver.disconnect()
@@ -795,8 +801,13 @@ export default class SightReadingPage extends React.Component {
 
     let padding = parseFloat(window.getComputedStyle(el).paddingLeft) || 0
     let staffWidth = el.clientWidth - padding
-    if (staffWidth != this.state.staffWidth) {
-      this.setState({staffWidth})
+    // the scroll-mode hit band's centre (sight_reading_page.module.css's
+    // .scroll_mode .staff_wrapper::before), in StaffTwo's own pixels: the
+    // band is centred on the wrapper's full (padded) box, and StaffTwo's
+    // box starts after the left padding
+    let hitX = el.clientWidth / 2 - padding
+    if (staffWidth != this.state.staffWidth || hitX != this.state.hitX) {
+      this.setState({staffWidth, hitX})
     }
   }
 
@@ -1672,6 +1683,8 @@ export default class SightReadingPage extends React.Component {
            scale = {this.state.scale}
            height = {STAFF_TWO_HEIGHT}
            maxScale = {0.3 * PLATE_STAFF_SCALE}
+           range = {this.state.currentStaff.range}
+           hitX = {this.state.mode == "scroll" ? this.state.hitX : null}
           />
       } else if (engineCard) {
         staff = <ScoreCard
