@@ -472,15 +472,21 @@ export default class SightReadingPage extends React.Component {
     return !!this.state.tempo
   }
 
+  // D4(c): whether the head column isn't being read yet: at rest, or
+  // nothing played since Begin or the drill was rebuilt
+  // (this.playedThisSegment). The staff starts such a column over on the
+  // hit line, as it stands with the setting off (see followHead)
+  headRests() {
+    return !this.state.session || !this.playedThisSegment
+  }
+
   // D4(c): whether the head column still waits at the line (as D4(a)
-  // always does) rather than scroll past it: at rest, nothing played since
-  // Begin or the drill was rebuilt (this.playedThisSegment), or the column
-  // opens a card or a lap of a looping card (cardIndex 0). A generator
-  // without cardIndex (the random-note exercises, pasted notation) is
-  // therefore only ever exempt by the second condition
+  // always does) rather than scroll past it: it isn't being read yet
+  // (headRests), or it opens a card or a lap of a looping card (cardIndex
+  // 0). A generator without cardIndex (the random-note exercises, pasted
+  // notation) is therefore only ever exempt by headRests
   headWaits() {
-    if (!this.state.session) { return true }
-    if (!this.playedThisSegment) { return true }
+    if (this.headRests()) { return true }
 
     let notes = this.matcher.notes
     let column = notes && notes.length ? notes.currentColumn() : []
@@ -493,10 +499,13 @@ export default class SightReadingPage extends React.Component {
   // followLine would otherwise keep moving its arrival forward, resetting
   // its lateness (the slider rests there, so no frame of it moves either).
   // Off, this restores wait-at-the-line (D4(a)) and never touches onLine,
-  // so that behaviour stays bit-identical. On, a waiting column's floor
-  // never jumps back past where it already stands, with the loop point kept
-  // below that floor so a slider the floor holds never loops however far
-  // past the line the floor sits; a scrolling column's floor is lifted
+  // so that behaviour stays bit-identical. On, a column not being read yet
+  // (headRests: at rest, at Begin, on a rebuilt drill) is carried back to
+  // the line the same way, since there is no reading of it to keep the
+  // staff where it stands for; a column handed over mid-list that waits
+  // keeps its floor where the staff already stands, with the loop point
+  // kept below that floor so a slider the floor holds never loops however
+  // far past the line the floor sits; a scrolling column's floor is lifted
   // (null) and the slider's loop point moves to the tolerance short of the
   // line, restarting the animation if it had stopped. Either way the matcher
   // is told when the new head reaches, or reached, the line, which can be in
@@ -517,7 +526,11 @@ export default class SightReadingPage extends React.Component {
       return
     }
 
-    if (this.headWaits()) {
+    if (this.headRests()) {
+      slider.floor = SCROLL_WAIT
+      slider.passAt = 0
+      slider.checkAndStart()
+    } else if (this.headWaits()) {
       slider.floor = Math.min(SCROLL_WAIT, slider.value)
       slider.passAt = slider.floor - TEMPO_TOLERANCE
     } else {

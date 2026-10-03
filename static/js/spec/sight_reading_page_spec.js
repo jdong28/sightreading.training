@@ -1860,6 +1860,35 @@ describe("sight reading page", function() {
           expect(slider.value).toEqual(SCROLL_WAIT)
         })
 
+        // the floor that keeps the staff where it stands is for a head
+        // handed over mid-list, which is being read: Rest and Begin start a
+        // column over on the line, as the setting going off does
+        it("carries the head back to the line at Rest and at Begin", async function() {
+          let el = await renderSection({measuresPerCard: "2"}, {mode: "scroll", tempo: true})
+          let slider = page.state.slider
+
+          playHead()
+          slider.value = SCROLL_WAIT - 0.2
+          flushSync(() => slider.onLoop())
+
+          // the staff comes to rest below the line, where tempo mode left it
+          await frames(3)
+          expect(slider.value).toBeLessThan(SCROLL_WAIT)
+
+          click(buttonNamed(el, "Rest"))
+          expect(slider.floor).toEqual(SCROLL_WAIT)
+          await frames(3)
+          expect(slider.value).toEqual(SCROLL_WAIT)
+          await waitFor(() => store.recentSessions().length == 1, "the session to be saved")
+
+          // and again at Begin, which starts the drill's first column over
+          slider.value = SCROLL_WAIT - 0.2
+          click(buttonNamed(el, "Begin"))
+          expect(slider.floor).toEqual(SCROLL_WAIT)
+          await frames(3)
+          expect(slider.value).toEqual(SCROLL_WAIT)
+        })
+
         // a column that scrolls past hands the next one over at the room it
         // held, which on an engine's system can be shorter than the
         // tolerance and so leave the staff past the line: a waiting column
@@ -1872,6 +1901,13 @@ describe("sight reading page", function() {
             await renderSection({measuresPerCard: "2"}, {mode: "scroll", tempo: true})
             let slider = page.state.slider
             page.matcher.now = () => clock.now
+
+            // the card is played through, so its last column hands the next
+            // card's opening column over mid-list: a wait that keeps the
+            // staff where the column before it left it
+            playHead()
+            playHead()
+            expect(page.state.notes.currentColumn().cardIndex).toEqual(0)
 
             // the waiting head stands a tolerance and more past the line
             slider.value = -0.2
