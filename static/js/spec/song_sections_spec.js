@@ -6,7 +6,7 @@ import {
   parseSongText, staffTracks
 } from "st/song_sections"
 import {parseMusicXML} from "st/musicxml"
-import {noteXML, nocturneBars5to6, tiedTrillScore, reverieOpening, repeatedNoteBar} from "spec/helpers"
+import {noteXML, nocturneBars5to6, tiedTrillScore, trillLineScore, reverieOpening, repeatedNoteBar} from "spec/helpers"
 
 import {
   SheetMusicGenerator, generatorDefaultSettings, storeGeneratorSettings,
@@ -219,6 +219,30 @@ describe("song sections", function() {
       let right = extractSectionColumns(parseMusicXML(tiedTrillScore()),
         {startMeasure: 1, endMeasure: 2, track: staffTracks(parseMusicXML(tiedTrillScore())).treble, notation: true})
       expect(trailingSets(right)).toEqual([[["C5"], ["C5", "D5"]]])
+    })
+
+    // sr-detect-trill-lines-n7b: every note a trill line runs over is trilled,
+    // so each column under it allows its notes' upper neighbours, and the
+    // trilled note again past its onset, up to the column after the line's
+    // last note, which is trilled by nothing
+    it("allows a trill line's neighbours over every note it runs over, up to its stop", function() {
+      let song = parseMusicXML(trillLineScore())
+
+      let right = extractSectionColumns(song, {startMeasure: 1, endMeasure: 2, track: staffTracks(song).treble, notation: true})
+      expect(allowances(right)).toEqual([
+        [["G4", "E5"], ["F#5"]], [["D5"], ["E5"]], [["F#4", "C5"], ["D5"]], [["G4", "B4"], null],
+      ])
+      expect(trailingSets(right)).toEqual([
+        [["G4", "E5"], ["E5", "F#5"]], [["D5"], ["D5", "E5"]], [["F#4", "C5"], ["C5", "D5"]], [["G4", "B4"], null],
+      ])
+
+      let both = extractSectionColumns(song, {startMeasure: 1, endMeasure: 2, notation: true})
+      expect(allowances(both)).toEqual([
+        [["G2", "G4", "E5"], ["F#5"]], [["D3"], ["E5", "F#5"]], [["B3"], ["E5", "F#5"]], [["D3"], ["E5", "F#5"]],
+        [["G2", "D5"], ["E5"]], [["D3"], ["D5", "E5"]], [["B3"], ["D5", "E5"]], [["D3"], ["D5", "E5"]],
+        [["D2", "F#4", "C5"], ["D5"]], [["A2"], ["C5", "D5"]], [["F#3"], ["C5", "D5"]], [["A2"], ["C5", "D5"]],
+        [["G2", "G4", "B4"], null], [["D3"], null], [["B3"], null], [["D3"], null],
+      ])
     })
 
     // 4/4, C major: a whole note C5 carrying one ornament over the left
