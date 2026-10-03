@@ -1458,7 +1458,7 @@ describe("ScoreCard", function() {
 
   it("re-attaches a kept system with none of the marks it was drilled with", async function() {
     let names = ["C4", "D4", "E4", "F4"]
-    let notesFor = {"1-4": names, "2-2": ["G4"]}
+    let notesFor = {"1-4": names, "2-2": ["G4"], "3-3": ["G4"]}
     let loadEngines = () => Promise.resolve({ENGINES: {osmd: {
       renderSystem: async ({fromMeasure, toMeasure}) => {
         let svg = document.createElementNS(SVG_NS, "svg")
@@ -1481,6 +1481,9 @@ describe("ScoreCard", function() {
       ...base, fromMeasure: 2, toMeasure: 2, staves: [{part: "P1", staff: 2}],
       columns: columnsOf(notesFor["2-2"]), head: 0,
     }
+    // a second hand-alone bar, so the section is left for a system the engine
+    // has yet to draw rather than for another kept one
+    let otherBar = {...bar, fromMeasure: 3, toMeasure: 3}
     let marks = () => [...container.querySelectorAll("[data-score-card] svg > *")]
       .map(el => Object.values(MARK_CLASSES).filter(cls => el.classList.contains(cls)))
     let barDrawn = () => waitFor(() => card.result && card.result.notes.length == 1,
@@ -1502,7 +1505,7 @@ describe("ScoreCard", function() {
     // away and back on another of its bars: scroll mode joins the card's own
     // columns alone (SightReadingPage#engineCard), so the bars the drill has
     // left keep no mark of the pass they were drilled in
-    rerenderCard(bar)
+    rerenderCard(otherBar)
     await barDrawn()
     rerenderCard({...section(names.slice(0, 1)), head: 0})
     expect(card.result).toBeTruthy()
