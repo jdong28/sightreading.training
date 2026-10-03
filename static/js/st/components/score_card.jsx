@@ -207,6 +207,13 @@ export class ScoreCard extends React.Component {
     return scrollAdvance(this.track, column, next)
   }
 
+  // the drawn heads of the column at the head of the drill, which the
+  // plate's ink smudge marks (see PlateFeedback): [] before the card is
+  // joined, or with no column at the head
+  headElements() {
+    return this.cardJoin && this.props.head != null ? this.cardJoin.heads[this.props.head] || [] : []
+  }
+
   // where the system's hit line is, in the middle of the plate
   hitX() {
     return this.props.width / 2
