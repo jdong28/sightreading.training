@@ -171,7 +171,8 @@ weak-below-75% rule and the insight sentence all come from). The four stat cards
 Elapsed/Accuracy/Notes read/Best streak, or, for a sitting with nothing detected (acoustic
 self-graded practice), the three live acoustic cards Elapsed/Passes/Clean. The context label next
 to each trouble row is its miss count. "Practise these notes" switches the trainer to Random
-notes focused on the rows shown (`SightReadingPage#practiseNotes`), hidden on a page whose
+notes focused on the weak rows alone, the ones drawn in oxblood
+(`SightReadingPage#practiseNotes`), and is hidden when nothing shown is weak or on a page whose
 generator can't take a seed (the sheet music generator, so the score page never shows it). "New
 programme" is a link to `/setup` on the exercises page, and on the score page closes the card and
 opens its own drawer instead. "See all progress →" links to `/stats` until the progress screen

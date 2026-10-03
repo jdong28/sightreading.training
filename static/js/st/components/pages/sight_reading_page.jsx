@@ -16,7 +16,7 @@ import styles from "./sight_reading_page.module.css"
 import staffStyles from "st/components/staff.module.css"
 import devMetricsStyles from "st/components/sight_reading/dev_metrics_panel.module.css"
 
-import {noteName, parseNote} from "st/music"
+import {noteName, parseNote, displayNoteName} from "st/music"
 import {
   STAVES, GENERATORS, sheetMusicPiece, handTracks, handSetting, drilledRange, sectionDroppedPitches, RIGHT_HAND, LEFT_HAND,
 } from "st/data"
@@ -114,11 +114,6 @@ export function romanNumeral(n) {
     }
   }
   return out
-}
-
-// eg. "C#4" -> "C♯4", in the app's octave numbering like the keyboard labels
-function displayNoteName(note) {
-  return String(note).replace("#", "♯").replace(/^([A-G])b/, "$1♭")
 }
 
 function measuresLabel(start, end) {
@@ -1107,10 +1102,10 @@ export default class SightReadingPage extends React.Component {
   }
 
   // "Practise these notes": closes the card and switches to the programme's
-  // focusGenerator (eg. Random notes), focused on the card's own rows, same
-  // staff and key, staying at rest. Unreachable without a focusGenerator
-  // (the pill is hidden, see renderSummary) or without rows (chord sessions
-  // have none)
+  // focusGenerator (eg. Random notes), focused on the card's weak rows
+  // (focusFromRows), same staff and key, staying at rest. Unreachable
+  // without a focusGenerator (the pill is hidden, see renderSummary) or
+  // without a weak row (chord sessions have none)
   practiseNotes() {
     let summary = this.state.summary
     if (!summary) { return }
@@ -1127,7 +1122,7 @@ export default class SightReadingPage extends React.Component {
     if (!generator) { return }
 
     let settings = this.state.currentGenerator == generator ? this.state.currentGeneratorSettings : {}
-    this.setGenerator(generator, {...settings, focus, musical: false})
+    this.setGenerator(generator, {...settings, focus})
   }
 
   // "New programme" where the programme has no destination of its own (see

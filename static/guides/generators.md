@@ -43,7 +43,7 @@ The following parameters are available for the **Random** generator:
 *   **Notes** — How many notes to generate at a time
 *   **Hands** — How many hands should be used to play all the notes. For example, if you wanted to practice playing 5 chord notes in one hand, set notes to 5 and hands to 1
 *   **Chord based** — The column of notes will be limited to notes that can be formed from stacked thirds
-*   **Focus notes** — Narrows the pool to specific notes. This row only appears once a focus is set: pressing "Practise these notes" on the session summary card switches to Random notes and sets it to the notes that gave the most trouble, so a session can be spent on exactly those
+*   **Focus notes** — Narrows the pool to specific notes. This row only appears while a focus is on: pressing "Practise these notes" on the session summary card switches to Random notes and sets it to the weak notes the card showed, so a session can be spent on exactly those. Switching them all off here drills the whole staff again and takes the row away
 
 ### The Position Generator
 

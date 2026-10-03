@@ -610,15 +610,15 @@ const ALL_GENERATORS = [
         type: "bool",
         hint: "Column fits random chord",
       },
-      // the session summary card's "Practise these notes" seeds this: the
-      // toggles shown are whatever focus names are set, so the row hides
-      // itself again once there's no seed
+      // the session summary card's "Practise these notes" seeds this: every
+      // seeded name stays an option while the row shows, and the row hides
+      // itself again once the player has switched them all off
       {
         name: "focus",
         label: "focus notes",
         type: "toggles",
         options: settings => Object.keys(settings.focus || {}),
-        visible: settings => Object.keys(settings.focus || {}).length > 0,
+        visible: settings => Object.values(settings.focus || {}).some(Boolean),
       },
     ],
     create: function(staff, keySignature, options) {

@@ -64,6 +64,9 @@ export class SessionSummary extends React.Component {
     let {record} = this.props
     let rows = troubleNotes(record)
     let insight = summaryInsight(record, rows)
+    // "Practise these notes" seeds the weak rows alone (focusFromRows), so
+    // there's nothing to practise when every row shown is gilt
+    let anyWeak = rows.some(row => row.weak)
 
     return <dialog
       ref={this.dialogRef ||= React.createRef()}
@@ -92,7 +95,7 @@ export class SessionSummary extends React.Component {
         {insight ? <p className={styles.insight}>{insight}</p> : null}
 
         <div className={styles.actions}>
-          {this.props.onPractise && rows.length ? <Pill
+          {this.props.onPractise && anyWeak ? <Pill
             variant="primary"
             className={styles.action}
             onClick={this.props.onPractise}>Practise these notes</Pill> : null}

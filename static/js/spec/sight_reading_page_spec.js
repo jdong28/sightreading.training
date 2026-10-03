@@ -2949,7 +2949,7 @@ describe("sight reading page", function() {
       expect(buttonNamed(dialog, "Practise these notes")).toBeUndefined()
     })
 
-    it("practises these notes: seeds Random notes with the rows shown, staying at rest", function() {
+    it("practises these notes: seeds Random notes with the weak rows, staying at rest", function() {
       let el = renderPage()
       click(buttonNamed(el, "Begin"))
 
@@ -2977,6 +2977,38 @@ describe("sight reading page", function() {
       for (let col of page.state.notes) {
         expect(col.every(note => focusedNotes.includes(note.replace(/\d+$/, "")))).toBe(true)
       }
+    })
+
+    // the seed is the only writer of the generator's focus, so the drawer's
+    // row is how the player takes it off again
+    it("offers the seeded notes in the drawer, and hides the row once every one is off", function() {
+      let el = renderPage()
+      click(buttonNamed(el, "Begin"))
+
+      let column = page.state.notes.currentColumn()
+      play([WRONG_NOTE])
+      play(column)
+      click(buttonNamed(el, "Rest"))
+
+      click(buttonNamed(el.querySelector("dialog"), "Practise these notes"))
+
+      let seeded = Object.keys(page.state.currentGeneratorSettings.focus)
+      expect(seeded.length).toBeGreaterThan(0)
+      let focusedPool = page.state.notes.generator.notes.length
+
+      click(buttonLabelled(el, "Programme"))
+      let focusPills = () => el.querySelector('[role="group"][aria-label="focus notes"]')
+      expect([...focusPills().querySelectorAll("button")].map(b => b.textContent)).toEqual(seeded)
+
+      for (let name of seeded) {
+        click([...focusPills().querySelectorAll("button")].find(b => b.textContent == name))
+      }
+
+      expect(focusPills()).toBe(null)
+      expect(page.state.currentGeneratorSettings.focus).toEqual(
+        Object.fromEntries(seeded.map(name => [name, false])))
+      // back to the staff's whole scale, not the focused pool
+      expect(page.state.notes.generator.notes.length).toBeGreaterThan(focusedPool)
     })
 
     it("links New programme to /setup and See all progress to /stats", function() {
