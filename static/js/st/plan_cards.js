@@ -376,7 +376,10 @@ export class PlanGenerator extends MeasureCardGenerator {
     return [super.caption(), this.lastCaption].filter(Boolean).join(" · ") || null
   }
 
-  /** @returns {Object[]} see MeasureCardGenerator#takePractice, the caption going with it */
+  /**
+   * @returns {Object[]} see MeasureCardGenerator#takePractice, the caption
+   * and the receipt's schedule clause going with it
+   */
   takePractice() {
     this.lastCaption = null
     this.lastWhen = null
