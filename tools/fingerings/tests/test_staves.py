@@ -406,9 +406,10 @@ def test_recover_missing_staff_mode_tie_prefers_the_larger_count():
 def test_barlines_recovers_a_worn_opening_line():
     """The opening line is always a bar line (rule 1), but worn print can
     break it up enough that no column passes the strict per-staff
-    min_fill test: real content before the first bar actually found (not
-    just a key signature's accidentals, which the width check below
-    still screens out) is the signal that one was missed."""
+    min_fill test: real content before the first bar actually found (a
+    short pickup measure's own notes, dense enough that neither the
+    width nor the sparse-glyphs check below reads it as a header) is the
+    signal that one was missed."""
     black = _canvas()
     ys_a = _draw_staff(black, 100)
     ys_b = _draw_staff(black, 300)
@@ -422,12 +423,12 @@ def test_barlines_recovers_a_worn_opening_line():
     for gy in range(int(top), int(bot) + 1, 15):
         black[gy:gy + 2, opening_x:opening_x + 2] = False
 
-    # a key signature's accidentals in the header, wide enough that the
-    # header-vs-measure width check (calibrated on real measures) still
-    # lets it through rather than reading it as a header
+    # a short pickup measure's own notes: dense enough (> 1 per space)
+    # that this reads as real music, not a header's glyph fragments,
+    # even though the interval is narrower than a real full measure
     heads_in_system = [
-        dict(x=opening_x + int(0.5 * space), y=ys_a[2], w=space, system=0, staff=1),
-        dict(x=opening_x + int(2.5 * space), y=ys_b[2], w=space, system=0, staff=2),
+        dict(x=opening_x + f * space, y=ys_a[2], w=space, system=0, staff=1)
+        for f in (0.5, 1.2, 1.9, 2.6, 3.3, 4.0, 4.7, 5.4)
     ]
     b0x = opening_x + 6 * space
     black[int(top):int(bot) + 1, b0x:b0x + 2] = True

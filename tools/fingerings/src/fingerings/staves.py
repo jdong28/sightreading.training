@@ -273,7 +273,21 @@ def _drop_header(out, heads_in_system, space):
         avg_other = sum(other_widths) / len(other_widths)
         first_width = b["x"] - a["x"]
         header_by_width = avg_other > 0 and first_width < 0.65 * avg_other
-    if is_wide and (no_notes_between or header_by_width):
+    # a header's accidentals (or a measure number) are glyph fragments,
+    # not music laid out by rhythm, so they read far sparser than any
+    # real passage this corpus has shown, even a short pickup measure's
+    # own few notes: a signal independent of width, so it still catches
+    # a header that also carries a time signature (a trio's own opening,
+    # say), wide enough on its own to dodge the ratio check above. Never
+    # the true opening line on a system with no other bar found yet, far
+    # from here, read as "sparse" only for covering several blank or
+    # rest-only measures: a header is at most a handful of spaces wide to
+    # begin with, never anywhere near this corpus's own real measures'
+    # width, let alone several of them.
+    interval_w = b["x0"] - a["x1"]
+    between = [h for h in heads_in_system if a["x1"] < h["x"] < b["x0"]]
+    sparse_glyphs = (0 < interval_w <= 20 * space) and (len(between) / (interval_w / space)) <= 1.0
+    if is_wide and (no_notes_between or header_by_width or sparse_glyphs):
         return out[1:]  # a's "bar" was really the header before a start-repeat
     return out
 
