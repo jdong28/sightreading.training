@@ -245,6 +245,33 @@ describe("song sections", function() {
       ])
     })
 
+    // sr-detect-trill-lines-n7b: every tone of a chord a trill line runs
+    // over gets its own upper neighbour (plan, open question 1), so the
+    // column allows each tone's own neighbour too
+    it("allows each tone of a chord a trill line runs over its own upper neighbour", function() {
+      let song = parseMusicXML(`<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes><divisions>1</divisions><key><fifths>0</fifths></key><time><beats>3</beats><beat-type>4</beat-type></time></attributes>
+      ${noteXML("C", 5, 1, 1, `<notations><ornaments><trill-mark/><wavy-line type="start" number="1"/></ornaments></notations>`)}
+      ${noteXML("E", 5, 1, 1, "<chord/>")}
+      ${noteXML("D", 5, 1, 1)}
+      ${noteXML("F", 5, 1, 1, "<chord/>")}
+      ${noteXML("G", 5, 1, 1, `<notations><ornaments><wavy-line type="stop" number="1"/></ornaments></notations>`)}
+    </measure>
+  </part>
+</score-partwise>`)
+
+      let columns = extractSectionColumns(song, {startMeasure: 1, endMeasure: 1, notation: true})
+      expect(allowances(columns)).toEqual([
+        [["C5", "E5"], ["D5", "F5"]],
+        [["D5", "F5"], ["E5", "G5"]],
+        [["G5"], ["A5"]],
+      ])
+    })
+
     // 4/4, C major: a whole note C5 carrying one ornament over the left
     // hand's quarters G3 A3 B3 C4
     let heldOrnament = marks => parseMusicXML(`<?xml version="1.0" encoding="UTF-8"?>
