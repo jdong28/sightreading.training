@@ -775,6 +775,20 @@ describe("measure cards", function() {
           expect(generator.deck.card.measures).toEqual([2])
         })
 
+        it("marks a self-graded hand-alone item deliberate, never a hands-together one", async function() {
+          let deck = new MeasureCardDeck(measureCards(pickupMeasures(), 2), {pieceId: "p", hand: "lower", order: IN_ORDER, store})
+          let generator = track(new MeasureCardGenerator(deck, {now: () => time}))
+          generator.setDrill(() => ({mode: "self"}))
+
+          time = 2000
+          generator.selfGrade(GOOD)
+          await generator.finishing
+
+          expect(store.item("p:lower:0-0").deliberate).toBe(true)
+          expect(store.item("p:lower:0-1").deliberate).toBe(true)
+          expect(store.item("p:lower:1-1").deliberate).toBe(true)
+        })
+
         it("restarts a looping card from its first column after a self grade", async function() {
           let deck = new MeasureCardDeck(measureCards([pickupMeasures()[1]], 1), {pieceId: "p", order: IN_ORDER, store})
           let generator = track(new MeasureCardGenerator(deck, {now: () => time}))

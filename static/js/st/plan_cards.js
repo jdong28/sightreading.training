@@ -7,7 +7,9 @@
 // bar the hand scaffold offers hands apart is a card of that bar alone, of
 // that hand's notes, and its attempts are written to that hand's items; the
 // scaffold is offered in wait mode alone, so a failing bar returns hands
-// together while the drill scrolls.
+// together while the drill scrolls. The scaffold's own passes never mark
+// their items deliberate (PlanDeck#scaffold, ItemRecord#deliberate): only a
+// session played with that hand as its own does.
 
 import {getAppStore} from "st/storage"
 import {MeasureCardGenerator, sectionCard} from "st/measure_cards"
@@ -123,6 +125,15 @@ export class PlanDeck {
   /** @returns {string} the hand of the card being shown, the session's or a hand alone */
   get hand() {
     return this.entry ? this.entry.hand : this.sessionHand
+  }
+
+  /**
+   * @returns {boolean} whether the card shown is the hand scaffold's hand
+   * alone, standing in for its bar played hands together, rather than the
+   * player's own choice of hand (see ItemRecord#deliberate)
+   */
+  get scaffold() {
+    return !!this.entry && this.entry.hand != this.sessionHand
   }
 
   /** @returns {boolean} whether the piece has a measure to play */

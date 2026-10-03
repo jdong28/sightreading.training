@@ -51,7 +51,11 @@
 // the last review of each bar, and writes nothing, so the schedule stays what
 // replay rebuilds. The count of a piece's bars due must follow the same rule,
 // or a scaffold the planner has retired keeps flagging its piece as overdue
-// (mostOverduePiece, which reads items alone).
+// (mostOverduePiece, which reads items alone). A hand alone the player has
+// practised by choice, in free practice or a programme played with that
+// hand, is marked deliberate on its item (ItemRecord#deliberate) and always
+// counts there, so only the scaffold's own hand items follow the retirement
+// rule above.
 //
 // Rest it until the next sitting: a bar failing a third time in a sitting,
 // whichever hand it was played with, is not offered again in the sitting. Its
@@ -560,7 +564,8 @@ export function studyStatus(input) {
 /**
  * Which piece in study most needs practice: the one with the most single
  * measures due by the end of today, the earliest due first on a tie; null
- * when nothing is due. A bar's hand alone counts while the bar has no
+ * when nothing is due. A hand alone the player chose (ItemRecord#deliberate)
+ * always counts. One the hand scaffold made counts while its bar has no
  * schedule hands together of its own, or while that bar is in trouble and
  * the hand has not held since, which keeps a retired scaffold from flagging
  * its piece. It reads no reviews, so only the two goods running can retire
@@ -583,7 +588,7 @@ export function mostOverduePiece({studies, items, now}) {
     let together = new Map(bars.filter(item => item.hand == "both").map(item => [item.startMeasure, item]))
 
     let offered = item => {
-      if (item.hand == "both") { return true }
+      if (item.hand == "both" || item.deliberate) { return true }
       let bar = together.get(item.startMeasure)
       if (!bar || !scheduled(bar)) { return true }
 

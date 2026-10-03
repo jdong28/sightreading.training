@@ -154,6 +154,14 @@ describe("spaced repetition records", function() {
       expect(validItem({...item, startMeasure: 5, id: "p:both:5-4"})).toBe(false)
       expect(validItem({...item, state: "due"})).toBe(false)
 
+      // deliberate marks a hand-alone item the player chose (st/srs/planner);
+      // absent on an item stored before the field was kept
+      let lower = {...item, hand: "lower", id: itemId({pieceId: "p", hand: "lower", startMeasure: 2, endMeasure: 4})}
+      expect(validItem({...lower, deliberate: true})).toBe(true)
+      expect(validItem({...lower, deliberate: false})).toBe(false)
+      expect(validItem({...lower, deliberate: "yes"})).toBe(false)
+      expect(validItem(lower)).toBe(true)
+
       expect(validReview(legacyReview(section("p", 1, 4)))).toBe(true)
       expect(validReview({...legacyReview(section("p", 1, 4)), grade: 3})).toBe(false)
       expect(validReview(attempt("p", 1, 1, 5, {grade: 5}))).toBe(false)
@@ -208,6 +216,21 @@ describe("spaced repetition records", function() {
 
       let untouched = itemWithPractice(item, {hits: 0, misses: 0, at: 2000, elapsedMs: 900})
       expect(untouched.attempts).toEqual(0)
+    })
+
+    it("marks a hand-alone item deliberate once a pass the player chose is written to it, sticky from then on", function() {
+      let lower = newItem({pieceId: "p", hand: "lower", startMeasure: 1, endMeasure: 1}, 10)
+      let marked = itemWithPractice(lower, {hits: 1, misses: 0, at: 2000, deliberate: true})
+      expect(marked.deliberate).toBe(true)
+
+      let both = newItem({pieceId: "p", startMeasure: 1, endMeasure: 1}, 10)
+      let stillBoth = itemWithPractice(both, {hits: 1, misses: 0, at: 2000, deliberate: true})
+      expect(stillBoth.deliberate).toBeUndefined()
+
+      // the mark is never removed by a later stint without it, eg. the hand
+      // scaffold's own pass
+      let again = itemWithPractice(marked, {hits: 1, misses: 0, at: 3000})
+      expect(again.deliberate).toBe(true)
     })
   })
 
@@ -667,6 +690,47 @@ describe("spaced repetition records", function() {
         ["local:both:3-3", 3000, "local"],
       ])
       expect(store.study("local").status).toEqual("maintaining")
+    })
+
+    it("keeps a hand-alone item's deliberate marker sticky through a library merge", async function() {
+      let store = await open()
+      await store.putPiece(pieceData("local", "Same notes", 1000, ["F4"]))
+
+      let lowerId = itemId({pieceId: "local", hand: "lower", startMeasure: 1, endMeasure: 1})
+      let upperId = itemId({pieceId: "local", hand: "upper", startMeasure: 2, endMeasure: 2})
+      await store.recordAttempt({
+        item: {...practicedItem("local", 1, 1, 1000, {hand: "lower", id: lowerId}), deliberate: true},
+        review: attempt("local", 1, 1, 1000, {itemId: lowerId}),
+      })
+      await store.recordAttempt({
+        item: practicedItem("local", 2, 2, 1000, {hand: "upper", id: upperId}),
+        review: attempt("local", 2, 2, 1000, {itemId: upperId}),
+      })
+
+      let remoteId = (hand, m) => itemId({pieceId: "remote", hand, startMeasure: m, endMeasure: m})
+      let library = {
+        format: LIBRARY_FORMAT,
+        version: LIBRARY_VERSION,
+        pieces: [pieceData("remote", "Same notes", 1000, ["F4"])],
+        items: [
+          // newer, replaces the stored deliberate item, but carries no mark
+          // of its own (the hand scaffold's pass, say): the merge keeps the
+          // stored item's mark
+          practicedItem("remote", 1, 1, 5000, {hand: "lower", id: remoteId("lower", 1), hits: 20}),
+          // older, kept out, but practiced by choice elsewhere: the merge
+          // marks the stored item deliberate without replacing it
+          {...practicedItem("remote", 2, 2, 500, {hand: "upper", id: remoteId("upper", 2)}), deliberate: true},
+        ],
+        reviews: [],
+        studies: [],
+      }
+
+      let result = await importLibraryFile(JSON.stringify(library), store)
+      expect(result.report.updatedSections).toEqual(1)
+
+      expect(store.item(lowerId)).toEqual(jasmine.objectContaining({hits: 20, deliberate: true}))
+      expect(store.item(upperId)).toEqual(jasmine.objectContaining({deliberate: true}))
+      expect(store.items().every(validItem)).toBe(true)
     })
   })
 })

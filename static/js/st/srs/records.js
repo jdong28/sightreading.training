@@ -73,6 +73,12 @@ export const RECENT_ATTEMPTS = 5
  * @property {number} algo the scheduler version that wrote s, d and due, 0
  * for none
  * @property {number} createdAt
+ * @property {boolean} [deliberate] a hand-alone item the player has
+ * practised by choice (free practice, or the programme played with that
+ * hand), set by the first such pass and kept from then on; absent on a
+ * hands-together item, on a hand alone only the programme's hand scaffold
+ * has played, and on one not played by choice since the field was kept;
+ * read by mostOverduePiece (st/srs/planner)
  */
 
 /**
@@ -187,7 +193,8 @@ export function validItem(item) {
     Array.isArray(item.recent) && item.recent.length <= RECENT_ATTEMPTS &&
     item.recent.every(entry => Array.isArray(entry) && entry.length == 4) &&
     optional(item.paceMs, isTime) && optional(item.contentKey, key => typeof key == "string") &&
-    isCount(item.algo) && isTime(item.createdAt)
+    isCount(item.algo) && isTime(item.createdAt) &&
+    optional(item.deliberate, value => value === true)
 }
 
 const PER_COLUMN_FIELDS = 7
@@ -337,12 +344,14 @@ export function legacyReview(stats) {
  * An item with one practice stint on it added to its totals, as section
  * stats were added up before items.
  * @param {ItemRecord} item
- * @param {{hits: number, misses: number, at: number, elapsedMs?: number, played?: boolean}} practice
+ * @param {{hits: number, misses: number, at: number, elapsedMs?: number, played?: boolean, deliberate?: boolean}} practice
  * played forces the attempt count even without hits or misses, for a
- * self-graded stint that played notes but recorded none (see st/srs/attempt)
+ * self-graded stint that played notes but recorded none (see st/srs/attempt);
+ * deliberate marks a hand-alone item the player chose to practise, see
+ * ItemRecord
  * @returns {ItemRecord}
  */
-export function itemWithPractice(item, {hits, misses, at, elapsedMs, played}) {
+export function itemWithPractice(item, {hits, misses, at, elapsedMs, played, deliberate}) {
   let record = {
     ...item,
     hits: item.hits + hits,
@@ -354,6 +363,10 @@ export function itemWithPractice(item, {hits, misses, at, elapsedMs, played}) {
   // only items timed once carry the field
   if (elapsedMs !== undefined || item.elapsedMs !== undefined) {
     record.elapsedMs = (item.elapsedMs || 0) + Math.round(elapsedMs || 0)
+  }
+
+  if (deliberate && item.hand != "both") {
+    record.deliberate = true
   }
 
   return record

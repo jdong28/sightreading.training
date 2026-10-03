@@ -398,6 +398,24 @@ describe("spaced repetition scheduler", function() {
       expect(replay(roundTripped, {item: bar()})).toEqual(built)
     })
 
+    it("keeps a deliberate marker through replay, untouched by the schedule", function() {
+      let id = "p:lower:3-3"
+      let detected = (at, grade) => ({
+        itemId: id, at, pieceId: "p", kind: "attempt", grade, was: "new",
+        columns: 4, clean: grade == AGAIN ? 0 : 4, misses: grade == AGAIN ? 4 : 0,
+        stuck: 0, skipped: 0, hesitations: 0, mode: "wait", algo: 1,
+      })
+      let self = (at, grade) => ({itemId: id, at, pieceId: "p", kind: "attempt", mode: "self", grade, was: "review"})
+      let log = [detected(now, GOOD), self(now + MINUTE, HARD), detected(now + 2 * MINUTE, EASY)]
+
+      let marked = replay(log, {item: {...bar(), hand: "lower", id, deliberate: true}})
+      let unmarked = replay(log, {item: {...bar(), hand: "lower", id}})
+
+      expect(marked.deliberate).toBe(true)
+      let {deliberate, ...scheduleFields} = marked
+      expect(scheduleFields).toEqual(unmarked)
+    })
+
     it("counts a self entry's share missed from its grade alone, a detected entry as before", function() {
       let selfEntry = grade => ({...bar(), recent: [[now, null, null, grade]]})
       expect(recentMissRate(selfEntry(AGAIN), now)).toBeCloseTo(1, 9)
