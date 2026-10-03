@@ -150,6 +150,7 @@ describe("song sections", function() {
   // T7: the ornaments a player may add at a column without a slip
   describe("ornament allowances", function() {
     let allowances = columns => columns.map(column => [[...column], column.allowed || null])
+    let trailingSets = columns => columns.map(column => [[...column], column.trailing || null])
 
     it("allows the Nocturne's trill over every column it sounds at, and its grace notes at their note's", function() {
       let song = parseMusicXML(nocturneBars5to6())
@@ -176,6 +177,48 @@ describe("song sections", function() {
       expect(allowances(right)).toEqual([
         [["G#5"], null], [["F#5"], ["G#5"]], [["G#5"], ["E5", "F#5"]], [["C#5"], null],
       ])
+    })
+
+    // column.trailing (sr-detect-ornament-span-n7d): the trill still sounds
+    // on past the column it is written at, up to the column after it, where
+    // it has moved past the key its own note needs; the grace notes' column
+    // is past the trill's span (it ends at its own onset) and trails nothing
+    it("trails the Nocturne's trill over the columns it sounds on past, release column excepted", function() {
+      let song = parseMusicXML(nocturneBars5to6())
+
+      let columns = extractSectionColumns(song, {startMeasure: 1, endMeasure: 2, notation: true})
+      expect(trailingSets(columns).slice(3, 10)).toEqual([
+        [["C#4"], null],
+        [["C#3", "F#5"], ["F#5", "G#5"]],
+        [["A3"], ["F#5", "G#5"]],
+        [["D#4"], ["F#5", "G#5"]],
+        [["C#4"], ["F#5", "G#5"]],
+        [["C#3", "G#5"], null],
+        [["G#3"], null],
+      ])
+
+      let right = extractSectionColumns(song, {startMeasure: 1, endMeasure: 2, track: staffTracks(song).treble})
+      expect(trailingSets(right)).toEqual([
+        [["G#5"], null], [["F#5"], ["F#5", "G#5"]], [["G#5"], null], [["C#5"], null],
+      ])
+    })
+
+    it("trails the ornamented note again at every column past its own onset", function() {
+      expect(trailingSets(heldColumns("<mordent/>"))).toEqual([
+        [["G3", "C5"], ["B4", "C5"]], [["A3"], ["B4", "C5"]], [["B3"], ["B4", "C5"]], [["C4"], ["B4", "C5"]],
+      ])
+    })
+
+    it("trails a trill written on a tie's continuation only from that continuation on", function() {
+      let both = extractSectionColumns(parseMusicXML(tiedTrillScore()), {startMeasure: 1, endMeasure: 2, notation: true})
+      expect(trailingSets(both)).toEqual([
+        [["G3", "C5"], null], [["A3"], null], [["B3"], null], [["C4"], null],
+        [["G3"], ["C5", "D5"]], [["A3"], ["C5", "D5"]], [["B3"], ["C5", "D5"]], [["C4"], ["C5", "D5"]],
+      ])
+
+      let right = extractSectionColumns(parseMusicXML(tiedTrillScore()),
+        {startMeasure: 1, endMeasure: 2, track: staffTracks(parseMusicXML(tiedTrillScore())).treble, notation: true})
+      expect(trailingSets(right)).toEqual([[["C5"], ["C5", "D5"]]])
     })
 
     // 4/4, C major: a whole note C5 carrying one ornament over the left
@@ -245,6 +288,51 @@ describe("song sections", function() {
       ])
     })
 
+    // 4/4, C major: the right hand's C5 D5 in halves over the left hand's C3
+    // G3, the G3 led into by a grace note B4 the score writes on the treble
+    // staff in the left hand's voice (a cross-staff grace), so it is kept on
+    // the bass staff's G3 (sr-detect-cross-staff-grace-n7c)
+    let crossStaffGrace = () => `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes><divisions>1</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><staves>2</staves><clef number="1"><sign>G</sign><line>2</line></clef><clef number="2"><sign>F</sign><line>4</line></clef></attributes>
+      ${noteXML("C", 5, 2, 1, "<voice>1</voice>")}
+      ${noteXML("D", 5, 2, 1, "<voice>1</voice>")}
+      <backup><duration>4</duration></backup>
+      ${noteXML("C", 3, 2, 2, "<voice>5</voice>")}
+      <note><grace slash="yes"/><pitch><step>B</step><octave>4</octave></pitch><voice>5</voice><type>eighth</type><staff>1</staff></note>
+      ${noteXML("G", 3, 2, 2, "<voice>5</voice>")}
+    </measure>
+  </part>
+</score-partwise>`
+
+    it("allows a grace note drawn on the hand drilled though it leads into the other hand's note", function() {
+      let song = parseMusicXML(crossStaffGrace())
+      let right = extractSectionColumns(song,
+        {startMeasure: 1, endMeasure: 1, track: staffTracks(song).treble, notation: true})
+
+      // the treble staff draws the B4, which the right hand plays into bar
+      // 1's beat 3 with its D5
+      expect(allowances(right)).toEqual([[["C5"], null], [["D5"], ["B4"]]])
+    })
+
+    it("still allows the left hand alone its own grace note, drawn on its own staff", function() {
+      let song = parseMusicXML(crossStaffGrace())
+      let left = extractSectionColumns(song,
+        {startMeasure: 1, endMeasure: 1, track: staffTracks(song).bass, notation: true})
+
+      expect(allowances(left)).toEqual([[["C3"], null], [["G3"], ["B4"]]])
+    })
+
+    it("keeps the cross-staff grace note allowed with both hands, as either alone", function() {
+      let song = parseMusicXML(crossStaffGrace())
+      let both = extractSectionColumns(song, {startMeasure: 1, endMeasure: 1, notation: true})
+
+      expect(allowances(both)).toEqual([[["C3", "C5"], null], [["G3", "D5"], ["B4"]]])
+    })
+
     it("keeps a column's allowances through the range filter and the generator's copies", function() {
       let column = Object.assign(["C2", "C4"], {allowed: ["D4"]})
       let [[kept]] = filterColumnsToRange([column], "C3", "C6")
@@ -252,6 +340,12 @@ describe("song sections", function() {
 
       let g = new SheetMusicGenerator([kept])
       expect(g.nextNote().allowed).toEqual(["D4"])
+    })
+
+    it("keeps a column's trailing set through the range filter", function() {
+      let column = Object.assign(["C2", "C4"], {trailing: ["D4"]})
+      let [[kept]] = filterColumnsToRange([column], "C3", "C6")
+      expect(trailingSets([kept])).toEqual([[["C4"], ["D4"]]])
     })
   })
 

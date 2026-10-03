@@ -165,16 +165,18 @@ function tieHeads(note, staff) {
   }))
 }
 
-// The score's ornament notes a player may add at the column of onsetNotes, at
-// beat, without a slip (st/note_matcher): the grace notes leading into its
-// notes, and the notes of every trill, turn or mordent of ornamented (notes
-// with neighbours) sounding at it, from ornaments.at (a tie's continuation
-// carries its own) to the end of the note, and the ornamented note itself at
-// the columns past its own onset, which its ornament strikes it again at. A
-// pitch the column plays is required rather than allowed, so it isn't one.
-// Pitch sorted, one name a pitch
-function allowedExtras(beat, onsetNotes, ornamented, required) {
-  let names = onsetNotes.flatMap(note => (note.ornaments && note.ornaments.graces) || [])
+// The score's ornament notes a player may add at the column of beat, without
+// a slip (st/note_matcher): the grace notes of graces, the notes of any track
+// (whichever hand is drilled, a cross-staff grace, sr-detect-cross-staff-
+// grace-n7c) whose onset falls in (prevOnset, beat], which the caller walks
+// (see graceWindowWalk), and the notes of every trill, turn or mordent of
+// ornamented (notes with neighbours, drilled tracks only) sounding at it, from
+// ornaments.at (a tie's continuation carries its own) to the end of the note,
+// and the ornamented note itself at the columns past its own onset, which its
+// ornament strikes it again at. A pitch the column plays is required rather than
+// allowed, so it isn't one. Pitch sorted, one name a pitch
+function allowedExtras(beat, graces, ornamented, required) {
+  let names = graces.flatMap(note => note.ornaments.graces)
 
   for (let note of ornamented) {
     let from = note.ornaments.at ?? note.start
@@ -200,16 +202,82 @@ function allowedExtras(beat, onsetNotes, ornamented, required) {
   return allowed.sort((a, b) => parseNote(a) - parseNote(b))
 }
 
+// A column's trailing set (T, st/note_matcher): the pitch sorted, deduplicated
+// note and neighbours of every trill, turn or mordent of the drilled tracks
+// (ornamented) whose span, [ornaments.at ?? start, start + duration), overlaps
+// [beat, nextOnset), the next onset of the drilled tracks after beat (Infinity
+// past the last). Unlike allowedExtras this keeps the ornamented note's own
+// pitch even at its own column, where it is required: the matcher's own keys
+// carried from a column aren't filtered against what the next requires either
+function trailingAt(beat, nextOnset, ornamented) {
+  let names = []
+  for (let note of ornamented) {
+    let from = note.ornaments.at ?? note.start
+    let to = note.start + note.duration
+    let overlaps = from < nextOnset - ONSET_EPSILON / 2 && to > beat + ONSET_EPSILON / 2
+    if (!overlaps) { continue }
+
+    names.push(note.note, ...note.ornaments.neighbours)
+  }
+
+  let seen = new Set()
+  let trailing = []
+  for (let name of names) {
+    let pitch = parseNote(name)
+    if (seen.has(pitch)) { continue }
+    seen.add(pitch)
+    trailing.push(name)
+  }
+
+  return trailing.sort((a, b) => parseNote(a) - parseNote(b))
+}
+
+// Walks the sorted onsets of the drilled tracks (every note of them, not just
+// those in the section's range, so a column at a measure's edge still sees the
+// note before or after it: pieceSectionMeasures extracts one measure at a
+// time) alongside the columns, which groupByOnset builds in ascending onset
+// order: each call returns the onset strictly before beat and the one strictly
+// after it (-Infinity/Infinity past either end) and must be called with
+// ascending beats
+function onsetNeighbourWalk(onsets) {
+  let idx = 0
+  return beat => {
+    while (idx < onsets.length && onsets[idx] < beat - ONSET_EPSILON / 2) { idx++ }
+    let after = idx
+    while (after < onsets.length && onsets[after] <= beat + ONSET_EPSILON / 2) { after++ }
+    return [
+      idx > 0 ? onsets[idx - 1] : -Infinity,
+      after < onsets.length ? onsets[after] : Infinity,
+    ]
+  }
+}
+
+// Walks the notes carrying grace notes in onset order alongside the columns:
+// each call returns those whose onset falls in (prevOnset, beat] and must be
+// called with the ascending, non-overlapping windows of successive columns
+function graceWindowWalk(gracedNotes) {
+  let notes = [...gracedNotes].sort((a, b) => a.start - b.start)
+  let idx = 0
+  return (prevOnset, beat) => {
+    while (idx < notes.length && notes[idx].start <= prevOnset + ONSET_EPSILON / 2) { idx++ }
+    let end = idx
+    while (end < notes.length && notes[end].start <= beat + ONSET_EPSILON / 2) { end++ }
+    return notes.slice(idx, end)
+  }
+}
+
 // group notes by quantized onset into pitch sorted, deduplicated columns.
-// A column with ornaments to allow (see allowedExtras, given ornamented)
-// carries them as column.allowed.
+// A column with ornaments to allow (see allowedExtras, given ornamented and
+// gracedNotes, and drilledOnsets for the window either reads) carries them as
+// column.allowed, and one a trill, turn or mordent sounds on past (see
+// trailingAt) carries them as column.trailing.
 // Each entry is [note, staff]; given clefsAt (see grandStaffClefs) the column
 // carries the staves as column.staves, one per note (the first of notes
 // sharing a pitch), and the clefs at its onset as column.clefs. When the
 // notes also carry the score's notation the column carries column.beat, the
 // beat it falls on, column.notation, what each of its notes is drawn as, and
 // column.extras
-function groupByOnset(entries, clefsAt, ornamented=[]) {
+function groupByOnset(entries, clefsAt, ornamented=[], drilledOnsets=[], gracedNotes=[]) {
   let byOnset = new Map()
 
   for (let entry of entries) {
@@ -221,6 +289,8 @@ function groupByOnset(entries, clefsAt, ornamented=[]) {
   }
 
   let keys = [...byOnset.keys()].sort((a, b) => a - b)
+  let neighbouringOnsets = onsetNeighbourWalk(drilledOnsets)
+  let gracesIn = graceWindowWalk(gracedNotes)
 
   return keys.map(key => {
     let seen = new Set()
@@ -245,10 +315,16 @@ function groupByOnset(entries, clefsAt, ornamented=[]) {
     notes.sort((a, b) => a.pitch - b.pitch)
     let column = notes.map(note => note.name)
     let beat = byOnset.get(key)[0][0].start
+    let [prevOnset, nextOnset] = neighbouringOnsets(beat)
 
-    let allowed = allowedExtras(beat, byOnset.get(key).map(([note]) => note), ornamented, seen)
+    let allowed = allowedExtras(beat, gracesIn(prevOnset, beat), ornamented, seen)
     if (allowed.length) {
       column.allowed = allowed
+    }
+
+    let trailing = trailingAt(beat, nextOnset, ornamented)
+    if (trailing.length) {
+      column.trailing = trailing
     }
 
     if (clefsAt) {
@@ -329,7 +405,9 @@ function markSustained(columns, entries) {
 // sounds some of its notes from an earlier onset (see markSustained)
 // whatever opts.notation is, a column the score ornaments carries
 // column.allowed, the ornament notes a player may add at it without a slip
-// (see allowedExtras)
+// (see allowedExtras), and column.trailing, the ones a trill, turn or mordent
+// still sounds on past it, up to the next column (see trailingAt), which the
+// matcher excuses independent of the head (st/note_matcher)
 // returns array of columns, each an ascending array of note names
 export function extractSectionColumns(song, opts={}) {
   let [firstMeasure] = measureNumberRange(song)
@@ -373,7 +451,23 @@ export function extractSectionColumns(song, opts={}) {
   let ornamented = entries.map(([note]) => note)
     .filter(note => note.ornaments && note.ornaments.neighbours)
 
-  let columns = groupByOnset(inRange, grand && grandStaffClefs(song, grand, trackIndices), ornamented)
+  // the drilled tracks' onsets, every one of them rather than just the
+  // section's, so a column at a measure's edge still finds its neighbour
+  // across the boundary (the grace window's prevOnset, trailingAt's nextOnset;
+  // pieceSectionMeasures extracts one measure at a time)
+  let drilledOnsets = [...new Set(entries.map(([note]) => Math.round(note.start / ONSET_EPSILON)))]
+    .sort((a, b) => a - b)
+    .map(key => key * ONSET_EPSILON)
+
+  // grace notes a player may add at a drilled column though they lead into a
+  // note of another hand (a cross-staff grace, sr-detect-cross-staff-grace-
+  // n7c): every track's notes, not just the drilled ones, so they can be
+  // windowed by onset alone
+  let gracedNotes = (song.tracks || []).flatMap(track => [...(track || [])])
+    .filter(note => note.ornaments && note.ornaments.graces && note.ornaments.graces.length)
+
+  let columns = groupByOnset(inRange, grand && grandStaffClefs(song, grand, trackIndices),
+    ornamented, drilledOnsets, gracedNotes)
 
   if (!grand) {
     return columns
@@ -424,6 +518,9 @@ export function filterColumnsToRange(columns, min, max) {
     let kept = column.filter((note, idx) => keep[idx])
     if (column.allowed) {
       kept.allowed = column.allowed
+    }
+    if (column.trailing) {
+      kept.trailing = column.trailing
     }
     if (column.staves) {
       kept.staves = column.staves.filter((staff, idx) => keep[idx])

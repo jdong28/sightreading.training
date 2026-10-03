@@ -790,6 +790,12 @@ export default class SightReadingPage extends React.Component {
     window.removeEventListener("resize", this.onResize)
     this.observeStaffWrapper(null)
     this.stopClock()
+
+    if (this.ornamentTimer) {
+      clearTimeout(this.ornamentTimer)
+      this.ornamentTimer = null
+    }
+
     this.recordSession()
     this.stopGenerator(this.state.notes && this.state.notes.generator)
 
@@ -1098,6 +1104,8 @@ export default class SightReadingPage extends React.Component {
     let update = this.matchUpdate
     this.matchUpdate = null
 
+    this.scheduleOrnamentTick()
+
     if (!result) { return }
 
     this.setState({
@@ -1105,6 +1113,26 @@ export default class SightReadingPage extends React.Component {
       heldNotes: result.held,
       touchedNotes: result.touched,
     })
+  }
+
+  // An ornament key pending between the ornament going on and a real strike
+  // (st/note_matcher) is settled by the next key down, or, with none coming,
+  // by this timer once ORNAMENT_GAP has passed (ruling out eg. a looping
+  // card's last column ending on the ornament's own pitches): the matcher
+  // owns the rule (tick), this only schedules the call for when it is due
+  scheduleOrnamentTick() {
+    if (this.ornamentTimer) {
+      clearTimeout(this.ornamentTimer)
+      this.ornamentTimer = null
+    }
+
+    let due = this.matcher.pendingUntil()
+    if (due == null) { return }
+
+    this.ornamentTimer = setTimeout(() => {
+      this.ornamentTimer = null
+      this.judge(() => this.matcher.tick(this.matcher.now()))
+    }, Math.max(0, due - this.matcher.now()))
   }
 
   // Renders one judgement of the matcher's: the stats, the staff's marks,
