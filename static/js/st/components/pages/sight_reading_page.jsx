@@ -489,9 +489,9 @@ export default class SightReadingPage extends React.Component {
 
   // D4(c): keeps the slider's floor and the matcher's line arrival in step
   // with the head column. Called after every change of head or session,
-  // never on every render: while a waiting column stands at the floor, the
-  // onLine formula below would otherwise keep moving its arrival forward,
-  // resetting its lateness.
+  // never on every render: while a waiting column stands at the floor,
+  // followLine would otherwise keep moving its arrival forward, resetting
+  // its lateness (the slider rests there, so no frame of it moves either).
   // Off, this restores wait-at-the-line (D4(a)) and never touches onLine,
   // so that behaviour stays bit-identical. On, a waiting column's floor
   // never jumps back past where it already stands; a scrolling column's
@@ -524,8 +524,21 @@ export default class SightReadingPage extends React.Component {
       slider.checkAndStart()
     }
 
-    let now = this.matcher.now()
-    this.matcher.onLine(now + (slider.value - SCROLL_WAIT) * 1000 / slider.speed)
+    this.followLine(slider.value)
+  }
+
+  // D4(c): tells the matcher when the head column reaches, or reached, the
+  // hit line, read off where the staff stands: a column short of the line
+  // arrives in the future, one already past it arrived in the past. Told on
+  // every change of head (followHead) and on every frame that moves the
+  // staff, which gives the same answer frame after frame while it slides at
+  // its speed and so carries the crossing along with a frame gap the slider
+  // dropped rather than played out (FRAME_GAP_PAUSE_MS in st/slide_to_zero,
+  // a hidden tab). A frame the floor held still isn't one: the column stands
+  // where it stood and its crossing stays behind it (see SlideToZero)
+  followLine(value) {
+    this.matcher.onLine(this.matcher.now() +
+      (value - SCROLL_WAIT) * 1000 / this.state.slider.speed)
   }
 
   // the generator of notes and the index in its card of their head column
@@ -1288,7 +1301,10 @@ export default class SightReadingPage extends React.Component {
         // the head column waits on the line, never looping past it, until
         // followHead lifts the floor in tempo mode (D4(c))
         floor: SCROLL_WAIT,
-        onUpdate: value => this.setOffset(value),
+        onUpdate: value => {
+          this.setOffset(value)
+          if (this.tempoMode()) { this.followLine(value) }
+        },
         // the matcher times how long each column stands on the hit line
         // before it is played (its late), which is recorded and never a miss
         onStart: () => this.matcher.onLine(null),

@@ -103,6 +103,34 @@ describe("SlideToZero", function() {
     expect(slider.value).toBeCloseTo(1.8, 5)
   })
 
+  it("tells onUpdate only of a frame that moved the value", function() {
+    let {step} = frames()
+    let drawn = []
+    let stops = 0
+    let slider = new SlideToZero({
+      speed: 1, loopPhase: 1, initialValue: 1, floor: 0.5,
+      onUpdate: value => drawn.push(value),
+      onStop: () => stops++,
+    })
+
+    // the starting position is drawn as the animation begins
+    expect(drawn).toEqual([1])
+
+    step(0)
+    step(100)
+    expect(drawn.length).toEqual(2)
+    expect(drawn[1]).toBeCloseTo(0.9, 5)
+
+    // the floor lowered to where the value already stands (as tempo mode
+    // does for a waiting column): the next frame holds it there, drawing
+    // the offset it already drew, so it tells onUpdate nothing
+    slider.floor = slider.value
+    step(100)
+    expect(drawn.length).toEqual(2)
+    expect(slider.value).toEqual(slider.floor)
+    expect(stops).toEqual(1)
+  })
+
   it("clamps to a numeric floor set while animating with no floor, and stops", function() {
     let {step} = frames()
     let stops = 0

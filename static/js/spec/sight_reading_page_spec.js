@@ -1736,6 +1736,109 @@ describe("sight reading page", function() {
           expect(late).toBeLessThanOrEqual(Math.round(behind))
         })
 
+        // Drives the slider's frames by hand, each stamped from the clock
+        // the matcher reads, as the browser stamps them against
+        // performance.now. Returns step(ms), which runs every frame queued
+        // so far, and the frames the page queues from here on are its own
+        let driveFrames = () => {
+          let realRAF = window.requestAnimationFrame
+          let queued = []
+          let clock = {now: 0}
+          window.requestAnimationFrame = cb => queued.push(cb)
+
+          return {
+            clock,
+            restore: () => { window.requestAnimationFrame = realRAF },
+            step: ms => {
+              clock.now += ms
+              let due = queued
+              queued = []
+              due.forEach(cb => cb(clock.now))
+            },
+          }
+        }
+
+        // the frame gap a hidden tab leaves is dropped rather than played
+        // out (FRAME_GAP_PAUSE_MS), so no column is scroll-passed for the
+        // time away — and the head's crossing of the line has to move on
+        // with it, or every column of the rest of the card reads as that
+        // much later than it was
+        it("carries a scrolling head's crossing of the line along with a dropped frame gap", async function() {
+          let {clock, step, restore} = driveFrames()
+
+          try {
+            await renderSection({measuresPerCard: "4"}, {mode: "scroll", tempo: true})
+            let slider = page.state.slider
+            page.matcher.now = () => clock.now
+            expect(slider.speed).toEqual(1)
+
+            // the card's opening column stands on the line; playing it there
+            // hands the head to the second, a second short of the line
+            slider.value = SCROLL_WAIT
+            page.followHead()
+            step(0)
+            playAt(clock.now, 0)
+            expect(slider.floor).toBe(null)
+            expect(slider.value).toEqual(SCROLL_WAIT + 1)
+
+            // the tab is hidden for a minute: the gap is dropped, so the
+            // staff hasn't moved and nothing scrolled past
+            step(60000)
+            expect(slider.value).toEqual(SCROLL_WAIT + 1)
+            expect(page.state.stats.misses).toEqual(0)
+
+            // a second of frames then carries that column to the line, where
+            // it is played a tenth of a second on
+            step(500)
+            step(500)
+            expect(slider.value).toBeCloseTo(SCROLL_WAIT, 10)
+            playAt(clock.now, 100)
+            playAt(clock.now, 200)
+            playAt(clock.now, 300)
+            await finished()
+
+            let review = await card()
+            expect(review.perColumn[1][6]).toEqual(100)
+          } finally {
+            restore()
+          }
+        })
+
+        // a waiting column keeps its floor, so the hidden gap is played out
+        // instead of dropped and the staff snaps to the line on the first
+        // frame back: the column reaches the line then, not when the slider
+        // had it reaching before the gap
+        it("times a waiting head from the line it snaps to after a frame gap", async function() {
+          let {clock, step, restore} = driveFrames()
+
+          try {
+            await renderSection({measuresPerCard: "4"}, {mode: "scroll", tempo: true})
+            let slider = page.state.slider
+            page.matcher.now = () => clock.now
+
+            // the card's opening column waits, two seconds short of the line
+            slider.value = SCROLL_WAIT + 2
+            page.followHead()
+            expect(slider.floor).toEqual(SCROLL_WAIT)
+
+            // the tab is hidden for a minute, which the floor plays out
+            step(0)
+            step(60000)
+            expect(slider.value).toEqual(SCROLL_WAIT)
+
+            playAt(clock.now, 100)
+            playAt(clock.now, 200)
+            playAt(clock.now, 300)
+            playAt(clock.now, 400)
+            await finished()
+
+            let review = await card()
+            expect(review.perColumn[0][6]).toEqual(100)
+          } finally {
+            restore()
+          }
+        })
+
         // turning the setting off restores wait-at-the-line (D4(a)), which
         // has to carry a head the setting left below the line back up to it
         it("carries a head left below the line back to it when the setting goes off", async function() {

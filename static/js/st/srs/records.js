@@ -130,8 +130,10 @@ export const RECENT_ATTEMPTS = 5
  * wrong on it, stalled 1 when it was skipped, then what the note matcher
  * measured on its hit (see NoteMatcher#measured), ms or a count of keys,
  * each null when not measured (late is null in wait mode; in scroll mode a
- * played column always has one, so null there instead marks a column that
- * scrolled past unplayed, ruling D4(c), see NoteMatcher#scrollPast). Absent
+ * played column always has one, so null there marks one the player never
+ * played: stalled tells the two apart, 1 for a column skipped with the space
+ * bar and 0 for one that scrolled past as a miss, ruling D4(c), see
+ * NoteMatcher#scrollPast and columnSkipped in st/srs/attempt). Absent
  * on reviews graded before GRADE_ALGO 2. From GRADE_ALGO 3 a column settled
  * by a key held (latency null, heldCredit above 0) is untimed, and the
  * latency of the next column played runs from the column played before it

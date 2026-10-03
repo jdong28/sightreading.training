@@ -80,6 +80,7 @@ export default class SlideToZero {
         return;
       }
 
+      let before = this.value;
       this.value = this.value - this.speed * dt;
 
       if (this.floor != null && this.value < this.floor) {
@@ -95,7 +96,12 @@ export default class SlideToZero {
         this.value = Math.max(0, this.value);
       }
 
-      this.onUpdate(this.value);
+      // a frame the floor held the value through drew the same offset it
+      // already stood at, so it moved nothing: told apart from one that
+      // slid, as the dropped gap above is (D4(c))
+      if (this.value != before) {
+        this.onUpdate(this.value);
+      }
 
       // this.value > this.floor is this.value > 0 when floor is null (a
       // JS trap: null coerces to 0 in a comparison), which would stop the
