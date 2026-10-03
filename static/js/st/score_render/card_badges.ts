@@ -1,9 +1,10 @@
 // Bar badges over an engine-drawn card during acoustic mode's "Where?"
 // (SelfGradeRow, st/srs/self_grade): a small pill above each bar the
-// follow-up names, lit once the grade going to it is known, plus a light
-// tint over the bar. Pure geometry from the drawn heads' rects (relative to
-// the .score_card root, see ScoreCard#placeBadges), which never touches the
-// engine's own layout or types (./types, ./osmd, ./verovio)
+// follow-up names, lit once the grade going to it is known, with a light
+// tint over the bar chosen (a span is placed for every bar, and only a lit
+// one drawn, see ScoreCard#renderBadges). Pure geometry from the drawn heads'
+// rects (relative to the .score_card root, see ScoreCard#placeBadges), which
+// never touches the engine's own layout or types (./types, ./osmd, ./verovio)
 
 // a bar is the span of columns from one badge's column up to the next's (or
 // the end of the card for the last), so the page only names each bar's
@@ -72,10 +73,11 @@ export function placeBadges(badges: BarBadge[], columnRects: Rect[][]): BadgePla
     let end = i + 1 < badges.length ? badges[i + 1].column : columnRects.length
     let columns = columnRects.slice(badge.column, end)
     let rects = columns.flat()
-    let first = union(columns[0] || [])
-    let last = union(columns[columns.length - 1] || [])
-    let left = first ? Math.max(0, first.left - BADGE_PAD) : 0
-    let right = last ? last.right + BADGE_PAD : left
+    // from the bar's own drawn heads, so a column the engine didn't draw
+    // (joinCard leaves its heads empty) never moves the span
+    let box = union(rects)
+    let left = box ? Math.max(0, box.left - BADGE_PAD) : 0
+    let right = box ? box.right + BADGE_PAD : left
 
     return {badge, rects, left, right}
   })

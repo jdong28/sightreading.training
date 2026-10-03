@@ -3073,6 +3073,22 @@ describe("sight reading page", function() {
       expect(await reviews()).toEqual([])
     })
 
+    // Esc reaches the page from anywhere (leaving fullscreen, say), so with
+    // the pills up it has no question to leave and must not re-arm the dwell
+    it("Esc does nothing with the grade pills up, so the grade tapped after it is taken", async function() {
+      let el = await renderAcoustic({measuresPerCard: "2"})
+      click(buttonNamed(el, "Begin"))
+
+      played()
+      flushSync(() => document.body.dispatchEvent(new KeyboardEvent("keydown", {keyCode: 27, bubbles: true})))
+      expect(el.querySelector("[data-self-grade-followup]")).toBe(null)
+
+      click(buttonLike(el, "Clean"))
+      flash()
+      await finished()
+      expect((await reviews()).length).toEqual(3)
+    })
+
     it("starts the grade row fresh when the drill is rebuilt under it", async function() {
       let el = await renderAcoustic({measuresPerCard: "2"})
       click(buttonNamed(el, "Begin"))

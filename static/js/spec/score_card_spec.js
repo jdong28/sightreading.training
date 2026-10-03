@@ -71,12 +71,31 @@ describe("card badges", function() {
     expect(placements).toEqual([
       {
         label: "Bar 1", on: false, left: 0, top: 0,
-        tint: {left: 0, top: -1, width: 0, height: 42},
+        tint: {left: 0, top: -1, width: 24, height: 42},
       },
       {
         label: "Bar 2", on: true, left: 96, top: 0,
         tint: {left: 96, top: -1, width: 68, height: 42},
       },
+    ])
+  })
+
+  // joinCard leaves a column the engine didn't draw without heads, so a bar
+  // is spanned by the heads it has, not by the slots of its first and last
+  // columns
+  it("spans a bar by its own drawn heads, whichever of its columns were joined", function() {
+    let badges = [{column: 0, label: "Bar 1", on: false}, {column: 2, label: "Bar 2", on: true}]
+    let columnRects = [
+      [rect(0, 10, 20, 30)],
+      [rect(40, 10, 60, 30)],
+      [],
+      [rect(140, 10, 160, 30)],
+    ]
+
+    let placements = placeBadges(badges, columnRects)
+    expect(placements.map(p => [p.left, p.tint.left, p.tint.width])).toEqual([
+      [0, 0, 64],
+      [136, 136, 28],
     ])
   })
 
@@ -1346,12 +1365,13 @@ describe("score page engine card", function() {
     let engineDrawn = () => waitFor(() => container.querySelector("[data-score-card] svg"),
       {message: "the engine card"})
     let badges = () => [...container.querySelectorAll("[data-bar-badge]")]
+    let tints = () => [...container.querySelectorAll("[data-bar-tint]")]
     // the grade row's own dwell (SELF_GRADE_DWELL_MS) guards a tap or chip
     // choice sooner than this after it last changed what it shows; this file
     // uses no fake clock, so a real wait stands in for st/srs/self_grade's played()
     let wait = ms => new Promise(resolve => setTimeout(resolve, ms))
 
-    it("shows a badge per bar while Where? is open, lights the chosen one, and clears once the grade is written", async function() {
+    it("shows a badge per bar while Where? is open, lights and tints the chosen one alone, and clears once the grade is written", async function() {
       await drillPiece(reverieOpening(), {startMeasure: 2, endMeasure: 3, measuresPerCard: "2"})
       let el = renderScorePage({acoustic: true})
       await engineDrawn()
@@ -1365,6 +1385,8 @@ describe("score page engine card", function() {
       expect(shown.every(b => b.closest("[aria-hidden]"))).toBe(true)
       expect(shown[0].getBoundingClientRect().left).toBeLessThan(shown[1].getBoundingClientRect().left)
       expect(shown.some(b => b.className.includes("bar_badge_on"))).toBe(false)
+      // nothing is tinted while no bar has the grade yet
+      expect(tints().length).toEqual(0)
 
       await wait(600)
       click(exactButton(el, "Bar 3"))
@@ -1372,10 +1394,18 @@ describe("score page engine card", function() {
       expect(chosen[1].className).toContain("bar_badge_on")
       expect(chosen[0].className).not.toContain("bar_badge_on")
 
+      // only the chosen bar is tinted, over its own span
+      let tinted = tints()
+      expect(tinted.length).toEqual(1)
+      expect(tinted[0].getAttribute("data-bar-tint")).toEqual("1")
+      expect(parseFloat(tinted[0].style.left)).toBeCloseTo(parseFloat(chosen[1].style.left), 3)
+      expect(parseFloat(tinted[0].style.width)).toBeGreaterThan(0)
+
       flushSync(() => page.writeSelfGrade())
       await page.state.notes.generator.finishing
       flushSync(() => {})
       expect(badges().length).toEqual(0)
+      expect(tints().length).toEqual(0)
     })
 
     it("shows no badges on the app staff's fallback", async function() {

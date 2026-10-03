@@ -426,7 +426,11 @@ export class PlanGenerator extends MeasureCardGenerator {
       let measure = pass.selfGrade.bars?.[0] ?? entry.measure
       let id = itemId({pieceId: opts.pieceId, hand: opts.hand, startMeasure: measure, endMeasure: measure})
       let item = items.find(item => item.id == id) ?? this.deck.item(id)
-      let words = state.resting.has(measure) ? "rests until your next sitting" : entryCaption(item, state.now)
+      // the schedule of a bar the grade never reached is none of the
+      // receipt's business: a bar the off-schedule rule left to the totals
+      // alone (practiceOnly) says nothing, while one resting says so
+      let words = state.resting.has(measure) ? "rests until your next sitting" :
+        this.practiceOnly(pass, opts).includes(id) ? null : entryCaption(item, state.now)
       this.lastWhen = words ? {measure, words} : null
     } else {
       let item = entry && items.find(item => item.id == entry.itemId)

@@ -244,10 +244,8 @@ export class ScoreCard extends React.Component {
     let placements = placeBadges(badges, columnRects)
     container.style.display = "block"
 
-    let tints = container.querySelectorAll("[data-bar-tint]")
-    let pills = container.querySelectorAll("[data-bar-badge]")
     placements.forEach((placement, i) => {
-      let tint = tints[i]
+      let tint = container.querySelector(`[data-bar-tint="${i}"]`)
       if (tint) {
         tint.style.left = `${placement.tint.left}px`
         tint.style.top = `${placement.tint.top}px`
@@ -255,7 +253,7 @@ export class ScoreCard extends React.Component {
         tint.style.height = `${placement.tint.height}px`
       }
 
-      let pill = pills[i]
+      let pill = container.querySelector(`[data-bar-badge="${i}"]`)
       if (pill) {
         pill.style.left = `${placement.left}px`
         pill.style.top = `${placement.top}px`
@@ -322,10 +320,10 @@ export class ScoreCard extends React.Component {
 
     return <div ref={this.badgesRef} className={styles.badges} aria-hidden="true">
       {badges.map((badge, i) => <React.Fragment key={i}>
-        <div className={styles.bar_tint} data-bar-tint />
+        {badge.on && <div className={styles.bar_tint} data-bar-tint={i} />}
         <div
           className={classNames(styles.bar_badge, {[styles.bar_badge_on]: badge.on})}
-          data-bar-badge>
+          data-bar-badge={i}>
           {badge.label}
         </div>
       </React.Fragment>)}
