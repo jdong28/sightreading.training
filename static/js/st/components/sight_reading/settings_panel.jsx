@@ -14,7 +14,7 @@ import {
 } from "st/generators"
 import styles from "./programme_drawer.module.css"
 
-import {noteName, parseNote} from "st/music"
+import {noteName, parseNote, barsHeading} from "st/music"
 import * as types from "prop-types"
 
 import {ENABLE_PRESETS} from "st/globals"
@@ -671,7 +671,7 @@ export class GeneratorSettings extends React.PureComponent {
             onClick={() => {
               if (!selected) { this.updateSettings(input.update(settings, flag)) }
             }}>
-            {`Bars ${flag.start}–${flag.end} · ${LEVEL_WORDS[flag.level]}`}
+            {`${barsHeading(flag.start, flag.end)} · ${LEVEL_WORDS[flag.level]}`}
           </Pill>
         })}
       </div>

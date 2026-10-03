@@ -170,6 +170,17 @@ export function displayNoteName(note) {
   return String(note).replace("#", "♯").replace(/^([A-G])b/, "$1♭")
 }
 
+// a range of printed bar numbers, eg. "bars 9–11" or "bar 12" for one bar.
+// barsHeading is the same label as a sentence or a heading starts it
+export function barsLabel(start, end) {
+  return start == end ? `bar ${start}` : `bars ${start}–${end}`
+}
+
+export function barsHeading(start, end) {
+  let label = barsLabel(start, end)
+  return label.charAt(0).toUpperCase() + label.slice(1)
+}
+
 // eg. 4 -> "IV", for numbering the passages of a piece and the sessions of
 // an evening
 export function romanNumeral(n) {

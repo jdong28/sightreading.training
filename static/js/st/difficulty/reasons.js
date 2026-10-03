@@ -3,7 +3,7 @@
 // practice tip. No Claude, no outside sources: every sentence comes from the
 // score analysis alone.
 
-import {parseNote, noteStaffOffset, displayNoteName} from "st/music"
+import {parseNote, noteStaffOffset, displayNoteName, barsLabel, barsHeading} from "st/music"
 
 const HAND_WORD = {upper: "right", lower: "left"}
 
@@ -344,9 +344,13 @@ export function passageReasons(passage, {tempo, bars} = {}) {
     "A difficult passage"
 
   if (passage.alsoAt && passage.alsoAt.length) {
-    for (let [from, to] of passage.alsoAt) {
+    for (let {bars, of} of passage.alsoAt) {
       if (reasons.length >= 3) { break }
-      reasons.push(from == to ? `Also at bar ${from}.` : `Also at bars ${from}–${to}.`)
+      let wholePassage = of[0] == passage.start && of[1] == passage.end
+      reasons.push(wholePassage ?
+        `Also at ${barsLabel(bars[0], bars[1])}.` :
+        `${barsHeading(of[0], of[1])} ${of[0] == of[1] ? "recurs" : "recur"} ` +
+          `at ${barsLabel(bars[0], bars[1])}.`)
     }
   }
 

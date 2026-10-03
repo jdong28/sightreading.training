@@ -336,6 +336,19 @@ describe("st/difficulty", () => {
         .toEqual([[4, 7, 3]])
     })
 
+    it("ranks the heat strip over the bars that strike a note only", () => {
+      let bars = Array.from({length: 16}, (_, i) =>
+        (i >= 8 && i <= 10) ? denseBar() : ((i == 12 || i == 13) ? uniformBlank() : quietBar()))
+      let song = parseMusicXML(pianoScore({bars}))
+      let heatPct = analyzePiece({song, source: null, at: 1}).runs.score.heat
+
+      expect(heatPct.length).toEqual(16)
+      expect([heatPct[12], heatPct[13]]).toEqual([0, 0])
+      expect(heatPct.filter(pct => pct == 0).length).toEqual(2)
+      expect(heatPct[8]).toEqual(1)
+      expect(heatPct[0]).toBeGreaterThan(0)
+    })
+
     it("heat buckets a percentile into the strip's 0-4 ramp", () => {
       expect(heat(0.95)).toEqual(4)
       expect(heat(0.75)).toEqual(3)
@@ -374,10 +387,10 @@ describe("st/difficulty", () => {
       let repeats = exactRepeats(fingerprint(song))
       let passages = findPassages(scored, {repeats})
       expect(passages.map(p => [p.start, p.end])).toEqual([[5, 7]])
-      expect(passages[0].alsoAt).toEqual([[17, 19]])
+      expect(passages[0].alsoAt).toEqual([{bars: [17, 19], of: [5, 7]}])
 
       let proposals = analyzePiece({song, source: null, at: 1}).proposals
-      expect(proposals.map(p => p.alsoAt)).toEqual([[[17, 19]]])
+      expect(proposals.map(p => p.alsoAt)).toEqual([[{bars: [17, 19], of: [5, 7]}]])
     })
 
     it("merges a repeat into the earliest flagged copy, the first copy unflagged", () => {
@@ -393,7 +406,28 @@ describe("st/difficulty", () => {
 
       let passages = findPassages(scored, {repeats})
       expect(passages.map(p => [p.start, p.end])).toEqual([[6, 7]])
-      expect(passages[0].alsoAt).toEqual([[10, 11]])
+      expect(passages[0].alsoAt).toEqual([{bars: [10, 11], of: [6, 7]}])
+
+      // the whole passage recurs, so it is named as the passage over again
+      expect(passageReasons(passages[0], {bars: scored}).reasons)
+        .toContain("Also at bars 10–11.")
+    })
+
+    it("records the part of a passage that recurs, when only part of it does", () => {
+      // bars 1-4 are the passage; bars 7-8 repeat its bars 2-3 note for note
+      let scores = [4, 4, 4, 4, 0.2, 0.2, 3.5, 3.5, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2]
+      let scored = scores.map((score, i) => scoredBar(i + 1, score))
+      let repeats = new Map([[6, 1], [7, 2]])
+
+      expect(findPassages(scored, {repeats: new Map()}).map(p => [p.start, p.end]))
+        .toEqual([[1, 4], [7, 8]])
+
+      let passages = findPassages(scored, {repeats})
+      expect(passages.map(p => [p.start, p.end])).toEqual([[1, 4]])
+      expect(passages[0].alsoAt).toEqual([{bars: [7, 8], of: [2, 3]}])
+
+      expect(passageReasons(passages[0], {bars: scored}).reasons)
+        .toContain("Bars 2–3 recur at bars 7–8.")
     })
 
     it("gives the same proposals and ids for the same song", () => {
@@ -506,22 +540,37 @@ describe("st/difficulty", () => {
       expect(annotationStale(record, changedSong, {hasSource: false})).toBeTruthy()
     })
 
-    it("validAnnotation rejects a proposal whose alsoAt is not bar ranges", () => {
+    it("validAnnotation rejects the proposal fields the plate renders unchecked", () => {
       let song = workhorseSong()
       let analysis = analyzePiece({song, source: null, at: 1})
       let record = annotationWith(null, "p1", analysis)
       let proposal = record.proposals[0]
-      let withAlsoAt = alsoAt => ({
+      let withFields = fields => ({
         ...record,
-        proposals: [{...proposal, alsoAt}, ...record.proposals.slice(1)],
+        proposals: [{...proposal, ...fields}, ...record.proposals.slice(1)],
       })
 
-      expect(validAnnotation(withAlsoAt([[9, 11]]))).toBeTruthy()
-      expect(validAnnotation(withAlsoAt([]))).toBeTruthy()
       expect(validAnnotation(record)).toBeTruthy()
+      expect(validAnnotation(withFields({alsoAt: [{bars: [9, 11], of: [1, 3]}]}))).toBeTruthy()
+      expect(validAnnotation(withFields({alsoAt: []}))).toBeTruthy()
 
-      for (let bad of [5, "9-11", ["9-11"], [null], [[9]], [[9, 11, 13]], [[9, "11"]]]) {
-        expect(validAnnotation(withAlsoAt(bad))).toBeFalsy()
+      // a recurrence is two bar ranges, never a bare range or a loose number
+      for (let bad of [5, "9-11", ["9-11"], [null], [[9, 11]], [{bars: [9, 11]}],
+        [{bars: [9], of: [1, 3]}], [{bars: [11, 9], of: [1, 3]}],
+        [{bars: [9, 11.5], of: [1, 3]}]]) {
+        expect(validAnnotation(withFields({alsoAt: bad}))).toBeFalsy()
+      }
+
+      // the reasons are rendered as React children, so each must be a string
+      expect(validAnnotation(withFields({reasons: ["why"]}))).toBeTruthy()
+      for (let bad of [[{}], [null], [["why"]], [3]]) {
+        expect(validAnnotation(withFields({reasons: bad}))).toBeFalsy()
+      }
+
+      // the plate walks the bars of a range, so a range is whole and in order
+      for (let bad of [{start: 1, end: 1e9 + 0.5}, {start: 11, end: 9},
+        {start: 1.5, end: 3}, {startIndex: 3, endIndex: 1}, {startIndex: 0.5, endIndex: 3}]) {
+        expect(validAnnotation(withFields(bad))).toBeFalsy()
       }
     })
 

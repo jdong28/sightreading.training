@@ -7,7 +7,7 @@ import * as React from "react"
 import * as types from "prop-types"
 import classNames from "classnames"
 
-import {romanNumeral} from "st/music"
+import {romanNumeral, barsLabel} from "st/music"
 import {LEVEL_WORDS} from "st/difficulty/index"
 
 import styles from "./bar_strip.module.css"
@@ -48,7 +48,7 @@ export function BarStrip({numbers, heat, flags, selectedId, onSelect}) {
         let to = lastIndexOfNumber(numbers, flag.end)
         if (from < 0 || to < 0) { return null }
 
-        let bars = flag.start == flag.end ? `bar ${flag.start}` : `bars ${flag.start}–${flag.end}`
+        let bars = barsLabel(flag.start, flag.end)
         let on = flag.id == selectedId
 
         return <button

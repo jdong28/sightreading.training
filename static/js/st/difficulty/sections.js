@@ -1,10 +1,10 @@
 // Turns st/difficulty/features.js's per-bar measurements into scores and
-// groups the hardest bars into passages. The numbers here (ANALYZER_ALGO 3)
+// groups the hardest bars into passages. The numbers here (ANALYZER_ALGO 4)
 // are a first guess (report section 9): tune them freely, but bump
 // ANALYZER_ALGO whenever a change would relabel an existing piece's flags,
 // so a stale record is recomputed rather than silently kept.
 
-export const ANALYZER_ALGO = 3
+export const ANALYZER_ALGO = 4
 
 const MIN_ANALYSIS_BARS = 8
 
@@ -370,11 +370,29 @@ function coversMaterial(outer, inner) {
   return true
 }
 
+// the carrier's own bars whose material is the given one: the part of it
+// that the dropped passage repeats, which is the whole of it for a
+// whole-passage repeat
+function recurringRange(carrier, material, repeats) {
+  let numbers = []
+  for (let bar of carrier.run) {
+    if (!bar.indices) { continue }
+    let recurs = rangeIndices(bar)
+      .some(idx => material.has(repeats.has(idx) ? repeats.get(idx) : idx))
+    if (recurs) { numbers.push(bar.number) }
+  }
+  return numbers.length ?
+    [Math.min(...numbers), Math.max(...numbers)] : [carrier.start, carrier.end]
+}
+
 // repeated material is flagged once (decision 7): a passage whose bars all
-// repeat the material of an earlier passage is dropped and its range kept on
-// that passage as alsoAt. The match is on the material itself, never on
-// where it was first written, so the first time it appears need not be
-// flagged for the later copies to merge into one passage.
+// repeat the material of an earlier passage is dropped, and that passage
+// keeps the recurrence as alsoAt — {bars} where it recurs, {of} the bars of
+// the carrier that do, which a reason words as "also at" when it is the
+// whole passage and "bars X–Y recur at" when it is only part of it. The
+// match is on the material itself, never on where it was first written, so
+// the first time it appears need not be flagged for the later copies to
+// merge into one passage.
 function mergeRepeats(passages, repeats) {
   let byStart = [...passages].sort((a, b) => a.startIndex - b.startIndex)
   let material = new Map(byStart.map(p => [p, materialIndices(p, repeats)]))
@@ -388,7 +406,10 @@ function mergeRepeats(passages, repeats) {
     if (carrier == p) {
       kept.push(p)
     } else {
-      carrier.alsoAt = [...(carrier.alsoAt || []), [p.start, p.end]]
+      carrier.alsoAt = [...(carrier.alsoAt || []), {
+        bars: [p.start, p.end],
+        of: recurringRange(carrier, mine, repeats),
+      }]
     }
   }
 

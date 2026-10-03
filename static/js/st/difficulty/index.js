@@ -14,12 +14,15 @@ export {ANALYZER_ALGO}
 
 export const LEVEL_WORDS = {1: "Worth a look", 2: "Hard", 3: "Hardest"}
 
+// a bar's percentile rank among the bars that strike a note, as scoreBars
+// and findPassages rank them: a bar with nothing struck in it is the floor,
+// never a middling cell on the strip
 function heatRanks(scored) {
-  let scores = scored.map(b => b.score)
-  let sorted = [...scores].sort((a, b) => a - b)
-  return scores.map(score => {
-    if (!sorted.length) { return 0 }
-    let rank = sorted.filter(v => v <= score).length
+  let noted = scored.filter(bar => bar.density.notes > 0).map(bar => bar.score)
+  let sorted = [...noted].sort((a, b) => a - b)
+  return scored.map(bar => {
+    if (!sorted.length || !(bar.density.notes > 0)) { return 0 }
+    let rank = sorted.filter(v => v <= bar.score).length
     return Math.round((rank / sorted.length) * 100) / 100
   })
 }

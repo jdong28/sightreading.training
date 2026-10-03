@@ -5,22 +5,29 @@
 
 import {hash8} from "st/difficulty/fingerprints"
 
+// a [start, end] of printed bar numbers: whole numbers, in order, so every
+// consumer that walks a range walks a bounded one
 function validRange(range) {
-  return Array.isArray(range) && range.length == 2 && range.every(Number.isFinite)
+  return Array.isArray(range) && range.length == 2 &&
+    range.every(Number.isInteger) && range[0] <= range[1]
+}
+
+function validRecurrence(r) {
+  return !!r && validRange(r.bars) && validRange(r.of)
 }
 
 function validProposal(p) {
   return !!p && typeof p.id == "string" &&
     typeof p.source == "string" &&
-    Number.isFinite(p.start) && Number.isFinite(p.end) &&
-    Number.isFinite(p.startIndex) && Number.isFinite(p.endIndex) &&
+    validRange([p.start, p.end]) &&
+    validRange([p.startIndex, p.endIndex]) &&
     (p.hand == "upper" || p.hand == "lower" || p.hand == "both") &&
     (p.level == 1 || p.level == 2 || p.level == 3) &&
     Array.isArray(p.kinds) &&
-    (p.alsoAt == null || (Array.isArray(p.alsoAt) && p.alsoAt.every(validRange))) &&
+    (p.alsoAt == null || (Array.isArray(p.alsoAt) && p.alsoAt.every(validRecurrence))) &&
     typeof p.title == "string" &&
     typeof p.reason == "string" &&
-    Array.isArray(p.reasons) &&
+    Array.isArray(p.reasons) && p.reasons.every(r => typeof r == "string") &&
     typeof p.tip == "string"
 }
 

@@ -226,6 +226,17 @@ describe("the passages view (st/difficulty)", function() {
       {message: "the score plate"})
     expect(score.textContent).toContain("Bar 12")
     expect(score.textContent).not.toContain("Bars 12–12")
+
+    // and the drawer's quick pick for the same passage
+    let programme = [...container.querySelectorAll("button")]
+      .find(b => b.textContent.trim() == "Programme")
+    expect(programme).toBeTruthy()
+    flushSync(() => programme.dispatchEvent(new MouseEvent("click", {bubbles: true})))
+
+    let picks = container.querySelector('[role="group"][aria-label="difficult passages"]')
+    expect(picks).toBeTruthy()
+    expect([...picks.querySelectorAll("button")].map(b => b.textContent))
+      .toContain("Bar 12 · Hardest")
   })
 
   it("hides the score plate when the engine can't draw the piece", async function() {

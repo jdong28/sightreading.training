@@ -12,7 +12,7 @@ import classNames from "classnames"
 import {Plate, Pill} from "st/components/salon"
 import {BarStrip} from "st/components/bar_strip"
 import {ScoreCard} from "st/components/score_card"
-import {romanNumeral} from "st/music"
+import {romanNumeral, barsLabel, barsHeading} from "st/music"
 import {measureNumberList, measureNumberRange} from "st/song_sections"
 import {sheetMusicPiece, passageSettings} from "st/data"
 import {pieceSong, ensureAnnotation} from "st/sheet_music_deck"
@@ -52,15 +52,6 @@ const HAND_LABEL = {upper: "Right hand alone", lower: "Left hand alone", both: "
 // hand first")
 function handPillHand(flag) {
   return flag.hand == "both" ? "upper" : flag.hand
-}
-
-function barsLabel(start, end) {
-  return start == end ? `bar ${start}` : `bars ${start}–${end}`
-}
-
-function barsHeading(start, end) {
-  let label = barsLabel(start, end)
-  return label.charAt(0).toUpperCase() + label.slice(1)
 }
 
 export class PassagesPlate extends React.Component {
@@ -339,18 +330,16 @@ export class PassagesPlate extends React.Component {
     let heatPct = (record.runs && record.runs.score && record.runs.score.heat) || []
     let heat = numbers.map((_, idx) => heatLevel(heatPct[idx] || 0))
 
-    let coveredBars = new Set()
-    for (let flag of flags) {
-      for (let n = flag.start; n <= flag.end; n++) { coveredBars.add(n) }
-      for (let [from, to] of flag.alsoAt || []) {
-        for (let n = from; n <= to; n++) { coveredBars.add(n) }
-      }
-    }
+    let inFlag = (flag, number) =>
+      (number >= flag.start && number <= flag.end) ||
+      (flag.alsoAt || []).some(({bars}) => number >= bars[0] && number <= bars[1])
+    let coveredCount = [...new Set(numbers)]
+      .filter(number => flags.some(flag => inFlag(flag, number))).length
 
     let selected = this.selectedFlag(flags)
 
     return <div className={styles.passages} ref={this.columnRef} data-passages-plate>
-      {this.renderGlance(numbers, heat, flags, coveredBars.size, selected)}
+      {this.renderGlance(numbers, heat, flags, coveredCount, selected)}
 
       {!this.state.folded && <div className={classNames(styles.detail_row, {
         [styles.side_by_side]: this.state.width >= SIDE_BY_SIDE_WIDTH,
