@@ -67,21 +67,13 @@ const makeBox = function(x,y,w,h) {
   return bar
 }
 
-// a box built at the local origin, repositioned and resized through
-// translation and vertex updates (see LedgerLine), unlike makeBox's shapes
-// which bake their position into their vertices once
-const makeLedgerBox = function(w, h) {
-  let bar = new Two.Path([
-    new Two.Anchor(0, 0),
-    new Two.Anchor(w, 0),
-    new Two.Anchor(w, h),
-    new Two.Anchor(0, h)
-  ], true, false)
-
-  bar.fill = "black"
-  bar.noStroke()
-
-  return bar
+// moves a persisted shape into the group its props now name (see
+// StaffGroup#render's groupFor, which flips a keyed shape between the head
+// column's group and the rest as the note list shifts)
+const reparent = function(shape, renderGroup) {
+  if (shape.parent !== renderGroup) {
+    renderGroup.add(shape)
+  }
 }
 
 const GClef = createAsset(CLEF_G, "GClef")
@@ -118,11 +110,11 @@ class NoteGroup extends React.PureComponent {
   constructor(props) {
     super(props)
     this.noteGroup = props.getAsset("wholeNote")
-    props.renderGroup.add(this.noteGroup)
     this.refresh()
   }
 
   refresh() {
+    reparent(this.noteGroup, this.props.renderGroup)
     this.noteGroup.translation.set(this.props.x, this.props.y)
     this.noteGroup.className = classNames("note", {
       head: this.props.head,
@@ -153,13 +145,13 @@ class NoteGroup extends React.PureComponent {
 class LedgerLine extends React.PureComponent {
   constructor(props) {
     super(props)
-    this.box = makeLedgerBox(Math.max(props.w, 0), props.h)
+    this.box = makeBox(0, 0, Math.max(props.w, 0), props.h)
     this.box.className = "ledgerLine"
-    props.renderGroup.add(this.box)
     this.refresh()
   }
 
   refresh() {
+    reparent(this.box, this.props.renderGroup)
     this.box.translation.set(this.props.x, this.props.y)
     let w = Math.max(this.props.w, 0)
     this.box.vertices[1].x = w
@@ -185,23 +177,34 @@ class LedgerLine extends React.PureComponent {
 
 // an accidental (sharp, flat or natural) drawn left of a note's head
 class Accidental extends React.PureComponent {
+  static defaultProps = {
+    held: false,
+  }
+
   constructor(props) {
     super(props)
     this.shape = props.getAsset(props.type)
-    this.shape.className = classNames("accidental", props.type)
-    props.renderGroup.add(this.shape)
     this.refresh()
   }
 
   refresh() {
+    reparent(this.shape, this.props.renderGroup)
+    this.shape.className = classNames("accidental", this.props.type, {
+      held: this.props.held,
+    })
     this.shape.translation.set(this.props.x, this.props.y)
+    // legacy: staff.module.css .note.held { opacity: 0.2 } covers the
+    // note's accidental too
+    this.shape.opacity = this.props.held ? 0.2 : 1
   }
 
   componentDidUpdate(prevProps) {
-    this.refresh()
     if (prevProps.type != this.props.type) {
-      this.shape.className = classNames("accidental", this.props.type)
+      // the glyph itself came from the type, so it has to be rebuilt
+      this.shape.remove()
+      this.shape = this.props.getAsset(this.props.type)
     }
+    this.refresh()
   }
 
   componentWillUnmount() {
@@ -226,12 +229,17 @@ class Annotation extends React.PureComponent {
       family: "sans-serif",
     })
     this.text.className = "annotation"
-    props.renderGroup.add(this.text)
+    this.refresh()
+  }
+
+  refresh() {
+    reparent(this.text, this.props.renderGroup)
+    this.text.translation.set(this.props.x, this.props.y)
+    this.text.value = this.props.text
   }
 
   componentDidUpdate() {
-    this.text.translation.set(this.props.x, this.props.y)
-    this.text.value = this.props.text
+    this.refresh()
   }
 
   componentWillUnmount() {
@@ -293,6 +301,7 @@ class StaffGroup extends React.PureComponent {
     this.marginX = 0
 
     this.getAsset = props.getAsset
+    this.getAssetWidth = props.getAssetWidth
     // this will hold all the notes for this staff
     this.notesGroup = new Two.Group()
     this.notesGroup.className = "notesGroup"
@@ -529,10 +538,10 @@ class StaffGroup extends React.PureComponent {
         const type = accidentals == 0 ? "natural" : accidentals == 1 ? "sharp" : "flat"
         const accidentalYOffset = {natural: 61, sharp: 58, flat: 85}[type]
         const accidentalGap = 15
-        const aWidth = this.getAsset(type).getBoundingClientRect().width
+        const aWidth = this.getAssetWidth(type)
 
         outputAccidentals.push({
-          column, type,
+          column, type, held,
           x: x - Math.ceil(aWidth) - accidentalGap,
           y: y - accidentalYOffset + LINE_HALF_DY,
         })
@@ -717,6 +726,7 @@ export class StaffTwo extends React.PureComponent {
   static defaultProps = {
     height: 300, // pixel height of the svg element
     maxScale: 0.5, // the maximum scale size when scaling contents to fit element
+    range: [], // the staff's note range, what the fit is computed from
   }
 
   constructor(props) {
@@ -729,6 +739,7 @@ export class StaffTwo extends React.PureComponent {
 
     this.assets = { } // this will be populated with asset refs when they are fist instantiated
     this.assetCache = {} // the parsed two.js objects
+    this.assetWidths = {} // the measured staff-local widths of those objects
   }
 
   // the staff-local column spacing: the legacy renderer's pixel spacing
@@ -895,7 +906,7 @@ export class StaffTwo extends React.PureComponent {
 
     let {top, bottom} = clef.getBoundingClientRect()
 
-    for (const note of (notes || [])) {
+    for (const note of notes) {
       const row = rowForNote(type, note)
       const y = yForNote(type, note)
 
@@ -920,10 +931,6 @@ export class StaffTwo extends React.PureComponent {
   // the staff never jumps as notes come and go (step 3, AGENTS.md sharp
   // edge about StaffTwo not being usable for the exercises page yet)
   computeFit() {
-    if (!this.props.range) {
-      return this.currentNotesFit()
-    }
-
     const {type, range, height, maxScale} = this.props
     let top, bottom
 
@@ -948,32 +955,6 @@ export class StaffTwo extends React.PureComponent {
 
     const sourceHeight = bottom - top
     const scale = Math.min(maxScale, height / sourceHeight)
-    const translateY = Math.floor(-(top * scale))
-
-    return {scale, translateY}
-  }
-
-  // the old "fit the current notes" hack, kept as a fallback for callers
-  // that don't pass a range (eg. the standalone staff two specs)
-  currentNotesFit() {
-    const targetHeight = this.state.two.height
-    const prevScale = this.renderGroup.scale
-    const prevX = this.renderGroup.translation.x
-    const prevY = this.renderGroup.translation.y
-
-    this.renderGroup.scale = 1
-    this.renderGroup.translation.set(0, 0)
-
-    let {top, bottom} = this.renderGroup.getBoundingClientRect()
-
-    this.renderGroup.scale = prevScale
-    this.renderGroup.translation.set(prevX, prevY)
-
-    top = Math.min(top, -1)
-    bottom += 10
-
-    const sourceHeight = bottom - top
-    const scale = Math.min(this.props.maxScale, targetHeight / sourceHeight)
     const translateY = Math.floor(-(top * scale))
 
     return {scale, translateY}
@@ -1054,23 +1035,23 @@ export class StaffTwo extends React.PureComponent {
     // spacing (which reads renderGroup.scale through columnDx/dx) correct
     // on the very first paint, rather than one render stale behind flush()'s
     // own call to fit() (which still runs, idempotently, from flush())
-    if (this.props.range) {
-      const {scale, translateY} = this.computeFit()
-      this.renderGroup.scale = scale
-      this.renderGroup.translation.set(0, translateY)
-    }
+    const {scale, translateY} = this.computeFit()
+    this.renderGroup.scale = scale
+    this.renderGroup.translation.set(0, translateY)
 
     const startTime = performance.now()
 
     let marginX = 0
 
     const getAsset = this._getAsset || this.getAsset.bind(this)
+    const getAssetWidth = this.getAssetWidth.bind(this)
     const dx = this.columnDx()
 
     const staffProps = {
       // two: this.state.two,
       targetRenderGroup: this.renderGroup,
       getAsset,
+      getAssetWidth,
       keySignature: this.props.keySignature.getCount(), // TODO: just pass key signature to avoid additional work
       width: Math.floor(this.state.two.width / this.renderGroup.scale),
       dx,
@@ -1158,6 +1139,17 @@ export class StaffTwo extends React.PureComponent {
 
     console.log("Load Asset", name, performance.now() - startTime)
     return asset
+  }
+
+  // the staff-local width of an asset's glyph: it only depends on the asset,
+  // so one clone is measured and the width kept (makeNotes needs an
+  // accidental's width on every render)
+  getAssetWidth(name) {
+    if (this.assetWidths[name] == null) {
+      this.assetWidths[name] = this.getAsset(name).getBoundingClientRect().width
+    }
+
+    return this.assetWidths[name]
   }
 
   // true once every asset ref assigned in render has attached its DOM node

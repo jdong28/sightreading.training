@@ -28,6 +28,7 @@ describe("staff two", function() {
       // treble
       React.createElement(StaffTwo, {
         type: "treble",
+        range: ["A3", "C6"],
         keySignature: new KeySignature(0),
         height: 150
       }),
@@ -35,6 +36,7 @@ describe("staff two", function() {
       // bass
       React.createElement(StaffTwo, {
         type: "bass",
+        range: ["C2", "E4"],
         keySignature: new KeySignature(0),
         height: 150
       }),
@@ -42,6 +44,7 @@ describe("staff two", function() {
       // alto
       React.createElement(StaffTwo, {
         type: "alto",
+        range: ["B3", "D6"],
         keySignature: new KeySignature(0),
         height: 150,
       })
@@ -53,6 +56,7 @@ describe("staff two", function() {
   it("renders empty grand staff", function() {
     render(React.createElement(StaffTwo, {
       type: "grand",
+      range: ["C2", "C6"],
       keySignature: new KeySignature(0)
     }))
 
@@ -66,6 +70,7 @@ describe("staff two", function() {
       React.createElement(StaffTwo, {
         height: 200,
         type: "grand",
+        range: ["C2", "C6"],
         keySignature: new KeySignature(0),
         notes: new NoteList([
           ["C4"],
@@ -93,6 +98,7 @@ describe("staff two", function() {
       React.createElement(StaffTwo, {
         height: 200,
         type: "grand",
+        range: ["C2", "C6"],
         keySignature: new KeySignature(0),
         notes: new NoteList([
           ["C4"],
@@ -104,6 +110,7 @@ describe("staff two", function() {
 
       React.createElement(StaffTwo, {
         type: "grand",
+        range: ["C2", "C6"],
         keySignature: new KeySignature(0),
         notes: new NoteList([
           ["F3", "A3", "D4"],
@@ -119,6 +126,7 @@ describe("staff two", function() {
     render(
       React.createElement(StaffTwo, {
         type: "grand",
+        range: ["C2", "C6"],
         keySignature: new KeySignature(0),
         heldNotes: {
           "C4": true
@@ -148,6 +156,7 @@ describe("staff two", function() {
     render(
       React.createElement(StaffTwo, {
         type: "treble",
+        range: ["A3", "C6"],
         keySignature: new KeySignature(2),
         heldNotes,
         notes
@@ -169,6 +178,7 @@ describe("staff two", function() {
   it("renders full treble staff", function() {
     render(React.createElement(StaffTwo, {
       type: "treble",
+      range: ["A3", "C6"],
       keySignature: new KeySignature(0),
       notes: new NoteList([
         ["G4"],
@@ -201,6 +211,7 @@ describe("staff two", function() {
     render(
       React.createElement(StaffTwo, {
         type: "alto",
+        range: ["B3", "D6"],
         height: 150,
         keySignature: new KeySignature(0),
         notes
@@ -208,6 +219,7 @@ describe("staff two", function() {
 
       React.createElement(StaffTwo, {
         type: "alto",
+        range: ["B3", "D6"],
         height: 150,
         keySignature: new KeySignature(7),
         notes
@@ -215,6 +227,7 @@ describe("staff two", function() {
 
       React.createElement(StaffTwo, {
         type: "alto",
+        range: ["B3", "D6"],
         height: 150,
         keySignature: new KeySignature(-7),
         notes
@@ -241,6 +254,7 @@ describe("staff two", function() {
       React.createElement(StaffTwo, {
         height: 150,
         type: "treble",
+        range: ["A3", "C6"],
         keySignature: new KeySignature(7),
         notes
       }),
@@ -248,6 +262,7 @@ describe("staff two", function() {
       React.createElement(StaffTwo, {
         height: 150,
         type: "treble",
+        range: ["A3", "C6"],
         keySignature: new KeySignature(-7),
         notes
       }),
@@ -255,6 +270,7 @@ describe("staff two", function() {
       React.createElement(StaffTwo, {
         height: 150,
         type: "bass",
+        range: ["C2", "G5"],
         keySignature: new KeySignature(7),
         notes
       }),
@@ -262,6 +278,7 @@ describe("staff two", function() {
       React.createElement(StaffTwo, {
         height: 150,
         type: "bass",
+        range: ["C2", "G5"],
         keySignature: new KeySignature(-7),
         notes
       }),
@@ -282,6 +299,7 @@ describe("staff two", function() {
       React.createElement(StaffTwo, {
         height: 150,
         type: "treble",
+        range: ["A3", "C6"],
         keySignature: new KeySignature(0),
         notes
       }),
@@ -312,6 +330,7 @@ describe("staff two", function() {
       React.createElement(StaffTwo, {
         height: 150,
         type: "treble",
+        range: ["A3", "C6"],
         keySignature: new KeySignature(0),
         notes
       }),
@@ -319,6 +338,7 @@ describe("staff two", function() {
       React.createElement(StaffTwo, {
         height: 150,
         type: "treble",
+        range: ["A3", "C6"],
         keySignature: new KeySignature(3),
         notes
       }),
@@ -326,6 +346,7 @@ describe("staff two", function() {
       React.createElement(StaffTwo, {
         height: 150,
         type: "treble",
+        range: ["A3", "C6"],
         keySignature: new KeySignature(-3),
         notes
       }),
@@ -384,6 +405,7 @@ describe("staff two mount/unmount race", function() {
       root.render(React.createElement(StaffTwo, {
         ref: inst => { instance = inst },
         type: "treble",
+        range: ["A3", "C6"],
         keySignature: new KeySignature(0)
       }))
     })
@@ -405,6 +427,7 @@ describe("staff two mount/unmount race", function() {
       root.render(React.createElement(StaffTwo, {
         ref: inst => { instance = inst },
         type: "treble",
+        range: ["A3", "C6"],
         keySignature: new KeySignature(0),
         notes: new NoteList([["C4"], ["E4"]])
       }))
@@ -424,6 +447,7 @@ describe("staff two mount/unmount race", function() {
     flushSync(() => {
       root.render(React.createElement(StaffTwo, {
         type: "treble",
+        range: ["A3", "C6"],
         keySignature: new KeySignature(0),
         notes: new NoteList([["C4"]])
       }))
@@ -445,6 +469,7 @@ describe("staff two mount/unmount race", function() {
       root.render(React.createElement(StaffTwo, {
         ref: inst => { instance = inst },
         type: "treble",
+        range: ["A3", "C6"],
         keySignature: new KeySignature(0),
         notes: new NoteList([["C4"]])
       }))
@@ -459,6 +484,7 @@ describe("staff two mount/unmount race", function() {
       root.render(React.createElement(StaffTwo, {
         ref: inst => { instance = inst },
         type: "bass",
+        range: ["C2", "E4"],
         keySignature: new KeySignature(0),
         notes: new NoteList([["C4"]])
       }))
@@ -477,6 +503,7 @@ describe("staff two mount/unmount race", function() {
       root.render(React.createElement(StaffTwo, {
         ref: inst => { instance = inst },
         type: "treble",
+        range: ["A3", "C6"],
         keySignature: new KeySignature(0)
       }))
     })
@@ -515,6 +542,7 @@ describe("staff two ledger lines", function() {
         ref: inst => { instance = inst },
         keySignature: new KeySignature(0),
         height: 150,
+        range: ["A3", "C6"],
         ...props,
       }))
     })
@@ -541,6 +569,7 @@ describe("staff two ledger lines", function() {
   it("draws ledger lines above and below the bass staff", function() {
     let instance = mount({
       type: "bass",
+      range: ["C2", "E4"],
       notes: new NoteList([["C2"], ["E2"], ["G2"], ["A3"], ["C4"], ["E4"]]),
     })
 
@@ -549,23 +578,23 @@ describe("staff two ledger lines", function() {
   })
 
   it("draws ledger lines above and below both staves of the grand staff", function() {
-    let bothAbove = mount({type: "grand", notes: new NoteList([["C6"], ["C6"]])})
+    let bothAbove = mount({type: "grand", range: ["C2", "C6"], notes: new NoteList([["C6"], ["C6"]])})
     expect(bothAbove.trebleStaffRef.current.notesGroup.getByClassName("ledgerLine").length).toBe(4)
     expect(bothAbove.bassStaffRef.current.notesGroup.getByClassName("ledgerLine").length).toBe(0)
 
-    let stickToTreble = mount({type: "grand", notes: new NoteList([["E4"], ["B3"]])})
+    let stickToTreble = mount({type: "grand", range: ["C2", "C6"], notes: new NoteList([["E4"], ["B3"]])})
     let trebleLines = stickToTreble.trebleStaffRef.current.notesGroup.getByClassName("ledgerLine")
     expect(trebleLines.length).toBe(1)
     expect(trebleLines[0].translation.y).toBe(290)
     expect(stickToTreble.bassStaffRef.current.notesGroup.getByClassName("ledgerLine").length).toBe(0)
 
-    let stickToBass = mount({type: "grand", notes: new NoteList([["A3"], ["C4"]])})
+    let stickToBass = mount({type: "grand", range: ["C2", "C6"], notes: new NoteList([["A3"], ["C4"]])})
     let bassLines = stickToBass.bassStaffRef.current.notesGroup.getByClassName("ledgerLine")
     expect(bassLines.length).toBe(1)
     expect(bassLines[0].translation.y).toBe(-58)
     expect(stickToBass.trebleStaffRef.current.notesGroup.getByClassName("ledgerLine").length).toBe(0)
 
-    let bothBelow = mount({type: "grand", notes: new NoteList([["C2"], ["C2"]])})
+    let bothBelow = mount({type: "grand", range: ["C2", "C6"], notes: new NoteList([["C2"], ["C2"]])})
     expect(bothBelow.bassStaffRef.current.notesGroup.getByClassName("ledgerLine").length).toBe(4)
     expect(bothBelow.trebleStaffRef.current.notesGroup.getByClassName("ledgerLine").length).toBe(0)
   })
@@ -698,6 +727,7 @@ describe("staff two parity", function() {
       root.render(React.createElement(StaffTwo, {
         ref: inst => { instance = inst },
         height: 150,
+        range: ["A3", "C6"],
         ...props,
       }))
     })
@@ -787,6 +817,127 @@ describe("staff two parity", function() {
 
     flushSync(() => updater(-1, 0))
     expect(groups.every(g => g.translation.x == 0)).toBe(true)
+  })
+
+  it("dims a held key's accidental along with its head", function() {
+    let instance = mount({
+      type: "treble",
+      keySignature: new KeySignature(0),
+      notes: new NoteList([["C5"]]),
+      heldNotes: {"A#5": true},
+    })
+
+    let accidentals = instance.trebleStaffRef.current.notesGroup.getByClassName("accidental")
+    expect(accidentals.length).toBe(1)
+    expect(accidentals[0].classList.includes("held")).toBe(true)
+    expect(accidentals[0].opacity).toBe(0.2)
+
+    // the same accidental, on a note nothing is holding, is drawn full black
+    instance = mount({
+      type: "treble",
+      keySignature: new KeySignature(0),
+      notes: new NoteList([["A#5"]]),
+    })
+
+    accidentals = instance.trebleStaffRef.current.notesGroup.getByClassName("accidental")
+    expect(accidentals.length).toBe(1)
+    expect(accidentals[0].classList.includes("held")).toBe(false)
+    expect(accidentals[0].opacity).toBe(1)
+  })
+
+  it("redraws an accidental's glyph when its type changes under the same key", function() {
+    // F major: B is natural against the key's Bb, C# is spelled Db
+    let instance = mount({
+      type: "treble",
+      keySignature: new KeySignature(-1),
+      notes: new NoteList([["E4"]]),
+      heldNotes: {"B4": true, "C#5": true},
+    })
+
+    // the glyph's own extent, with its placement (the shape's own matrix)
+    // left out, so a drawn accidental can be compared against a fresh asset
+    let extent = shape => {
+      let rect = shape.getBoundingClientRect(true)
+      return [rect.width, rect.height]
+    }
+
+    let flat = extent(instance.getAsset("flat"))
+    let natural = extent(instance.getAsset("natural"))
+    // the spec only means something if the two glyphs are different shapes
+    expect(Math.abs(flat[0] - natural[0]) + Math.abs(flat[1] - natural[1]))
+      .toBeGreaterThan(1)
+
+    let accidentals = () => instance.trebleStaffRef.current.notesGroup.getByClassName("accidental")
+    expect(accidentals().length).toBe(2)
+
+    // releasing B4 drops the natural, leaving the flat under the key the
+    // natural's shape was built for
+    instance = mount({
+      type: "treble",
+      keySignature: new KeySignature(-1),
+      notes: new NoteList([["E4"]]),
+      heldNotes: {"C#5": true},
+    })
+
+    expect(accidentals().length).toBe(1)
+    expect(accidentals()[0].classList.includes("flat")).toBe(true)
+
+    let drawn = extent(accidentals()[0])
+    expect(drawn[0]).toBeCloseTo(flat[0], 3)
+    expect(drawn[1]).toBeCloseTo(flat[1], 3)
+  })
+
+  it("measures an accidental's glyph width once, not on every render", function() {
+    let instance = mount({
+      type: "treble",
+      keySignature: new KeySignature(0),
+      notes: new NoteList([["C#4"]]),
+    })
+
+    expect(instance.assetWidths.sharp).toBeGreaterThan(0)
+
+    let loads = spyOn(instance, "getAsset").and.callThrough()
+
+    mount({
+      type: "treble",
+      keySignature: new KeySignature(0),
+      notes: new NoteList([["D#4"], ["F#4"]]),
+    })
+
+    expect(loads.calls.allArgs().map(args => args[0])).not.toContain("sharp")
+  })
+
+  it("moves a shape into the head column's group as the note list shifts under it", function() {
+    let notes = (columns, heldNotes) => ({
+      type: "treble",
+      keySignature: new KeySignature(0),
+      notes: new NoteList(columns),
+      heldNotes,
+    })
+
+    let instance = mount(notes([["C4"], ["E4"]], {"A5": true}))
+    let staff = instance.trebleStaffRef.current
+
+    // the faint held key is drawn on the head column, so its shape has to sit
+    // in the head group NoteShaker shakes
+    let faint = () => staff.notesGroup.getByClassName("note")
+      .find(n => n.classList.includes("held"))
+    let later = () => staff.notesGroup.getByClassName("note")
+      .find(n => !n.classList.includes("held") && !n.classList.includes("head"))
+
+    expect(faint().parent).toBe(staff.headGroup)
+    expect(later().parent).toBe(staff.notesGroup)
+
+    // the list advances: the keyed shape that drew the second column's note
+    // now draws the faint held key on the head column
+    mount(notes([["E4"]], {"A5": true}))
+    expect(faint().parent).toBe(staff.headGroup)
+    expect(later()).toBeUndefined()
+
+    // and back the other way: that shape draws the second column again
+    mount(notes([["C4"], ["E4"]], {"A5": true}))
+    expect(faint().parent).toBe(staff.headGroup)
+    expect(later().parent).toBe(staff.notesGroup)
   })
 
   it("draws a column's annotation above it", function() {
