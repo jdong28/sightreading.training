@@ -260,7 +260,7 @@ def run(run_dir):
                                        voice=f["note"]["voice"]))
 
         if not two_hand_ok:
-            parts_desc = ", ".join(f"{pid} ({c} staff{'ves' if c != 1 else ''})" for pid, c in part_counts)
+            parts_desc = ", ".join(f"{pid} ({c} {'staff' if c == 1 else 'staves'})" for pid, c in part_counts)
             report["checks"].append(_check(
                 "placement: one part with one or two staves",
                 False, f"placing fingerings needs one part with one or two staves; this score has {parts_desc}: "
