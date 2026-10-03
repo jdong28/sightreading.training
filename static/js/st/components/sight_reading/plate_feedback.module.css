@@ -14,7 +14,7 @@
     margin: -39px 0 0 -39px;
     opacity: 0;
     filter: blur(1.5px);
-    transition: opacity .55s ease, left .2s ease, top .2s ease;
+    transition: opacity .55s ease;
     background: radial-gradient(42% 38% at 50% 50%,
         color-mix(in srgb, var(--salon-ink) 40%, transparent),
         color-mix(in srgb, var(--salon-ink) 14%, transparent) 56%,
@@ -23,10 +23,5 @@
 
 .on {
     opacity: 1;
-}
-
-@media (prefers-reduced-motion: reduce) {
-    .smudge {
-        transition: opacity .55s ease;
-    }
+    transition: none;
 }

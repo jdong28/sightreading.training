@@ -78,22 +78,38 @@ describe("plate feedback", function() {
     tick(1)
     expect(smudge().dataset.smudge).toEqual("off")
 
-    // a second change at 600ms keeps it on until 1500ms and moves it
+    // a second change restarts the hold, and a third while it is lit moves it
     rerender({...props, smudge: 2})
-    tick(600)
+    tick(SMUDGE_HOLD_MS - 100)
     expect(smudge().dataset.smudge).toEqual("on")
 
     locateHead.and.returnValue([rectEl(90, 100, 10, 10)])
     rerender({...props, smudge: 3})
-    tick(600)
+    tick(SMUDGE_HOLD_MS - 1)
     expect(smudge().dataset.smudge).toEqual("on")
     expect(parseFloat(smudge().style.left)).toBeCloseTo(95, 5)
     expect(parseFloat(smudge().style.top)).toBeCloseTo(105, 5)
 
-    tick(299)
-    expect(smudge().dataset.smudge).toEqual("on")
     tick(1)
     expect(smudge().dataset.smudge).toEqual("off")
+  })
+
+  it("inks at once and animates only the fade out", function() {
+    let props = {smudge: 0, locateHead: () => [rectEl(10, 10, 10, 10)]}
+    render(props)
+    stubLayerRect(0, 0, 200, 150)
+    expect(getComputedStyle(smudge()).opacity).toEqual("0")
+
+    rerender({...props, smudge: 1})
+    let lit = getComputedStyle(smudge())
+    expect(lit.opacity).toEqual("1")
+    expect(lit.transitionProperty).toEqual("none")
+
+    tick(SMUDGE_HOLD_MS)
+    expect(smudge().dataset.smudge).toEqual("off")
+    let fading = getComputedStyle(smudge())
+    expect(fading.transitionProperty).toEqual("opacity")
+    expect(fading.transitionDuration).toEqual("0.55s")
   })
 
   it("keeps the smudge at its CSS default with no located element, but still turns it on", function() {

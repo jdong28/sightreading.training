@@ -4,10 +4,12 @@ import classNames from "classnames"
 
 import styles from "./plate_feedback.module.css"
 
-// How long the ink smudge stays lit after the matcher's latest judgement,
-// before fading (see SightReadingPage#countMiss, which bumps the smudge
-// prop once per judgement)
-export const SMUDGE_HOLD_MS = 900
+// How long the ink smudge stays lit after the matcher's latest judgement
+// (see SightReadingPage#countMiss, which bumps the smudge prop once per
+// judgement): it is drawn at once, holds, then the .55s fade of
+// plate_feedback.module.css carries it out, so the ink is gone 900ms after
+// the judgement (docs/design/salon-de-chopin.md)
+export const SMUDGE_HOLD_MS = 350
 
 // The trainer's gentle feedback state, drawn over the staff plate: an ink
 // smudge at the head column on every wrong key (including a wrong chord).
