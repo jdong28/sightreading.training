@@ -187,6 +187,50 @@ describe("local store", function() {
       expect(await reopened.pieceSource("p1")).toEqual(LITTLE_WALTZ_XML)
       expect(reopened.sectionStats("p1")).toEqual([section("p1", 1, 4)])
     })
+
+    it("adds the annotations store, leaving every other store's records exactly as they were", async function() {
+      await deleteDB(TEST_DB_NAME)
+
+      // the version 4 database, before annotations
+      let db = await openDB(TEST_DB_NAME, 4, {
+        upgrade(db) {
+          db.createObjectStore("pieces", {keyPath: "id"})
+          db.createObjectStore("pieceSources", {keyPath: "pieceId"})
+          db.createObjectStore("sectionStats", {keyPath: ["pieceId", "startMeasure", "endMeasure"]})
+            .createIndex("pieceId", "pieceId")
+          db.createObjectStore("sessions", {keyPath: "id"}).createIndex("startedAt", "startedAt")
+          db.createObjectStore("meta", {keyPath: "key"})
+          db.createObjectStore("items", {keyPath: "id"}).createIndex("pieceId", "pieceId")
+          db.createObjectStore("reviews", {keyPath: ["itemId", "at"]}).createIndex("pieceId", "pieceId")
+          db.createObjectStore("studies", {keyPath: "pieceId"})
+        },
+      })
+
+      let minuet = pieceData("p1", "Minuet", 1000)
+      let item = {
+        id: "p1:both:1-4", pieceId: "p1", hand: "both", startMeasure: 1, endMeasure: 4,
+        level: "span", state: "tracked", step: 0, reps: 0, lapses: 0, streak: 0,
+        hits: 1, misses: 0, attempts: 1, lastPracticed: 1000, recent: [], algo: 0, createdAt: 1,
+      }
+      let study = {pieceId: "p1"}
+
+      await db.put("pieces", minuet)
+      await db.put("items", item)
+      await db.put("studies", study)
+      await db.put("meta", {key: DECK_MIGRATION_MARKER, migratedAt: 1, pieces: 0})
+      db.close()
+
+      let store = await open({keep: true})
+      expect(store.persistent).toBe(true)
+      expect(store.backend.db.version).toEqual(DB_VERSION)
+      expect([...store.backend.db.objectStoreNames]).toContain("annotations")
+
+      expect(store.pieces()).toEqual([minuet])
+      expect(store.items("p1")).toEqual([item])
+      expect(store.studies()).toEqual([study])
+      expect(store.annotations()).toEqual([])
+      expect(store.annotation("p1")).toBe(null)
+    })
   })
 
   describe("piece sources", function() {
@@ -275,6 +319,64 @@ describe("local store", function() {
       await store.deletePiece("a")
       expect(await store.pieceSource("a")).toBe(null)
     })
+  })
+
+  describe("annotations", function() {
+    let flag = () => ({
+      id: "score:1-2:aaaaaaaa", source: "score", start: 1, end: 2, startIndex: 0, endIndex: 1,
+      hand: "both", level: 2, kinds: ["speed"], title: "The densest bars",
+      reason: "Dense writing.", reasons: ["Dense writing."], tip: "Slowly at first.",
+    })
+    let annotationFor = (pieceId, overrides={}) => ({
+      pieceId,
+      fingerprint: {algo: 1, numbersHash: "abc", bars: ["x", "y"]},
+      proposals: [flag()],
+      decisions: [],
+      runs: {score: {algo: 1, at: 1, source: false, tempo: null, heat: [0, 1]}},
+      ...overrides,
+    })
+
+    for (let persist of [true, false]) {
+      describe(persist ? "in IndexedDB" : "in memory", function() {
+        it("stores, caches synchronously after the write, and survives reopening", async function() {
+          let store = await open({persist})
+          await store.putPiece(pieceData("a", "First", 1000))
+
+          let record = annotationFor("a")
+          let stored = await store.putAnnotation(record)
+          expect(stored).toEqual(record)
+          expect(store.annotation("a")).toEqual(record) // cached synchronously
+          expect(store.annotations()).toEqual([record])
+
+          if (persist) {
+            await store.close()
+            let reopened = await open({keep: true})
+            expect(reopened.annotation("a")).toEqual(record)
+          }
+        })
+
+        it("refuses a record of no stored piece or of the wrong shape, leaving the cache untouched", async function() {
+          let store = await open({persist})
+          await store.putPiece(pieceData("a", "First", 1000))
+          await store.putAnnotation(annotationFor("a"))
+
+          await expectAsync(store.putAnnotation(annotationFor("unknown"))).toBeRejected()
+          await expectAsync(store.putAnnotation({...annotationFor("a"), proposals: "not an array"})).toBeRejected()
+
+          expect(store.annotations()).toEqual([annotationFor("a")])
+        })
+
+        it("deletePiece deletes the piece's annotation", async function() {
+          let store = await open({persist})
+          await store.putPiece(pieceData("a", "First", 1000))
+          await store.putAnnotation(annotationFor("a"))
+
+          await store.deletePiece("a")
+          expect(store.annotation("a")).toBe(null)
+          expect(store.annotations()).toEqual([])
+        })
+      })
+    }
   })
 
   describe("legacy deck migration", function() {
@@ -585,6 +687,71 @@ describe("local store", function() {
       expect(await store.pieceSource("a")).toBe(null)
     })
 
+    it("round trips the annotations of each piece that has one", async function() {
+      let flag = () => ({
+        id: "score:1-2:aaaaaaaa", source: "score", start: 1, end: 2, startIndex: 0, endIndex: 1,
+        hand: "both", level: 2, kinds: ["speed"], title: "The densest bars",
+        reason: "Dense writing.", reasons: ["Dense writing."], tip: "Slowly at first.",
+      })
+      let annotation = (pieceId, overrides={}) => ({
+        pieceId,
+        fingerprint: {algo: 1, numbersHash: "abc", bars: ["x", "y"]},
+        proposals: [flag()],
+        decisions: [],
+        runs: {score: {algo: 1, at: 1, source: false, tempo: null, heat: [0, 1]}},
+        ...overrides,
+      })
+
+      let store = await open()
+      await store.putPiece(pieceData("a", "First", 1000))
+      await store.putPiece(pieceData("b", "Sourceless", 2000, ["E4"]))
+      await store.putAnnotation(annotation("a"))
+
+      let file = await exportLibraryFile(store)
+      let data = JSON.parse(file.text)
+      expect(data.annotations).toEqual([annotation("a")])
+
+      await store.close()
+      let other = await open()
+      let result = await importLibraryFile(file.text, other)
+      expect(result.error).toBeUndefined()
+      expect(result.report.addedAnnotations).toEqual(1)
+      expect(other.annotation("a")).toEqual(annotation("a"))
+      expect(other.annotation("b")).toBe(null)
+
+      // importing again adds nothing: the piece already has a record
+      let again = await importLibraryFile(file.text, other)
+      expect(again.report.addedAnnotations).toEqual(0)
+      expect(other.annotation("a")).toEqual(annotation("a"))
+
+      // a local annotation is kept, not replaced by the file's
+      let keepStore = await open()
+      await keepStore.putPiece(pieceData("kept", "Kept", 3000, ["G4"]))
+      let localAnnotation = annotation("kept", {proposals: []})
+      await keepStore.putAnnotation(localAnnotation)
+
+      let remoteLibrary = {
+        format: LIBRARY_FORMAT,
+        version: LIBRARY_VERSION,
+        pieces: [pieceData("remote", "Kept", 3000, ["G4"])],
+        annotations: [annotation("remote"), {pieceId: "remote2", bad: true}],
+      }
+      let keepResult = await importLibraryFile(JSON.stringify(remoteLibrary), keepStore)
+      expect(keepResult.report.addedAnnotations).toEqual(0)
+      expect(keepStore.annotation("kept")).toEqual(localAnnotation)
+
+      // libraries without annotations (versions 6 and 7) import as before
+      for (let version of [6, 7]) {
+        let oldStore = await open({persist: false})
+        let oldResult = await importLibraryFile(JSON.stringify({
+          format: LIBRARY_FORMAT, version, pieces: [pieceData(`v${version}`, `V${version}`, 1000, [`C${version}`])],
+        }), oldStore)
+        expect(oldResult.error).toBeUndefined()
+        expect(oldResult.report.addedPieces).toEqual(1)
+        expect(oldStore.annotations()).toEqual([])
+      }
+    })
+
     it("imports a library exported before pieces kept their source", async function() {
       let store = await open()
       let library = {
@@ -685,7 +852,7 @@ describe("local store", function() {
 
       let exported = await store.exportLibrary()
       expect(exported.version).toEqual(LIBRARY_VERSION)
-      expect(LIBRARY_VERSION).toEqual(7)
+      expect(LIBRARY_VERSION).toEqual(8)
       expect(exported.reviews).toEqual([jasmine.objectContaining({mode: "self", grade: GOOD})])
 
       let other = await open()

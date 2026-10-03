@@ -165,6 +165,40 @@ export function shiftNoteOctave(note, octaves) {
   return `${parsed[1]}${+parsed[2] + octaves}`
 }
 
+// eg. "C#4" -> "C♯4", in the app's octave numbering like the keyboard labels
+export function displayNoteName(note) {
+  return String(note).replace("#", "♯").replace(/^([A-G])b/, "$1♭")
+}
+
+// a range of printed bar numbers, eg. "bars 9–11" or "bar 12" for one bar.
+// barsHeading is the same label as a sentence or a heading starts it
+export function barsLabel(start, end) {
+  return start == end ? `bar ${start}` : `bars ${start}–${end}`
+}
+
+export function barsHeading(start, end) {
+  let label = barsLabel(start, end)
+  return label.charAt(0).toUpperCase() + label.slice(1)
+}
+
+const NUMERALS = [
+  [1000, "M"], [900, "CM"], [500, "D"], [400, "CD"], [100, "C"], [90, "XC"],
+  [50, "L"], [40, "XL"], [10, "X"], [9, "IX"], [5, "V"], [4, "IV"], [1, "I"],
+]
+
+// eg. 4 -> "IV", for numbering the passages of a piece and the sessions of
+// an evening
+export function romanNumeral(n) {
+  let out = ""
+  for (let [value, numeral] of NUMERALS) {
+    while (n >= value) {
+      out += numeral
+      n -= value
+    }
+  }
+  return out
+}
+
 // the staff row of a note, counting letter steps up from C in the pitch's
 // octave 0 (so rows don't depend on the octave numbering of names)
 export function noteStaffOffset(note) {

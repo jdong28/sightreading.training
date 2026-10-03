@@ -464,6 +464,82 @@ describe("card scroll", function() {
   })
 })
 
+describe("score card overview", function() {
+  let container, root
+
+  let mount = props => {
+    container = document.createElement("div")
+    container.style.width = "600px"
+    document.body.appendChild(container)
+    root = createRoot(container)
+    flushSync(() => {
+      root.render(React.createElement(ScoreCard, {
+        musicXML: pickupScore(), fromMeasure: 0, toMeasure: 2, hand: "both", width: 500,
+        overview: true, ...props,
+      }))
+    })
+    return container
+  }
+
+  afterEach(function() {
+    flushSync(() => root.unmount())
+    container.remove()
+  })
+
+  it("draws a rect per shaded band and an HTML label per shade, clickable, with no [data-score-card]", async function() {
+    let onShade = jasmine.createSpy("onShade")
+    let shades = [
+      {id: "a", from: 1, to: 1, level: 3, on: true, label: "I"},
+      {id: "b", from: 2, to: 2, level: 1, on: false, label: "II"},
+    ]
+    mount({shades, onShade})
+
+    await waitFor(() => container.querySelector("[data-score-overview] svg rect[data-shade]"),
+      {message: "the shaded overview"})
+
+    expect(container.querySelector("[data-score-card]")).toBe(null)
+    expect(container.querySelector("[data-score-overview]")).toBeTruthy()
+
+    let rects = [...container.querySelectorAll("rect[data-shade]")]
+    expect(rects.map(el => el.getAttribute("data-shade")).sort()).toEqual(["a", "b"])
+    for (let rect of rects) {
+      expect(rect.hasAttribute("fill")).toBe(false)
+      expect(rect.hasAttribute("stroke")).toBe(false)
+    }
+
+    let labels = [...container.querySelectorAll("button")]
+    expect(labels.map(el => el.textContent).sort()).toEqual(["I", "II"])
+    for (let label of labels) {
+      expect(parseFloat(getComputedStyle(label).fontSize)).toBeGreaterThanOrEqual(11)
+    }
+
+    rects.find(el => el.getAttribute("data-shade") == "a").dispatchEvent(new MouseEvent("click", {bubbles: true}))
+    expect(onShade).toHaveBeenCalledWith("a")
+
+    labels.find(el => el.textContent == "II").dispatchEvent(new MouseEvent("click", {bubbles: true}))
+    expect(onShade).toHaveBeenCalledWith("b")
+  })
+
+  it("restyles in place without redrawing when the shade on changes", async function() {
+    let shades = [{id: "a", from: 1, to: 1, level: 2, on: false, label: "I"}]
+    let el = mount({shades})
+
+    await waitFor(() => el.querySelector("rect[data-shade]"), {message: "the shaded overview"})
+    let svg = el.querySelector("svg")
+    let rect = el.querySelector("rect[data-shade]")
+    expect(rect.getAttribute("class")).not.toContain("on")
+
+    flushSync(() => root.render(React.createElement(ScoreCard, {
+      musicXML: pickupScore(), fromMeasure: 0, toMeasure: 2, hand: "both", width: 500,
+      overview: true, shades: [{...shades[0], on: true}],
+    })))
+
+    expect(el.querySelector("svg")).toBe(svg) // the same element: no redraw
+    let restyled = el.querySelector("rect[data-shade]")
+    expect(restyled.getAttribute("class")).toContain("on")
+  })
+})
+
 describe("score page engine card", function() {
   let container, root, page, store, previousStore, savedStorage
   const STORAGE_KEYS = [SCORE_DRILL_STORAGE_KEY, SHEET_MUSIC_STORAGE_KEY]
@@ -1725,6 +1801,103 @@ describe("ScoreCard", function() {
     rerenderCard({...section(names.slice(0, 1)), head: 0})
     expect(card.result).toBeTruthy()
     expect(marks()).toEqual([[MARK_CLASSES.current], [], [], []])
+  })
+
+  it("shades a kept system it re-attaches rather than drawing again", async function() {
+    let renders = 0
+    let measuresFor = {
+      "1-2": [
+        {index: 0, number: 1, box: {x: 0, y: 0, width: 50, height: 40}},
+        {index: 1, number: 2, box: {x: 50, y: 0, width: 50, height: 40}},
+      ],
+      "3-3": [{index: 2, number: 3, box: {x: 0, y: 0, width: 50, height: 40}}],
+    }
+    let loadEngines = () => Promise.resolve({ENGINES: {osmd: {
+      renderSystem: async ({fromMeasure, toMeasure}) => {
+        renders++
+        let svg = document.createElementNS(SVG_NS, "svg")
+        svg.appendChild(document.createElementNS(SVG_NS, "rect"))
+        let note = drawn(parseNote("C4"), 0)
+        svg.appendChild(note.el)
+        return {svg, notes: [note], measures: measuresFor[`${fromMeasure}-${toMeasure}`]}
+      },
+    }}})
+    let base = {
+      musicXML: "<score-partwise/>", measureStarts: [0, 4, 8], hand: "both", width: 600,
+      system: true, overview: true, loadEngines,
+    }
+    let shade = on => [{id: "a", from: 1, to: 2, level: 3, on, label: "I"}]
+    let shaded = () => [...container.querySelectorAll("rect[data-shade]")]
+      .map(el => el.getAttribute("data-shade"))
+
+    mountCard({...base, fromMeasure: 1, toMeasure: 2, shades: shade(false)})
+    await waitFor(() => shaded().length, {message: "the first system's shade"})
+
+    rerenderCard({...base, fromMeasure: 3, toMeasure: 3, shades: shade(false)})
+    await waitFor(() => renders == 2, {message: "the second system"})
+
+    // back to the kept system, then restyled: its measures came with the
+    // copy, so the shade is laid out over them without a redraw
+    rerenderCard({...base, fromMeasure: 1, toMeasure: 2, shades: shade(false)})
+    expect(renders).toEqual(2)
+    rerenderCard({...base, fromMeasure: 1, toMeasure: 2, shades: shade(true)})
+    expect(renders).toEqual(2)
+    expect(shaded()).toEqual(["a"])
+  })
+
+  // The page moves the drawn range on with the section setting, but rebuilds
+  // the drill's columns a render later (refreshNoteList in
+  // SightReadingPage#componentDidUpdate), and a kept system is re-attached at
+  // once rather than on a draw settling: its re-join lands on the columns of
+  // the section the card has moved on from. Returning to a flagged passage
+  // already drilled in scroll mode used to take those for a card the engine
+  // couldn't draw and fall back to the app's staff for good
+  it("keeps a kept system's drawing where the drill's columns lag its range by a render", async function() {
+    let renders = 0
+    let notesFor = {"1-4": ["C4", "D4", "E4", "F4"], "5-8": ["G4", "A4", "B4", "C5"]}
+    let beatOf = {"1-4": 0, "5-8": 4}
+    let loadEngines = () => Promise.resolve({ENGINES: {osmd: {
+      renderSystem: async ({fromMeasure, toMeasure}) => {
+        renders++
+        let range = `${fromMeasure}-${toMeasure}`
+        let svg = document.createElementNS(SVG_NS, "svg")
+        let notes = notesFor[range].map((name, idx) => {
+          let note = drawn(parseNote(name), beatOf[range] + idx)
+          svg.appendChild(note.el)
+          return note
+        })
+        return {svg, notes, measures: []}
+      },
+    }}})
+    let columnsAt = range => notesFor[range].map((name, idx) => column([name], beatOf[range] + idx))
+    let onError = jasmine.createSpy("onError")
+    let base = {
+      musicXML: "<score-partwise/>", measureStarts: [0, 4, 8, 12, 16, 20, 24, 28],
+      hand: "both", width: 600, system: true, loadEngines, onError,
+    }
+
+    mountCard({...base, fromMeasure: 1, toMeasure: 4, columns: columnsAt("1-4"), head: 0})
+    await waitFor(() => card.result, {message: "the first system"})
+
+    rerenderCard({...base, fromMeasure: 5, toMeasure: 8, columns: columnsAt("5-8"), head: 0})
+    await waitFor(() => renders == 2, {message: "the second system"})
+
+    // back to the first range with the second's columns still on the props:
+    // re-attached, and the drawing kept rather than failed
+    rerenderCard({...base, fromMeasure: 1, toMeasure: 4, columns: columnsAt("5-8"), head: 0})
+    expect(renders).toEqual(2)
+    expect(onError).not.toHaveBeenCalled()
+    expect(card.result).toBeTruthy()
+    expect(container.querySelector("[data-score-card] svg")).toBe(card.result.svg)
+
+    // the columns catch up a render later, and the kept system is joined to
+    // them without a draw of its own
+    rerenderCard({...base, fromMeasure: 1, toMeasure: 4, columns: columnsAt("1-4"), head: 1})
+    expect(renders).toEqual(2)
+    expect(onError).not.toHaveBeenCalled()
+    expect(card.result).toBeTruthy()
+    expect(card.cardJoin.heads.map(heads => heads.length)).toEqual([1, 1, 1, 1])
+    expect(card.cardJoin.heads[1].every(el => el.classList.contains(MARK_CLASSES.current))).toBe(true)
   })
 
   it("draws a system again once its score changes", async function() {

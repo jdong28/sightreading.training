@@ -45,7 +45,7 @@ npm test        # headless Jasmine specs (static/js/specs.js) via puppeteer
 make lint_js     # eslint over static/js
 ```
 
-Both are run in CI (`.github/workflows/test.yml`) alongside the existing Lua/Docker test job. `npm test` builds and runs the frontend specs headlessly and exits non-zero on any failure (855 specs, 0 failures as of this writing). `npm run build_assets` produces the production JS bundle that CI also builds before testing.
+Both are run in CI (`.github/workflows/test.yml`) alongside the existing Lua/Docker test job. `npm test` builds and runs the frontend specs headlessly and exits non-zero on any failure; the run prints the spec count. `npm run build_assets` produces the production JS bundle that CI also builds before testing.
 
 ## Importing sheet music
 
@@ -67,6 +67,7 @@ This fork started from upstream [`leafo/sightreading.training`](https://github.c
 - **Spaced-repetition practice.** Practice attempts are graded and scheduled per measure with an FSRS-6-based scheduler, surfaced as "today's programme" — a generated practice session across your imported pieces that picks weak measures first and will offer a hand alone when only one hand is missing it. ([#26](https://github.com/jdong28/sightreading.training/pull/26), [#28](https://github.com/jdong28/sightreading.training/pull/28)–[#30](https://github.com/jdong28/sightreading.training/pull/30), [#37](https://github.com/jdong28/sightreading.training/pull/37), [#42](https://github.com/jdong28/sightreading.training/pull/42))
 - **A developer metrics panel** (`?devMetrics=1`) showing live note-matcher measurements, pass pace, and grading detail for debugging the detection and scheduling logic. ([#40](https://github.com/jdong28/sightreading.training/pull/40), [#44](https://github.com/jdong28/sightreading.training/pull/44))
 - **Acoustic self-graded practice.** Sheet music can be practised on an acoustic piano instead of MIDI: play the card on the screen, then grade the pass yourself (Fell apart, Stumbled, Clean, Easy) and optionally tag what slipped, feeding the same per-measure spaced-repetition records and FSRS schedule as detected practice. ([#47](https://github.com/jdong28/sightreading.training/pull/47))
+- **The hard passages of a piece, found from its score.** Every imported piece is analysed at import — free, offline and with no account — and the sheet music page shows what it found at rest: a bar-by-bar difficulty strip, the flagged passages shaded on your own engraved score, why each one is hard and how to practise it, with a pill that drills the passage (or one hand of it) straight away. Flagged passages also become quick picks for the section in the free-practice drawer.
 - **A visual redesign** ("Salon de Chopin"): a new header/nav, setup screen, first-run onboarding flow, and a restyled trainer screen. ([#5](https://github.com/jdong28/sightreading.training/pull/5), [#8](https://github.com/jdong28/sightreading.training/pull/8)–[#10](https://github.com/jdong28/sightreading.training/pull/10))
 
 The full commit and PR history is on GitHub: [commits since the fork point](https://github.com/jdong28/sightreading.training/compare/24219ac29061b437204763a150b834f928dfb550...master) and the [pull request list](https://github.com/jdong28/sightreading.training/pulls?q=is%3Apr+is%3Amerged).

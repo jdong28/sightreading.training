@@ -74,6 +74,75 @@
     }
 }
 
+/* the passages view's overview (st/difficulty): shaded bands over the
+   engraving, under the music (score_card.jsx inserts them right after the
+   engine's own background rect). Classes only, never fill/stroke
+   attributes, which the blanket recolouring above would catch */
+.score_shade {
+    cursor: pointer;
+    opacity: .28;
+    transition: opacity .15s ease;
+
+    &:hover {
+        opacity: .4;
+    }
+
+    &.on {
+        opacity: .55;
+    }
+}
+
+.shade_level_1 {
+    fill: var(--salon-heat-2);
+}
+
+.shade_level_2 {
+    fill: var(--salon-heat-3);
+}
+
+.shade_level_3 {
+    fill: var(--salon-oxblood);
+}
+
+/* the HTML layer of a shaded band's label, placed in percentages of the
+   svg's own drawn size (ScoreCard#renderShadeLabels) so it tracks any
+   scaling and never shrinks below 11px */
+.shade_labels {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+.shade_label {
+    position: absolute;
+    transform: translate(2px, -100%);
+    font-family: var(--font-display);
+    font-size: 11px;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    padding: 1px 5px;
+    border-radius: 2px;
+    border: none;
+    cursor: pointer;
+    pointer-events: auto;
+    color: var(--salon-paper);
+    background: var(--salon-heat-3);
+    white-space: nowrap;
+
+    &.shade_level_1 {
+        background: var(--salon-heat-2);
+        color: var(--salon-ink);
+    }
+
+    &.shade_level_2 {
+        background: var(--salon-heat-3);
+    }
+
+    &.shade_level_3, &.on {
+        background: var(--salon-oxblood);
+    }
+}
+
 /* scroll mode: the system on one line slides under the hit line, moved by
    a transform alone (ScoreCard#place), never laid out again */
 .system {

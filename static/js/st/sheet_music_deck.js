@@ -12,6 +12,7 @@
 import {MultiTrackSong, SongNote} from "st/song_note_list"
 import {parseMusicXML, readMusicXMLFile, MusicXMLError} from "st/musicxml"
 import {getAppStore, LEGACY_DECK_KEY, LibraryFormatError} from "st/storage"
+import {analyzePiece, annotationWith, annotationStale} from "st/difficulty/index"
 
 // where the deck was kept before the local store, see migrateLegacyDeck in
 // st/storage
@@ -262,6 +263,58 @@ export function pieceSong(piece) {
   return songCache.get(piece)
 }
 
+// Analyses a piece's score and stores the result, folding it into any
+// record it already has (st/difficulty: another source's proposals and
+// every decision survive a re-run). Never throws: an analysis or write
+// failure is only logged, so a flagged passage is never load-bearing for an
+// import or a page.
+async function annotatePiece(piece, {source}, store) {
+  try {
+    let song = pieceSong(piece)
+    if (!song) { return null }
+
+    let analysis = analyzePiece({song, source: source || null, at: Date.now()})
+    let record = annotationWith(store.annotation(piece.id), piece.id, analysis)
+    return await store.putAnnotation(record)
+  } catch (e) {
+    console.warn(`Couldn't analyse the score of piece ${piece.id}:`, e)
+    return null
+  }
+}
+
+/**
+ * Ensures a stored piece has an up to date flagged-passages record (see
+ * st/difficulty), analysing it from its source when the record is missing
+ * or stale: a piece imported before this change, or by an older version of
+ * the analyzer. A second call with nothing changed writes nothing. Never
+ * throws.
+ * @param {string} pieceId
+ * @param {LocalStore} [store]
+ * @param {Object} [opts]
+ * @param {string} [opts.source] the piece's source MusicXML, when the caller
+ *   has already read it: the store's copy is gzipped, so a caller holding the
+ *   text (the passages plate holds the page's) saves decompressing it again
+ * @returns {Promise<AnnotationRecord|null>}
+ */
+export async function ensureAnnotation(pieceId, store=getAppStore(), {source: given}={}) {
+  try {
+    let piece = store.piece(pieceId)
+    let song = piece && pieceSong(piece)
+    if (!song) { return null }
+
+    let source = given != null ? given : await store.pieceSource(pieceId)
+    let current = store.annotation(pieceId)
+    if (!annotationStale(current, song, {hasSource: !!source})) {
+      return current
+    }
+
+    return await annotatePiece(piece, {source}, store)
+  } catch (e) {
+    console.warn(`Couldn't analyse the score of piece ${pieceId}:`, e)
+    return null
+  }
+}
+
 function newPieceId() {
   return `p${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
 }
@@ -308,6 +361,13 @@ export async function addPiece(title, song, store=getAppStore(), {fileName, sour
         return {piece: existing, warning: [notSaved, warning.warning].filter(w => w).join(" ")}
       }
     }
+
+    let existingSong = pieceSong(existing)
+    let existingSource = source || await store.pieceSource(existing.id)
+    if (existingSong && annotationStale(store.annotation(existing.id), existingSong, {hasSource: !!existingSource})) {
+      await annotatePiece(existing, {source: existingSource}, store)
+    }
+
     return {piece: existing, ...warning}
   }
 
@@ -332,7 +392,9 @@ export async function addPiece(title, song, store=getAppStore(), {fileName, sour
   try {
     // a replaced song without a source drops the old one, which no longer
     // matches it
-    return {piece: await store.putPiece(record, {source: source || null}), ...outcome, ...warning}
+    let stored = await store.putPiece(record, {source: source || null})
+    await annotatePiece(stored, {source: source || null}, store)
+    return {piece: stored, ...outcome, ...warning}
   } catch (e) {
     return {error: `"${title}" wasn't added to the deck. ${storageErrorMessage(e)}`}
   }

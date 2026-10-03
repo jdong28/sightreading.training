@@ -4,8 +4,9 @@ import {flushSync} from "react-dom"
 import {MemoryRouter} from "react-router-dom"
 
 import SightReadingPage, {
-  formatElapsed, accuracyPercent, romanNumeral, MISSING_ENGINE_SOURCE, FAILED_ENGINE_SOURCE
+  formatElapsed, accuracyPercent, MISSING_ENGINE_SOURCE, FAILED_ENGINE_SOURCE
 } from "st/components/pages/sight_reading_page"
+import {romanNumeral} from "st/music"
 import ScorePage, {SCORE_PROGRAMME} from "st/components/pages/score_page"
 import NoteList from "st/note_list"
 import staffStyles from "st/components/staff.module.css"
@@ -407,6 +408,8 @@ describe("sight reading page", function() {
     expect(accuracyPercent(0, 0)).toBe(null)
     expect(accuracyPercent(3, 1)).toEqual(75)
     expect(["I", "II", "III", "IV", "IX"]).toEqual([1, 2, 3, 4, 9].map(romanNumeral))
+    expect([40, 41, 49, 50, 90, 99, 100, 400, 1984].map(romanNumeral))
+      .toEqual(["XL", "XLI", "XLIX", "L", "XC", "XCIX", "C", "CD", "MCMLXXXIV"])
   })
 
   it("titles the score page by what it drills", function() {

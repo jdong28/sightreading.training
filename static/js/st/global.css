@@ -21,6 +21,13 @@
     --salon-piano-lid: #4a2c1c;
     --salon-piano-lid-dark: #2f1b11;
 
+    /* the difficulty strip's ramp (st/difficulty), easier to harder */
+    --salon-heat-0: #f1e8d8;
+    --salon-heat-1: #e6d6b8;
+    --salon-heat-2: #d5bb8c;
+    --salon-heat-3: #b98a5c;
+    --salon-heat-4: var(--salon-oxblood);
+
     /* ghost pill text and inactive nav, from the handoff markup */
     --salon-ghost-ink: #3d3629;
     --salon-nav-ink: #544e3e;

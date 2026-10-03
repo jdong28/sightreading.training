@@ -27,6 +27,10 @@ export interface PreparedCard {
   // the onset of each of the first part's measures, in quarter notes from
   // the start of the score, by position
   measureStarts: number[]
+  // the printed bar number of each of the first part's measures, by
+  // position (st/measure_numbers): a pickup is 0, a split bar's halves
+  // share a number
+  numbers: number[]
   // for each part drawn, in order, the source staff number of each of its
   // drawn staves, in order
   partStaves: number[][]
@@ -361,6 +365,7 @@ export function prepareCard(musicXML: string, {fromMeasure, toMeasure, hand, sta
     throw new Error(`The score has no measures ${fromMeasure}–${toMeasure}`)
   }
 
+  const numbers = measureNumbersFor(directChildren(parts(doc)[0], "measure"))
   const tagged = tagNotes(doc, measureStarts)
   const partStaves = keepStaves(doc, hand, staves)
 
@@ -370,6 +375,7 @@ export function prepareCard(musicXML: string, {fromMeasure, toMeasure, hand, sta
     lastIndex: positions[1],
     notes: tagged.notes,
     measureStarts: tagged.measureStarts,
+    numbers,
     partStaves,
   }
 }

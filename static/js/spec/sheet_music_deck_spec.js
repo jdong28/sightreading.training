@@ -10,7 +10,7 @@ import {
 
 import {
   songToJSON, songFromJSON, loadDeck, findPiece, pieceSong, pieceSource, addPiece,
-  removePiece, importMusicXMLPiece, MAX_PIECES
+  removePiece, importMusicXMLPiece, ensureAnnotation, MAX_PIECES
 } from "st/sheet_music_deck"
 
 import {
@@ -21,7 +21,7 @@ import {
 import {setAppStore} from "st/storage"
 import {
   openTestStore, pickupScore, noteXML, reverieOpening, keyChangeScore, nocturneBars5to6,
-  tiedTrillScore, LITTLE_WALTZ_XML, littleWaltzMXL
+  tiedTrillScore, LITTLE_WALTZ_XML, littleWaltzMXL, pianoScore
 } from "spec/helpers"
 
 let tuples = notes => [...notes]
@@ -30,6 +30,26 @@ let tuples = notes => [...notes]
 
 const grand = {name: "grand", range: ["C2", "C6"]}
 const treble = {name: "treble", range: ["A3", "C6"]}
+
+// a piece with a dense run of sixteenths at bars 9-11, long enough for
+// st/difficulty to flag passages. A different barCount makes a different
+// score (fewer/more measures) under the same (score-given) title.
+function workhorseScore({leadNote="C4", barCount=16, directions=null}={}) {
+  let quiet = {upper: ["C4", "D4", "E4", "F4"], lower: ["C3", "D3", "E3", "F3"]}
+  let dense = {
+    upper: ["C4", "D4", "E4", "F4", "G4", "F4", "E4", "D4", "C4", "D4", "E4", "F4", "G4", "F4", "E4", "D4"],
+    lower: ["C3", "D3", "E3", "F3", "G3", "F3", "E3", "D3", "C3", "D3", "E3", "F3", "G3", "F3", "E3", "D3"],
+  }
+
+  let bars = Array.from({length: barCount}, (_, i) => i >= 8 && i <= 10 ?
+    {upper: dense.upper.map(name => ({name, duration: 0.25, type: "16th"})),
+      lower: dense.lower.map(name => ({name, duration: 0.25, type: "16th"}))} :
+    {upper: quiet.upper.map(name => ({name})), lower: quiet.lower.map(name => ({name}))})
+
+  bars[0].upper[0] = {name: leadNote}
+  if (directions) { bars[0] = {...bars[0], directions} }
+  return pianoScore({title: "Workhorse", bars})
+}
 
 describe("sheet music deck", function() {
   describe("stored song", function() {
@@ -689,6 +709,97 @@ describe("sheet music deck", function() {
     })
   })
 
+  describe("flagged passages (st/difficulty)", function() {
+    let store
+    beforeEach(async function() {
+      store = await openTestStore()
+    })
+
+    afterEach(async function() {
+      await store.close()
+    })
+
+    it("stores the piece's annotation with it", async function() {
+      let {piece} = await importMusicXMLPiece("workhorse.musicxml", workhorseScore(), store)
+      let record = store.annotation(piece.id)
+      expect(record).toBeTruthy()
+      expect(record.pieceId).toEqual(piece.id)
+      expect(record.proposals.length).toBeGreaterThan(0)
+    })
+
+    it("keeps the record and its ids on a re-import; re-analyses a corrected note; a different score gets its own record", async function() {
+      let {piece} = await importMusicXMLPiece("workhorse.musicxml", workhorseScore(), store)
+      let ids = store.annotation(piece.id).proposals.map(p => p.id)
+
+      // the same score again: the record (and its ids) stay put
+      await importMusicXMLPiece("workhorse.musicxml", workhorseScore(), store)
+      expect(store.annotation(piece.id).proposals.map(p => p.id)).toEqual(ids)
+
+      // a corrected note, same title and score shape: re-analysed, same id kept
+      let {piece: corrected, updated} = await importMusicXMLPiece(
+        "workhorse.musicxml", workhorseScore({leadNote: "G4"}), store)
+      expect(updated).toBe(true)
+      expect(corrected.id).toEqual(piece.id)
+      expect(store.annotation(piece.id)).toBeTruthy()
+
+      // a different score under the same title gets a record of its own
+      let {piece: other, sameTitle} = await importMusicXMLPiece(
+        "workhorse.musicxml", workhorseScore({barCount: 20}), store)
+      expect(sameTitle).toBe(true)
+      expect(other.id).not.toEqual(piece.id)
+      expect(store.annotation(other.id)).toBeTruthy()
+    })
+
+    it("never fails the import when the analysis or write fails", async function() {
+      spyOn(store, "putAnnotation").and.rejectWith(new Error("boom"))
+      spyOn(console, "warn")
+
+      let {piece, error} = await importMusicXMLPiece("workhorse.musicxml", workhorseScore(), store)
+      expect(error).toBeUndefined()
+      expect(piece).toBeTruthy()
+      expect(store.annotation(piece.id)).toBe(null)
+      expect(console.warn).toHaveBeenCalled()
+    })
+
+    it("ensureAnnotation analyses a piece stored without a record, once", async function() {
+      // stored directly, as a piece imported before this change would be:
+      // addPiece always annotates a freshly imported piece
+      let song = parseMusicXML(workhorseScore())
+      let piece = await store.putPiece({id: "old", title: "Workhorse", importedAt: 1000, song: songToJSON(song)})
+      expect(store.annotation(piece.id)).toBe(null)
+
+      let record = await ensureAnnotation(piece.id, store)
+      expect(record).toBeTruthy()
+      expect(store.annotation(piece.id)).toEqual(record)
+
+      spyOn(store, "putAnnotation")
+      let again = await ensureAnnotation(piece.id, store)
+      expect(again).toEqual(record)
+      expect(store.putAnnotation).not.toHaveBeenCalled()
+    })
+
+    it("ensureAnnotation analyses the source text its caller already holds", async function() {
+      // the metronome mark lives only in the source text, so the stored run
+      // shows which copy of it was analysed
+      let xml = workhorseScore({directions: [{metronome: {unit: "quarter", perMinute: 90}}]})
+      let song = parseMusicXML(xml)
+      let piece = await store.putPiece({
+        id: "held", title: "Workhorse", importedAt: 1000, song: songToJSON(song),
+      })
+      spyOn(store, "pieceSource").and.callThrough()
+
+      let record = await ensureAnnotation(piece.id, store, {source: xml})
+      expect(store.pieceSource).not.toHaveBeenCalled()
+      expect(record.runs.score.source).toBe(true)
+      expect(record.runs.score.tempo).toEqual({bpm: 90, from: "metronome", word: null})
+
+      // with no text handed over it still reads the store's copy
+      let again = await ensureAnnotation(piece.id, store)
+      expect(store.pieceSource).toHaveBeenCalled()
+      expect(again).toEqual(record)
+    })
+  })
+
   describe("sheet music generator", function() {
     // the generator reads the app's store, so swap in the specs' one
     let store, appStore
@@ -749,6 +860,33 @@ describe("sheet music deck", function() {
 
       await removePiece(piece.id)
       expect(sheetMusicSection(grand, {...settings, endMeasure: 1}).columns).toEqual([["C4"], ["D4"]])
+    })
+
+    it("offers the piece's flagged passages as quick picks in free practice only", async function() {
+      let passageInput = SHEET_MUSIC_GENERATOR.inputs.find(i => i.name == "passage")
+      let {piece} = await importMusicXMLPiece("workhorse.musicxml", workhorseScore())
+
+      let free = {piece: piece.id, practice: "free practice", startMeasure: 1, endMeasure: 1, hand: BOTH_HANDS}
+      expect(passageInput.visible(free)).toBe(true)
+      let flags = passageInput.values(free)
+      expect(flags.length).toBeGreaterThan(0)
+      expect(flags[0].id.startsWith("score:")).toBe(true)
+
+      let picked = passageInput.update(free, flags[0])
+      expect(picked.startMeasure).toEqual(flags[0].start)
+      expect(picked.endMeasure).toEqual(flags[0].end)
+      expect(picked.measuresPerCard).toEqual("all")
+      expect(picked.practice).toEqual("free practice")
+
+      // absent in today's programme
+      let planned = {...free, practice: "programme"}
+      expect(passageInput.visible(planned)).toBe(false)
+
+      // absent for a piece without passages
+      let {piece: short} = await importMusicXMLPiece("minuet.musicxml", pickupScore())
+      let shortSettings = {...free, piece: short.id}
+      expect(passageInput.values(shortSettings)).toEqual([])
+      expect(passageInput.visible(shortSettings)).toBe(false)
     })
   })
 })

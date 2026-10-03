@@ -306,3 +306,132 @@ export const LITTLE_WALTZ_MXL_BASE64 =
 
 // the bytes of LITTLE_WALTZ_MXL_BASE64, as a picked file reads
 export const littleWaltzMXL = () => Uint8Array.from(atob(LITTLE_WALTZ_MXL_BASE64), c => c.charCodeAt(0))
+
+// "C4" / "C#4" / "Cb4" -> {step, alter, octave}
+function parseNoteName(name) {
+  let m = name.match(/^([A-G])(#|b)?(-?\d+)$/)
+  if (!m) { throw new Error(`pianoScore: invalid note name '${name}'`) }
+  return {step: m[1], alter: m[2] == "#" ? 1 : m[2] == "b" ? -1 : 0, octave: +m[3]}
+}
+
+// one <note> (or <note><rest/></note>) for st/difficulty's fixtures. note is
+// a note name string (a plain quarter) or an object:
+//   {name, duration=1 (beats), type="quarter", dots=0, voice, tuplet: [actual, normal],
+//    chord, rest, alter (overrides the name's accidental, for double accidentals),
+//    tieStart, tieStop, trill}
+function pianoNoteXML(note, divisions, staff, defaultVoice) {
+  if (typeof note == "string") { note = {name: note} }
+
+  let {
+    duration = 1, type = "quarter", dots = 0, voice = defaultVoice, tuplet,
+    chord, rest, tieStart, tieStop, trill, alter,
+  } = note
+
+  let parts = []
+
+  if (rest) {
+    parts.push("<rest/>")
+  } else {
+    let {step, alter: nameAlter, octave} = parseNoteName(note.name)
+    let a = alter != null ? alter : nameAlter
+    parts.push(`<pitch><step>${step}</step>${a ? `<alter>${a}</alter>` : ""}<octave>${octave}</octave></pitch>`)
+  }
+
+  parts.push(`<duration>${Math.round(duration * divisions)}</duration>`)
+  if (chord) { parts.push("<chord/>") }
+  if (tieStart) { parts.push("<tie type=\"start\"/>") }
+  if (tieStop) { parts.push("<tie type=\"stop\"/>") }
+  parts.push(`<voice>${voice}</voice>`)
+  parts.push(`<type>${type}</type>`)
+  for (let i = 0; i < dots; i++) { parts.push("<dot/>") }
+  parts.push(`<staff>${staff}</staff>`)
+
+  if (tuplet) {
+    parts.push(`<time-modification><actual-notes>${tuplet[0]}</actual-notes><normal-notes>${tuplet[1]}</normal-notes></time-modification>`)
+  }
+
+  let notations = []
+  if (tieStart) { notations.push("<tied type=\"start\"/>") }
+  if (tieStop) { notations.push("<tied type=\"stop\"/>") }
+  if (trill) { notations.push("<ornaments><trill-mark/></ornaments>") }
+  if (notations.length) { parts.push(`<notations>${notations.join("")}</notations>`) }
+
+  return `<note>${parts.join("")}</note>`
+}
+
+function pianoDirectionXML(spec) {
+  if (spec.metronome) {
+    let {unit = "quarter", dot = false, perMinute} = spec.metronome
+    return `<direction><direction-type><metronome><beat-unit>${unit}</beat-unit>` +
+      `${dot ? "<beat-unit-dot/>" : ""}<per-minute>${perMinute}</per-minute></metronome></direction-type></direction>`
+  }
+  if (spec.sound != null) {
+    return `<direction><sound tempo="${spec.sound}"/></direction>`
+  }
+  if (spec.words != null) {
+    return `<direction><direction-type><words>${spec.words}</words></direction-type></direction>`
+  }
+  return ""
+}
+
+// a hand's content as one or more sequential "voice" layers, each starting
+// back at the bar's beginning (a <backup> between layers): [notes] for one
+// layer, or {layers: [[notes], [notes], ...]} for several, eg. a held note
+// under moving ones, or a real voice beside a rest-only layout voice
+function handLayers(hand) {
+  if (!hand) { return [] }
+  return hand.layers ? hand.layers : [hand]
+}
+
+function layersXML(layers, divisions, staff, voice, barBeats) {
+  return layers.map((notes, idx) => {
+    let backup = idx > 0 ? `<backup><duration>${Math.round(barBeats * divisions)}</duration></backup>` : ""
+    let notesXML = notes.map(n => pianoNoteXML(n, divisions, staff, (typeof n == "object" && n.voice) || voice + idx)).join("")
+    return `${backup}${notesXML}`
+  }).join("")
+}
+
+// A piano score for st/difficulty's fixtures, built from a plain description
+// (parsed through parseMusicXML like any other import, so the fixtures
+// exercise the real importer). bars: [{upper: [...notes], lower: [...notes],
+// beats, key, time: [beats, beatType], clef: [[sign,line],[sign,line]],
+// directions: [{metronome|sound|words}]}]. "upper"/"lower" can instead be
+// {layers: [[...notes], [...notes]]} for more than one voice in that hand.
+// A bar without "lower" (or "lowerLayers") writes a one-staff piece (a
+// melody).
+export function pianoScore({title="Difficulty Fixture", key=0, time=[4, 4], divisions=48, bars=[]}={}) {
+  let twoStaves = bars.some(bar => bar.lower)
+
+  let measuresXML = bars.map((bar, idx) => {
+    let number = idx + 1
+    let barBeats = bar.beats || time[0]
+
+    let attrs = ""
+    if (idx == 0 || bar.key != null || bar.time) {
+      let fifths = bar.key != null ? bar.key : key
+      let [beats, beatType] = bar.time || time
+      attrs = `<attributes>${idx == 0 ? `<divisions>${divisions}</divisions>` : ""}` +
+        `<key><fifths>${fifths}</fifths></key><time><beats>${beats}</beats><beat-type>${beatType}</beat-type></time>` +
+        `${idx == 0 && twoStaves ? "<staves>2</staves>" : ""}` +
+        `${(bar.clef || (idx == 0 ? (twoStaves ? [["G", 2], ["F", 4]] : [["G", 2]]) : [])).map(([sign, line], i) =>
+          `<clef number="${i + 1}"><sign>${sign}</sign><line>${line}</line></clef>`).join("")}</attributes>`
+    }
+
+    let directionsXML = (bar.directions || []).map(pianoDirectionXML).join("")
+    let upperXML = layersXML(handLayers(bar.upper), divisions, 1, 1, barBeats)
+    let lowerXML = twoStaves ?
+      `<backup><duration>${Math.round(barBeats * divisions)}</duration></backup>` +
+      layersXML(handLayers(bar.lower), divisions, 2, 5, barBeats) : ""
+
+    return `<measure number="${number}">${attrs}${directionsXML}${upperXML}${lowerXML}</measure>`
+  }).join("\n")
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <work><work-title>${title}</work-title></work>
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    ${measuresXML}
+  </part>
+</score-partwise>`
+}
