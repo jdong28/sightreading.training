@@ -303,6 +303,17 @@ export function rankedSignals(run) {
   return [...totals.values()].sort((a, b) => b.total - a.total)
 }
 
+// every range a passage recurs at, named in one sentence: "Also at bars
+// 7–8, 13–14 and 19–20.", so none of them goes unsaid
+function recurrenceSentence(ranges) {
+  if (!ranges.length) { return null }
+  if (ranges.length == 1) { return `Also at ${barsLabel(ranges[0][0], ranges[0][1])}.` }
+
+  let parts = ranges.map(([from, to]) => from == to ? `${from}` : `${from}–${to}`)
+  let last = parts.pop()
+  return `Also at bars ${parts.join(", ")} and ${last}.`
+}
+
 // {title, reason, reasons, tip} for a passage (st/difficulty/sections.js),
 // given the piece's tempo (st/difficulty/source.js) and the full scored bars
 // (for "the piece's densest bar" and whether the piece has one staff)
@@ -314,10 +325,11 @@ export function passageReasons(passage, {tempo, bars} = {}) {
   let maxDensity = Math.max(0, ...bars.map(b =>
     tempo ? (b.density.perSecond || 0) : (b.density.perBeat || 0)))
 
-  // up to three sentences, and a passage that recurs always ends with where
-  // it does, so its own reasons give way to that rather than crowd it out
-  let recurrences = (passage.alsoAt || []).map(([from, to]) => `Also at ${barsLabel(from, to)}.`)
-  let maxSignals = recurrences.length ? MAX_REASONS - 1 : MAX_REASONS
+  // up to three sentences, and a passage that recurs always ends with every
+  // bar range it recurs at, so its own reasons give way to that rather than
+  // crowd it out
+  let recurrence = recurrenceSentence(passage.alsoAt || [])
+  let maxSignals = recurrence ? MAX_REASONS - 1 : MAX_REASONS
 
   let reasons = []
   let leadDetail = null
@@ -350,10 +362,7 @@ export function passageReasons(passage, {tempo, bars} = {}) {
     (TITLES[leadDetail.kind] ? TITLES[leadDetail.kind](leadDetail.hand, ctx) : "A difficult passage") :
     "A difficult passage"
 
-  for (let recurrence of recurrences) {
-    if (reasons.length >= MAX_REASONS) { break }
-    reasons.push(recurrence)
-  }
+  if (recurrence) { reasons.push(recurrence) }
 
   let leadKind = passage.kinds[0]
   let tipFn = TIPS[leadKind] || TIPS.reading

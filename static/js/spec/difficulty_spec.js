@@ -461,6 +461,26 @@ describe("st/difficulty", () => {
         .toContain("Also at bars 10–11.")
     })
 
+    it("names every range a passage recurs at in one sentence", () => {
+      // the same two-bar figure four times over: bars 1-2, 7-8, 13-14 and
+      // 19-20, all four within this 24-bar piece's budget
+      let figureAt = [1, 2, 7, 8, 13, 14, 19, 20]
+      let scored = Array.from({length: 24}, (_, i) =>
+        scoredBar(i + 1, figureAt.includes(i + 1) ? 5 : 0))
+      let repeats = new Map([[6, 0], [7, 1], [12, 0], [13, 1], [18, 0], [19, 1]])
+
+      expect(findPassages(scored, {repeats: new Map()}).map(p => [p.start, p.end]))
+        .toEqual([[1, 2], [7, 8], [13, 14], [19, 20]])
+
+      let passages = findPassages(scored, {repeats})
+      expect(passages.map(p => [p.start, p.end])).toEqual([[1, 2]])
+      expect(passages[0].alsoAt).toEqual([[7, 8], [13, 14], [19, 20]])
+
+      let reasons = passageReasons(passages[0], {bars: scored}).reasons
+      expect(reasons.length).toBeLessThanOrEqual(3)
+      expect(reasons[reasons.length - 1]).toEqual("Also at bars 7–8, 13–14 and 19–20.")
+    })
+
     it("keeps a passage that repeats only part of another as its own flag", () => {
       // bars 1-4 are the passage; bars 7-8 repeat its bars 2-3 note for note,
       // which is a part of it, not a copy of it

@@ -1,10 +1,10 @@
 // Turns st/difficulty/features.js's per-bar measurements into scores and
-// groups the hardest bars into passages. The numbers here (ANALYZER_ALGO 7)
+// groups the hardest bars into passages. The numbers here (ANALYZER_ALGO 8)
 // are a first guess (report section 9): tune them freely, but bump
 // ANALYZER_ALGO whenever a change would relabel an existing piece's flags,
 // so a stale record is recomputed rather than silently kept.
 
-export const ANALYZER_ALGO = 7
+export const ANALYZER_ALGO = 8
 
 const MIN_ANALYSIS_BARS = 8
 
