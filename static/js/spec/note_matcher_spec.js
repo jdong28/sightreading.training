@@ -1130,7 +1130,7 @@ describe("note matcher", function() {
         {scroll: true, tempo: true})
       expect(run(matcher, [["on", "Bb3", 0], ["on", "E4", 100]])).toEqual(["hit Bb3"])
       expect(head(matcher)).toEqual(["Bb3"])
-      expect(matcher.early).toEqual({E4: 100})
+      expect(matcher.early).toEqual({E4: {at: 100, kind: "required"}})
 
       matcher.judged.length = 0
       matcher.scrollPast(101 + EARLY_KEY_WINDOW)
