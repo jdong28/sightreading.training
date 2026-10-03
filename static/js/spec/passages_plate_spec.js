@@ -5,11 +5,14 @@ import {MemoryRouter} from "react-router-dom"
 
 import ScorePage from "st/components/pages/score_page"
 import {PassagesPlate} from "st/components/sight_reading/passages_plate"
+import {ProgrammePlate} from "st/components/sight_reading/programme_plate"
 import {importMusicXMLPiece, songToJSON} from "st/sheet_music_deck"
 import {parseMusicXML} from "st/musicxml"
 import {setAppStore} from "st/storage"
 import {SHEET_MUSIC_STORAGE_KEY} from "st/data"
 import {SCORE_DRILL_STORAGE_KEY} from "st/generators"
+import {loadScoreEngines} from "st/score_render/load"
+import scoreCardStyles from "st/components/score_card.module.css"
 
 import {openTestStore, pianoScore} from "spec/helpers"
 
@@ -89,18 +92,39 @@ describe("the passages view (st/difficulty)", function() {
     }
   })
 
-  let renderScorePage = () => {
+  let renderScorePage = (props={}) => {
     container = document.createElement("div")
     container.style.width = "1100px"
     document.body.appendChild(container)
     root = createRoot(container)
     flushSync(() => {
       root.render(React.createElement(MemoryRouter, {},
-        React.createElement(ScorePage, {ref: p => page = p})))
+        React.createElement(ScorePage, {ref: p => page = p, ...props})))
     })
     flushSync(() => {})
     return container
   }
+
+  // wraps the real engines so overviewCalls records each overview render
+  // (st/components/score_card draws a real engine card, never a fake
+  // bundle): [fromMeasure, toMeasure] per call
+  let countOverviewDraws = () => {
+    let overviewCalls = []
+    let loadEngines = () => loadScoreEngines().then(bundle => ({...bundle, ENGINES: {...bundle.ENGINES,
+      osmd: {...bundle.ENGINES.osmd, renderCard: args => {
+        overviewCalls.push([args.fromMeasure, args.toMeasure])
+        return bundle.ENGINES.osmd.renderCard(args)
+      }}}}))
+    return {overviewCalls, loadEngines}
+  }
+
+  let openScorePane = () => {
+    let button = [...plate().querySelectorAll("button")]
+      .find(b => b.textContent.trim() == "Show the score")
+    flushSync(() => button.dispatchEvent(new MouseEvent("click", {bubbles: true})))
+  }
+
+  let scorePane = () => container.querySelector('aside[aria-label="The score"]')
 
   let drillPiece = async (xml, settings={}) => {
     let {piece} = await importMusicXMLPiece("piece.musicxml", xml, store)
@@ -124,11 +148,82 @@ describe("the passages view (st/difficulty)", function() {
     expect(plate().textContent).toContain("How to practise it")
     expect([...plate().querySelectorAll("li")].some(li => li.textContent.includes("Score"))).toBe(true)
 
+    // it lives in the trainer's rail (an aside), not the main column
+    expect(plate().closest("aside")).toBeTruthy()
+
     flushSync(() => page.beginSession())
     expect(plate()).toBe(null)
 
     flushSync(() => page.restSession())
     await waitFor(() => plate(), {message: "the passages plate again"})
+  })
+
+  it("draws the shaded score only once its pane is open", async function() {
+    let {overviewCalls, loadEngines} = countOverviewDraws()
+
+    await drillPiece(workhorseScore())
+    renderScorePage({loadEngines})
+    await waitFor(() => plate(), {message: "the passages plate"})
+    await waitFor(() => page.state.engineSource?.status == "ready", {message: "the engine source"})
+
+    let drewOverview = () => overviewCalls.some(([from, to]) => from == 1 && to == 16)
+
+    expect(plate().querySelector("[data-score-overview]")).toBe(null)
+    expect(drewOverview()).toBe(false)
+
+    // selecting another passage, and a Begin/Rest cycle, still draws nothing
+    let rows = [...plate().querySelectorAll('[class*="flag_list"] li button')]
+    let other = rows.find(b => !b.closest("li").className.includes("on"))
+    if (other) { flushSync(() => other.dispatchEvent(new MouseEvent("click", {bubbles: true}))) }
+
+    flushSync(() => page.beginSession())
+    expect(plate()).toBe(null)
+    flushSync(() => page.restSession())
+    await waitFor(() => plate(), {message: "the passages plate again"})
+
+    expect(container.querySelector("[data-score-overview]")).toBe(null)
+    expect(drewOverview()).toBe(false)
+
+    openScorePane()
+    let pane = await waitFor(() => scorePane(), {message: "the score pane"})
+    expect(pane.getAttribute("aria-hidden")).not.toEqual("true")
+
+    let overview = await waitFor(() => pane.querySelector("[data-score-overview]"), {message: "the drawn overview"})
+    await waitFor(() => overview.getAttribute("aria-busy") == "false", {message: "the overview to settle"})
+
+    expect(overview.querySelectorAll("rect[data-shade]").length).toBeGreaterThan(0)
+    expect(overviewCalls.filter(([from, to]) => from == 1 && to == 16).length).toEqual(1)
+
+    flushSync(() => pane.dispatchEvent(new KeyboardEvent("keydown", {key: "Escape", bubbles: true})))
+    expect(container.querySelector("[data-score-overview]")).toBe(null)
+  })
+
+  it("reads why a shaded passage is hard from the score pane", async function() {
+    await drillPiece(workhorseScore({barCount: 24, denseAt: [5, 6, 7], alsoDenseAt: [17, 18, 19]}))
+    renderScorePage()
+    await waitFor(() => plate(), {message: "the passages plate"})
+    await waitFor(() => page.state.engineSource?.status == "ready", {message: "the engine source"})
+
+    openScorePane()
+    let pane = await waitFor(() => scorePane(), {message: "the score pane"})
+    let overview = await waitFor(() => pane.querySelector("[data-score-overview]"), {message: "the drawn overview"})
+    await waitFor(() => overview.getAttribute("aria-busy") == "false", {message: "the overview to settle"})
+
+    let before = pane.querySelector("h3").textContent
+
+    let selected = overview.querySelector(`rect[data-shade].${scoreCardStyles.on}`)
+    expect(selected).toBeTruthy()
+    let otherId = [...overview.querySelectorAll("rect[data-shade]")]
+      .map(el => el.getAttribute("data-shade"))
+      .find(id => id != selected.getAttribute("data-shade"))
+    expect(otherId).toBeTruthy()
+
+    flushSync(() => overview.querySelector(`rect[data-shade="${otherId}"]`)
+      .dispatchEvent(new MouseEvent("click", {bubbles: true})))
+
+    expect(pane.querySelector("h3").textContent).not.toEqual(before)
+    // the rail's own detail plate reads the same selection
+    expect(plate().querySelector("h3").textContent).toEqual(pane.querySelector("h3").textContent)
   })
 
   it("selects a passage from a bracket or a list row", async function() {
@@ -180,6 +275,62 @@ describe("the passages view (st/difficulty)", function() {
     expect(stored.measuresPerCard).toEqual("all")
   })
 
+  it("practises a passage from the score pane", async function() {
+    let piece = await drillPiece(workhorseScore())
+    renderScorePage()
+    await waitFor(() => plate(), {message: "the passages plate"})
+    await waitFor(() => page.state.engineSource?.status == "ready", {message: "the engine source"})
+
+    openScorePane()
+    let pane = await waitFor(() => scorePane(), {message: "the score pane"})
+    await waitFor(() => {
+      let overview = pane.querySelector("[data-score-overview]")
+      return overview && overview.getAttribute("aria-busy") == "false"
+    }, {message: "the drawn overview"})
+
+    let practise = [...pane.querySelectorAll("button")].find(b => b.textContent.startsWith("Practise bars"))
+    expect(practise).toBeTruthy()
+    let [, from, to] = practise.textContent.match(/Practise bars (\d+)–(\d+)/)
+
+    flushSync(() => practise.dispatchEvent(new MouseEvent("click", {bubbles: true})))
+
+    let stored = JSON.parse(window.localStorage.getItem(SHEET_MUSIC_STORAGE_KEY))
+    expect(stored.piece).toEqual(piece.id)
+    expect(stored.practice).toEqual("free practice")
+    expect(stored.startMeasure).toEqual(+from)
+    expect(stored.endMeasure).toEqual(+to)
+    expect(stored.measuresPerCard).toEqual("all")
+
+    expect(pane.getAttribute("aria-hidden")).toEqual("true")
+  })
+
+  it("opens the score pane at the passage shown, scrolled to it", async function() {
+    await drillPiece(workhorseScore({barCount: 24, denseAt: [5, 6, 7], alsoDenseAt: [17, 18, 19]}))
+    renderScorePage()
+    await waitFor(() => plate(), {message: "the passages plate"})
+    await waitFor(() => page.state.engineSource?.status == "ready", {message: "the engine source"})
+
+    // select a passage other than the default (hardest) one
+    let rows = [...plate().querySelectorAll('[class*="flag_list"] li button')]
+    let other = rows.find(b => !b.closest("li").className.includes("on"))
+    expect(other).toBeTruthy()
+    flushSync(() => other.dispatchEvent(new MouseEvent("click", {bubbles: true})))
+    let wantedBars = plate().querySelector("h3").textContent
+
+    let openInScore = [...plate().querySelectorAll("button")]
+      .find(b => b.textContent.trim() == "Show in the score")
+    expect(openInScore).toBeTruthy()
+    flushSync(() => openInScore.dispatchEvent(new MouseEvent("click", {bubbles: true})))
+
+    let pane = await waitFor(() => scorePane(), {message: "the score pane"})
+    expect(pane.querySelector("h3").textContent).toEqual(wantedBars)
+
+    let overview = await waitFor(() => pane.querySelector("[data-score-overview]"), {message: "the drawn overview"})
+    await waitFor(() => overview.getAttribute("aria-busy") == "false", {message: "the overview to settle"})
+    await waitFor(() => overview.querySelector(`rect[data-shade].${scoreCardStyles.on}`),
+      {message: "the selected band, allowing the scroll retry"})
+  })
+
   it("analyses a piece added without an annotation on first open", async function() {
     // stored directly, as a piece imported before this change would be:
     // addPiece always annotates a freshly imported piece
@@ -194,13 +345,15 @@ describe("the passages view (st/difficulty)", function() {
     }))
     renderScorePage()
     await waitFor(() => plate(), {message: "the passages plate, once analysed on open"})
+    await waitFor(() => page.state.engineSource?.status == "ready", {message: "the engine source"})
 
-    // the column only enters the tree once the annotation has loaded, so its
-    // width is measured then: without it the score plate never draws and the
-    // detail and list plates never sit side by side
-    await waitFor(() => plate().querySelector("[class*=\"side_by_side\"]"),
-      {message: "the plate column to be measured"})
-    await waitFor(() => plate().querySelector("[class*=\"score_plate\"]"),
+    // the pane measures its own column once it opens: without that, the
+    // overview never draws
+    await waitFor(() => [...plate().querySelectorAll("button")].find(b => b.textContent.trim() == "Show the score"),
+      {message: "the Show the score control"})
+    openScorePane()
+
+    await waitFor(() => container.querySelector('aside[aria-label="The score"] [data-score-overview]'),
       {message: "the shaded engraving"})
   })
 
@@ -218,14 +371,19 @@ describe("the passages view (st/difficulty)", function() {
 
     renderScorePage()
     await waitFor(() => plate(), {message: "the passages plate"})
+    await waitFor(() => page.state.engineSource?.status == "ready", {message: "the engine source"})
 
     expect(plate().querySelector("h3").textContent).toEqual("Bar 12")
     expect(plate().textContent).toContain("Practise bar 12")
 
-    let score = await waitFor(() => plate().querySelector("[class*=\"score_plate\"]"),
-      {message: "the score plate"})
-    expect(score.textContent).toContain("Bar 12")
-    expect(score.textContent).not.toContain("Bars 12–12")
+    openScorePane()
+    let pane = await waitFor(() => scorePane(), {message: "the score pane"})
+    await waitFor(() => {
+      let overview = pane.querySelector("[data-score-overview]")
+      return overview && overview.getAttribute("aria-busy") == "false"
+    }, {message: "the drawn overview"})
+    expect(pane.textContent).toContain("Bar 12")
+    expect(pane.textContent).not.toContain("Bars 12–12")
 
     // and the Flagged passages list row for the same passage
     expect(plate().querySelector("[class*=\"flag_list\"] [class*=\"list_bars\"]").textContent)
@@ -303,13 +461,42 @@ describe("the passages view (st/difficulty)", function() {
       }))
     })
 
-    let score = await waitFor(() => plate() && plate().querySelector("[class*=\"score_plate\"]"),
-      {message: "the score plate to go up"})
-    expect(score.querySelector("[aria-busy=\"true\"]")).toBeTruthy()
+    await waitFor(() => plate(), {message: "the passages plate"})
+    let showScore = () => [...plate().querySelectorAll("button")].find(b => b.textContent.trim() == "Show the score")
+    await waitFor(() => showScore(), {message: "the Show the score control"})
+    openScorePane()
 
-    await waitFor(() => !plate().querySelector("[class*=\"score_plate\"]"),
-      {message: "the score plate to come down"})
+    let overview = await waitFor(() => container.querySelector("[data-score-overview]"),
+      {message: "the overview to go up"})
+    expect(overview.getAttribute("aria-busy")).toEqual("true")
+
+    await waitFor(() => !container.querySelector("[data-score-overview]"),
+      {message: "the overview to come down"})
+    expect(showScore()).toBeUndefined()
     expect(plate().textContent).toContain("The piece at a glance")
+  })
+
+  it("offers no score pane without a stored source", async function() {
+    let piece = await drillPiece(workhorseScore())
+
+    container = document.createElement("div")
+    container.style.width = "1100px"
+    document.body.appendChild(container)
+    root = createRoot(container)
+    flushSync(() => {
+      root.render(React.createElement(PassagesPlate, {
+        settings: {piece: piece.id, hand: "both hands", measuresPerCard: "all", practice: "free practice"},
+        setSettings: () => {},
+        source: {status: "missing"},
+        store,
+      }))
+    })
+
+    await waitFor(() => plate(), {message: "the passages plate"})
+    expect([...plate().querySelectorAll("button")].find(b => b.textContent.trim() == "Show the score"))
+      .toBeUndefined()
+    expect([...plate().querySelectorAll("button")].find(b => b.textContent.trim() == "Show in the score"))
+      .toBeUndefined()
   })
 
   it("shows nothing for a piece without passages", async function() {
@@ -317,5 +504,56 @@ describe("the passages view (st/difficulty)", function() {
     renderScorePage()
     await waitFor(() => container.querySelector("[data-score-card]"), {message: "the page to settle"})
     expect(plate()).toBe(null)
+  })
+
+  // the sheet-music UI polish: the glance plate's header and counts row, and
+  // the programme plate's figures, both fit a rail column (clamp(260px,
+  // 26vw, 340px), see docs/design/salon-de-chopin.md) without overflowing it
+  it("fits a narrow rail column without horizontal overflow", async function() {
+    let piece = await drillPiece(workhorseScore({barCount: 101, denseAt: [9, 10, 11], alsoDenseAt: [53, 54]}))
+
+    let overflowing = el => [...el.querySelectorAll('[class*="plate"]')]
+      .filter(plateEl => plateEl.scrollWidth > plateEl.clientWidth + 1)
+
+    for (let width of [260, 340]) {
+      let div = document.createElement("div")
+      div.style.width = `${width}px`
+      document.body.appendChild(div)
+      let r = createRoot(div)
+      flushSync(() => r.render(React.createElement(PassagesPlate, {
+        settings: {piece: piece.id, hand: "both hands", measuresPerCard: "all", practice: "free practice"},
+        setSettings: () => {},
+        source: null,
+        store,
+      })))
+      await waitFor(() => div.querySelector("[data-passages-plate]"), {message: `the plate at ${width}px`})
+
+      expect(overflowing(div)).toEqual([])
+
+      flushSync(() => r.unmount())
+      div.remove()
+    }
+  })
+
+  it("fits a narrow rail column without horizontal overflow (the programme plate)", function() {
+    let generator = {
+      summary: () => ({due: 2, dueMinutes: 4, newMeasures: 3, targetMinutes: 20, learned: 4, measures: 8}),
+    }
+
+    let overflowing = el => [...el.querySelectorAll('[class*="plate"]')]
+      .filter(plateEl => plateEl.scrollWidth > plateEl.clientWidth + 1)
+
+    let div = document.createElement("div")
+    div.style.width = "260px"
+    document.body.appendChild(div)
+    let r = createRoot(div)
+    flushSync(() => r.render(React.createElement(ProgrammePlate, {
+      generator, settings: {piece: "x"}, setSettings: () => {}, store,
+    })))
+
+    expect(overflowing(div)).toEqual([])
+
+    flushSync(() => r.unmount())
+    div.remove()
   })
 })

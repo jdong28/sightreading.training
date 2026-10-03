@@ -1,8 +1,13 @@
-// "The piece at a glance": the score page's preface showing a piece's
+// "The piece at a glance": the score page's rail plate showing a piece's
 // flagged passages (st/difficulty). Shown at rest in both free practice and
-// today's programme, for any imported piece with flags in force. Reasons
-// come only from the score analysis in stage 1: no Claude, no outside
-// sources, no practice records, no teacher.
+// today's programme, for any imported piece with flags in force, at the
+// head of the trainer's right rail (see ScoreRail in score_page.jsx).
+// Reasons come only from the score analysis in stage 1: no Claude, no
+// outside sources, no practice records, no teacher.
+// "Show the score" opens the whole shaded piece in a right-hand pane
+// ("The score"), drawn only while it is open, so a long import's one-time
+// render (ScoreCard's shared draw queue) never blocks landing, Begin, Rest
+// or a section change
 
 import * as React from "react"
 import * as types from "prop-types"
@@ -11,6 +16,7 @@ import classNames from "classnames"
 import {Plate, Pill} from "st/components/salon"
 import {BarStrip} from "st/components/bar_strip"
 import {ScoreCard} from "st/components/score_card"
+import {SidePane} from "st/components/sight_reading/settings_panel"
 import {romanNumeral, barsLabel, barsHeading} from "st/music"
 import {measureNumberList, measureNumberRange} from "st/song_sections"
 import {sheetMusicPiece, passageSettings} from "st/data"
@@ -42,7 +48,9 @@ function storeFolded(folded, storage=window.localStorage) {
 }
 
 // the plate column is wide enough for the passage and list plates side by
-// side, else they stack
+// side, else they stack. At the rail's width (see docs/design/salon-de-chopin.md)
+// this never holds; it still applies to the stacked phone layout between
+// 600 and 860px of the single-column trainer
 const SIDE_BY_SIDE_WIDTH = 600
 
 const HAND_LABEL = {upper: "Right hand alone", lower: "Left hand alone", both: "Hands separately"}
@@ -67,9 +75,13 @@ export class PassagesPlate extends React.Component {
 
   constructor(props) {
     super(props)
-    this.state = {selectedId: null, folded: foldedState(), width: 0, scoreFailed: false}
+    this.state = {
+      selectedId: null, folded: foldedState(), width: 0, scoreFailed: false,
+      scoreOpen: false, paneWidth: 0,
+    }
     this.columnRef = React.createRef()
-    this.scoreScrollRef = React.createRef()
+    this.paneRef = React.createRef()
+    this.scoreColumnRef = React.createRef()
   }
 
   componentDidMount() {
@@ -84,17 +96,21 @@ export class PassagesPlate extends React.Component {
     let piece = sheetMusicPiece(this.props.settings)
     let prevPiece = sheetMusicPiece(prevProps.settings)
     if ((piece && piece.id) != (prevPiece && prevPiece.id)) {
-      this.setState({selectedId: null, scoreFailed: false})
+      this.setState({selectedId: null, scoreFailed: false, scoreOpen: false})
       this.ensure()
     }
 
     this.observeWidth()
+    if (this.state.scoreOpen) { this.observePaneWidth() }
   }
 
   componentWillUnmount() {
     this.unmounted = true
     if (this.resizeObserver) {
       this.resizeObserver.disconnect()
+    }
+    if (this.paneResizeObserver) {
+      this.paneResizeObserver.disconnect()
     }
   }
 
@@ -122,7 +138,7 @@ export class PassagesPlate extends React.Component {
     this.observedEl = el
 
     // measured once synchronously too: a ResizeObserver's first callback can
-    // lag in a backgrounded tab, and the score plate needs a width to draw to
+    // lag in a backgrounded tab, and the side-by-side rule needs a width
     let initial = el.getBoundingClientRect().width
     if (initial) { this.setState({width: initial}) }
 
@@ -137,24 +153,60 @@ export class PassagesPlate extends React.Component {
     this.resizeObserver.observe(el)
   }
 
+  // the score pane's own column, measured the same way as observeWidth: the
+  // overview is drawn to whatever width the pane gives it, not the rail's
+  observePaneWidth() {
+    let el = this.scoreColumnRef.current
+    if (!el || el == this.observedPaneEl) { return }
+
+    this.observedPaneEl = el
+
+    let initial = el.getBoundingClientRect().width
+    if (initial) { this.setState({paneWidth: initial}) }
+
+    if (typeof ResizeObserver == "undefined") { return }
+
+    if (this.paneResizeObserver) { this.paneResizeObserver.disconnect() }
+
+    this.paneResizeObserver = new ResizeObserver(entries => {
+      let width = entries[0] && entries[0].contentRect.width
+      if (width && width != this.state.paneWidth) { this.setState({paneWidth: width}) }
+    })
+    this.paneResizeObserver.observe(el)
+  }
+
   setFolded(folded) {
     this.setState({folded})
     storeFolded(folded)
   }
 
-  // selecting from the strip or the list scrolls the score box to the
-  // passage; selecting the shaded band itself (already in view) does not
+  // selecting from the strip or the list scrolls the pane to the passage,
+  // once it is open; selecting the shaded band itself (already in view)
+  // does not, and there is nothing to scroll while the pane is closed
   select(id, {scroll=false}={}) {
     this.setState({selectedId: id}, () => {
-      if (scroll) { this.scrollToSelected(id) }
+      if (scroll && this.state.scoreOpen) { this.scrollToSelected(id) }
     })
   }
 
-  // the shaded rect may not be drawn yet (an overview width change can make
-  // the card redraw asynchronously instead of just restyling), so this
-  // tries a few times rather than only right after the selection's setState
+  // opens the score pane, selecting a passage (the one already shown by
+  // default) and scrolling to it once it is drawn
+  openScore(id) {
+    this.setState({scoreOpen: true, selectedId: id ?? this.state.selectedId}, () => {
+      this.observePaneWidth()
+      this.scrollToSelected(this.state.selectedId)
+    })
+  }
+
+  closeScore() {
+    this.setState({scoreOpen: false})
+  }
+
+  // the shaded rect may not be drawn yet (a pane just opened measures its
+  // width only after this callback, so the overview can still be mid-draw),
+  // so this tries a few times rather than only right after the selection
   scrollToSelected(id, triesLeft=20) {
-    let box = this.scoreScrollRef.current
+    let box = this.paneRef.current
     if (!box) { return }
 
     let rect = box.querySelector(`rect[data-shade="${id}"]`)
@@ -171,12 +223,21 @@ export class PassagesPlate extends React.Component {
     box.scrollTo({top, behavior: "smooth"})
   }
 
+  // the trainer's own staff can always draw a piece; the shaded score needs
+  // the piece's stored source MusicXML and an engine that can draw it
+  canShowScore() {
+    let source = this.props.source
+    return !!(source && source.status == "ready" && source.musicXML) && !this.state.scoreFailed
+  }
+
   practise(flag) {
     this.props.setSettings(passageSettings(this.props.settings, flag))
+    this.closeScore()
   }
 
   practiseHand(flag) {
     this.props.setSettings(passageSettings(this.props.settings, flag, handPillHand(flag)))
+    this.closeScore()
   }
 
   // the passage shown in the detail plate: the selected one, else the
@@ -189,24 +250,31 @@ export class PassagesPlate extends React.Component {
     let aside = `${flags.length} ${flags.length == 1 ? "passage" : "passages"} · ` +
       `${coveredCount} of ${numbers.length} bars`
 
-    return <Plate
-      className={styles.glance_plate}
-      header="The piece at a glance"
-      headerAside={<span className={styles.glance_aside}>
-        {aside}
-        <button
-          type="button"
-          className={styles.fold_toggle}
-          onClick={() => this.setFolded(!this.state.folded)}>
-          {this.state.folded ? "Show the passages" : "Hide the passages"}
-        </button>
-      </span>}>
+    return <Plate className={styles.glance_plate} header="The piece at a glance">
       <BarStrip
         numbers={numbers}
         heat={heat}
         flags={flags}
         selectedId={selected && selected.id}
         onSelect={id => this.select(id, {scroll: true})} />
+
+      <div className={styles.glance_row}>
+        <span className={styles.glance_count}>{aside}</span>
+        <div className={styles.glance_actions}>
+          {this.canShowScore() && <button
+            type="button"
+            className={styles.fold_toggle}
+            onClick={() => this.openScore(selected.id)}>
+            Show the score
+          </button>}
+          <button
+            type="button"
+            className={styles.fold_toggle}
+            onClick={() => this.setFolded(!this.state.folded)}>
+            {this.state.folded ? "Show the passages" : "Hide the passages"}
+          </button>
+        </div>
+      </div>
 
       {!this.state.folded && <div className={styles.legend}>
         <span>
@@ -223,7 +291,9 @@ export class PassagesPlate extends React.Component {
     </Plate>
   }
 
-  renderDetail(flag, flags) {
+  // shared by the rail's detail plate and the score pane's; showOpenAction
+  // is false inside the pane, which already shows the score beside it
+  renderDetail(flag, flags, {showOpenAction=true}={}) {
     let num = romanNumeral(flag.num)
     let total = romanNumeral(flags.length)
 
@@ -256,6 +326,12 @@ export class PassagesPlate extends React.Component {
         <Pill variant="ghost" className={styles.small_pill} onClick={() => this.practiseHand(flag)}>
           {HAND_LABEL[flag.hand]}
         </Pill>
+        {showOpenAction && this.canShowScore() && <Pill
+          variant="ghost"
+          className={styles.small_pill}
+          onClick={() => this.openScore(flag.id)}>
+          Show in the score
+        </Pill>}
       </div>
     </Plate>
   }
@@ -279,12 +355,13 @@ export class PassagesPlate extends React.Component {
     </Plate>
   }
 
-  renderScore(song, flags, selected) {
+  // "The score" pane (st/components/sight_reading/settings_panel's SidePane,
+  // right-anchored): the whole piece shaded, beside the selected passage's
+  // detail. Mounted only while open (this.state.scoreOpen): closing unmounts
+  // the ScoreCard, so a draw still queued on the shared draw queue
+  // (st/components/score_card) goes stale rather than blocking the next one
+  renderScorePane(song, flags, selected) {
     let source = this.props.source
-    if (!source || source.status != "ready" || !source.musicXML) { return null }
-    if (this.state.scoreFailed) { return null }
-    if (!this.state.width) { return null }
-
     let [fromMeasure, toMeasure] = measureNumberRange(song)
     let shades = flags.map(flag => ({
       id: flag.id,
@@ -295,28 +372,42 @@ export class PassagesPlate extends React.Component {
       label: `${romanNumeral(flag.num)} · ${LEVEL_WORDS[flag.level].toUpperCase()}`,
     }))
 
-    return <Plate
-      className={styles.score_plate}
-      header="The score · your imported MusicXML"
-      headerAside={barsHeading(selected.start, selected.end)}>
-      <div className={styles.score_scroll} ref={this.scoreScrollRef}>
-        <ScoreCard
-          overview
-          musicXML={source.musicXML}
-          fromMeasure={fromMeasure}
-          toMeasure={toMeasure}
-          hand="both"
-          width={this.state.width}
-          engine={this.props.engine}
-          loadEngines={this.props.loadEngines}
-          shades={shades}
-          onShade={id => this.select(id)}
-          onError={() => this.setState({scoreFailed: true})} />
+    let ready = source && source.status == "ready" && source.musicXML
+
+    return <SidePane
+      side="right"
+      open={this.state.scoreOpen}
+      close={() => this.closeScore()}
+      paneRef={this.paneRef}
+      title="The score"
+      label="The score"
+      closeLabel="Close the score">
+      <div className={styles.pane_body}>
+        <div className={styles.pane_score} ref={this.scoreColumnRef}>
+          {this.state.scoreOpen && this.state.paneWidth > 0 && ready && !this.state.scoreFailed ?
+            <ScoreCard
+              overview
+              musicXML={source.musicXML}
+              fromMeasure={fromMeasure}
+              toMeasure={toMeasure}
+              hand="both"
+              width={this.state.paneWidth}
+              engine={this.props.engine}
+              loadEngines={this.props.loadEngines}
+              shades={shades}
+              onShade={id => this.select(id)}
+              onError={() => this.setState({scoreFailed: true})} /> :
+            this.state.scoreFailed ?
+              <p className={styles.pane_note}>The score couldn't be engraved.</p> : null}
+          <div className={styles.legend}>
+            <span>Tap a shaded passage, or a label above it, to read why it is hard.</span>
+          </div>
+        </div>
+        <div className={styles.pane_detail}>
+          {this.renderDetail(selected, flags, {showOpenAction: false})}
+        </div>
       </div>
-      <div className={styles.legend}>
-        <span>Tap a shaded passage, or a bracket above the strip, to read why it is hard.</span>
-      </div>
-    </Plate>
+    </SidePane>
   }
 
   render() {
@@ -349,7 +440,7 @@ export class PassagesPlate extends React.Component {
         {this.renderList(flags, selected)}
       </div>}
 
-      {!this.state.folded && this.renderScore(song, flags, selected)}
+      {this.renderScorePane(song, flags, selected)}
     </div>
   }
 }

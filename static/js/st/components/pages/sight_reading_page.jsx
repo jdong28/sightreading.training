@@ -165,9 +165,13 @@ export const EXERCISES_PROGRAMME = {
   // own staff (see engineCard): in wait mode card by card, in scroll mode the
   // whole section on one line, save a bar today's programme offers as one
   // hand alone, drawn as its own one-bar system
-  // Preface, a component shown above the staff at rest, handed the
-  // generator, its settings (defaults filled in) and a setter of them, eg.
-  // the score page's "Tonight's programme" plate.
+  // Rail, a component shown at rest at the head of the trainer's right
+  // rail, in place of the rail's engraving, handed the generator, its
+  // settings (defaults filled in) and a setter of them, the engine source
+  // and loadEngines, eg. the score page's "Tonight's programme" and "The
+  // piece at a glance" plates.
+  // wideRail, true for a wider trainer and rail (see the score page), which
+  // sets .wide_rail on the page root.
   //
   // A generator may also name what it plays (all optional): sectionLabel(),
   // the title's words for its measures; cardLabel(), the plate's for its
@@ -1733,6 +1737,7 @@ export default class SightReadingPage extends React.Component {
         [styles.fullscreen]: this.state.fullscreen,
         [styles.scroll_mode]: this.state.mode == "scroll",
         [styles.wait_mode]: this.state.mode == "wait",
+        [styles.wide_rail]: this.programme.wideRail,
     })}>
       <div className={styles.trainer_scroller}>
         <main className={styles.trainer}>
@@ -1741,7 +1746,6 @@ export default class SightReadingPage extends React.Component {
 
           <div className={styles.trainer_grid}>
             <div className={styles.trainer_main}>
-              {this.renderPreface()}
               {this.renderStaffPlate()}
               {this.renderSelfGrade()}
               {this.renderTransport()}
@@ -2106,27 +2110,6 @@ export default class SightReadingPage extends React.Component {
     return caption ? <p className={styles.plate_note} data-caption>{caption}</p> : null
   }
 
-  // the programme's preface to a session, shown at rest
-  renderPreface() {
-    let Preface = this.programme.Preface
-    let generator = this.currentNotesGenerator()
-    if (!Preface || this.state.session || !generator) { return null }
-
-    return <Preface
-      generator={generator}
-      settings={this.currentSettings()}
-      setSettings={this._setSettings ||= settings => {
-        let generator = this.state.currentGenerator
-        if (generator.storageKey) {
-          storeGeneratorSettings(generator.storageKey, settings)
-        }
-        this.setGenerator(generator, settings)
-      }}
-      source={this.state.engineSource}
-      engine={this.programme.engine}
-      loadEngines={this.props.loadEngines} />
-  }
-
   // the plate's gentle feedback state (see PlateFeedback): an ink smudge at
   // the head column on every wrong key. Hidden in acoustic mode, where
   // nothing is detected to react to
@@ -2322,8 +2305,29 @@ export default class SightReadingPage extends React.Component {
       evening = <p className={styles.evening_empty}>Nothing played yet</p>
     }
 
-    return <aside className={styles.rail}>
-      <figure className={styles.engraving}>
+    // the programme's own plates at the head of the rail, in place of the
+    // engraving, while a generator is up at rest; in session the rail is
+    // always the default one below
+    let Rail = this.programme.Rail
+    let generator = this.currentNotesGenerator()
+    let top
+
+    if (Rail && !this.state.session && generator) {
+      top = <Rail
+        generator={generator}
+        settings={this.currentSettings()}
+        setSettings={this._setSettings ||= settings => {
+          let generator = this.state.currentGenerator
+          if (generator.storageKey) {
+            storeGeneratorSettings(generator.storageKey, settings)
+          }
+          this.setGenerator(generator, settings)
+        }}
+        source={this.state.engineSource}
+        engine={this.programme.engine}
+        loadEngines={this.props.loadEngines} />
+    } else {
+      top = <figure className={styles.engraving}>
         <div className={styles.engraving_slot}>
           <img
             src={SALON_IMAGE}
@@ -2331,6 +2335,10 @@ export default class SightReadingPage extends React.Component {
         </div>
         <figcaption className={styles.engraving_caption}>Soirée at the Hôtel Lambert</figcaption>
       </figure>
+    }
+
+    return <aside className={styles.rail}>
+      {top}
 
       <div className={styles.evening}>
         <SectionLabel ornament="❧">This evening</SectionLabel>

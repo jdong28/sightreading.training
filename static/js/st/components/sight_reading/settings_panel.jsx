@@ -48,12 +48,25 @@ function SettingsGroup({label, aside, className, children}) {
   </section>
 }
 
-// The drawer a trainer page's settings slide in from the left in, over a
-// scrim, focusing its close button as it opens
-export class SettingsDrawer extends React.PureComponent {
+// A pane sliding in over a scrim, from the left by default or the right,
+// focusing its close button as it opens. The trainer's settings drawer
+// (SettingsDrawer, below) is one; the score page's "The score" pane
+// (passages_plate.jsx) is another, on the right
+export class SidePane extends React.PureComponent {
   static propTypes = {
     open: types.bool,
     close: types.func.isRequired,
+    side: types.oneOf(["left", "right"]),
+    title: types.node.isRequired,
+    label: types.string.isRequired,
+    closeLabel: types.string.isRequired,
+    // a ref to the pane's own scrolling element (the aside), for a caller
+    // that scrolls its content into view (eg. the score pane's shaded band)
+    paneRef: types.object,
+  }
+
+  static defaultProps = {
+    side: "left",
   }
 
   constructor(props) {
@@ -77,8 +90,12 @@ export class SettingsDrawer extends React.PureComponent {
         onClick={this.props.close} />
 
       <aside
-        className={classNames(styles.drawer, {[styles.open]: open})}
-        aria-label="Programme"
+        ref={this.props.paneRef}
+        className={classNames(styles.drawer, {
+          [styles.open]: open,
+          [styles.right]: this.props.side == "right",
+        })}
+        aria-label={this.props.label}
         aria-hidden={!open}
         onKeyDown={e => {
           if (e.key == "Escape") {
@@ -87,13 +104,13 @@ export class SettingsDrawer extends React.PureComponent {
         }}>
         <div className={styles.drawer_header}>
           <span className={styles.drawer_title}>
-            Programme<span className={styles.drawer_ornament} aria-hidden="true">❧</span>
+            {this.props.title}<span className={styles.drawer_ornament} aria-hidden="true">❧</span>
           </span>
           <button
             type="button"
             ref={this.closeButton}
             className={styles.close_button}
-            aria-label="Close the programme"
+            aria-label={this.props.closeLabel}
             onClick={this.props.close}>×</button>
         </div>
 
@@ -104,6 +121,26 @@ export class SettingsDrawer extends React.PureComponent {
         </div>
       </aside>
     </>
+  }
+}
+
+// The drawer a trainer page's settings slide in from the left in, over a
+// scrim, focusing its close button as it opens
+export class SettingsDrawer extends React.PureComponent {
+  static propTypes = {
+    open: types.bool,
+    close: types.func.isRequired,
+  }
+
+  render() {
+    return <SidePane
+      open={this.props.open}
+      close={this.props.close}
+      title="Programme"
+      label="Programme"
+      closeLabel="Close the programme">
+      {this.props.children}
+    </SidePane>
   }
 }
 

@@ -33,6 +33,30 @@
         }
     }
 
+    /* the score page: a wider trainer and rail, so its plates (moved into
+       the rail) fit without pushing the card below the fold. Both
+       overrides are restated here, at the same specificity as .fullscreen's
+       and .trainer_grid's own media rule but with an extra class, so this
+       block still loses to fullscreen collapsing to one column and to the
+       narrow-viewport stack */
+    &.wide_rail {
+        .trainer {
+            max-width: 1240px;
+        }
+
+        .trainer_grid {
+            grid-template-columns: minmax(0, 1fr) clamp(260px, 26vw, 340px);
+
+            @media (max-width: 860px) {
+                grid-template-columns: minmax(0, 1fr);
+            }
+        }
+
+        &.fullscreen .trainer_grid {
+            grid-template-columns: minmax(0, 1fr);
+        }
+    }
+
     &.scroll_mode .staff_wrapper::before {
         content: "";
         position: absolute;

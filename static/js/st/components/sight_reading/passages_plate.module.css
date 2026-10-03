@@ -3,18 +3,29 @@
    custom */
 
 .passages {
-    margin-bottom: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    min-width: 0;
 }
 
-.glance_plate {
-    margin-bottom: 18px;
+.glance_row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px 14px;
+    margin-top: 12px;
+    font-family: var(--font-ui);
+    font-size: 12px;
+    color: var(--salon-ink-soft);
 }
 
-.glance_aside {
-    display: inline-flex;
-    align-items: center;
-    gap: 10px;
-    white-space: nowrap;
+.glance_actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 6px 14px;
 }
 
 .fold_toggle {
@@ -84,7 +95,6 @@
     display: grid;
     gap: 18px;
     grid-template-columns: 1fr;
-    margin-bottom: 18px;
 
     &.side_by_side {
         grid-template-columns: 1fr 1fr;
@@ -231,11 +241,36 @@
     font-size: 12px;
 }
 
-.score_plate {
-    min-width: 0;
+/* "The score" pane (st/components/sight_reading/settings_panel's SidePane,
+   right-anchored): the whole piece shaded, beside the selected passage's
+   detail at about 900px of pane width, else the detail stacked below it */
+.pane_body {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+
+    @media (min-width: 900px) {
+        flex-direction: row;
+        align-items: flex-start;
+    }
 }
 
-.score_scroll {
-    max-height: 520px;
-    overflow: auto;
+.pane_score {
+    min-width: 0;
+    flex: 1;
+}
+
+.pane_detail {
+    min-width: 0;
+    flex: none;
+
+    @media (min-width: 900px) {
+        width: 320px;
+    }
+}
+
+.pane_note {
+    font-family: var(--font-display);
+    font-style: italic;
+    color: var(--salon-ink-soft);
 }
