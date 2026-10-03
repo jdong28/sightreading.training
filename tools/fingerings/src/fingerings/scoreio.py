@@ -16,13 +16,17 @@ def _check_utf16(path, data):
 
 
 def read_text(path):
+    # Path.read_text's `newline` kwarg needs Python 3.13; open() has always
+    # taken it, and newline="" is what disables newline translation.
     data = Path(path).read_bytes()
     _check_utf16(path, data)
-    return Path(path).read_text(encoding="utf-8", newline="")
+    with open(path, encoding="utf-8", newline="") as f:
+        return f.read()
 
 
 def write_text(path, text):
-    Path(path).write_text(text, encoding="utf-8", newline="")
+    with open(path, "w", encoding="utf-8", newline="") as f:
+        f.write(text)
 
 
 def mxl_root_name(zf):

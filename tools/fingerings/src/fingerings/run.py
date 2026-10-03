@@ -242,6 +242,13 @@ def run(run_dir):
                                        beat=f["note"]["beat"], pitch=f["pitch"], mark=mark_id,
                                        voice=f["note"]["voice"]))
 
+        if read_pages is None:
+            report["checks"].append(_check("markup: at least one page has ink", bool(ink_pages),
+                                            "no markup ink on any page (wrong PDF, or its markup layer is missing)"
+                                            if not ink_pages else f"ink on page(s) {ink_pages}"))
+            if not ink_pages:
+                return _finish(run_path, report, t0)
+
         if missing_readings:
             report["checks"].append(_check("readings present", False,
                                             f"read sheets/p<N>.png for pages {missing_readings} into readings/"))
@@ -407,7 +414,8 @@ def _render_markdown(report):
     for o in sorted(report["other"], key=lambda o: o.get("proof", 0)):
         lines.append(f"- #{o.get('proof', '?')} {o['mark']}: {o.get('mark_desc') or o.get('text') or ''}")
     lines.append("")
-    lines.append(f"{len(report['placements'])} placed, {len(report['skipped'])} skipped, {report['seconds']} s")
+    # no timing, no absolute paths: report.md stays golden-comparable
+    lines.append(f"{len(report['placements'])} placed, {len(report['skipped'])} skipped")
     return "\n".join(lines) + "\n"
 
 

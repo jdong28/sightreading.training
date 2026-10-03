@@ -14,6 +14,10 @@ ALLOWED_INSERT = re.compile(
 )
 
 
+def _check(name, ok, detail):
+    return dict(check=name, ok=bool(ok), detail=detail)
+
+
 def note_key(r):
     return (r["measure"], r["staff"], r["voice"], str(r["onset"]), str(r["dur"]),
             r["step"], r["alter"], r["octave"], r["chord"], r["grace"], r["rest"])
@@ -67,38 +71,40 @@ def check(src_text, out_text, out_path, planned, added, xsd=None):
     planned: [(measure, staff, onset, pitch, digits)] expected to be on
     their note, whether added this run or already there from an earlier
     one. added: count of individual fingering digits newly inserted this
-    run (not "same" or "conflict"). Returns [(check, passed, detail)]."""
+    run (not "same" or "conflict"). Returns [{check, ok, detail}, ...],
+    the same shape as run.py's other checks."""
     res = []
     ok, detail = _well_formed(out_text)
-    res.append(("well-formed", ok, detail))
+    res.append(_check("well-formed", ok, detail))
     if xsd:
         out_ok = _schema_ok(out_text, xsd)
         src_ok = _schema_ok(src_text, xsd)
-        res.append(("MusicXML 4.0 schema (same verdict as the source)", out_ok == src_ok,
-                    f"source {'PASS' if src_ok else 'FAIL'}, output {'PASS' if out_ok else 'FAIL'}"))
+        res.append(_check("MusicXML 4.0 schema (same verdict as the source)", out_ok == src_ok,
+                           f"source {'PASS' if src_ok else 'FAIL'}, output {'PASS' if out_ok else 'FAIL'}"))
     else:
-        res.append(("MusicXML 4.0 schema (same verdict as the source)", True, "skipped: no xsd in the manifest"))
+        res.append(_check("MusicXML 4.0 schema (same verdict as the source)", True, "skipped: no xsd in the manifest"))
     ok, detail = _insertions_only(src_text, out_text)
-    res.append(("diff: insertions only", ok, detail))
+    res.append(_check("diff: insertions only", ok, detail))
     src_rows = score.note_table(score.load_text(src_text))
     out_rows = score.note_table(score.load_text(out_text))
-    res.append(("notes unchanged", [note_key(r) for r in src_rows] == [note_key(r) for r in out_rows],
-                f"{len(src_rows)} notes before, {len(out_rows)} after"))
+    res.append(_check("notes unchanged", [note_key(r) for r in src_rows] == [note_key(r) for r in out_rows],
+                       f"{len(src_rows)} notes before, {len(out_rows)} after"))
     got = {}
     for f in score.fingerings(out_rows):
         got.setdefault((f["measure"], f["staff"], f["onset"], f["pitch"]), []).append(f["finger"])
     before = len(score.fingerings(src_rows))
     missing = [pl for pl in planned if got.get(pl[:4]) != pl[4].split("-")]
-    res.append(("every planned fingering on its note", not missing,
-                f"{len(planned) - len(missing)}/{len(planned)}" + (f"; missing {missing[:5]}" if missing else "")))
+    res.append(_check("every planned fingering on its note", not missing,
+                       f"{len(planned) - len(missing)}/{len(planned)}" + (f"; missing {missing[:5]}" if missing else "")))
     total = sum(len(v) for v in got.values())
     want = before + added
-    res.append(("no other fingering added", total == want, f"{total} fingerings, expected {want}"))
+    res.append(_check("no other fingering added", total == want, f"{total} fingerings, expected {want}"))
     try:
         import music21
         s = music21.converter.parse(str(out_path), forceSource=True)
         n = sum(1 for nn in s.recurse().notes for art in nn.articulations if isinstance(art, music21.articulations.Fingering))
-        res.append(("music21 parses", n == total, f"{n} fingerings, {len(s.parts[0].getElementsByClass('Measure'))} measures"))
+        res.append(_check("music21 parses", n == total,
+                           f"{n} fingerings, {len(s.parts[0].getElementsByClass('Measure'))} measures"))
     except Exception as e:  # noqa: BLE001
-        res.append(("music21 parses", False, repr(e)[:200]))
+        res.append(_check("music21 parses", False, repr(e)[:200]))
     return res

@@ -39,10 +39,13 @@ def _find_match(lines, start, end, pattern):
     return None
 
 
-def _note_line_map(lines, notes):
+def _note_line_map(lines, root):
     """{id(note element): line index of its opening <note> tag}, pairing the
-    k-th <note>-only line with the k-th <note> element in document order."""
+    k-th <note>-only line with the k-th <note> element in document order
+    (every <note> in the document, not just the ones being edited, since a
+    line is only meaningful relative to the whole file)."""
     note_lines = [i for i, line in enumerate(lines) if NOTE_OPEN.match(line)]
+    notes = list(root.iter("note"))
     if len(note_lines) != len(notes):
         raise ValueError(f"not one element per line: {len(note_lines)} <note> lines, {len(notes)} <note> elements")
     return dict(zip((id(n) for n in notes), note_lines))
@@ -67,8 +70,10 @@ def splice(text, edits):
     crlf = "\r\n" in text
     eol = "\r" if crlf else ""
     lines = text.split("\n")
-    notes = [e[0] for e in edits]
-    note_line = _note_line_map(lines, notes) if notes else {}
+    note_line = {}
+    if edits:
+        root = edits[0][0].getroottree().getroot()
+        note_line = _note_line_map(lines, root)
     inserts = []  # (line index, lines)
     results = []
     for note, digits, placement in edits:
