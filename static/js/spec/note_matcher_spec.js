@@ -578,6 +578,177 @@ describe("note matcher", function() {
     })
   })
 
+  // D4(c): the trainer's "Keep tempo" setting, a column that scrolls past
+  // the hit line by TEMPO_TOLERANCE counts as a miss and the staff moves on
+  describe("scroll mode's tempo setting, scrollPast (D4(c))", function() {
+    it("misses an untouched column that scrolls past, then advances with nothing measured", function() {
+      let matcher = matcherFor([["C4"], ["E4"]], {scroll: true, tempo: true})
+      let measured = []
+      matcher.notes.generator.columnDone = (column, list, m) => measured.push(m)
+
+      let result = matcher.scrollPast(1000)
+
+      expect(matcher.judged.map(e => [e.type, e.counted])).toEqual([
+        ["miss", "miss"], ["scrolled", undefined],
+      ])
+      expect(matcher.judged[0].blamed).toEqual(["C4"])
+      expect(measured).toEqual([undefined])
+      expect(head(matcher)).toEqual(["E4"])
+      expect(result.notes).toBe(matcher.notes)
+
+      // the next key down is judged at the new head, not the one that scrolled past
+      expect(run(matcher, [["on", "E4", 1100]])).toEqual(["hit E4"])
+    })
+
+    it("counts a second scroll-past on an already-missed column as a slip, never a second miss", function() {
+      let matcher = matcherFor([["C4"], ["E4"]], {scroll: true, tempo: true})
+      // a wrong key counts the column's first miss
+      run(matcher, [["on", "D4", 100]])
+      matcher.judged.length = 0
+
+      matcher.scrollPast(1000)
+      expect(matcher.judged.map(e => [e.type, e.counted])).toEqual([
+        ["miss", "slip"], ["scrolled", undefined],
+      ])
+    })
+
+    // rule 2.3, as after a hit: the player was reading the note the staff
+    // took away, so striking it just after counts once, as the scroll-past's
+    // own miss, and never again as a slip on the column that took over
+    it("excuses a key of the scrolled-past column struck again within the repeat window", function() {
+      let matcher = matcherFor([["C4"], ["E4"]], {scroll: true, tempo: true})
+      matcher.scrollPast(1000)
+      matcher.judged.length = 0
+
+      expect(run(matcher, [["on", "C4", 1000 + LATE_REPEAT_WINDOW]])).toEqual([])
+      expect(head(matcher)).toEqual(["E4"])
+      // the column that took over is still clean, and plays as it should
+      expect(run(matcher, [["on", "E4", 1300]])).toEqual(["hit E4"])
+    })
+
+    it("slips the column that took over for a key of the scrolled-past one struck later", function() {
+      let matcher = matcherFor([["C4"], ["E4"]], {scroll: true, tempo: true})
+      matcher.scrollPast(1000)
+      matcher.judged.length = 0
+
+      expect(run(matcher, [["on", "C4", 1001 + LATE_REPEAT_WINDOW]])).toEqual(["miss E4"])
+    })
+
+    it("plays the new head with a pitch the scrolled-past column had too", function() {
+      let matcher = matcherFor([["C4"], ["C4"]], {scroll: true, tempo: true})
+      matcher.scrollPast(1000)
+      matcher.judged.length = 0
+
+      expect(run(matcher, [["on", "C4", 1100]])).toEqual(["hit C4"])
+      expect(head(matcher)).toEqual([])
+    })
+
+    it("is a hit, not a miss, when the keys held already complete the column (held credit, rule 1)", function() {
+      let sustain = (column, ...notes) => Object.assign(column, {sustained: notes})
+      let matcher = matcherFor([["Bb3"], sustain(["Bb3"], "Bb3")], {scroll: true, tempo: true})
+      run(matcher, [["on", "Bb3", 0]])
+      matcher.judged.length = 0
+
+      matcher.scrollPast(1000)
+      expect(matcher.judged.map(e => e.type)).toEqual(["hit"])
+      expect(matcher.judged[0].settled).toBe(true)
+      expect(head(matcher)).toEqual([])
+    })
+
+    it("credits keys of the next column struck early, chaining a hit when they complete it", function() {
+      let matcher = matcherFor([["C4"], ["E4", "G4"]], {scroll: true, tempo: true})
+      run(matcher, [["on", "E4", 100], ["on", "G4", 150]])
+      matcher.judged.length = 0
+
+      matcher.scrollPast(100 + EARLY_KEY_WINDOW)
+      expect(matcher.judged.map(e => e.type)).toEqual(["miss", "scrolled", "hit"])
+      expect([...matcher.judged[2].credited].sort()).toEqual(["E4", "G4"])
+    })
+
+    // rule 2.4: the head didn't complete within EARLY_KEY_WINDOW of them,
+    // so they weren't early, they were wrong — the same whether the head
+    // was completed or scrolled past
+    it("drops keys struck too early to still be credited, counting no miss beyond its own", function() {
+      let matcher = matcherFor([["C4"], ["E4", "G4"]], {scroll: true, tempo: true})
+      run(matcher, [["on", "E4", 100], ["on", "G4", 150]])
+      matcher.judged.length = 0
+
+      matcher.scrollPast(151 + EARLY_KEY_WINDOW)
+      expect(matcher.judged.map(e => [e.type, e.counted])).toEqual([
+        ["miss", "miss"], ["scrolled", undefined],
+      ])
+      expect(matcher.judged[0].blamed).toEqual(["C4"])
+      expect(head(matcher)).toEqual(["E4", "G4"])
+      expect(matcher.credited).toEqual([])
+
+      // the column is still there to be played, as it was never credited
+      expect(run(matcher, [["on", "E4", 2000], ["on", "G4", 2050]]))
+        .toEqual(["hit E4+G4"])
+    })
+
+    // the scroll-past's other way out, a column the held keys already
+    // complete, advances through hit(), which credits this.early to the
+    // column after it: the same keys are stale there
+    it("drops keys struck too early on the held-credit settle too", function() {
+      let sustain = (column, ...notes) => Object.assign(column, {sustained: notes})
+      let opening = column => Object.assign(column, {cardIndex: 0})
+      // three cards of one column each: a key held on from the first sounds
+      // through the second, which settleHeld won't settle at a key down, as
+      // it opens its card and the key isn't of it
+      let matcher = matcherFor(
+        [opening(["Bb3"]), opening(sustain(["Bb3"], "Bb3")), opening(["E4"])],
+        {scroll: true, tempo: true})
+      expect(run(matcher, [["on", "Bb3", 0], ["on", "E4", 100]])).toEqual(["hit Bb3"])
+      expect(head(matcher)).toEqual(["Bb3"])
+      expect(matcher.early).toEqual({E4: 100})
+
+      matcher.judged.length = 0
+      matcher.scrollPast(101 + EARLY_KEY_WINDOW)
+      expect(matcher.judged.map(e => e.type)).toEqual(["hit"])
+      expect(head(matcher)).toEqual(["E4"])
+      expect(matcher.credited).toEqual([])
+    })
+
+    it("counts nothing on an empty head column, and just advances", function() {
+      let matcher = matcherFor([[]], {scroll: true, tempo: true})
+      matcher.scrollPast(1000)
+      expect(matcher.judged.map(e => e.type)).toEqual(["scrolled"])
+    })
+
+    it("advances without a miss when miss is false (the at-rest guard)", function() {
+      let matcher = matcherFor([["C4"], ["E4"]], {scroll: true, tempo: true})
+      matcher.scrollPast(1000, {miss: false})
+      expect(matcher.judged.map(e => e.type)).toEqual(["scrolled"])
+      expect(head(matcher)).toEqual(["E4"])
+    })
+
+    it("measures a column's lateness unclamped from when it crossed the line", function() {
+      let clock = 0
+      let matcher = matcherFor([["C4"], ["E4"]], {now: () => clock, scroll: true, tempo: true})
+      matcher.onLine(1000)
+      clock = 1300
+      matcher.noteOn("C4", 1300)
+      clock = 1500
+      matcher.noteOn("E4", 1500)
+
+      let hit = matcher.judged.find(e => e.type == "hit" && e.hitNotes.includes("E4"))
+      expect(hit.late).toEqual(500)
+    })
+
+    it("clamps lateness to becoming the head when tempo is off, as today (D4(a))", function() {
+      let clock = 0
+      let matcher = matcherFor([["C4"], ["E4"]], {now: () => clock, scroll: true})
+      matcher.onLine(1000)
+      clock = 1300
+      matcher.noteOn("C4", 1300)
+      clock = 1500
+      matcher.noteOn("E4", 1500)
+
+      let hit = matcher.judged.find(e => e.type == "hit" && e.hitNotes.includes("E4"))
+      expect(hit.late).toEqual(200)
+    })
+  })
+
   // T6 of the note detection report, rule 1's held credit: a key the score
   // still sounds at a column's onset from an earlier one (column.sustained,
   // see extractSectionColumns), held rather than struck again, counts toward

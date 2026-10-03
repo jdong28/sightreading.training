@@ -29,9 +29,12 @@
 // this column completes it is credited to the next, which completes at once
 // if that was all it needed. It counts as a slip on this column only if this
 // one doesn't complete within EARLY_KEY_WINDOW of it (the player wasn't
-// early, they were wrong), judged at the next key down. A key of the column
-// just completed struck again within LATE_REPEAT_WINDOW of its completing (a
-// late duplicate, a key bounce) is ignored. Both windows are on the events'
+// early, they were wrong), judged at the next key down — or, in tempo mode,
+// dropped uncredited as this column scrolls past (see scrollPast), which
+// counts its own miss on the column instead. A key of the column the head
+// has just moved on from, completed or scrolled past, struck again within
+// LATE_REPEAT_WINDOW of its going (a late duplicate, a key bounce, the note
+// the player was still reading) is ignored. Both windows are on the events'
 // timeStamps, so a press with none (the on-screen keyboard) is judged as if
 // outside them.
 //
@@ -66,7 +69,12 @@
 // isn't one); how many of its keys were credited early (above) and held
 // over (heldCredit, rule 1); and, in scroll mode, how long it stood on the
 // hit line before it completed (late), which is recorded but never a miss:
-// scroll mode scrolls to the line and waits (ruling D4(a)). See measured.
+// scroll mode scrolls to the line and waits (ruling D4(a)) — unless the
+// trainer's "Keep tempo" setting is on (this.tempo, ruling D4(c)), when a
+// column that scrolls past the line by TEMPO_TOLERANCE is missed instead of
+// waited for (see scrollPast) and late runs unclamped from onLineSince,
+// since the column may already have crossed the line before it became the
+// head. See measured.
 // A column settled by held credit (settleHeld, or settleCardEnd at the
 // card's end) had none of its keys struck at it, so it has no time of its
 // own: it is measured settled, with no latency, and the next column played
@@ -88,16 +96,18 @@ export const LATE_REPEAT_WINDOW = 250
 export default class NoteMatcher {
   // notes is the NoteList the drill is playing (the matcher advances it);
   // opts are the options detection reads: the generator's mode ("notes" or
-  // "chords") and anyOctave, whether the staff scrolls (scroll mode), onEvent,
-  // told each judgement as it is made, and now, the clock of the moments no
-  // event times (a column becoming the head through a new list, Begin, a
-  // press with no timeStamp, the staff coming to rest on the hit line):
+  // "chords") and anyOctave, whether the staff scrolls (scroll mode), tempo,
+  // the "Keep tempo" setting (D4(c): see scrollPast), onEvent, told each
+  // judgement as it is made, and now, the clock of the moments no event
+  // times (a column becoming the head through a new list, Begin, a press
+  // with no timeStamp, the staff coming to rest on the hit line):
   // performance.now by default, the clock MIDI events are stamped by
   constructor(notes, opts={}) {
     this.notes = notes || null
     this.mode = opts.mode || "notes"
     this.anyOctave = !!opts.anyOctave
     this.scroll = !!opts.scroll
+    this.tempo = !!opts.tempo
     this.onEvent = opts.onEvent || null
     this.now = opts.now || (() => performance.now())
 
@@ -471,6 +481,76 @@ export default class NoteMatcher {
     }
   }
 
+  // Tempo mode (D4(c)): the head column has scrolled past the hit line by
+  // TEMPO_TOLERANCE. A column the held keys already complete (rule 1) is a
+  // hit instead, exactly as a key down would settle it (settleHeld), since
+  // held credit is otherwise only applied lazily at a key down, which a
+  // column scrolling past unplayed never sees. Otherwise, when the column
+  // has notes and miss is set (false at rest, as the page's old loop
+  // checked the session), it counts one miss, "miss" when the column
+  // hasn't been counted missed yet, else "slip" (even within the try that
+  // already slipped: the scroll-past isn't a try, and the grade must always
+  // hear it), blamed on its notes not yet struck. Either way the column
+  // then advances exactly as a hit does but for the hit itself: cleared
+  // with nothing measured, the keys held early for the next column credited
+  // to it as before, chaining a hit when they complete it — all but the
+  // ones the head took longer than EARLY_KEY_WINDOW to scroll past, which
+  // are dropped uncredited (dropStaleEarly), as rule 2.4 drops them at a
+  // key down, counting no miss beyond the scroll-past's own. The column it
+  // took away is the one looked back to (previous, at the scroll-past), so
+  // rule 2.3 excuses the note the player was still reading struck just after
+  // it went by rather than slipping the column that took over: one miss for
+  // the one late note. Emits "scrolled"
+  // after the miss (if any) and before any chained hit, so the miss reaches
+  // the stats, and through them the generator's columnDone, before the
+  // shift below calls it
+  scrollPast(time, {miss=true}={}) {
+    this.dropStaleEarly(time)
+
+    let notes = this.notes
+    let column = notes.currentColumn()
+
+    if (this.heldCredit().length && this.completes()) {
+      this.hit(null, {settled: true})
+      return this.result()
+    }
+
+    if (column.length && miss) {
+      let blamed = this.blamedForHead()
+      let counted = this.missedNotes == notes ? "slip" : "miss"
+      this.missedNotes = notes
+      this.emit({type: "miss", missed: column, blamed, counted, notes})
+    }
+
+    let early = this.early
+    this.slipped = false
+    let advanced = notes.clone()
+    advanced.shift()
+    advanced.pushRandom()
+    this.notes = advanced
+
+    this.startHead(time)
+    this.previous = {column, at: time}
+    this.restrikes = {}
+
+    let next = advanced.currentColumn()
+    let credited = Object.keys(early).filter(n => this.inColumn(next, n))
+    for (let n of credited) {
+      this.touched[n] = true
+      this.firstDown = true
+      this.firstAt = this.firstAt == null ? early[n] : Math.min(this.firstAt, early[n])
+    }
+    this.credited = credited
+
+    this.emit({type: "scrolled", from: notes, to: advanced})
+
+    if (credited.length && advanced.matchesHead(credited, this.anyOctave)) {
+      this.hit(Math.max(...credited.map(n => early[n])))
+    }
+
+    return this.result()
+  }
+
   // The head column's keys the score still sounds at its onset from an
   // earlier one (column.sustained) that are down but weren't struck at it
   heldCredit() {
@@ -542,8 +622,7 @@ export default class NoteMatcher {
   // within EARLY_KEY_WINDOW of, at a key down at timeStamp, were wrong: they
   // count as one slip on the head, and aren't credited to the next column
   expireEarly(timeStamp) {
-    let stale = Object.keys(this.early).filter(n =>
-      timeStamp == null || timeStamp - this.early[n] > EARLY_KEY_WINDOW)
+    let stale = this.staleEarly(timeStamp)
     if (!stale.length) { return }
 
     this.early = {...this.early}
@@ -556,9 +635,29 @@ export default class NoteMatcher {
     this.emitMiss()
   }
 
+  // The same stale keys, dropped uncredited as the head scrolls past at
+  // time (D4(c)): they are never credited to the next column either, but
+  // the scroll-past counts the head's one miss, so they add no second one
+  dropStaleEarly(time) {
+    let stale = this.staleEarly(time)
+    if (!stale.length) { return }
+
+    this.early = {...this.early}
+    for (let n of stale) {
+      delete this.early[n]
+    }
+  }
+
+  // the keys held early for the next column that the head still hasn't
+  // completed at time, EARLY_KEY_WINDOW on from each of them
+  staleEarly(time) {
+    return Object.keys(this.early).filter(n =>
+      time == null || time - this.early[n] > EARLY_KEY_WINDOW)
+  }
+
   // whether a key down is one struck again rather than played: one of the
-  // column just completed (repeated), or held for the card's last column
-  // as it completed (see settleCardEnd)
+  // column the head just moved on from (repeated), or held for the card's
+  // last column as it completed (see settleCardEnd)
   struckAgain(note, timeStamp) {
     return !!this.restrikes[note] || this.repeated(note, timeStamp)
   }
@@ -573,8 +672,8 @@ export default class NoteMatcher {
     delete this.restrikes[note]
   }
 
-  // whether a key is one of the column just completed, struck again within
-  // LATE_REPEAT_WINDOW of its completing (rule 2.3)
+  // whether a key is one of the column the head has just moved on from,
+  // struck again within LATE_REPEAT_WINDOW of its going (rule 2.3)
   repeated(note, timeStamp) {
     let previous = this.previous
     return !!previous && previous.at != null && timeStamp != null &&
@@ -586,13 +685,19 @@ export default class NoteMatcher {
   // struck at it that are its own or slipped, and the keys it credits held:
   // a note the column already has is never one the miss is put down to
   emitMiss() {
+    this.emit(this.missColumn(this.notes.currentColumn(), this.blamedForHead()))
+  }
+
+  // the head column's notes a miss on it is put down to (see emitMiss): the
+  // one rule, shared with the scroll-past's forced miss
+  blamedForHead() {
     let notes = this.notes
     let column = notes.currentColumn()
     let struck = [
       ...Object.keys(this.touched).filter(n => this.strays[n] || this.inColumn(column, n)),
       ...this.heldCredit(),
     ]
-    this.emit(this.missColumn(column, notes.blamedNotes(struck, this.anyOctave)))
+    return notes.blamedNotes(struck, this.anyOctave)
   }
 
   // the column at an index of the list, [] past its end
@@ -614,11 +719,15 @@ export default class NoteMatcher {
 
   // In scroll mode, how long the head column has stood on the hit line as
   // the head at time (0 while it is still on its way there), null in wait
-  // mode. Never a miss (D4(a))
+  // mode. Never a miss in D4(a); in tempo mode (D4(c), this.tempo) measured
+  // with no headAt clamp, since a column that became the head after it had
+  // already crossed the line (the column before it was hit late) is late
+  // from its own crossing, not from when it became the head
   headOnLine(time) {
     if (!this.scroll) { return null }
-    return this.onLineSince == null ? 0 :
-      Math.max(0, time - Math.max(this.onLineSince, this.headAt))
+    if (this.onLineSince == null) { return 0 }
+    let since = this.tempo ? this.onLineSince : Math.max(this.onLineSince, this.headAt)
+    return Math.max(0, time - since)
   }
 
   // The head column's measurements for the grade, as the key down at time
