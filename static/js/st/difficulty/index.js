@@ -1,6 +1,6 @@
-// Score analysis entry point (report 2.2, 2.6): a piece's flagged
-// passages, worked out from its own score, free and offline. Pure: the same
-// song, source and `at` always give the same record, ids included.
+// Score analysis entry point: a piece's flagged passages, worked out from
+// its own score, free and offline. Pure: the same song, source and `at`
+// always give the same record, ids included.
 
 import {measureNumberList} from "st/song_sections"
 import {fingerprint, exactRepeats} from "st/difficulty/fingerprints"
@@ -74,9 +74,9 @@ export function analyzePiece({song, source, at}) {
   }
 }
 
-// the record after folding a fresh analysis into a previous one (report
-// 3.4): a run replaces only its own source's proposals, every other
-// source's proposals and every decision are kept
+// the record after folding a fresh analysis into a previous one: a run
+// replaces only its own source's proposals, every other source's proposals
+// and every decision are kept
 export function annotationWith(previous, pieceId, analysis) {
   let decisions = previous ? previous.decisions : []
   let otherProposals = previous ? previous.proposals.filter(p => p.source != "score") : []

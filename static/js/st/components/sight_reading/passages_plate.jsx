@@ -1,9 +1,8 @@
 // "The piece at a glance": the score page's preface showing a piece's
-// flagged passages (st/difficulty), mockup screen I ("The difficult
-// passages"). Shown at rest in both free practice and today's programme,
-// for any imported piece with flags in force. Reasons come only from the
-// score analysis in stage 1: no Claude, no outside sources, no practice
-// records, no teacher.
+// flagged passages (st/difficulty). Shown at rest in both free practice and
+// today's programme, for any imported piece with flags in force. Reasons
+// come only from the score analysis in stage 1: no Claude, no outside
+// sources, no practice records, no teacher.
 
 import * as React from "react"
 import * as types from "prop-types"
@@ -48,8 +47,7 @@ const SIDE_BY_SIDE_WIDTH = 600
 
 const HAND_LABEL = {upper: "Right hand alone", lower: "Left hand alone", both: "Hands separately"}
 
-// a both-hands passage starts with the right hand (the mockup's "right
-// hand first")
+// a passage to practise hands separately offers the right hand first
 function handPillHand(flag) {
   return flag.hand == "both" ? "upper" : flag.hand
 }

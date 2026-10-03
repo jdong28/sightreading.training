@@ -1,6 +1,6 @@
-/* "The piece at a glance": a piece's flagged passages (st/difficulty),
-   mockup screen I. Primitives from st/components/salon; only this file's
-   own layout is custom */
+/* "The piece at a glance": a piece's flagged passages (st/difficulty).
+   Primitives from st/components/salon; only this file's own layout is
+   custom */
 
 .passages {
     margin-bottom: 24px;

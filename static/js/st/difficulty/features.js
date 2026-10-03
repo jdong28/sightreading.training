@@ -7,8 +7,8 @@ import {staffTracks, measureNumberList, measureBeatRange} from "st/song_sections
 
 const EPSILON = 1e-6
 
-// treble lines E4-F5, bass lines G2-A3 (report 2.2): a note needing 3 or
-// more ledger lines beyond either boundary is a reading hazard
+// treble lines E4-F5, bass lines G2-A3: a note needing 3 or more ledger
+// lines beyond either boundary is a reading hazard
 const STAFF_BOUNDS = {
   g: [noteStaffOffset("E4"), noteStaffOffset("F5")],
   f: [noteStaffOffset("G2"), noteStaffOffset("A3")],

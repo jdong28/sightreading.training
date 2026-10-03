@@ -1,8 +1,8 @@
 // Turns st/difficulty/features.js's per-bar measurements into scores and
 // groups the hardest bars into passages. The numbers here (ANALYZER_ALGO 9)
-// are a first guess (report section 9): tune them freely, but bump
-// ANALYZER_ALGO whenever a change would relabel an existing piece's flags,
-// so a stale record is recomputed rather than silently kept.
+// are a first guess: tune them freely, but bump ANALYZER_ALGO whenever a
+// change would relabel an existing piece's flags, so a stale record is
+// recomputed rather than silently kept.
 
 export const ANALYZER_ALGO = 9
 
@@ -256,9 +256,9 @@ function levelFor(peakPercentile, restsOnOneSignal) {
   return 1
 }
 
-// whether a run's evidence keeps it at Worth a look however high it scores
-// (report 2.6): a run resting on a single signal, or on reading signals
-// alone, never reaches Hard or Hardest on that
+// whether a run's evidence keeps it at Worth a look however high it scores:
+// a run resting on a single signal, or on reading signals alone, never
+// reaches Hard or Hardest on that
 function runRestsOnOneSignal(run) {
   let signals = new Set()
   for (let bar of run) {

@@ -1,7 +1,6 @@
-// The stored shapes of a piece's flagged passages (report 3.1): one
-// AnnotationRecord per piece, holding every source's FlagProposals (stage 1
-// only ever writes the "score" source) and the instructor's decisions
-// (always [] until stage 3).
+// The stored shapes of a piece's flagged passages: one AnnotationRecord per
+// piece, holding every source's FlagProposals (stage 1 only ever writes the
+// "score" source) and the instructor's decisions (always [] until stage 3).
 
 import {hash8} from "st/difficulty/fingerprints"
 
