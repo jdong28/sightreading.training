@@ -494,11 +494,13 @@ export default class SightReadingPage extends React.Component {
   // its lateness (the slider rests there, so no frame of it moves either).
   // Off, this restores wait-at-the-line (D4(a)) and never touches onLine,
   // so that behaviour stays bit-identical. On, a waiting column's floor
-  // never jumps back past where it already stands; a scrolling column's
-  // floor is lifted (null) and the slider's loop point moves to the
-  // tolerance short of the line, restarting the animation if it had
-  // stopped. Either way the matcher is told when the new head reaches, or
-  // reached, the line, which can be in the past
+  // never jumps back past where it already stands, with the loop point kept
+  // below that floor so a slider the floor holds never loops however far
+  // past the line the floor sits; a scrolling column's floor is lifted
+  // (null) and the slider's loop point moves to the tolerance short of the
+  // line, restarting the animation if it had stopped. Either way the matcher
+  // is told when the new head reaches, or reached, the line, which can be in
+  // the past
   followHead() {
     // wait mode's slider has nothing to do with the hit line: leave it alone
     if (this.state.mode != "scroll") { return }
@@ -517,7 +519,7 @@ export default class SightReadingPage extends React.Component {
 
     if (this.headWaits()) {
       slider.floor = Math.min(SCROLL_WAIT, slider.value)
-      slider.passAt = 0
+      slider.passAt = slider.floor - TEMPO_TOLERANCE
     } else {
       slider.floor = null
       slider.passAt = SCROLL_WAIT - TEMPO_TOLERANCE
@@ -1064,8 +1066,10 @@ export default class SightReadingPage extends React.Component {
         // "miss" event just before this one
         update.notes = this.matcher.notes
         this.advanceEngineMarks(event.from, event.to)
-        // as the hit above: the new head's own arrival at the line, before
-        // the keys struck early for it complete and measure it
+        // as the hit above: the room the column leaving the staff held, then
+        // the new head's own arrival at the line, before the keys struck
+        // early for it complete and measure it
+        this.state.slider.add(this.columnAdvance(event.from))
         this.followHead()
         break
 
@@ -1319,13 +1323,12 @@ export default class SightReadingPage extends React.Component {
         // tolerance, judged through the matcher (NoteMatcher#scrollPast) so
         // every detection rule stays there
         onLoop: function() {
-          // the room the column leaving the staff held, which the notes
-          // slide by, applied before the judgement so the head the matcher
-          // hands over is followed at the geometry it is drawn in
+          // the loop raised the value by loopPhase: put it back, so the room
+          // the column leaving the staff held is added by the handler of the
+          // judgement that actually shifts it off the list ("scrolled", or
+          // "hit" when the keys held settle it), exactly once either way
           let slider = this.state.slider
-          let advance = this.columnAdvance(this.matcher.notes)
-          slider.value += advance - slider.loopPhase
-          slider.loopPhase = advance
+          slider.value -= slider.loopPhase
 
           let now = this.matcher.now()
           this.judge(() => this.matcher.scrollPast(now, {miss: this.state.session}))

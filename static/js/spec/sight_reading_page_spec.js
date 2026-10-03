@@ -1859,6 +1859,85 @@ describe("sight reading page", function() {
           await frames(3)
           expect(slider.value).toEqual(SCROLL_WAIT)
         })
+
+        // a column that scrolls past hands the next one over at the room it
+        // held, which on an engine's system can be shorter than the
+        // tolerance and so leave the staff past the line: a waiting column
+        // there waits all the same, and no frame of the staff scrolls it
+        // past unplayed
+        it("holds a waiting head left past the slider's loop point", async function() {
+          let {clock, step, restore} = driveFrames()
+
+          try {
+            await renderSection({measuresPerCard: "2"}, {mode: "scroll", tempo: true})
+            let slider = page.state.slider
+            page.matcher.now = () => clock.now
+
+            // the waiting head stands a tolerance and more past the line
+            slider.value = -0.2
+            page.followHead()
+            expect(page.headWaits()).toBe(true)
+            expect(slider.floor).toEqual(-0.2)
+
+            let head = [...page.state.notes.currentColumn()]
+            step(0)
+            step(500)
+            step(500)
+
+            expect(slider.value).toEqual(-0.2)
+            expect(page.state.stats.misses).toEqual(0)
+            expect([...page.state.notes.currentColumn()]).toEqual(head)
+          } finally {
+            restore()
+          }
+        })
+
+        // the keys held for a column the score sounds on complete it as the
+        // head scrolls past (rule 1), which is a hit and no miss: the staff
+        // then moves on by that one column, as it does for any hit, and
+        // never twice over for the one column it shifted off
+        it("moves the staff on once for a column the scroll-past settles from keys held", async function() {
+          let {clock, step, restore} = driveFrames()
+
+          try {
+            await renderSection({measuresPerCard: "4"}, {mode: "scroll", tempo: true})
+            let slider = page.state.slider
+            page.matcher.now = () => clock.now
+            expect(slider.speed).toEqual(1)
+
+            // the second column is sounded on by the first, so the keys
+            // struck for the first and still down are all of it
+            let head = [...page.state.notes.currentColumn()]
+            let next = page.state.notes[1]
+            expect(Array.isArray(next)).toBe(true)
+            next.splice(0, next.length, ...head)
+            next.sustained = [...head]
+
+            // the opening column stands on the line and is played there, its
+            // keys held down, handing the second the head a column right of
+            // the line
+            slider.value = SCROLL_WAIT
+            page.followHead()
+            step(0)
+            head.forEach(note => flushSync(() => page.pressNote(note, clock.now)))
+            expect([...page.state.notes.currentColumn()]).toEqual(head)
+            expect(slider.floor).toBe(null)
+            expect(slider.value).toEqual(SCROLL_WAIT + 1)
+
+            // it scrolls on to the tolerance past the line, where the keys
+            // held settle it rather than missing it
+            step(500)
+            step(500)
+            step(500)
+            step(500)
+            expect(page.state.stats.misses).toEqual(0)
+
+            // one column's width on from the line it scrolled past
+            expect(slider.value).toBeCloseTo(SCROLL_WAIT, 10)
+          } finally {
+            restore()
+          }
+        })
       })
     })
 
