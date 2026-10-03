@@ -729,27 +729,7 @@ export default class NoteMatcher {
     advanced.pushRandom()
     this.notes = advanced
 
-    // T, carried on past this column (T7, redesigned): its own allowed and
-    // trailing pitches, plus its own keys a pending resolution judged real
-    // this tenure (ambiguousOwn). headAmbiguous (A), the subset that makes
-    // the new head's own keys ambiguous, leaves out allowed: a grace note
-    // only ever excuses, never holding a melody note back
-    let ambiguousOwn = Object.keys(this.ambiguousOwn)
-    let trailingOf = column.trailing || []
-    this.trailing = [...(column.allowed || []), ...trailingOf, ...ambiguousOwn]
-    this.headAmbiguous = [...trailingOf, ...ambiguousOwn]
-
-    // the ornament this column opens is live from its hit, and a key pending
-    // for the next column is now pending for the head
-    if (this.trailing.length) {
-      this.ornamentAt = Math.max(this.ornamentAt ?? -Infinity, at)
-    }
-    let pending = {}
-    for (let n of Object.keys(this.pending)) {
-      let entry = this.pending[n]
-      pending[n] = entry.target == "next" ? {...entry, target: "head"} : entry
-    }
-    this.pending = pending
+    this.handOver(column, at)
 
     // the next column is played afresh, but for its keys struck early: the
     // keys still down stay held, and count toward it only as held credit,
@@ -766,22 +746,8 @@ export default class NoteMatcher {
       this.restrikes = Object.fromEntries(excused.map(n => [n, true]))
     }
 
-    // an ornament key (kind "ornament") is never credited, since it isn't
-    // really the next column's note; an excused key (a pending key resolved
-    // for the next column, kind "excused") is, exactly as a plain early key
-    // (kind "required") is, both filtered to the next column's own already
     let next = advanced.currentColumn()
-    let credited = Object.keys(early).filter(n => early[n].kind != "ornament" && this.inColumn(next, n))
-    for (let n of credited) {
-      this.touched[n] = true
-      this.firstDown = true
-      this.firstAt = this.firstAt == null ? early[n].at : Math.min(this.firstAt, early[n].at)
-      // a key credited from an ornament-ambiguous press stays excused at the
-      // column after this one, so the player's own strike of it is never a
-      // slip, and is pending where the new head's own key would be
-      if (early[n].kind == "excused") { this.ambiguousOwn[n] = true }
-    }
-    this.credited = credited
+    let credited = this.creditEarly(early, next)
 
     // the list as it now stands, before any column the keys credited early
     // complete in turn
@@ -793,30 +759,93 @@ export default class NoteMatcher {
     }
   }
 
+  // T, carried on past column (T7, redesigned): its own allowed and trailing
+  // pitches, plus its own keys a pending resolution judged real this tenure
+  // (ambiguousOwn). headAmbiguous (A), the subset that makes the new head's
+  // own keys ambiguous, leaves out allowed: a grace note only ever excuses,
+  // never holding a melody note back. The ornament column opens is live
+  // from at, and a key pending for the next column is now pending for the
+  // head. Shared by hit() and scrollPast() (D4(c)), so a column hands over
+  // to the next the same way however it completes
+  handOver(column, at) {
+    let ambiguousOwn = Object.keys(this.ambiguousOwn)
+    let trailingOf = column.trailing || []
+    this.trailing = [...(column.allowed || []), ...trailingOf, ...ambiguousOwn]
+    this.headAmbiguous = [...trailingOf, ...ambiguousOwn]
+
+    if (this.trailing.length) {
+      this.ornamentAt = Math.max(this.ornamentAt ?? -Infinity, at)
+    }
+
+    let pending = {}
+    for (let n of Object.keys(this.pending)) {
+      let entry = this.pending[n]
+      pending[n] = entry.target == "next" ? {...entry, target: "head"} : entry
+    }
+    this.pending = pending
+  }
+
+  // Credits the keys of early (a column's own early map, read before
+  // startHead cleared it) that are the new head's own, once the next
+  // column is the head, same as any T5 early key: an ornament key (kind
+  // "ornament") is never credited, since it isn't really the next column's
+  // note; an excused key (a pending key resolved for the next column, kind
+  // "excused") is, exactly as a plain early key (kind "required") is, both
+  // filtered to the next column's own already. A key credited from an
+  // ornament-ambiguous press stays excused at the column after this one, so
+  // the player's own strike of it is never a slip, and is pending where the
+  // new head's own key would be. Returns the credited keys, so the caller
+  // can chain a hit when they complete it too. Shared by hit() and
+  // scrollPast() (D4(c))
+  creditEarly(early, next) {
+    let credited = Object.keys(early).filter(n => early[n].kind != "ornament" && this.inColumn(next, n))
+    for (let n of credited) {
+      this.touched[n] = true
+      this.firstDown = true
+      this.firstAt = this.firstAt == null ? early[n].at : Math.min(this.firstAt, early[n].at)
+      if (early[n].kind == "excused") { this.ambiguousOwn[n] = true }
+    }
+    this.credited = credited
+    return credited
+  }
+
   // Tempo mode (D4(c)): the head column has scrolled past the hit line by
-  // TEMPO_TOLERANCE. A column the held keys already complete (rule 1) is a
-  // hit instead, exactly as a key down would settle it (settleHeld), since
-  // held credit is otherwise only applied lazily at a key down, which a
-  // column scrolling past unplayed never sees. Otherwise, when the column
-  // has notes and miss is set (false at rest, as the page's old loop
-  // checked the session), it counts one miss, "miss" when the column
-  // hasn't been counted missed yet, else "slip" (even within the try that
-  // already slipped: the scroll-past isn't a try, and the grade must always
-  // hear it), blamed on its notes not yet struck. Either way the column
-  // then advances exactly as a hit does but for the hit itself: cleared
-  // with nothing measured, the keys held early for the next column credited
-  // to it as before, chaining a hit when they complete it — all but the
-  // ones the head took longer than EARLY_KEY_WINDOW to scroll past, which
-  // are dropped uncredited (dropStaleEarly), as rule 2.4 drops them at a
-  // key down, counting no miss beyond the scroll-past's own. The column it
-  // took away is the one looked back to (previous, at the scroll-past), so
-  // rule 2.3 excuses the note the player was still reading struck just after
-  // it went by rather than slipping the column that took over: one miss for
-  // the one late note. Emits "scrolled"
-  // after the miss (if any) and before any chained hit, so the miss reaches
-  // the stats, and through them the generator's columnDone, before the
-  // shift below calls it
+  // TEMPO_TOLERANCE. A key still pending as ambiguous (noteOn, settlePending)
+  // is resolved first, by the same ended-on rule the page's tick uses
+  // (resolveByGap): the column is ending now regardless of the ornament's
+  // own clock, so nothing is carried silently across the jump. When that
+  // resolution itself advances the head (through judgePress, exactly as a
+  // real strike does) the column has already moved on by the ordinary
+  // hit(), and scrollPast has nothing further to do. Otherwise: a column
+  // the held keys already complete (rule 1) is a hit instead, exactly as a
+  // key down would settle it (settleHeld), since held credit is otherwise
+  // only applied lazily at a key down, which a column scrolling past
+  // unplayed never sees. Otherwise, when the column has notes and miss is
+  // set (false at rest, as the page's old loop checked the session), it
+  // counts one miss, "miss" when the column hasn't been counted missed
+  // yet, else "slip" (even within the try that already slipped: the
+  // scroll-past isn't a try, and the grade must always hear it), blamed on
+  // its notes not yet struck. Either way the column then hands over to the
+  // next exactly as a hit does (handOver, creditEarly: T, the carried
+  // ornament set, and an ornament-kind early key excluded from its credit),
+  // but for the hit itself: cleared with nothing measured, and the keys
+  // held early for the next column dropped uncredited once the head took
+  // longer than EARLY_KEY_WINDOW to scroll past (dropStaleEarly), as rule
+  // 2.4 drops them at a key down, counting no miss beyond the scroll-past's
+  // own. The column it took away is the one looked back to (previous, at
+  // the scroll-past), so rule 2.3 excuses the note the player was still
+  // reading struck just after it went by rather than slipping the column
+  // that took over: one miss for the one late note. Emits "scrolled" after
+  // the miss (if any) and before any chained hit, so the miss reaches the
+  // stats, and through them the generator's columnDone, before the shift
+  // below calls it
   scrollPast(time, {miss=true}={}) {
+    if (Object.keys(this.pending).length) {
+      let before = this.notes
+      this.resolveByGap()
+      if (this.notes !== before) { return this.result() }
+    }
+
     this.dropStaleEarly(time)
 
     let notes = this.notes
@@ -841,23 +870,19 @@ export default class NoteMatcher {
     advanced.pushRandom()
     this.notes = advanced
 
+    this.handOver(column, time)
+
     this.startHead(time)
     this.previous = {column, at: time}
     this.restrikes = {}
 
     let next = advanced.currentColumn()
-    let credited = Object.keys(early).filter(n => this.inColumn(next, n))
-    for (let n of credited) {
-      this.touched[n] = true
-      this.firstDown = true
-      this.firstAt = this.firstAt == null ? early[n] : Math.min(this.firstAt, early[n])
-    }
-    this.credited = credited
+    let credited = this.creditEarly(early, next)
 
     this.emit({type: "scrolled", from: notes, to: advanced})
 
     if (credited.length && advanced.matchesHead(credited, this.anyOctave)) {
-      this.hit(Math.max(...credited.map(n => early[n])))
+      this.hit(Math.max(...credited.map(n => early[n].at)))
     }
 
     return this.result()

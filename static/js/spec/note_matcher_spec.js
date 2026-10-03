@@ -1177,6 +1177,63 @@ describe("note matcher", function() {
       let hit = matcher.judged.find(e => e.type == "hit" && e.hitNotes.includes("E4"))
       expect(hit.late).toEqual(200)
     })
+
+    // A column hands over to the next the same way whether it completes
+    // through a key (hit) or scrolls past in tempo mode (scrollPast):
+    // handOver/creditEarly are shared, so an ornament key is never credited
+    // to the next column either way (sr-detect-ornament-span-n7d)
+    it("doesn't credit an ornament-only early key to the next column when it scrolls past", function() {
+      let matcher = matcherFor([["C4"], ornamented(["G4"], ["A4"])], {scroll: true, tempo: true})
+      run(matcher, [["on", "A4", 100]])
+      matcher.judged.length = 0
+
+      matcher.scrollPast(200)
+      expect(matcher.judged.map(e => e.type)).toEqual(["miss", "scrolled"])
+      expect(matcher.credited).toEqual([])
+      expect(head(matcher)).toEqual(["G4"])
+
+      expect(run(matcher, [["on", "G4", 300]])).toEqual(["hit G4"])
+    })
+
+    // A key still pending as ambiguous when its column scrolls past is
+    // resolved by the same ended-on rule the page's tick uses (resolveByGap),
+    // not dropped and not carried silently across the jump
+    it("resolves a key still pending as ambiguous the same way a hit would when its column scrolls past", function() {
+      let matcher = matcherFor(
+        [ornamented(["F#5"], ["G#5"], ["F#5", "G#5"]), ["G#5"], ["C#5"]],
+        {scroll: true, tempo: true})
+      // G#5 within ORNAMENT_GAP of F#5's hit, so the ornament is still live
+      // and G#5 is ambiguous at the head rather than its ordinary strike
+      run(matcher, [["on", "F#5", 0], ["on", "G#5", 100]])
+      matcher.judged.length = 0
+
+      let result = matcher.scrollPast(100 + ORNAMENT_GAP - 10)
+      expect(matcher.judged.map(e => e.type)).toEqual(["hit"])
+      expect(matcher.judged[0].hitNotes).toEqual(["G#5"])
+      // timed from its own strike, exactly as the page's tick would resolve
+      // it (resolveByGap), not from the scroll-past's own time
+      expect(matcher.judged[0].latency).toEqual(100)
+      expect(result.notes).toBe(matcher.notes)
+      expect(head(matcher)).toEqual(["C#5"])
+    })
+
+    // tempo off (D4(a)) never calls scrollPast at all, so a key pending as
+    // ambiguous is untouched by any of the above: only a key down or the
+    // page's own tick (never the slider standing on the line) resolves it,
+    // exactly as in wait mode
+    it("leaves a key pending as ambiguous alone when scroll mode's tempo setting is off (D4(a))", function() {
+      let matcher = matcherFor(
+        [ornamented(["F#5"], ["G#5"], ["F#5", "G#5"]), ["G#5"], ["C#5"]],
+        {scroll: true})
+      run(matcher, [["on", "F#5", 0], ["on", "G#5", 100]])
+      matcher.judged.length = 0
+      expect(matcher.pending).not.toEqual({})
+      expect(head(matcher)).toEqual(["G#5"])
+
+      matcher.onLine(100)
+      expect(matcher.judged).toEqual([])
+      expect(matcher.pending).not.toEqual({})
+    })
   })
 
   // T6 of the note detection report, rule 1's held credit: a key the score
