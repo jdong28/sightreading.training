@@ -24,9 +24,15 @@ const LEDGER_EXTENT = 15 // how much ledger line extends before and past the not
 const STAFF_INNER_HEIGHT = LINE_DY*4 + LINE_HEIGHT
 const BAR_WIDTH = 12
 
-// the notes the grand staff's two staves draw between them: the lowest the
-// upper staff can carry, on its first ledger, and the highest the lower one
-// can, just above its lines (see StaffTwo#grandStaffDy)
+// the closest the grand staff's two staves ever draw a column's notes: the
+// room between a treble note and a bass note is the two staves' own distance
+// plus LINE_HALF_DY for every step between the notes, so only their step
+// difference matters, and NoteList#splitForGrandStaff never draws a treble
+// note below a bass one (the keys held down included, see
+// StaffTwo#splitHeldForGrandStaff). One step apart is therefore the worst
+// case, and a gap sized from this pair covers every other (see
+// StaffTwo#grandStaffDy). Tightening them to the lowest and highest pitch
+// each staff actually carries would let the two staves' notes collide
 const GRAND_STAFF_UPPER_LOW = "C4"
 const GRAND_STAFF_LOWER_HIGH = "B3"
 
@@ -1178,8 +1184,9 @@ export class StaffTwo extends React.PureComponent {
       this.flushChanges = false
 
       // re-apply the stored scroll/hitX offset against whatever just
-      // changed (the fit's scale, a staff's margin, the note list): see the
-      // "clef change in scroll mode at rest" pitfall
+      // changed (the fit's scale, a staff's margin, the note list): see
+      // sight_reading_page_spec.js's "keeps the head on the band after a
+      // staff change at rest"
       this.setOffset(this.offset || 0)
     }
   }
