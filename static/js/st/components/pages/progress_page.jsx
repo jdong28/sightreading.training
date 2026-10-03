@@ -59,9 +59,16 @@ export default class ProgressPage extends React.Component {
 
   // recentSessions() alone can miss the session a visit here just ended (its
   // write is still queued) and whatever another tab wrote, so the first
-  // paint above is replaced with a read through the store's write queue
+  // paint above is replaced with a read through the store's write queue; a
+  // read the database refuses leaves that first paint standing
   async loadSessions() {
-    let sessions = await getAppStore().sessionsSince(readSince(this.now))
+    let sessions
+    try {
+      sessions = await getAppStore().sessionsSince(readSince(this.now))
+    } catch (err) {
+      console.error("Couldn't read the practice history", err)
+      return
+    }
     if (this.unmounted) { return }
     this.setState({summary: this.summarize(sessions)})
   }

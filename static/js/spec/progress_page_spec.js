@@ -132,6 +132,21 @@ describe("progress page", function() {
     await waitFor(() => statValue(el, "Evenings kept") == "1", "the just-ended session")
   })
 
+  it("keeps the first paint when the history read fails", async function() {
+    await store.putSession({id: "s", startedAt: Date.now(), notesRead: 4, misses: 0, elapsedSeconds: 60})
+    spyOn(store, "sessionsSince").and.returnValue(Promise.reject(new Error("database closed")))
+    spyOn(console, "error")
+
+    let el = renderProgress()
+    expect(statValue(el, "Evenings kept")).toEqual("1")
+
+    await waitFor(() => console.error.calls.any(), "the failed read to be logged")
+    expect(console.error.calls.mostRecent().args[0]).toContain("practice history")
+    // the cached first paint stands and nothing is thrown at the page
+    expect(statValue(el, "Evenings kept")).toEqual("1")
+    expect(statValue(el, "Notes read")).toEqual("4")
+  })
+
   it("shows 14 missed days, no accuracy, and empty rail copy on an empty store", function() {
     let el = renderProgress()
 
