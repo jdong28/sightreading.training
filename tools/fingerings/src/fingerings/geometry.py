@@ -3,11 +3,14 @@ bar lines, staff mapping (a system showing fewer staves than the score),
 measure alignment and the head-match gate. `run.py` and the `geometry`
 subcommand both build on this, so a piece's geometry is detected exactly
 once either way."""
+import json
 from collections import defaultdict
+from pathlib import Path
 
 import numpy as np
+import pikepdf
 
-from . import align, heads as heads_mod, prep, staves
+from . import align, extract, heads as heads_mod, manifest, prep, score, scoreio, staves
 
 
 def analyze_page(gray, scan_kind="image-1bit"):
@@ -124,5 +127,152 @@ def match_page(pno, heads, measures_geo, by, numbers, min_head_match=0.9):
             check=f"p{pno} system {si} (bars {bar_range[0]}-{bar_range[1]}): noteheads matched",
             ok=False, detail=f"{sys_matched}/{sys_total} noteheads matched: bars misaligned"))
 
+    head_matches = [(h, note is not None) for h, note in pairs if not h.get("small") or note is not None]
+
     return dict(heads=heads, shifts=shifts, matched_ids=matched_rate_ids, n_matched=n_matched, n_total=n_total,
-                rate=rate, clef_shifts=clef_shifts, checks=checks)
+                rate=rate, clef_shifts=clef_shifts, checks=checks, head_matches=head_matches)
+
+
+def _read_score_text(man):
+    if scoreio.is_mxl(man["musicxml_path"]):
+        _root_name, text = scoreio.read_mxl_text(man["musicxml_path"])
+        return text
+    return scoreio.read_text(man["musicxml_path"])
+
+
+def _render_geometry_md(report):
+    lines = [f"# {report['piece']}: geometry", "", "## Checks"]
+    for c in report["checks"]:
+        lines.append(f"{'PASS' if c['ok'] else 'FAIL'} {c['check']} - {c['detail']}")
+    lines.append("")
+    lines.append("## Pages")
+    lines.append("| Page | Scan | Skew | Bars | Space | Heads matched | Rate |")
+    lines.append("|---|---|---|---|---|---|---|")
+    for p in report["pages"]:
+        if p.get("stop"):
+            lines.append(f"| {p['page']} | {p.get('scan_kind', '')} | | | | | STOP: {p['stop']} |")
+            continue
+        bars = "-".join(str(b) for b in p["bars"]) if p.get("bars") else ""
+        lines.append(f"| {p['page']} | {p.get('scan_kind', '')} | {p.get('skew_deg', 0):.2f} | {bars} | "
+                      f"{p.get('staff_space', 0):.1f} | {p.get('heads_matched', '')} | {p.get('rate', 0):.1%} |")
+    lines.append("")
+    return "\n".join(lines) + "\n"
+
+
+_OVERLAY_COLORS = dict(line=(190, 190, 255), bar=(0, 110, 255), matched=(0, 160, 0), unmatched=(220, 0, 0))
+
+
+def _write_overlay(path, gray, G, head_matches):
+    """Draws staff lines, system boxes, bar lines, and heads (matched
+    green, unmatched red) onto the page's scan, for diagnosis."""
+    from PIL import Image, ImageDraw
+    rgb = np.stack([gray] * 3, axis=-1).astype(np.uint8)
+    img = Image.fromarray(rgb).convert("RGB")
+    d = ImageDraw.Draw(img)
+    w = img.width
+    for sys_ in G["systems"]:
+        for st in sys_["staves"]:
+            for y in st["lines"]:
+                d.line([(0, y), (w, y)], fill=_OVERLAY_COLORS["line"], width=1)
+        d.rectangle([0, sys_["top"], w - 1, sys_["bottom"]], outline=_OVERLAY_COLORS["line"], width=1)
+        for b in sys_.get("bars", []):
+            d.line([(b["x"], sys_["top"] - 10), (b["x"], sys_["bottom"] + 10)], fill=_OVERLAY_COLORS["bar"], width=2)
+    for h, matched in head_matches:
+        r = h.get("w", 10) / 2
+        color = _OVERLAY_COLORS["matched"] if matched else _OVERLAY_COLORS["unmatched"]
+        d.ellipse([h["x"] - r, h["y"] - r, h["x"] + r, h["y"] + r], outline=color, width=2)
+    img.save(path)
+
+
+def run_geometry(run_dir, overlays=False):
+    """`fingerings geometry <run dir>`: steps 1-4 on every page, ink or
+    not, with the head-match gate applied to every page (no fingerings
+    needed: the head-match rate checks itself). Writes geometry.json/
+    geometry.md (and geometry/pN.png overlays, with `--overlays`) into
+    the run directory. Returns (report dict, exit code): 0 when every
+    gate passes, 1 otherwise."""
+    run_path = Path(run_dir)
+    man = manifest.load(run_path)
+    text = _read_score_text(man)
+    root = score.load_text(text)
+    rows = score.note_table(root)
+    by = align.xml_by_measure(rows)
+    measure_els = score.measures(root)
+    numbers = score.app_numbers(measure_els)
+    multirest = score.multirest_spans(measure_els)
+    part_counts = score.part_staff_counts(root)
+    score_staff_count = sum(c for _p, c in part_counts)
+    nmeas = len(measure_els)
+
+    first_page, last_page = man["pages"]
+    report = dict(piece=man["piece"], pages=[], checks=[])
+
+    with pikepdf.open(man["pdf_path"]) as pdf:
+        geoms, page_data = [], {}
+        for pno in range(first_page, last_page + 1):
+            L = extract.page_layers(pdf, pno - 1, render_scale=man["render_scale"])
+            G, hs, space, prep_meta = analyze_page(L["scan"]["gray"], scan_kind=L["scan"]["kind"])
+            for h in hs:
+                h["page"] = pno
+            geoms.append((pno, G))
+            page_data[pno] = dict(L=L, hs=hs, space=space, prep_meta=prep_meta)
+
+        measures_geo, total = align.page_measures(geoms, multirest=multirest)
+        gate = total == nmeas
+        n_spans = len(multirest)
+        if n_spans:
+            expected_printed = align.expected_printed_count(nmeas, multirest)
+            detail = (f"{len(measures_geo)} on pages {first_page}-{last_page}, {expected_printed} printed "
+                      f"({nmeas} measures, {n_spans} multi-bar rests)")
+        else:
+            detail = f"{total} on pages {first_page}-{last_page}, {nmeas} in the MusicXML"
+        report["checks"].append(dict(check="bar lines: the pages' measures add up to the MusicXML's",
+                                      ok=gate, detail=detail))
+
+        if overlays:
+            (run_path / "geometry").mkdir(exist_ok=True)
+
+        for pno, G in geoms:
+            data = page_data[pno]
+            prep_meta = data["prep_meta"]
+            page_stat = dict(page=pno, scan_kind=prep_meta["scan_kind"], threshold=prep_meta["threshold"],
+                              skew_deg=prep_meta["skew_deg"],
+                              size=[int(data["L"]["scan"]["w"]), int(data["L"]["scan"]["h"])])
+            if prep_meta["stop"]:
+                page_stat["stop"] = prep_meta["stop"]
+                report["checks"].append(dict(check=f"p{pno}: scan geometry", ok=False,
+                                              detail=f"p{pno}: {prep_meta['stop']}"))
+                report["pages"].append(page_stat)
+                continue
+
+            hs = data["hs"]
+            hs, stop_reason = apply_staff_mapping(pno, G, hs, measures_geo, by, score_staff_count)
+            if stop_reason:
+                page_stat["stop"] = stop_reason
+                report["checks"].append(dict(check=f"p{pno}: staff mapping", ok=False, detail=stop_reason))
+                report["pages"].append(page_stat)
+                continue
+
+            result = match_page(pno, hs, measures_geo, by, numbers, man["min_head_match"])
+            page_mindices = [m["mindex"] for m in measures_geo if m["page"] == pno]
+            page_stat["bars"] = [numbers[page_mindices[0]], numbers[page_mindices[-1]]] if page_mindices else None
+            page_stat["staff_space"] = round(data["space"], 1)
+            page_stat["systems"] = [dict(staves=len(sys_["staves"]), bars=len(sys_.get("bars", [])))
+                                     for sys_ in G["systems"]]
+            page_stat["heads_found"] = len(result["heads"])
+            page_stat["heads_matched"] = f"{result['n_matched']}/{result['n_total']}"
+            page_stat["rate"] = round(result["rate"], 4)
+            page_stat["clef_shifts"] = result["clef_shifts"]
+            report["pages"].append(page_stat)
+            report["checks"] += result["checks"]
+
+            if overlays:
+                _write_overlay(run_path / "geometry" / f"p{pno}.png", data["L"]["scan"]["gray"], G,
+                                result["head_matches"])
+
+    report["ok"] = all(c["ok"] for c in report["checks"])
+    (run_path / "geometry.json").write_text(json.dumps(report, indent=1, default=str) + "\n")
+    (run_path / "geometry.md").write_text(_render_geometry_md(report))
+    for c in report["checks"]:
+        print("PASS" if c["ok"] else "FAIL", c["check"], "-", c["detail"])
+    return report, (0 if report["ok"] else 1)

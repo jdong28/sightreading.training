@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 from . import batch as batch_mod
+from . import geometry as geometry_mod
 from . import layer, manifest, score, scoreio
 from . import run as run_mod
 
@@ -12,6 +13,15 @@ from . import run as run_mod
 def _cmd_run(args):
     try:
         report, code = run_mod.run(args.run_dir)
+    except (manifest.ManifestError, ValueError) as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+    return code
+
+
+def _cmd_geometry(args):
+    try:
+        report, code = geometry_mod.run_geometry(args.run_dir, overlays=args.overlays)
     except (manifest.ManifestError, ValueError) as e:
         print(f"error: {e}", file=sys.stderr)
         return 1
@@ -51,6 +61,11 @@ def build_parser():
     p_run = sub.add_parser("run", help="run one piece end to end")
     p_run.add_argument("run_dir")
     p_run.set_defaults(func=_cmd_run)
+
+    p_geom = sub.add_parser("geometry", help="check a piece's geometry (staves, bars, heads) on every page")
+    p_geom.add_argument("run_dir")
+    p_geom.add_argument("--overlays", action="store_true", help="also write geometry/pN.png diagnostic overlays")
+    p_geom.set_defaults(func=_cmd_geometry)
 
     p_batch = sub.add_parser("batch", help="run every piece in a batch directory")
     p_batch.add_argument("batch_dir")
