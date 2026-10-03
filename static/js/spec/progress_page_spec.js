@@ -14,6 +14,13 @@ import {openTestStore} from "spec/helpers"
 
 const HOUR = 60 * 60 * 1000
 
+// the clock every spec here runs on, a fixed local evening: the page reads
+// Date.now() itself at mount, so without pinning it a session seeded at a
+// time of its 4am day (st/srs/schedule) can fall after the real now and
+// drop out of the window for the hours before it. It goes on once the test
+// store is open, which never settles under a mocked clock
+const PINNED_NOW = new Date(2026, 8, 14, 20)
+
 // the real timer: a wait still runs even where a spec mocks the clock
 const realSetTimeout = window.setTimeout.bind(window)
 
@@ -31,6 +38,8 @@ describe("progress page", function() {
   beforeEach(async function() {
     store = await openTestStore()
     appStore = setAppStore(store)
+    jasmine.clock().install()
+    jasmine.clock().mockDate(PINNED_NOW)
   })
 
   afterEach(async function() {
@@ -41,6 +50,7 @@ describe("progress page", function() {
     }
     setAppStore(appStore)
     await store.close()
+    jasmine.clock().uninstall()
   })
 
   let renderProgress = () => {
