@@ -16,12 +16,12 @@ import {parseMusicXML} from "st/musicxml"
 import {
   GENERATORS, SHEET_MUSIC_STORAGE_KEY, BOTH_HANDS, RIGHT_HAND, WHOLE_SECTION, FREE_PRACTICE
 } from "st/data"
+import {SCROLL_WAIT} from "st/score_render/card_scroll"
 import {PlanGenerator} from "st/plan_cards"
 import {SITTING_GAP_MS} from "st/srs/planner"
 import {AGAIN, HARD, GOOD, EASY} from "st/srs/grade"
 import {IN_ORDER, RANDOM_ORDER, MeasureCardGenerator} from "st/measure_cards"
 import {DRILL_STORAGE_KEY, SCORE_DRILL_STORAGE_KEY} from "st/generators"
-import {SCROLL_WAIT} from "st/score_render/card_scroll"
 import {DEV_METRICS_KEY} from "st/dev_metrics"
 import {SELF_GRADE_DWELL_MS} from "st/srs/self_grade"
 import {scopeEvent} from "st/events"
