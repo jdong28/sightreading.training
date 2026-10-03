@@ -12,7 +12,7 @@ import classNames from "classnames"
 import {Plate, Pill} from "st/components/salon"
 import {BarStrip} from "st/components/bar_strip"
 import {ScoreCard} from "st/components/score_card"
-import {romanNumeral} from "st/components/pages/sight_reading_page"
+import {romanNumeral} from "st/music"
 import {measureNumberList, measureNumberRange} from "st/song_sections"
 import {sheetMusicPiece, passageSettings} from "st/data"
 import {pieceSong, ensureAnnotation} from "st/sheet_music_deck"
@@ -83,6 +83,9 @@ export class PassagesPlate extends React.Component {
     this.observeWidth()
   }
 
+  // the column is only in the tree once the piece's annotation has loaded
+  // (render returns null until then), so its width is measured whenever it
+  // first appears, not only at mount
   componentDidUpdate(prevProps) {
     let piece = sheetMusicPiece(this.props.settings)
     let prevPiece = sheetMusicPiece(prevProps.settings)
@@ -90,6 +93,8 @@ export class PassagesPlate extends React.Component {
       this.setState({selectedId: null})
       this.ensure()
     }
+
+    this.observeWidth()
   }
 
   componentWillUnmount() {
@@ -114,7 +119,9 @@ export class PassagesPlate extends React.Component {
 
   observeWidth() {
     let el = this.columnRef.current
-    if (!el) { return }
+    if (!el || el == this.observedEl) { return }
+
+    this.observedEl = el
 
     // measured once synchronously too: a ResizeObserver's first callback can
     // lag in a backgrounded tab, and the score plate needs a width to draw to
@@ -122,6 +129,8 @@ export class PassagesPlate extends React.Component {
     if (initial) { this.setState({width: initial}) }
 
     if (typeof ResizeObserver == "undefined") { return }
+
+    if (this.resizeObserver) { this.resizeObserver.disconnect() }
 
     this.resizeObserver = new ResizeObserver(entries => {
       let width = entries[0] && entries[0].contentRect.width

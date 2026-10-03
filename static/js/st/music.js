@@ -170,6 +170,19 @@ export function displayNoteName(note) {
   return String(note).replace("#", "♯").replace(/^([A-G])b/, "$1♭")
 }
 
+// eg. 4 -> "IV", for numbering the passages of a piece and the sessions of
+// an evening
+export function romanNumeral(n) {
+  let out = ""
+  for (let [value, numeral] of [[10, "X"], [9, "IX"], [5, "V"], [4, "IV"], [1, "I"]]) {
+    while (n >= value) {
+      out += numeral
+      n -= value
+    }
+  }
+  return out
+}
+
 // the staff row of a note, counting letter steps up from C in the pitch's
 // octave 0 (so rows don't depend on the octave numbering of names)
 export function noteStaffOffset(note) {

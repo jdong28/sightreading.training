@@ -7,7 +7,7 @@ import * as React from "react"
 import * as types from "prop-types"
 import classNames from "classnames"
 
-import {romanNumeral} from "st/components/pages/sight_reading_page"
+import {romanNumeral} from "st/music"
 import {LEVEL_WORDS} from "st/difficulty/index"
 
 import styles from "./bar_strip.module.css"

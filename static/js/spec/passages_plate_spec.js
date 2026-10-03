@@ -12,18 +12,36 @@ import {SCORE_DRILL_STORAGE_KEY} from "st/generators"
 
 import {openTestStore, pianoScore} from "spec/helpers"
 
-// a piece with a dense run of sixteenths at bars 9-11, long enough for
-// st/difficulty to flag passages
-function workhorseScore({barCount=16}={}) {
-  let quiet = {upper: ["C4", "D4", "E4", "F4"], lower: ["C3", "D3", "E3", "F3"]}
-  let dense = {
-    upper: ["C4", "D4", "E4", "F4", "G4", "F4", "E4", "D4", "C4", "D4", "E4", "F4", "G4", "F4", "E4", "D4"],
-    lower: ["C3", "D3", "E3", "F3", "G3", "F3", "E3", "D3", "C3", "D3", "E3", "F3", "G3", "F3", "E3", "D3"],
+const QUIET = {upper: ["C4", "D4", "E4", "F4"], lower: ["C3", "D3", "E3", "F3"]}
+
+const DENSE = {
+  upper: ["C4", "D4", "E4", "F4", "G4", "F4", "E4", "D4", "C4", "D4", "E4", "F4", "G4", "F4", "E4", "D4"],
+  lower: ["C3", "D3", "E3", "F3", "G3", "F3", "E3", "D3", "C3", "D3", "E3", "F3", "G3", "F3", "E3", "D3"],
+}
+
+// a second dense run that is no repeat of DENSE, so the two are flagged as
+// two passages rather than merged (st/difficulty decision 7)
+const DENSE_HIGH = {
+  upper: ["G5", "F5", "E5", "D5", "C5", "D5", "E5", "F5", "G5", "F5", "E5", "D5", "C5", "D5", "E5", "F5"],
+  lower: ["G3", "F3", "E3", "D3", "C3", "D3", "E3", "F3", "G3", "F3", "E3", "D3", "C3", "D3", "E3", "F3"],
+}
+
+function sixteenths(hand) {
+  return {
+    upper: hand.upper.map(name => ({name, duration: 0.25, type: "16th"})),
+    lower: hand.lower.map(name => ({name, duration: 0.25, type: "16th"})),
   }
-  let bars = Array.from({length: barCount}, (_, i) => i >= 8 && i <= 10 ?
-    {upper: dense.upper.map(name => ({name, duration: 0.25, type: "16th"})),
-      lower: dense.lower.map(name => ({name, duration: 0.25, type: "16th"}))} :
-    {upper: quiet.upper.map(name => ({name})), lower: quiet.lower.map(name => ({name}))})
+}
+
+// a piece with a dense run of sixteenths at bars 9-11 (and optionally a
+// second, different one), long enough for st/difficulty to flag passages
+function workhorseScore({barCount=16, denseAt=[9, 10, 11], alsoDenseAt=[]}={}) {
+  let bars = Array.from({length: barCount}, (_, i) => {
+    let number = i + 1
+    if (denseAt.includes(number)) { return sixteenths(DENSE) }
+    if (alsoDenseAt.includes(number)) { return sixteenths(DENSE_HIGH) }
+    return {upper: QUIET.upper.map(name => ({name})), lower: QUIET.lower.map(name => ({name}))}
+  })
   return pianoScore({title: "Workhorse", bars})
 }
 
@@ -113,20 +131,33 @@ describe("the passages view (st/difficulty)", function() {
   })
 
   it("selects a passage from a bracket or a list row", async function() {
-    await drillPiece(workhorseScore())
+    await drillPiece(workhorseScore({barCount: 24, denseAt: [5, 6, 7], alsoDenseAt: [17, 18, 19]}))
     renderScorePage()
     await waitFor(() => plate(), {message: "the passages plate"})
 
+    // the bars the detail plate is showing, and the bars a bracket names
+    let shownBars = () => plate().querySelector("h3").textContent
+    let bracketBars = el => {
+      let [, start, end] = el.getAttribute("aria-label").match(/bars? (\d+)(?:–(\d+))?/)
+      return `Bars ${start}–${end || start}`
+    }
+
     let brackets = [...plate().querySelectorAll("button[aria-label^='Passage']")]
-    expect(brackets.length).toBeGreaterThan(0)
+    expect(brackets.length).toBeGreaterThan(1)
+
+    let bracket = brackets.find(b => bracketBars(b) != shownBars())
+    expect(bracket).toBeTruthy()
+    let wanted = bracketBars(bracket)
+    flushSync(() => bracket.dispatchEvent(new MouseEvent("click", {bubbles: true})))
+    expect(shownBars()).toEqual(wanted)
 
     let rows = [...plate().querySelectorAll("li button")].filter(b => /–/.test(b.textContent))
-    expect(rows.length).toBeGreaterThan(0)
+    expect(rows.length).toBeGreaterThan(1)
     let other = rows.find(b => !b.closest("li").className.includes("on"))
-    if (other) {
-      flushSync(() => other.dispatchEvent(new MouseEvent("click", {bubbles: true})))
-      expect(other.closest("li").className).toContain("on")
-    }
+    expect(other).toBeTruthy()
+    flushSync(() => other.dispatchEvent(new MouseEvent("click", {bubbles: true})))
+    expect(other.closest("li").className).toContain("on")
+    expect(shownBars()).toContain(other.textContent.match(/(\d+)–(\d+)/)[0])
   })
 
   it("practises exactly the selected passage's bars as one card", async function() {
@@ -160,6 +191,12 @@ describe("the passages view (st/difficulty)", function() {
     }))
     renderScorePage()
     await waitFor(() => plate(), {message: "the passages plate, once analysed on open"})
+
+    // the column only enters the tree once the annotation has loaded, so its
+    // width is measured then: without it the score plate never draws and the
+    // detail and list plates never sit side by side
+    await waitFor(() => plate().querySelector("[class*=\"side_by_side\"]"),
+      {message: "the plate column to be measured"})
   })
 
   it("shows nothing for a piece without passages", async function() {

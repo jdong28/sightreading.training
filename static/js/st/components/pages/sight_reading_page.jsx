@@ -15,7 +15,7 @@ import styles from "./sight_reading_page.module.css"
 import staffStyles from "st/components/staff.module.css"
 import devMetricsStyles from "st/components/sight_reading/dev_metrics_panel.module.css"
 
-import {noteName, parseNote, displayNoteName} from "st/music"
+import {noteName, parseNote, displayNoteName, romanNumeral} from "st/music"
 import {
   STAVES, GENERATORS, sheetMusicPiece, handTracks, handSetting, drilledRange, sectionDroppedPitches, RIGHT_HAND, LEFT_HAND,
 } from "st/data"
@@ -101,17 +101,6 @@ export function formatElapsed(seconds) {
 export function accuracyPercent(hits, misses) {
   if (!hits && !misses) { return null }
   return Math.round(hits / (hits + misses) * 100)
-}
-
-export function romanNumeral(n) {
-  let out = ""
-  for (let [value, numeral] of [[10, "X"], [9, "IX"], [5, "V"], [4, "IV"], [1, "I"]]) {
-    while (n >= value) {
-      out += numeral
-      n -= value
-    }
-  }
-  return out
 }
 
 function measuresLabel(start, end) {
