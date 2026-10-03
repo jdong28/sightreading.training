@@ -28,10 +28,11 @@ export const MAX_PIECES = 300
 // its trill, turn or mordent, see addOrnaments in st/musicxml), which the
 // drill allows as extras. Pieces stored as 1 or 2 are read as they are, with
 // no ornaments allowed until the score is imported again
-// 4: a trill line gives the trill's neighbours to every note of the marked
-// note's voice and staff it runs over (see st/musicxml), not just the note
-// carrying the mark. Pieces stored as 1 to 3 are read as they are, a trill
-// line trilling only that note until the score is imported again
+// 4: a trill line trills every note of the marked note's voice and staff it
+// runs over, each allowing its own upper neighbour (see trillLines in
+// st/musicxml), not just the note carrying the mark. Pieces stored as 1 to 3
+// are read as they are, a trill line trilling only that note until the score
+// is imported again
 const SONG_FORMAT = 4
 
 // metadata copied into a stored piece, see parseMusicXML
