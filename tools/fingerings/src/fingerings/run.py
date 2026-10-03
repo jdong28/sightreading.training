@@ -108,14 +108,15 @@ def run(run_dir):
             nmeas = len(measure_els)
 
         measures_geo, total = align.page_measures(geoms, first_index=first_index, multirest=multirest)
-        gate = total == nmeas
+        covered = total - first_index  # measure elements actually walked, independent of first_index's offset
+        gate = covered == nmeas
         n_spans = sum(1 for idx in multirest if first_index <= idx < first_index + nmeas)
         if n_spans:
             expected_printed = align.expected_printed_count(nmeas, multirest, first_index)
             detail = (f"{len(measures_geo)} on pages {first_page}-{last_page}, {expected_printed} printed "
                       f"({nmeas} measures, {n_spans} multi-bar rests)")
         else:
-            detail = f"{total} on pages {first_page}-{last_page}, {nmeas} in the MusicXML"
+            detail = f"{covered} on pages {first_page}-{last_page}, {nmeas} in the MusicXML"
         report["checks"].append(_check("bar lines: the pages' measures add up to the MusicXML's", gate, detail))
         if not gate:
             return _finish(run_path, report, t0)

@@ -161,6 +161,21 @@ def test_bar_gate(tmp_path):
     assert not (run_dir / "layer.json").exists()
 
 
+def test_bar_gate_measures_offset(tmp_path):
+    """The manifest's `measures` range can start after a nonzero app bar
+    number (a PDF excerpt beginning partway through the piece, or here,
+    just page 2 on its own): the bar-count gate must compare the measure
+    elements actually covered, not the raw walked index, which carries
+    the first one's offset."""
+    run_dir = make_run_dir(tmp_path, manifest_overrides={"pages": [2, 2], "measures": [9, 16]})
+    p = _run(run_dir)
+    assert p.returncode == 0, p.stdout + p.stderr
+    report = json.loads((run_dir / "report.json").read_text())
+    gate = next(c for c in report["checks"] if c["check"].startswith("bar lines"))
+    assert gate["ok"]
+    assert gate["detail"] == "8 on pages 2-2, 8 in the MusicXML"
+
+
 def test_missing_readings(tmp_path):
     run_dir = make_run_dir(tmp_path, readings=False)
     p = _run(run_dir)

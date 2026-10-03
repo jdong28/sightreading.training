@@ -202,10 +202,24 @@ def run_geometry(run_dir, overlays=False):
     multirest = score.multirest_spans(measure_els)
     part_counts = score.part_staff_counts(root)
     score_staff_count = sum(c for _p, c in part_counts)
-    nmeas = len(measure_els)
 
     first_page, last_page = man["pages"]
     report = dict(piece=man["piece"], pages=[], checks=[])
+
+    if man["measures"]:
+        want_from, want_to = man["measures"]
+        first_index = next((i for i, n in enumerate(numbers) if n == want_from), None)
+        if first_index is None:
+            report["checks"].append(dict(check="bar lines: the pages' measures add up to the MusicXML's",
+                                          ok=False, detail=f"bar {want_from} (manifest measures) not found"))
+            report["ok"] = False
+            (run_path / "geometry.json").write_text(json.dumps(report, indent=1, default=str) + "\n")
+            (run_path / "geometry.md").write_text(_render_geometry_md(report))
+            return report, 1
+        nmeas = sum(1 for n in numbers if want_from <= n <= want_to)
+    else:
+        first_index = 0
+        nmeas = len(measure_els)
 
     with pikepdf.open(man["pdf_path"]) as pdf:
         geoms, page_data = [], {}
@@ -217,15 +231,16 @@ def run_geometry(run_dir, overlays=False):
             geoms.append((pno, G))
             page_data[pno] = dict(L=L, hs=hs, space=space, prep_meta=prep_meta)
 
-        measures_geo, total = align.page_measures(geoms, multirest=multirest)
-        gate = total == nmeas
-        n_spans = len(multirest)
+        measures_geo, total = align.page_measures(geoms, first_index=first_index, multirest=multirest)
+        covered = total - first_index
+        gate = covered == nmeas
+        n_spans = sum(1 for idx in multirest if first_index <= idx < first_index + nmeas)
         if n_spans:
-            expected_printed = align.expected_printed_count(nmeas, multirest)
+            expected_printed = align.expected_printed_count(nmeas, multirest, first_index)
             detail = (f"{len(measures_geo)} on pages {first_page}-{last_page}, {expected_printed} printed "
                       f"({nmeas} measures, {n_spans} multi-bar rests)")
         else:
-            detail = f"{total} on pages {first_page}-{last_page}, {nmeas} in the MusicXML"
+            detail = f"{covered} on pages {first_page}-{last_page}, {nmeas} in the MusicXML"
         report["checks"].append(dict(check="bar lines: the pages' measures add up to the MusicXML's",
                                       ok=gate, detail=detail))
 
