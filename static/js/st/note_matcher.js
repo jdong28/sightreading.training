@@ -72,12 +72,13 @@
 // slip; anything else (a key outside it, the gap elapsing, the page's tick)
 // means it was the real strike, judged at its own timeStamp. A key pending
 // for the head completes it as if struck then, and is dropped as part of an
-// ornament only for one carried in from the column before (T), never for one
-// the head itself writes, which runs from the head's own note; one pending
-// for the next column, ambiguous because it is also the next column's own
-// key, is credited early (T5) once resolved, excused rather than a slip when
-// it goes stale instead. A column's own key is only ever ambiguous this way
-// while a grace note only ever excuses, never holding a melody note back.
+// ornament only for one still rolling from an earlier column (T), never for
+// one the head's own trill, turn or mordent sounds (its trailing), which runs
+// from the head's own note; one pending for the next column, ambiguous
+// because it is also the next column's own key, is credited early (T5) once
+// resolved, excused rather than a slip when it goes stale instead. A column's
+// own key is only ever ambiguous this way while a grace note only ever
+// excuses, never holding a melody note back.
 //
 // Each hit also measures the column for the grade (rule 8 of the report):
 // its latency, from the moment it became the head to the first of its own
@@ -391,22 +392,15 @@ export default class NoteMatcher {
     return !!list && list.some(n => this.notes.sameNote(note, n, this.anyOctave))
   }
 
-  // whether note is one of the ornament pitches the head column writes
-  // itself: its own allowed and trailing (column.allowed, column.trailing),
-  // as against one carried into it from the column before (T, this.trailing)
-  inHeadOrnament(note) {
-    let column = this.notes.currentColumn()
-    return this.inSet(column.allowed, note) || this.inSet(column.trailing, note)
-  }
-
-  // whether note is one of the ornament pitches in play over the head: the
-  // head's own and the carried trailing set T. Used only to tell an ornament
-  // going on from a real strike at settlePending; classifyOrnamentKey's own
-  // sets are narrower (a column's own key, trailing only at its own column,
-  // never makes it an ornament key here, since it is already handled by
-  // headAmbiguous there)
+  // whether note is one of the ornament pitches in play over the head: its
+  // own allowed and trailing (column.allowed, column.trailing) and the
+  // carried trailing set T. Used only to tell an ornament going on from a
+  // real strike at settlePending; classifyOrnamentKey's own sets are narrower
+  // (a column's own key, trailing only at its own column, never makes it an
+  // ornament key here, since it is already handled by headAmbiguous there)
   inOrnamentPlay(note) {
-    return this.inHeadOrnament(note) || this.inSet(this.trailing, note)
+    let column = this.notes.currentColumn()
+    return this.inSet(column.allowed, note) || this.inSet(column.trailing, note) || this.inSet(this.trailing, note)
   }
 
   // A key pending from an earlier press (see noteOn) is settled against note,
@@ -415,17 +409,19 @@ export default class NoteMatcher {
   // going on, dropped with no strike and no slip; otherwise it was the real
   // strike, judged (or credited) at its own timeStamp, before this key's.
   //
-  // A key pending for the head is required there, so it is only ever dropped
-  // to an ornament carried in from the column before (T alone): an ornament
-  // the head itself writes runs from the head's own note, which the pending
-  // key was, so that key is the real strike and the ornament goes on after it
+  // A key pending for the head is required there, so what settles it has to
+  // be an ornament still rolling from an earlier column (T): one the head's
+  // own trill, turn or mordent sounds (its trailing) runs from the head's own
+  // note, which the pending key was, so that key is the real strike. The
+  // head's allowed decides nothing, since a grace leading into the head comes
+  // before its note rather than out of it
   settlePending(note, timeStamp) {
     let pending = this.pending
     if (!pending) { return }
 
     let withinGap = timeStamp != null && timeStamp - pending.at <= ORNAMENT_GAP
     let ornamentOn = pending.target == "head"
-      ? !this.inHeadOrnament(note) && this.inSet(this.trailing, note)
+      ? !this.inSet(this.notes.currentColumn().trailing, note) && this.inSet(this.trailing, note)
       : this.inOrnamentPlay(note)
     if (withinGap && ornamentOn) {
       this.pending = null

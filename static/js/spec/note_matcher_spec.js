@@ -451,6 +451,23 @@ describe("note matcher", function() {
       ]))).toEqual(["hit G#5", "hit F#5", "hit G#5", "hit C#5"])
     })
 
+    // the same case timed, which the hit sequence alone doesn't tell apart:
+    // bar 6's G#5 is the head while the trill runs on, and the grace notes
+    // into it are the trill's own pitches, so a G#5 pending there is the trill
+    // going on. Striking it on one of them would complete bar 6 mid-trill and
+    // lose the wait the grade reads as a hesitation (1890 ms, from the trill's
+    // column completing at 2110 to the real G#5 at 4000)
+    it("times the Nocturne's bar 6 from its own press, not from the trill pending at it", function() {
+      let matcher = matcherFor(nocturneRight(1, 2))
+      run(matcher, pressed([
+        ...trilled(),
+        [3870, 3925, "E5"], [3935, 3990, "F#5"], [4000, 5985, "G#5"], [6000, 8030, "C#5"],
+      ]))
+
+      expect(matcher.judged.filter(event => event.type == "hit").map(event => event.latency))
+        .toEqual([0, 2110, 1890, 2000])
+    })
+
     // case 1 on a looping card of bar 5: the trill's notes are the card's own,
     // so judged against the head they played lap after lap from one trill
     it("plays a looping card ending on the Nocturne's trill a lap at a time", function() {
