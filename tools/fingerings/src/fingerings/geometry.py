@@ -243,6 +243,12 @@ def run_geometry(run_dir, overlays=False):
             detail = f"{covered} on pages {first_page}-{last_page}, {nmeas} in the MusicXML"
         report["checks"].append(dict(check="bar lines: the pages' measures add up to the MusicXML's",
                                       ok=gate, detail=detail))
+        # a page can still be worth diagnosing when the overall bar count
+        # is wrong (geometry runs on every page regardless), but an
+        # over-detected system's mindex can run past the piece's own
+        # measure count; drop those before matching so a wrong count
+        # fails the gate cleanly instead of crashing
+        measures_geo = [m for m in measures_geo if m["mindex"] < len(numbers)]
 
         if overlays:
             (run_path / "geometry").mkdir(exist_ok=True)
