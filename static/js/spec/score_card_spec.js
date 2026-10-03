@@ -1181,37 +1181,123 @@ describe("score page engine card", function() {
     expect(graded.length).toEqual(1)
   })
 
-  it("returns a failing bar hands together when the drill scrolls", async function() {
+  it("draws a failing bar's hand alone as its own one-bar system when the drill scrolls", async function() {
+    window.localStorage.setItem(SCORE_DRILL_STORAGE_KEY, JSON.stringify({mode: "scroll"}))
     let {piece, generator} = await scaffoldedPiece()
+    await systemDrawn()
+    // scaffoldedPiece's own forceUpdate only starts the hand system's engine
+    // draw; wait for it to finish before reading the card it drew
+    await waitFor(() => page.staff.cardJoin && page.staff.props.toMeasure == 1,
+      {message: "the hand-alone system drawn"})
+
     expect(page.currentCard().card.hand).toEqual("lower")
+    expect(generator.statusLine()).toEqual("Once more · bar 1 · left hand")
 
-    flushSync(() => page.setMode("scroll"))
-    await cardDrawn()
+    let engineCard = page.engineCard()
+    expect(engineCard).toEqual(jasmine.objectContaining({system: true, fromMeasure: 1, toMeasure: 1}))
+    expect(engineCard.staves).not.toBe(null)
 
-    // the hand scaffold is offered in wait mode alone, so the bar comes
-    // back hands together and both staves are asked for again
-    expect(page.currentCard().card.hand).toBeUndefined()
-    expect(generator.statusLine()).toEqual("Once more · bar 1")
-    expect([...page.state.notes.currentColumn()]).toEqual(["C3", "E5"])
-    expect(page.engineCard().staves).toBe(null)
+    expect(page.staff.result.notes.map(note => note.pitch).sort((a, b) => a - b))
+      .toEqual(leftNotes.map(step => parseNote(`${step}3`)).sort((a, b) => a - b))
+    expect(page.staff.cardJoin.unmatched).toEqual([])
 
-    // the whole section on one line, as the slider moves along for any card
-    let system = await drawnAgain()
-    let distinct = pitches => [...new Set(pitches)].sort((a, b) => a - b)
-    expect(distinct(system.result.notes.map(note => note.pitch))).toEqual(distinct([
-      ...leftNotes.map(step => parseNote(`${step}3`)),
-      ...rightNotes.map(step => parseNote(`${step}5`)),
-    ]))
+    await settle()
+    expect(Math.abs(headFromLine())).toBeLessThan(1)
 
-    // played hands together, the pass is written to the bar's own item and
-    // nothing more is written to the hand's
-    leftNotes.forEach((step, idx) => play([`${step}3`, `${rightNotes[idx]}5`]))
+    // each left note in turn, the head settling onto the line every time,
+    // including the hands-together card the bar's last note hands back to
+    for (let step of leftNotes) {
+      play([`${step}3`])
+      await settle()
+      expect(Math.abs(headFromLine())).toBeLessThan(1)
+    }
+
     await generator.finishing
     flushSync(() => page.forceUpdate())
 
     let reviews = await store.reviews({pieceId: piece.id})
-    expect(reviews.filter(review => review.itemId == `${piece.id}:lower:1-1`)).toEqual([])
-    expect(reviews.filter(review => review.itemId == `${piece.id}:both:1-1`).length).toEqual(2)
+    expect(reviews.find(review => review.itemId == `${piece.id}:lower:1-1`))
+      .toEqual(jasmine.objectContaining({mode: "scroll", misses: 0}))
+
+    // hands together again, on the section system
+    expect(page.currentCard().card.hand).toBeUndefined()
+    expect(page.engineCard()).toEqual(jasmine.objectContaining({fromMeasure: 1, toMeasure: 2, staves: null}))
+  })
+
+  it("comes back to the section's system without drawing it again", async function() {
+    window.localStorage.setItem(SCORE_DRILL_STORAGE_KEY, JSON.stringify({mode: "scroll"}))
+    let renders = 0
+    let loadEngines = async () => {
+      let bundle = await loadScoreEngines()
+      let osmd = bundle.ENGINES.osmd
+      return {...bundle, ENGINES: {...bundle.ENGINES, osmd: {...osmd, renderSystem: async opts => {
+        renders++
+        return osmd.renderSystem(opts)
+      }}}}
+    }
+
+    // the section drawn once, then the left-hand system once the bar fails:
+    // the engine has drawn two systems before any note of the hand card plays.
+    // scaffoldedPiece's own forceUpdate only starts that second draw, so wait
+    // for it to finish before counting
+    let {piece, generator} = await scaffoldedPiece(undefined, {loadEngines})
+    await waitFor(() => renders == 2, {message: "the hand-alone system drawn"})
+    expect(page.currentCard().card.hand).toEqual("lower")
+
+    for (let step of leftNotes) {
+      play([`${step}3`])
+      await settle()
+    }
+    await generator.finishing
+    flushSync(() => page.forceUpdate())
+
+    // back on the section without a third render: it is re-joined from the
+    // kept drawing, not drawn again, and comes back with none of the stale
+    // missed marks it carried when the hand-alone card took its place
+    expect(page.currentCard().card.hand).toBeUndefined()
+    expect(renders).toEqual(2)
+    // the section's drawing is on the plate at once, with both staves of it:
+    // a draw of its own would have left result null until the engine answered
+    expect(page.staff.result).toBeTruthy()
+    expect(page.staff.result.notes.some(note => note.staff == 1)).toBe(true)
+    expect(marked(MARK_CLASSES.missed)).toEqual([])
+
+    let current = marked(MARK_CLASSES.current)
+    expect(current.length).toBeGreaterThan(0)
+  })
+
+  it("judges only the hand alone on its system", async function() {
+    window.localStorage.setItem(SCORE_DRILL_STORAGE_KEY, JSON.stringify({mode: "scroll"}))
+    let {generator} = await scaffoldedPiece()
+    await systemDrawn()
+    await settle()
+
+    let misses = page.state.stats.misses
+    play(["E5"])
+    expect(page.state.stats.misses).toEqual(misses + 1)
+    expect([...page.state.notes.currentColumn()]).toEqual(["C3"])
+  })
+
+  it("keeps a hand-alone card through a switch of modes", async function() {
+    let {piece, generator} = await scaffoldedPiece()
+    expect(page.currentCard().card.hand).toEqual("lower")
+
+    play([leftNotes[0] + "3"])
+    flushSync(() => page.setMode("scroll"))
+    await cardDrawn()
+    flushSync(() => page.setMode("wait"))
+    await cardDrawn()
+
+    expect(page.currentCard().card.hand).toEqual("lower")
+    leftNotes.slice(1).forEach(step => play([`${step}3`]))
+    await generator.finishing
+    flushSync(() => page.forceUpdate())
+
+    // the card never left, so the pass it was collecting didn't either: one
+    // grade for the whole pass, not a graded review per mode it was seen in
+    let graded = (await store.reviews({pieceId: piece.id}))
+      .filter(review => review.itemId == `${piece.id}:lower:1-1` && review.grade)
+    expect(graded.length).toEqual(1)
   })
 
   for (let [shape, xml] of Object.entries(SCORE_SHAPES)) {
@@ -1275,5 +1361,289 @@ describe("score page engine card", function() {
 
   it("is the score page's own programme", function() {
     expect(SCORE_PROGRAMME.engine).toEqual("osmd")
+  })
+})
+
+describe("ScoreCard", function() {
+  let container, root, card
+
+  afterEach(function() {
+    if (root) {
+      flushSync(() => root.unmount())
+      root = null
+    }
+    if (container) {
+      container.remove()
+      container = null
+    }
+    card = null
+  })
+
+  let mountCard = props => {
+    container = document.createElement("div")
+    document.body.appendChild(container)
+    root = createRoot(container)
+    flushSync(() => root.render(React.createElement(ScoreCard, {ref: c => { card = c }, ...props})))
+  }
+
+  let rerenderCard = props => {
+    flushSync(() => root.render(React.createElement(ScoreCard, {ref: c => { card = c }, ...props})))
+  }
+
+  let columnsOf = names => names.map((name, idx) => column([name], idx))
+
+  it("re-attaches a system it drew before rather than drawing it again", async function() {
+    let renders = 0
+    let notesFor = {"1-4": ["C4", "D4", "E4", "F4"], "2-2": ["G4"]}
+    let loadEngines = () => Promise.resolve({ENGINES: {osmd: {
+      renderSystem: async ({fromMeasure, toMeasure}) => {
+        renders++
+        let svg = document.createElementNS(SVG_NS, "svg")
+        let notes = notesFor[`${fromMeasure}-${toMeasure}`].map((name, idx) => {
+          let note = drawn(parseNote(name), idx)
+          svg.appendChild(note.el)
+          return note
+        })
+        return {svg, notes}
+      },
+    }}})
+    let base = {
+      musicXML: "<score-partwise/>", measureStarts: [0, 4], hand: "both", width: 600,
+      system: true, loadEngines,
+    }
+
+    mountCard({...base, fromMeasure: 1, toMeasure: 4, columns: columnsOf(notesFor["1-4"]), head: 2})
+    await waitFor(() => card.result, {message: "the first system"})
+    expect(renders).toEqual(1)
+    // the kept system is its own copy (the engine's own display is one it
+    // reuses and redraws into, osmd.ts), so re-attaching it is never the
+    // same node as the one first drawn, only an equal one
+    let firstSvg = card.result.svg
+    let firstPitches = card.result.notes.map(note => note.pitch)
+
+    rerenderCard({
+      ...base, fromMeasure: 2, toMeasure: 2, staves: [{part: "P1", staff: 2}],
+      columns: columnsOf(notesFor["2-2"]), head: 0,
+    })
+    await waitFor(() => renders == 2, {message: "the second system"})
+    expect(card.result.svg).not.toBe(firstSvg)
+
+    // back to the first range: re-attached, not redrawn
+    rerenderCard({
+      ...base, fromMeasure: 1, toMeasure: 4, staves: null,
+      columns: columnsOf(notesFor["1-4"]), head: 0,
+    })
+    expect(renders).toEqual(2)
+    expect(card.result.svg).not.toBe(firstSvg)
+    expect(card.result.notes.map(note => note.pitch)).toEqual(firstPitches)
+    expect(container.querySelector("[data-score-card] svg")).toBe(card.result.svg)
+
+    expect(card.cardJoin.heads[0].every(el => el.classList.contains(MARK_CLASSES.current))).toBe(true)
+    expect(card.cardJoin.heads.every((heads, idx) => idx == 0 || heads.every(el =>
+      !el.classList.contains(MARK_CLASSES.current) &&
+      !el.classList.contains(MARK_CLASSES.done) &&
+      !el.classList.contains(MARK_CLASSES.missed)))).toBe(true)
+
+    // an equal but new staves array still matches the kept system: its
+    // drawing is on the plate at once, before any render could have run
+    rerenderCard({
+      ...base, fromMeasure: 2, toMeasure: 2, staves: [{part: "P1", staff: 2}],
+      columns: columnsOf(notesFor["2-2"]), head: 0,
+    })
+    expect(renders).toEqual(2)
+    expect(card.result).toBeTruthy()
+    expect(container.querySelector("[data-score-card] svg")).toBe(card.result.svg)
+    expect(card.result.notes.map(note => note.pitch)).toEqual([parseNote("G4")])
+  })
+
+  it("re-attaches a kept system with none of the marks it was drilled with", async function() {
+    let names = ["C4", "D4", "E4", "F4"]
+    let notesFor = {"1-4": names, "2-2": ["G4"], "3-3": ["G4"]}
+    let loadEngines = () => Promise.resolve({ENGINES: {osmd: {
+      renderSystem: async ({fromMeasure, toMeasure}) => {
+        let svg = document.createElementNS(SVG_NS, "svg")
+        let notes = notesFor[`${fromMeasure}-${toMeasure}`].map((name, idx) => {
+          let note = drawn(parseNote(name), idx)
+          svg.appendChild(note.el)
+          return note
+        })
+        return {svg, notes}
+      },
+    }}})
+    let base = {
+      musicXML: "<score-partwise/>", measureStarts: [0, 4], hand: "both", width: 600,
+      system: true, loadEngines,
+    }
+    let section = cols => ({
+      ...base, fromMeasure: 1, toMeasure: 4, staves: null, columns: columnsOf(cols),
+    })
+    let bar = {
+      ...base, fromMeasure: 2, toMeasure: 2, staves: [{part: "P1", staff: 2}],
+      columns: columnsOf(notesFor["2-2"]), head: 0,
+    }
+    // a second hand-alone bar, so the section is left for a system the engine
+    // has yet to draw rather than for another kept one
+    let otherBar = {...bar, fromMeasure: 3, toMeasure: 3}
+    let marks = () => [...container.querySelectorAll("[data-score-card] svg > *")]
+      .map(el => Object.values(MARK_CLASSES).filter(cls => el.classList.contains(cls)))
+    let barDrawn = () => waitFor(() => card.result && card.result.notes.length == 1,
+      {message: "the one-bar system"})
+
+    // the section drawn, left for a one-bar system, then re-attached and
+    // drilled to its last column as the kept drawing itself
+    mountCard({...section(names), head: 0})
+    await waitFor(() => card.result, {message: "the section"})
+    rerenderCard(bar)
+    await barDrawn()
+
+    rerenderCard({...section(names), head: 3})
+    expect(card.result).toBeTruthy()
+    expect(marks()).toEqual([
+      [MARK_CLASSES.done], [MARK_CLASSES.done], [MARK_CLASSES.done], [MARK_CLASSES.current],
+    ])
+
+    // away and back on another of its bars: scroll mode joins the card's own
+    // columns alone (SightReadingPage#engineCard), so the bars the drill has
+    // left keep no mark of the pass they were drilled in
+    rerenderCard(otherBar)
+    await barDrawn()
+    rerenderCard({...section(names.slice(0, 1)), head: 0})
+    expect(card.result).toBeTruthy()
+    expect(marks()).toEqual([[MARK_CLASSES.current], [], [], []])
+  })
+
+  it("draws a system again once its score changes", async function() {
+    let renders = 0
+    let loadEngines = () => Promise.resolve({ENGINES: {osmd: {
+      renderSystem: async () => {
+        renders++
+        let svg = document.createElementNS(SVG_NS, "svg")
+        let note = drawn(parseNote("C4"), 0)
+        svg.appendChild(note.el)
+        return {svg, notes: [note]}
+      },
+    }}})
+    let props = {
+      fromMeasure: 1, toMeasure: 1, hand: "both", width: 600, system: true,
+      columns: [column(["C4"], 0)], head: 0, loadEngines,
+    }
+
+    mountCard({...props, musicXML: "<score-partwise/>A"})
+    await waitFor(() => renders == 1, {message: "the first draw"})
+
+    rerenderCard({...props, musicXML: "<score-partwise/>B"})
+    await waitFor(() => renders == 2, {message: "the second draw"})
+
+    rerenderCard({...props, musicXML: "<score-partwise/>A"})
+    await waitFor(() => renders == 3, {message: "a third draw of the first score"})
+  })
+
+  it("settles the plate when a kept system overtakes a draw in flight", async function() {
+    let letCardDraw
+    let cardDrawing = new Promise(resolve => { letCardDraw = resolve })
+    let oneNote = () => {
+      let svg = document.createElementNS(SVG_NS, "svg")
+      let note = drawn(parseNote("C4"), 0)
+      svg.appendChild(note.el)
+      return {svg, notes: [note]}
+    }
+    let loadEngines = () => Promise.resolve({ENGINES: {osmd: {
+      renderSystem: async () => oneNote(),
+      renderCard: async () => {
+        await cardDrawing
+        return oneNote()
+      },
+    }}})
+    let base = {
+      musicXML: "<score-partwise/>", fromMeasure: 1, toMeasure: 1, hand: "both",
+      width: 600, columns: [column(["C4"], 0)], head: 0, loadEngines,
+    }
+    let busy = () => container.querySelector("[data-score-card]").getAttribute("aria-busy")
+
+    mountCard({...base, system: true})
+    await waitFor(() => card.result, {message: "the system"})
+    expect(busy()).toEqual("false")
+
+    // wait mode's card is still being drawn when scroll mode comes back to
+    // the kept system: the plate is settled by the drawing it hands back,
+    // not left waiting on the draw its own re-join overtook
+    rerenderCard({...base, system: false})
+    await waitFor(() => busy() == "true", {message: "the card's draw in flight"})
+
+    rerenderCard({...base, system: true})
+    expect(card.result).toBeTruthy()
+    expect(busy()).toEqual("false")
+
+    letCardDraw()
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(busy()).toEqual("false")
+  })
+
+  it("keeps a wait-mode card's marks up until the next card is drawn", async function() {
+    let letSecondDraw
+    let secondDrawing = new Promise(resolve => { letSecondDraw = resolve })
+    let draws = 0
+    let notesFor = {1: ["C4", "D4"], 2: ["E4"]}
+    let loadEngines = () => Promise.resolve({ENGINES: {osmd: {
+      renderCard: async ({fromMeasure}) => {
+        if (++draws > 1) { await secondDrawing }
+        let svg = document.createElementNS(SVG_NS, "svg")
+        let notes = notesFor[fromMeasure].map((name, idx) => {
+          let note = drawn(parseNote(name), idx)
+          svg.appendChild(note.el)
+          return note
+        })
+        return {svg, notes}
+      },
+    }}})
+    let base = {
+      musicXML: "<score-partwise/>", hand: "both", width: 600, system: false, loadEngines,
+    }
+    let withClass = (els, cls) => els.filter(el => el.classList.contains(cls))
+
+    mountCard({...base, fromMeasure: 1, toMeasure: 1, columns: columnsOf(notesFor[1]), head: 1})
+    await waitFor(() => card.cardJoin, {message: "the first card"})
+    let firstHeads = card.cardJoin.heads.flat()
+    expect(withClass(firstHeads, MARK_CLASSES.done).length).toEqual(1)
+    expect(withClass(firstHeads, MARK_CLASSES.current).length).toEqual(1)
+
+    // the finished card is still the one on the plate while the next is being
+    // drawn, so it keeps the marks it ended on
+    rerenderCard({...base, fromMeasure: 2, toMeasure: 2, columns: columnsOf(notesFor[2]), head: 0})
+    expect(container.querySelector("[data-score-card] svg").contains(firstHeads[0])).toBe(true)
+    expect(withClass(firstHeads, MARK_CLASSES.done).length).toEqual(1)
+    expect(withClass(firstHeads, MARK_CLASSES.current).length).toEqual(1)
+
+    letSecondDraw()
+    await waitFor(() => card.cardJoin && card.cardJoin.heads.flat()[0] != firstHeads[0],
+      {message: "the second card"})
+    expect(container.querySelector("[data-score-card] svg").contains(firstHeads[0])).toBe(false)
+    expect(card.cardJoin.heads[0].every(el => el.classList.contains(MARK_CLASSES.current))).toBe(true)
+  })
+
+  it("draws a plate card afresh each time", async function() {
+    let renders = 0
+    let loadEngines = () => Promise.resolve({ENGINES: {osmd: {
+      renderCard: async () => {
+        renders++
+        let svg = document.createElementNS(SVG_NS, "svg")
+        let note = drawn(parseNote("C4"), 0)
+        svg.appendChild(note.el)
+        return {svg, notes: [note]}
+      },
+    }}})
+    let base = {
+      musicXML: "<score-partwise/>", hand: "both", width: 600, system: false,
+      columns: [column(["C4"], 0)], head: 0, loadEngines,
+    }
+
+    mountCard({...base, fromMeasure: 1, toMeasure: 1})
+    await waitFor(() => renders == 1, {message: "the first card"})
+
+    rerenderCard({...base, fromMeasure: 2, toMeasure: 2})
+    await waitFor(() => renders == 2, {message: "the second card"})
+
+    rerenderCard({...base, fromMeasure: 1, toMeasure: 1})
+    await waitFor(() => renders == 3, {message: "the first card drawn again"})
   })
 })
