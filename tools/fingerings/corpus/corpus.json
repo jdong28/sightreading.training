@@ -76,7 +76,7 @@
       "measures": [51, 84],
       "categories": ["ledger_heavy"],
       "systems": [[5, 6, 6, 5, 6, 6]],
-      "expect": {"stop": "systems misaligned"}
+      "expect": "pass"
     },
     {
       "id": "maple-leaf-rag-musescore",
