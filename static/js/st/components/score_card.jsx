@@ -226,9 +226,7 @@ export class ScoreCard extends React.Component {
     let badges = this.props.badges
     let root = this.rootRef.current
 
-    if (!container || !root || !badges || !badges.length || !this.cardJoin ||
-        this.state.drawing || this.props.system)
-    {
+    if (!container || !root || !badges || !badges.length || !this.cardJoin || this.props.system) {
       this.clearBadges()
       return
     }

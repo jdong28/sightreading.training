@@ -69,17 +69,21 @@ interface Bar {
 export function placeBadges(badges: BarBadge[], columnRects: Rect[][]): BadgePlacement[] {
   if (!badges.length) { return [] }
 
-  let bars: Bar[] = badges.map((badge, i) => {
+  let bars: Bar[] = []
+  badges.forEach((badge, i) => {
     let end = i + 1 < badges.length ? badges[i + 1].column : columnRects.length
     let columns = columnRects.slice(badge.column, end)
     let rects = columns.flat()
     // from the bar's own drawn heads, so a column the engine didn't draw
-    // (joinCard leaves its heads empty) never moves the span
+    // (joinCard leaves its heads empty) never moves the span; a bar it drew
+    // none of has no span at all and waits at the end of the bar before it,
+    // so it neither sits over its neighbour nor reads as a new row
     let box = union(rects)
-    let left = box ? Math.max(0, box.left - BADGE_PAD) : 0
+    let previous = bars[bars.length - 1]
+    let left = box ? Math.max(0, box.left - BADGE_PAD) : (previous ? previous.right : 0)
     let right = box ? box.right + BADGE_PAD : left
 
-    return {badge, rects, left, right}
+    bars.push({badge, rects, left, right})
   })
 
   let placements: BadgePlacement[] = []

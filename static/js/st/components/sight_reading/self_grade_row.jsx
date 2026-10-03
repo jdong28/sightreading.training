@@ -73,9 +73,11 @@ export default class SelfGradeRow extends React.Component {
   }
 
   // the one path a grade takes, from a pill or the page's hotkeys: a grade
-  // with a "Where?" question asks it rather than ending the pass
+  // with a "Where?" question asks it rather than ending the pass. The
+  // question's own chips answer it from there, so a grade given while it is
+  // open (only a hotkey can, the pills are gone) is ignored
   grade(grade) {
-    if (this.props.recorded || !this.settled()) { return }
+    if (this.props.recorded || this.props.asking != null || !this.settled()) { return }
 
     if (this.props.followUp && (grade == AGAIN || grade == HARD)) {
       this.shownAt = Date.now()

@@ -3035,6 +3035,38 @@ describe("sight reading page", function() {
       ])
     })
 
+    // the pills are gone while the question is up, so a grade can only come
+    // from a hotkey there: it must neither re-ask under another grade nor
+    // end the pass with no bar, and must leave the question's own dwell alone
+    it("ignores a grade hotkey while Where? is open, which keeps its grade and its dwell", async function() {
+      let el = await renderAcoustic({measuresPerCard: "2"})
+      click(buttonNamed(el, "Begin"))
+      let press = code => flushSync(() => {
+        document.body.dispatchEvent(new KeyboardEvent("keydown", {keyCode: code, bubbles: true}))
+        document.body.dispatchEvent(new KeyboardEvent("keyup", {keyCode: code, bubbles: true}))
+      })
+
+      played()
+      click(buttonLike(el, "Fell apart"))
+      expect(el.textContent).toContain("Fell apart — where did it go wrong?")
+
+      // "2" is Stumbled and "3" Clean: neither asks again nor grades the card
+      played()
+      press(50)
+      press(51)
+      expect(await reviews()).toEqual([])
+      expect(el.textContent).toContain("Fell apart — where did it go wrong?")
+
+      // the question still answers at once, with the grade the player chose
+      click(exactButton(el, "Bar 2"))
+      flash()
+      await finished()
+      expect((await reviews()).map(r => [r.itemId, r.grade])).toEqual([
+        [`${piece.id}:both:1-2`, AGAIN],
+        [`${piece.id}:both:2-2`, AGAIN],
+      ])
+    })
+
     it("change grade returns to the pills, tag kept, writing nothing, and re-arms the dwell", async function() {
       let el = await renderAcoustic({measuresPerCard: "2"})
       click(buttonNamed(el, "Begin"))

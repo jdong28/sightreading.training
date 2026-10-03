@@ -99,6 +99,24 @@ describe("card badges", function() {
     ])
   })
 
+  // a bar the engine drew nothing of has no span of its own, and must not
+  // land at the card's left edge nor read as the start of a new row
+  it("sits a bar without drawn heads at the end of the bar before it, in the same row", function() {
+    let badges = [{column: 0, label: "Bar 3", on: false}, {column: 2, label: "Bar 4", on: true}]
+    let columnRects = [
+      [rect(100, 10, 120, 30)],
+      [rect(140, 10, 160, 30)],
+      [],
+      [],
+    ]
+
+    let placements = placeBadges(badges, columnRects)
+    expect(placements.map(p => [p.left, p.top, p.tint.left, p.tint.width])).toEqual([
+      [96, 0, 96, 68],
+      [164, 0, 164, 0],
+    ])
+  })
+
   it("wraps to a new row once a bar's left is less than the previous bar's, its own top below the first row's bottom", function() {
     let badges = [
       {column: 0, label: "Bar 1", on: false},
@@ -1406,6 +1424,33 @@ describe("score page engine card", function() {
       flushSync(() => {})
       expect(badges().length).toEqual(0)
       expect(tints().length).toEqual(0)
+    })
+
+    // the overlay is placed from the drawn heads, so a redraw (a resize,
+    // fullscreen) must place it again rather than leave it hidden
+    it("places the badges again once the card has been redrawn under the question", async function() {
+      await drillPiece(reverieOpening(), {startMeasure: 2, endMeasure: 3, measuresPerCard: "2"})
+      let el = renderScorePage({acoustic: true})
+      await engineDrawn()
+
+      flushSync(() => page.beginSession())
+      await wait(600)
+      click(buttonLike(el, "Stumbled"))
+
+      let overlay = badges()[0].closest("[aria-hidden]")
+      expect(overlay.style.display).toEqual("block")
+
+      // the plate narrows (fullscreen, a rotation: the page's only width
+      // input, see SightReadingPage#measureStaffWrapper), so the card is
+      // drawn again under the question
+      flushSync(() => page.setState({staffWidth: page.state.staffWidth - 140}))
+      expect(overlay.style.display).toEqual("none")
+
+      await waitFor(() => overlay.style.display == "block", {timeout: 2000, message: "the badges placed again"})
+      expect(badges().map(b => b.textContent)).toEqual(["Bar 2", "Bar 3"])
+      expect(badges().every(b => parseFloat(b.style.left) >= 0)).toBe(true)
+      expect(badges()[0].getBoundingClientRect().left)
+        .toBeLessThan(badges()[1].getBoundingClientRect().left)
     })
 
     it("shows no badges on the app staff's fallback", async function() {
