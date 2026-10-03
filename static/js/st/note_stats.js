@@ -232,8 +232,11 @@ export default class NoteStats {
   // The session record for the local store (see putSession in st/storage),
   // or null before any note is played and any pass graded (acoustic mode
   // detects none, see selfGraded). The record keeps this object's id, so
-  // writing it again as the session grows replaces the earlier one
-  sessionRecord({staff, generator, settings}={}) {
+  // writing it again as the session grows replaces the earlier one.
+  // elapsedSeconds, when given, is the session clock from Begin to Rest (or
+  // to whenever it was last written), which activeSeconds can't stand in for
+  // (it leaves out pauses, and acoustic mode barely marks activity at all)
+  sessionRecord({staff, generator, settings, elapsedSeconds}={}) {
     if (!this.hits && !this.misses && !this.passes) {
       return null
     }
@@ -255,6 +258,10 @@ export default class NoteStats {
       misses: this.misses,
       bestStreak: this.bestStreak,
       notes,
+    }
+
+    if (elapsedSeconds != null) {
+      record.elapsedSeconds = Math.max(0, Math.floor(elapsedSeconds))
     }
 
     if (Object.keys(this.clefs).length) {
