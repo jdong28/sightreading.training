@@ -90,6 +90,43 @@
     will-change: transform;
 }
 
+/* Bar badges over the card during acoustic mode's "Where?" (ScoreCard#
+   placeBadges), positioned imperatively: style.left/top/width/height is
+   written directly on these nodes, never through React state. Hidden by
+   default so the first render (before a card is joined and the overlay
+   placed) never flashes at 0,0 */
+.badges {
+    display: none;
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+.bar_tint {
+    position: absolute;
+    background: color-mix(in srgb, var(--salon-oxblood) 10%, transparent);
+    border-radius: 4px;
+}
+
+.bar_badge {
+    position: absolute;
+    transform: translateY(-100%);
+    padding: 1px 6px;
+    border: 1px solid var(--salon-gilt);
+    border-radius: 999px;
+    background: var(--salon-paper);
+    color: var(--salon-oxblood);
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+
+    &.bar_badge_on {
+        background: var(--salon-oxblood);
+        border-color: var(--salon-oxblood);
+        color: var(--salon-paper);
+    }
+}
+
 /* the hit zone of the trainer's scroll mode, with the line the column to
    play waits on down its middle */
 .hit_line {

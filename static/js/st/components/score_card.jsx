@@ -16,12 +16,17 @@ import classNames from "classnames"
 import {loadScoreEngines} from "st/score_render/load"
 import {joinCard, markCard} from "st/score_render/card_join"
 import {scrollTrack, scrollAdvance, scrollOffset} from "st/score_render/card_scroll"
+import {placeBadges} from "st/score_render/card_badges"
 
 import styles from "./score_card.module.css"
 
 // an engine draws one card at a time (OSMD keeps one score loaded), so the
 // cards of every ScoreCard are drawn one after another
 let drawing = Promise.resolve()
+
+// a content key of a badges prop, so componentDidUpdate only replaces them
+// on a real change (a new array every render of engineCard() otherwise loops)
+const badgeKey = badges => (badges || []).map(b => `${b.column}:${b.on}`).join(",")
 
 export class ScoreCard extends React.Component {
   static propTypes = {
@@ -50,6 +55,10 @@ export class ScoreCard extends React.Component {
     head: types.number,
     // the indices of the columns a miss was counted on
     missed: types.array,
+    // bar badges to draw over the card during acoustic mode's "Where?" (see
+    // st/score_render/card_badges), one per bar, in bar order; left out or
+    // empty for none
+    badges: types.array,
     engine: types.string,
     loadEngines: types.func,
     // called with the error when the engine can't draw the card
@@ -66,8 +75,10 @@ export class ScoreCard extends React.Component {
 
   constructor(props) {
     super(props)
+    this.rootRef = React.createRef()
     this.plateRef = React.createRef()
     this.stripRef = React.createRef()
+    this.badgesRef = React.createRef()
     this.state = {drawing: true}
     this.drawCount = 0
   }
@@ -91,6 +102,12 @@ export class ScoreCard extends React.Component {
     } else if (prevProps.width != p.width) {
       this.place()
     }
+
+    // a badge change (eg. a chosen bar lighting up) can arrive with a columns
+    // change, so this stays outside the if/else chain above
+    if (badgeKey(prevProps.badges) != badgeKey(p.badges)) {
+      this.placeBadges()
+    }
   }
 
   componentWillUnmount() {
@@ -105,6 +122,7 @@ export class ScoreCard extends React.Component {
     this.cardJoin = null
     this.track = null
     this.setState({drawing: true})
+    this.clearBadges()
 
     let stale = () => count != this.drawCount || this.unmounted
     drawing = drawing
@@ -169,6 +187,7 @@ export class ScoreCard extends React.Component {
     }
 
     this.mark()
+    this.placeBadges()
     if (this.props.onDrawn) {
       this.props.onDrawn({join: this.cardJoin, result: this.result})
     }
@@ -190,6 +209,58 @@ export class ScoreCard extends React.Component {
     if (el && el.scrollIntoView) {
       el.scrollIntoView({block: "nearest", inline: "nearest", behavior: "smooth"})
     }
+  }
+
+  clearBadges() {
+    let container = this.badgesRef.current
+    if (container) { container.style.display = "none" }
+  }
+
+  // Positions the badges and tints over the card's named bars (see
+  // st/score_render/card_badges), imperatively: the overlay is never driven
+  // through state, since engineCard() builds a new badges array every
+  // render. Acoustic mode is always wait mode, never a system (D5(a)/Q1 of
+  // the design report), so a system draws none
+  placeBadges() {
+    let container = this.badgesRef.current
+    let badges = this.props.badges
+    let root = this.rootRef.current
+
+    if (!container || !root || !badges || !badges.length || !this.cardJoin ||
+        this.state.drawing || this.props.system)
+    {
+      this.clearBadges()
+      return
+    }
+
+    let rootRect = root.getBoundingClientRect()
+    let relative = rect => ({
+      left: rect.left - rootRect.left, top: rect.top - rootRect.top,
+      right: rect.right - rootRect.left, bottom: rect.bottom - rootRect.top,
+    })
+    let columnRects = this.props.columns.map((column, i) =>
+      (this.cardJoin.heads[i] || []).map(el => relative(el.getBoundingClientRect())))
+
+    let placements = placeBadges(badges, columnRects)
+    container.style.display = "block"
+
+    let tints = container.querySelectorAll("[data-bar-tint]")
+    let pills = container.querySelectorAll("[data-bar-badge]")
+    placements.forEach((placement, i) => {
+      let tint = tints[i]
+      if (tint) {
+        tint.style.left = `${placement.tint.left}px`
+        tint.style.top = `${placement.tint.top}px`
+        tint.style.width = `${placement.tint.width}px`
+        tint.style.height = `${placement.tint.height}px`
+      }
+
+      let pill = pills[i]
+      if (pill) {
+        pill.style.left = `${placement.left}px`
+        pill.style.top = `${placement.top}px`
+      }
+    })
   }
 
   // The trainer's slider, in units of the drawn system's mean onset gap (see
@@ -236,10 +307,28 @@ export class ScoreCard extends React.Component {
     }
 
     return <div
+      ref={this.rootRef}
       className={classNames(styles.score_card, {[styles.drawing]: this.state.drawing})}
       data-score-card
       aria-busy={this.state.drawing}>
       {plate}
+      {this.renderBadges()}
+    </div>
+  }
+
+  renderBadges() {
+    let badges = this.props.badges
+    if (!badges || !badges.length) { return null }
+
+    return <div ref={this.badgesRef} className={styles.badges} aria-hidden="true">
+      {badges.map((badge, i) => <React.Fragment key={i}>
+        <div className={styles.bar_tint} data-bar-tint />
+        <div
+          className={classNames(styles.bar_badge, {[styles.bar_badge_on]: badge.on})}
+          data-bar-badge>
+          {badge.label}
+        </div>
+      </React.Fragment>)}
     </div>
   }
 }

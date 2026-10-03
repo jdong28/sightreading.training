@@ -1,0 +1,57 @@
+/* fixed height so the instruction, a receipt and the next card never move
+   the grade row's top: one line plus padding above 600px, two lines at or
+   under it (see SelfGradeReceipt, which only ever changes this text) */
+.receipt {
+    display: flex;
+    align-items: center;
+    box-sizing: border-box;
+    min-height: 44px;
+    margin: 10px 0 0;
+    padding: 8px 14px;
+    font-size: 13px;
+    line-height: 1.3;
+    color: var(--salon-ink-soft);
+    background: var(--salon-paper-warm);
+    border: 1px solid var(--salon-rule-light);
+    border-radius: 6px;
+
+    @media (max-width: 600px) {
+        min-height: 64px;
+        align-items: flex-start;
+    }
+}
+
+.instruction {
+    font-style: italic;
+    color: var(--salon-ink-muted);
+}
+
+.tick {
+    color: var(--salon-oxblood);
+    font-weight: 700;
+}
+
+.when {
+    color: var(--salon-ink-muted);
+}
+
+.highlight {
+    display: inline;
+    animation: self_grade_receipt_highlight 1.6s ease-out;
+    border-radius: 3px;
+}
+
+@keyframes self_grade_receipt_highlight {
+    from {
+        background: var(--salon-gilt-light);
+    }
+    to {
+        background: transparent;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .highlight {
+        animation: none;
+    }
+}

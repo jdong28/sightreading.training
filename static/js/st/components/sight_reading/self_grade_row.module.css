@@ -37,9 +37,36 @@
     color: var(--salon-ink-muted);
 }
 
+/* the tapped pill stays fully opaque through the flash, read as confirmed
+   rather than faded like any other disabled pill */
+.recorded:disabled {
+    opacity: 1;
+}
+
 .prompt {
-    margin: 0;
+    margin: 0 0 4px;
     font-weight: 600;
+}
+
+.change_grade {
+    align-self: flex-start;
+    margin: 0 0 8px;
+    padding: 0;
+    border: none;
+    background: none;
+    font: inherit;
+    font-size: 13px;
+    color: var(--salon-ink-soft);
+    cursor: pointer;
+
+    &:hover:not(:disabled) {
+        color: var(--salon-oxblood);
+    }
+
+    &:disabled {
+        opacity: .6;
+        cursor: default;
+    }
 }
 
 .chips {

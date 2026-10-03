@@ -22,7 +22,7 @@ import {AGAIN, HARD, GOOD, EASY} from "st/srs/grade"
 import {IN_ORDER, RANDOM_ORDER, MeasureCardGenerator} from "st/measure_cards"
 import {DRILL_STORAGE_KEY, SCORE_DRILL_STORAGE_KEY} from "st/generators"
 import {DEV_METRICS_KEY} from "st/dev_metrics"
-import {SELF_GRADE_DWELL_MS} from "st/srs/self_grade"
+import {SELF_GRADE_DWELL_MS, SELF_GRADE_FLASH_MS, SELF_GRADE_INSTRUCTION} from "st/srs/self_grade"
 import {scopeEvent} from "st/events"
 import NoteStats, {addNoteListener} from "st/note_stats"
 import {parseNote} from "st/music"
@@ -2850,28 +2850,25 @@ describe("sight reading page", function() {
       flushSync(() => {})
     }
 
-    // the clock the page and its generator read: a grade only counts once the
-    // card has been up long enough to have been played, so every spec that
-    // grades plays the card first
-    let now, realNow
-
+    // the clock the page and its generator read, ticked through the row's
+    // dwell (SELF_GRADE_DWELL_MS, played) and the flash before a grade is
+    // written (SELF_GRADE_FLASH_MS, flash)
     beforeEach(function() {
-      realNow = Date.now
-      now = realNow()
-      Date.now = () => now
+      jasmine.clock().install()
+      clockInstalled = true
+      jasmine.clock().mockDate(new Date(2026, 8, 14, 20))
     })
 
-    afterEach(function() {
-      Date.now = realNow
-    })
-
-    let played = (ms=SELF_GRADE_DWELL_MS) => { now += ms }
+    let tick = ms => flushSync(() => jasmine.clock().tick(ms))
+    let played = (ms=SELF_GRADE_DWELL_MS) => tick(ms)
+    let flash = () => tick(SELF_GRADE_FLASH_MS)
 
     let reviews = () => store.reviews({pieceId: piece.id})
     let finished = () => page.state.notes.generator.finishing
     let plateLabel = el => el.querySelector("[aria-live]").previousElementSibling.textContent
     let buttonLike = (el, text) => [...el.querySelectorAll("button")].find(b => b.textContent.includes(text))
     let exactButton = (el, text) => [...el.querySelectorAll("button")].find(b => b.textContent.trim() == text)
+    let receiptText = el => el.querySelector("[data-self-grade-receipt]").textContent
 
     it("ignores MIDI messages and key presses: nothing detected, nothing written", async function() {
       let el = await renderAcoustic({measuresPerCard: "2"})
@@ -2889,13 +2886,17 @@ describe("sight reading page", function() {
       expect(await reviews()).toEqual([])
     })
 
-    it("shows no grade row at rest, a note instead, and the four grade pills once Begin is pressed", async function() {
+    it("shows no grade row at rest, the receipt's instruction and the four grade pills once Begin is pressed", async function() {
       let el = await renderAcoustic({measuresPerCard: "2"})
       expect(el.textContent).toContain("press Begin, play the card, then grade it")
       expect(buttonLike(el, "Clean")).toBeUndefined()
+      expect(el.querySelector("[data-self-grade-receipt]")).toBe(null)
 
       click(buttonNamed(el, "Begin"))
       expect(el.querySelector("[data-self-grade-rest]")).toBe(null)
+      let receipt = el.querySelector("[data-self-grade-receipt]")
+      expect(receipt.textContent).toEqual(SELF_GRADE_INSTRUCTION)
+      expect(receipt.getAttribute("aria-live")).toEqual("polite")
       for (let word of ["Fell apart", "Stumbled", "Clean", "Easy"]) {
         expect(buttonLike(el, word)).withContext(word).toBeDefined()
       }
@@ -2908,6 +2909,7 @@ describe("sight reading page", function() {
 
       played()
       click(buttonLike(el, "Clean"))
+      flash()
       await finished()
       expect((await reviews()).map(r => [r.itemId, r.mode, r.grade])).toEqual([
         [`${piece.id}:both:1-1`, "self", GOOD],
@@ -2919,6 +2921,7 @@ describe("sight reading page", function() {
       // the hotkey "3" grades Clean too
       played()
       flushSync(() => document.body.dispatchEvent(new KeyboardEvent("keydown", {keyCode: 51, bubbles: true})))
+      flash()
       await finished()
       expect((await reviews()).length).toEqual(6)
       expect(plateLabel(el)).toContain("measures 5–6")
@@ -2929,37 +2932,40 @@ describe("sight reading page", function() {
       expect(page.state.notes).toBe(notesBefore)
     })
 
-    // a pass takes one grade: the deck moves on as the grade is written, so a
-    // tap or key press repeated on the card it moved on to would grade a pass
-    // nobody played
-    it("ignores a grade pill tapped again before the next card has been played", async function() {
+    // the tap guard made visible: tapping a grade shows it recorded, with
+    // every other pill and tag disabled, for SELF_GRADE_FLASH_MS, before the
+    // grade is actually written
+    it("flashes the tapped pill recorded, with every pill and tag disabled, before writing the grade", async function() {
       let el = await renderAcoustic({measuresPerCard: "2"})
       click(buttonNamed(el, "Begin"))
 
       played()
-      click(buttonLike(el, "Clean"))
-      await finished()
-      expect((await reviews()).map(r => r.itemId)).toEqual([
-        `${piece.id}:both:1-1`, `${piece.id}:both:1-2`, `${piece.id}:both:2-2`,
-      ])
-      expect(plateLabel(el)).toContain("measures 3–4")
+      let clean = buttonLike(el, "Clean")
+      click(clean)
 
-      // the second tap of a double tap, a tenth of a second later
-      played(100)
-      click(buttonLike(el, "Clean"))
+      expect(clean.textContent).toContain("✓")
+      expect(clean.disabled).toBe(true)
+      for (let word of ["Fell apart", "Stumbled", "Easy"]) {
+        expect(buttonLike(el, word).disabled).withContext(word).toBe(true)
+      }
+      for (let aspect of ["rhythm", "tempo"]) {
+        expect(exactButton(el, aspect).disabled).withContext(aspect).toBe(true)
+      }
+      expect(await reviews()).toEqual([])
+      expect(plateLabel(el)).toContain("measures 1–2")
+
+      // the hotkey does nothing while the grade is flashing
+      flushSync(() => document.body.dispatchEvent(new KeyboardEvent("keydown", {keyCode: 52, bubbles: true})))
+      expect(await reviews()).toEqual([])
+
+      flash()
       await finished()
       expect((await reviews()).length).toEqual(3)
       expect(plateLabel(el)).toContain("measures 3–4")
-
-      // the same tap once the card has been played
-      played(600)
-      click(buttonLike(el, "Clean"))
-      await finished()
-      expect((await reviews()).length).toEqual(6)
-      expect(plateLabel(el)).toContain("measures 5–6")
+      expect(statValue(el, "Passes")).toEqual("1")
     })
 
-    it("ignores a grade hotkey pressed again before the next card has been played", async function() {
+    it("ignores a grade hotkey pressed again before the flash has written the first", async function() {
       let el = await renderAcoustic({measuresPerCard: "2"})
       click(buttonNamed(el, "Begin"))
       // let up between presses, since Hotkeys ignores a key's repeat
@@ -2970,21 +2976,37 @@ describe("sight reading page", function() {
 
       played()
       press()
-      await finished()
-      expect((await reviews()).length).toEqual(3)
-      expect(plateLabel(el)).toContain("measures 3–4")
-
-      played(100)
       press()
+      flash()
       await finished()
       expect((await reviews()).length).toEqual(3)
       expect(plateLabel(el)).toContain("measures 3–4")
 
       played(600)
       press()
+      flash()
       await finished()
       expect((await reviews()).length).toEqual(6)
       expect(plateLabel(el)).toContain("measures 5–6")
+    })
+
+    it("writes the grade at once if Rest or New passage comes during the flash, never as a detected pass", async function() {
+      let el = await renderAcoustic({measuresPerCard: "2"})
+      click(buttonNamed(el, "Begin"))
+
+      played()
+      click(buttonLike(el, "Clean"))
+      click(buttonNamed(el, "Rest"))
+      await finished()
+      expect((await reviews()).length).toEqual(3)
+      expect(statValue(el, "Passes")).toEqual("1")
+
+      click(buttonNamed(el, "Begin"))
+      played()
+      click(buttonLike(el, "Easy"))
+      click(buttonNamed(el, "New passage"))
+      await finished()
+      expect((await reviews()).length).toEqual(6)
     })
 
     it("ignores a Where? chip tapped as the question appears, and answers once it has settled", async function() {
@@ -2999,18 +3021,56 @@ describe("sight reading page", function() {
 
       played(100)
       click(exactButton(el, "Bar 1"))
-      await finished()
       expect(await reviews()).toEqual([])
       expect(el.querySelector("[data-self-grade-followup]")).not.toBe(null)
 
       // the question stays up, and answers as chosen once it has settled
       played(600)
       click(exactButton(el, "Bar 2"))
+      flash()
       await finished()
       expect((await reviews()).map(r => [r.itemId, r.grade])).toEqual([
         [`${piece.id}:both:1-2`, AGAIN],
         [`${piece.id}:both:2-2`, AGAIN],
       ])
+    })
+
+    it("change grade returns to the pills, tag kept, writing nothing, and re-arms the dwell", async function() {
+      let el = await renderAcoustic({measuresPerCard: "2"})
+      click(buttonNamed(el, "Begin"))
+
+      played()
+      click(exactButton(el, "rhythm"))
+      click(buttonLike(el, "Stumbled"))
+      expect(el.textContent).toContain("where did it go wrong?")
+
+      click(exactButton(el, "‹ change grade"))
+      expect(el.querySelector("[data-self-grade-followup]")).toBe(null)
+      expect(await reviews()).toEqual([])
+      expect(exactButton(el, "rhythm").getAttribute("aria-pressed")).toEqual("true")
+
+      // the dwell re-armed by change grade: an immediate tap is ignored
+      click(buttonLike(el, "Clean"))
+      expect(await reviews()).toEqual([])
+
+      played()
+      click(buttonLike(el, "Clean"))
+      flash()
+      await finished()
+      expect((await reviews()).every(r => JSON.stringify(r.slipped) == JSON.stringify(["rhythm"]))).toBe(true)
+    })
+
+    it("Esc does change grade too", async function() {
+      let el = await renderAcoustic({measuresPerCard: "2"})
+      click(buttonNamed(el, "Begin"))
+
+      played()
+      click(buttonLike(el, "Stumbled"))
+      expect(el.querySelector("[data-self-grade-followup]")).not.toBe(null)
+
+      flushSync(() => document.body.dispatchEvent(new KeyboardEvent("keydown", {keyCode: 27, bubbles: true})))
+      expect(el.querySelector("[data-self-grade-followup]")).toBe(null)
+      expect(await reviews()).toEqual([])
     })
 
     it("starts the grade row fresh when the drill is rebuilt under it", async function() {
@@ -3030,6 +3090,7 @@ describe("sight reading page", function() {
 
       played()
       click(buttonLike(el, "Clean"))
+      flash()
       await finished()
       let written = await reviews()
       expect(written.length).toEqual(3)
@@ -3045,11 +3106,13 @@ describe("sight reading page", function() {
       generator.selfGrade = () => { throw new Error("nope") }
 
       played()
-      expect(() => page.selfGrade(GOOD)).toThrow()
+      click(buttonLike(el, "Clean"))
+      expect(() => flushSync(() => page.writeSelfGrade())).toThrow()
       generator.selfGrade = selfGrade
 
       played()
       click(buttonLike(el, "Clean"))
+      flash()
       await finished()
       expect((await reviews()).length).toEqual(3)
     })
@@ -3070,6 +3133,7 @@ describe("sight reading page", function() {
 
       played()
       click(exactButton(el, "Bar 1"))
+      flash()
       await finished()
       expect((await reviews()).map(r => [r.itemId, r.grade])).toEqual([
         [`${piece.id}:both:1-1`, AGAIN],
@@ -3091,6 +3155,7 @@ describe("sight reading page", function() {
 
       played()
       click(buttonLike(el, "Easy"))
+      flash()
       await finished()
       expect(statValue(el, "Passes")).toEqual("1")
       expect(statValue(el, "Clean")).toEqual("1")
@@ -3173,6 +3238,7 @@ describe("sight reading page", function() {
       let entryBefore = plateStatus(el)
       played()
       click(buttonLike(el, "Clean"))
+      flash()
       await page.state.notes.generator.finishing
       await page.state.notes.generator.studying
       flushSync(() => page.forceUpdate())
@@ -3187,9 +3253,10 @@ describe("sight reading page", function() {
 
       played()
       click(buttonLike(el, "Stumbled"))
-      expect(el.textContent).toContain("Where?")
+      expect(el.textContent).toContain("where did it go wrong?")
       played()
       click(exactButton(el, "Bar 2"))
+      flash()
       await finished()
 
       let written = await reviews()
@@ -3204,7 +3271,7 @@ describe("sight reading page", function() {
       // Rest while the question is open writes no review
       played()
       click(buttonLike(el, "Stumbled"))
-      expect(el.textContent).toContain("Where?")
+      expect(el.textContent).toContain("where did it go wrong?")
       click(buttonNamed(el, "Rest"))
       expect((await reviews()).length).toEqual(written.length)
     })
@@ -3213,6 +3280,7 @@ describe("sight reading page", function() {
     // the grade went to returns: the bar "Where?" named, never the entry bar
     // its card was anchored on, which took the practice alone
     it("says when the bar Where? named returns in today's programme, not the entry bar's schedule", async function() {
+      let now = Date.now()
       piece = (await importMusicXMLPiece("salon_octet.musicxml", octetXML, store)).piece
       await store.putStudy({pieceId: piece.id, status: "learning", startedAt: now})
 
@@ -3246,41 +3314,88 @@ describe("sight reading page", function() {
       expect(plateLabel(el)).toContain("measures 3–4")
 
       // Stumbled, in bar 4: bar 3 takes the practice alone
-      let before = store.item(barId(4))
       played()
       click(buttonLike(el, "Stumbled"))
       played()
       click(exactButton(el, "Bar 4"))
-      await waitFor(() => store.item(barId(4)).reps > before.reps, "bar 4's review")
+      flash()
       await page.state.notes.generator.finishing
       flushSync(() => page.forceUpdate())
 
       let words = entryCaption(store.item(barId(4)), now)
       expect(words).not.toEqual("again in a moment")
-      expect(el.textContent).toContain(`bar 4 ${words}`)
-      // bar 3's own schedule, which the grade never reached
-      expect(el.textContent).not.toContain("again in a moment")
+      expect(receiptText(el)).toContain(`bar 4 ${words}`)
+      // bar 3's own schedule, which the grade never reached, never the
+      // receipt's: the drawer's own "again in a moment" hint text for
+      // today's programme setting is elsewhere on the page, not scoped here
+      expect(receiptText(el)).not.toContain("again in a moment")
     })
 
     it("stores toggled 'What slipped?' tags on every review of the pass, cleared for the next", async function() {
       let el = await renderAcoustic({measuresPerCard: "2"})
       click(buttonNamed(el, "Begin"))
 
+      // the tags are labelled and come before the grade pills in DOM order
+      let label = [...el.querySelectorAll("span")].find(s =>
+        s.textContent == "Before you grade, anything slip? (optional)")
+      expect(label).toBeDefined()
+      let clean = buttonLike(el, "Clean")
+      expect(label.compareDocumentPosition(clean) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
       played()
       click(exactButton(el, "rhythm"))
       click(buttonLike(el, "Clean"))
+      flash()
       await finished()
 
       let written = await reviews()
       expect(written.length).toEqual(3)
       expect(written.every(r => JSON.stringify(r.slipped) == JSON.stringify(["rhythm"]))).toBe(true)
+      expect(receiptText(el)).toContain("rhythm slipped")
 
       played()
       click(buttonLike(el, "Easy"))
+      flash()
       await finished()
       let next = (await reviews()).slice(written.length)
       expect(next.length).toEqual(3)
       expect(next.every(r => r.slipped === undefined)).toBe(true)
+    })
+
+    it("replaces the plate caption with the receipt, the same node throughout, gone at Rest", async function() {
+      let el = await renderAcoustic({measuresPerCard: "2"})
+      click(buttonNamed(el, "Begin"))
+      let node = el.querySelector("[data-self-grade-receipt]")
+      expect(node.textContent).toEqual(SELF_GRADE_INSTRUCTION)
+
+      played()
+      click(buttonLike(el, "Clean"))
+      flash()
+      await finished()
+      expect(el.querySelector("[data-self-grade-receipt]")).toBe(node)
+      expect(node.textContent).toContain("Recorded · bars 1–2 · Clean")
+      expect(el.querySelector("[data-caption]")).toBe(null)
+
+      click(buttonNamed(el, "Rest"))
+      expect(el.querySelector("[data-self-grade-rest]")).not.toBe(null)
+      expect(el.querySelector("[data-self-grade-receipt]")).toBe(null)
+    })
+
+    it("counts a looping card's passes in the receipt, 'Pass n recorded'", async function() {
+      let el = await renderAcoustic({measuresPerCard: WHOLE_SECTION})
+      click(buttonNamed(el, "Begin"))
+
+      played()
+      click(buttonLike(el, "Clean"))
+      flash()
+      await finished()
+      expect(receiptText(el)).toContain("Pass 1 recorded · bars 1–8 · Clean")
+
+      played()
+      click(buttonLike(el, "Clean"))
+      flash()
+      await finished()
+      expect(receiptText(el)).toContain("Pass 2 recorded · bars 1–8 · Clean")
     })
 
     it("lists the accuracy and the passes graded of a sitting that did both", async function() {
@@ -3295,6 +3410,7 @@ describe("sight reading page", function() {
       rerenderAcoustic(true)
       played()
       click(buttonLike(el, "Clean"))
+      flash()
       await finished()
 
       click(buttonNamed(el, "Rest"))
@@ -3309,6 +3425,7 @@ describe("sight reading page", function() {
       click(buttonNamed(el, "Begin"))
       played()
       click(buttonLike(el, "Clean"))
+      flash()
       await finished()
 
       click(buttonNamed(el, "Rest"))
