@@ -3,7 +3,7 @@ import NoteMatcher, {EARLY_KEY_WINDOW, LATE_REPEAT_WINDOW, ORNAMENT_GAP} from "s
 import {parseMusicXML} from "st/musicxml"
 import {extractSectionColumns, staffTracks} from "st/song_sections"
 import {cardColumn} from "st/measure_cards"
-import {nocturneBars5to6, tiedTrillScore} from "spec/helpers"
+import {nocturneBars5to6, tiedTrillScore, trillLineScore} from "spec/helpers"
 
 // A matcher over an explicit run of columns: the generator hands out the
 // columns still to come, and empty ones once they run out. Every judgement
@@ -818,6 +818,25 @@ describe("note matcher", function() {
       expect(run(matcher, [["on", "D4", 2500]])).toEqual([
         "hit G#5", "hit Bb3 (held Bb3)",
       ])
+    })
+
+    // sr-detect-trill-lines-n7b: the importer gives a trill line's notes the
+    // same neighbours a trill mark on each would, so this is no different
+    // from nocturneRight's single trill mark above, only across more
+    // columns: each trilled from its upper note is no slip
+    it("lets a trill line's notes run trilled from their upper note, right hand alone", function() {
+      let song = parseMusicXML(trillLineScore())
+      let columns = extractSectionColumns(song, {startMeasure: 1, endMeasure: 2, track: staffTracks(song).treble, notation: true})
+      let matcher = matcherFor(columns)
+
+      expect(run(matcher, pressed([
+        [-50, 1950, "G4"],
+        [0, 90, "F#5"], [100, 190, "E5"],
+        [1000, 1090, "D5"],
+        [1990, 2950, "F#4"],
+        [2000, 2090, "D5"], [2100, 2190, "C5"],
+        [2990, 3090, "G4"], [3000, 3090, "B4"],
+      ]))).toEqual(["hit E5+G4", "hit D5", "hit C5+F#4", "hit B4+G4"])
     })
   })
 

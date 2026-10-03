@@ -21,7 +21,7 @@ import {
 import {setAppStore} from "st/storage"
 import {
   openTestStore, pickupScore, noteXML, reverieOpening, keyChangeScore, nocturneBars5to6,
-  tiedTrillScore, LITTLE_WALTZ_XML, littleWaltzMXL, pianoScore
+  tiedTrillScore, trillLineScore, LITTLE_WALTZ_XML, littleWaltzMXL, pianoScore
 } from "spec/helpers"
 
 let tuples = notes => [...notes]
@@ -80,7 +80,7 @@ describe("sheet music deck", function() {
       let song = parseMusicXML(nocturneBars5to6())
       let stored = JSON.parse(JSON.stringify(songToJSON(song)))
 
-      expect(stored.format).toEqual(3)
+      expect(stored.format).toEqual(4)
       // one entry a note of the right hand's track, as its notation
       expect(stored.tracks[0].ornaments).toEqual([
         null, {neighbours: ["G#5"]}, {graces: ["E5", "F#5"]}, null,
@@ -569,10 +569,53 @@ describe("sheet music deck", function() {
       // allows its ornaments
       let {piece, updated} = await importMusicXMLPiece("nocturne.musicxml", nocturneBars5to6(), store)
       expect([piece.id, updated]).toEqual(["old", true])
-      expect(findPiece("old", store).song.format).toEqual(3)
+      expect(findPiece("old", store).song.format).toEqual(4)
       expect(columns().length).toEqual(16)
       expect(columns()[4].allowed).toEqual(["G#5"])
       expect(columns()[8].allowed).toEqual(["E5", "F#5"])
+    })
+
+    // sr-detect-trill-lines-n7b: a piece stored before song format 4 has
+    // only the marked note's own neighbours (what a format 3 import gave a
+    // trill line), so the notes it runs over allow nothing until the score
+    // is imported again
+    it("drills a piece stored in song format 3 with a trill line trilling only its marked note, until it is imported again", async function() {
+      let song = parseMusicXML(trillLineScore())
+      let stored = songToJSON(song)
+      let trebleIdx = staffTracks(song).treble
+      let notes = [...song.tracks[trebleIdx]]
+      stored.tracks[trebleIdx] = {
+        ...stored.tracks[trebleIdx],
+        ornaments: stored.tracks[trebleIdx].ornaments.map((entry, idx) => notes[idx].note == "E5" ? entry : null),
+      }
+
+      let old = {id: "old", title: "Trill Line", importedAt: 1000, song: {...stored, format: 3}}
+      await store.putPiece(old)
+
+      let columns = () => {
+        let restored = pieceSong(findPiece("old", store))
+        return extractSectionColumns(restored,
+          {startMeasure: 1, endMeasure: 2, track: staffTracks(restored).treble, notation: true})
+      }
+
+      expect(columns()[1].allowed).toBeFalsy()
+      expect(columns()[2].allowed).toBeFalsy()
+      expect(findPiece("old", store).song.format).toEqual(3)
+
+      let {piece, updated} = await importMusicXMLPiece("trill_line.musicxml", trillLineScore(), store)
+      expect([piece.id, updated]).toEqual(["old", true])
+      expect(findPiece("old", store).song.format).toEqual(4)
+      expect(columns()[1].allowed).toEqual(["E5"])
+    })
+
+    it("round trips a trill line's neighbours over every note it runs over", function() {
+      let song = parseMusicXML(trillLineScore())
+      let stored = JSON.parse(JSON.stringify(songToJSON(song)))
+      let restored = songFromJSON(stored)
+
+      let columns = extractSectionColumns(restored,
+        {startMeasure: 1, endMeasure: 2, track: staffTracks(restored).treble, notation: true})
+      expect(columns.map(c => c.allowed)).toEqual([["F#5"], ["E5"], ["D5"], undefined])
     })
 
     it("imports a compressed .mxl file, keeping its score as the source", async function() {

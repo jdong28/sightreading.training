@@ -622,7 +622,7 @@ describe("spaced repetition records", function() {
       let file = await exportLibraryFile(store)
       let data = JSON.parse(file.text)
       expect(data.version).toEqual(LIBRARY_VERSION)
-      expect(LIBRARY_VERSION).toEqual(8)
+      expect(LIBRARY_VERSION).toEqual(9)
       expect(data.items.map(item => item.id)).toEqual(["a:both:1-1", "a:upper:1-1"])
       expect(data.reviews.map(review => [review.itemId, review.at])).toEqual([["a:both:1-1", 1000], ["a:upper:1-1", 2000]])
       expect(data.studies).toEqual([{pieceId: "a", status: "learning", startedAt: 900}])
