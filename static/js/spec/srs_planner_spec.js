@@ -759,6 +759,23 @@ describe("today's programme planner", function() {
       expect(mostOverduePiece({studies, items, now: NOW})).toEqual("q")
     })
 
+    it("counts a hand alone the player chose whatever the hand scaffold says", function() {
+      let studies = ["p", "q"].map(pieceId => ({pieceId, status: "learning", startedAt: 0}))
+      let item = (fields, hand="both", pieceId="p") => ({...fields, pieceId, hand,
+        id: itemId({pieceId, hand, startMeasure: fields.startMeasure, endMeasure: fields.endMeasure})})
+      // q has one bar due, just after p's left hand; p's bar 3 holds hands
+      // together, and its left hand alone is due
+      let other = item(inReview(1, {due: NOW - DAY + 5000}), "both", "q")
+      let together = item(inReview(3, {due: NOW + 5 * DAY}))
+      let left = item(inReview(3, {due: NOW - DAY}), "lower")
+
+      // made by the scaffold, which has retired it
+      expect(mostOverduePiece({studies, items: [other, together, left], now: NOW})).toEqual("q")
+      // practised by choice, in free practice or a programme played with that hand
+      expect(mostOverduePiece({studies, items: [other, together, {...left, deliberate: true}], now: NOW}))
+        .toEqual("p")
+    })
+
     it("makes the programme the default in study", function() {
       expect(inStudy(null)).toBe(false)
       expect(inStudy({pieceId: "p", status: "learning", startedAt: 0})).toBe(true)
@@ -1455,6 +1472,102 @@ describe("today's programme on the staff", function() {
 
     // the programme is opened again: the failure it never saw splits the bar
     expect((await planDeck()).entry).toEqual(jasmine.objectContaining({measure: 1, hand: "lower"}))
+  })
+
+  // free practice of the piece's measures with a hand setting, one card a bar
+  let freePractice = (measures, hand) => {
+    let free = new MeasureCardGenerator(
+      new MeasureCardDeck(measureCards(measures, 1), {
+        pieceId: piece.id, hand, order: IN_ORDER, store, now: () => time,
+      }),
+      {now: () => time})
+    generators.push(free)
+    let notes = new NoteList([], {generator: free})
+    notes.fillBuffer(8)
+    return {generator: free, notes}
+  }
+
+  it("marks a hand alone the player chose, never the hand scaffold's", async function() {
+    let lowerItem = () => store.item(`${piece.id}:lower:1-1`)
+    // the pools first: making one stops the generator playing
+    let leftBar = pool(LEFT_HAND).filter(m => m.number == 1)
+    let rightPool = pool(RIGHT_HAND)
+    let {handMeasures, handCard} = handPools()
+    let {deck, generator, notes} = await generatorFor(1, {handMeasures, handCard})
+    let stats = new NoteStats()
+    notes = await playCard({generator, notes}, stats)
+
+    // bar 1 fails on its bass G3, so the scaffold offers its left hand alone
+    stats.missNotes(["G3"])
+    stats.missNotes(["G3"])
+    notes = await playCard({generator, notes}, stats)
+    expect(deck.entry).toEqual(jasmine.objectContaining({measure: 1, hand: "lower"}))
+    await playCard({generator, notes}, stats)
+    expect(lowerItem()).toEqual(jasmine.objectContaining({state: "review"}))
+    expect(lowerItem().deliberate).toBeUndefined()
+
+    // free practice of the same left hand marks it as the player's
+    await playCard(freePractice(leftBar, "lower"), new NoteStats())
+    expect(lowerItem().deliberate).toBe(true)
+
+    // as does a programme played with one hand, whose cards are its own
+    let rightDeck = new PlanDeck(rightPool, {pieceId: piece.id, hand: "upper", cardMeasures: 1, store, now: () => time})
+    let right = new PlanGenerator(rightDeck, {now: () => time})
+    generators.push(right)
+    await right.ready
+    let rightNotes = new NoteList([], {generator: right})
+    rightNotes.fillBuffer(8)
+    let {measure} = rightDeck.entry
+    await playCard({generator: right, notes: rightNotes}, new NoteStats())
+    expect(store.item(`${piece.id}:upper:${measure}-${measure}`).deliberate).toBe(true)
+
+    // hands together nothing is marked
+    expect(store.items(piece.id).filter(item => item.hand == "both" && item.deliberate)).toEqual([])
+  })
+
+  it("marks the practice of a hand alone left unfinished", async function() {
+    // bar 1's right hand is three columns: one is played, then Rest
+    let right = freePractice(pool(RIGHT_HAND).filter(m => m.number == 1), "upper")
+    time += 1000
+    right.notes = hit(right.notes, new NoteStats())
+
+    let practice = right.generator.takePractice()
+    expect(practice.length).toBeGreaterThan(0)
+    for (let stint of practice) {
+      await store.recordSectionPractice(stint)
+    }
+    expect(store.item(`${piece.id}:upper:1-1`)).toEqual(jasmine.objectContaining({
+      state: "tracked", attempts: 1, deliberate: true,
+    }))
+  })
+
+  it("flags a hands together study for the hand alone free practice built on purpose", async function() {
+    // the left hand of bar 1 is practised on its own first
+    let left = freePractice(pool(LEFT_HAND).filter(m => m.number == 1), "lower")
+    await playCard(left, new NoteStats())
+    let lower = store.item(`${piece.id}:lower:1-1`)
+    expect(lower).toEqual(jasmine.objectContaining({state: "review"}))
+
+    // the next day the programme plays bars 0 and 1 hands together, which
+    // puts the piece in study, both bars due after the left hand
+    time += DAY
+    let {deck, generator, notes} = await generatorFor(1)
+    let stats = new NoteStats()
+    for (let measure of [0, 1]) {
+      expect(deck.entry).toEqual(jasmine.objectContaining({measure, hand: "both"}))
+      notes = await playCard({generator, notes}, stats)
+    }
+    expect(store.study(piece.id)).toEqual(jasmine.objectContaining({status: "learning"}))
+
+    let together = store.item(`${piece.id}:both:1-1`)
+    expect(together.state).toEqual("review")
+    expect(together.due).toBeGreaterThan(lower.due)
+
+    // the day the left hand comes due, it alone is due
+    let now = lower.due + 8 * 60 * MINUTE
+    expect(store.items(piece.id).filter(item => item.due != null && item.due <= now).map(item => item.id))
+      .toEqual([lower.id])
+    expect(mostOverduePiece({studies: store.studies(), items: store.items(), now})).toEqual(piece.id)
   })
 
   it("ends the sitting once the bars resting fill the idle cap", async function() {
