@@ -1,6 +1,7 @@
 # Handoff: Sight Reading Trainer — "Salon de Chopin" UX facelift
 
-(Verbatim copy of the design handoff README from the Claude Design project, 2026-09-14.)
+(Verbatim copy of the design handoff README from the Claude Design project, 2026-09-14,
+except for the **Implementation** notes added under a screen as it lands.)
 
 ## Overview
 
