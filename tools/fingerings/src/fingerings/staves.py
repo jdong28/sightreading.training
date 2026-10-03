@@ -223,6 +223,7 @@ def barlines(black, system, heads_in_system=None, min_fill=0.9, min_gap_fill=0.9
         out.append(dict(x0=x0, x1=x1, x=float(np.mean(g)), is_full=is_full))
 
     out = _drop_header(out, heads_in_system, space)
+    out = _drop_stem_bars(out, black, staves, space)
 
     # rule 1 (above) says the opening line is always a bar line, but its
     # own ink can be the one place on the page where that's locally
@@ -275,6 +276,52 @@ def _drop_header(out, heads_in_system, space):
     if is_wide and (no_notes_between or header_by_width):
         return out[1:]  # a's "bar" was really the header before a start-repeat
     return out
+
+
+def _longest_gap_run(black, y0, y1, x):
+    """The longest unbroken run of non-ink in column `x` between y0 and
+    y1: a real bar line's stroke is unbroken for its whole height (print
+    noise aside), while two unrelated notes' stems -- one reaching down
+    from the staff above, one up from the staff below, far enough apart
+    that neither's note is a false ledger read -- leave the middle of
+    the gap between the staves untouched."""
+    col = black[y0:y1 + 1, x]
+    best = cur = 0
+    for v in col:
+        cur = 0 if v else cur + 1
+        best = max(best, cur)
+    return best
+
+
+def _drop_stem_bars(out, black, staves, space):
+    """A column can fill both staves solidly without being a bar line at
+    all: two separate notes' stems, one in each staff, happening to line
+    up at the same x. `barlines`' own full_ok rule accepts it regardless
+    of the gap between the staves whenever that gap isn't reliably
+    barred system-wide (rule 2's docstring; true of some real systems,
+    but also of a system where ordinary print noise drops enough real
+    bar lines' own gap fill below the threshold). Such a stem never
+    carries a bar line's unbroken stroke through the middle of that gap,
+    though, and only ever crowds its neighbours -- a bar a stem away
+    from the next isn't a real measure -- so it's dropped exactly when
+    both are true: still a coincidence otherwise, not a dropped bar."""
+    if len(out) < 3 or len(staves) < 2:
+        return out
+    widths = [out[i + 1]["x"] - out[i]["x"] for i in range(len(out) - 1)]
+    median_w = float(np.median(widths))
+    if median_w <= 0:
+        return out
+    y0, y1 = int(staves[0]["lines"][-1]), int(staves[1]["lines"][0])
+    keep = [True] * len(out)
+    for i in range(1, len(out) - 1):
+        gap_before = out[i]["x"] - out[i - 1]["x"]
+        gap_after = out[i + 1]["x"] - out[i]["x"]
+        if gap_before > 0.5 * median_w and gap_after > 0.5 * median_w:
+            continue
+        x = int(round(out[i]["x"]))
+        if _longest_gap_run(black, y0, y1, x) > 1.0 * space:
+            keep[i] = False
+    return [b for b, k in zip(out, keep) if k]
 
 
 def _best_connecting_column(black, staves, x0, x1):
