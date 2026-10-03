@@ -12,10 +12,6 @@ import {flagProposalId} from "st/difficulty/records"
 
 export {ANALYZER_ALGO}
 
-export const KINDS = [
-  "speed", "leaps", "stretch", "3:2", "two hands", "voicing", "pedal", "reading", "memory",
-]
-
 export const LEVEL_WORDS = {1: "Worth a look", 2: "Hard", 3: "Hardest"}
 
 function heatRanks(scored) {

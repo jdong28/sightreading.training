@@ -7,7 +7,7 @@ import {barFeatures} from "st/difficulty/features"
 import {scoreBars, findPassages, heat, ANALYZER_ALGO} from "st/difficulty/sections"
 import {intervalWords, passageReasons} from "st/difficulty/reasons"
 import {validAnnotation, flagsInForce} from "st/difficulty/records"
-import {analyzePiece, annotationWith, annotationStale, KINDS} from "st/difficulty/index"
+import {analyzePiece, annotationWith, annotationStale} from "st/difficulty/index"
 
 // a quiet 16-bar piece (quarter notes, both hands, all in C major) with a
 // dense run of sixteenths in both hands at bars 9-11, the workhorse for the
@@ -289,15 +289,21 @@ describe("st/difficulty", () => {
     })
 
     it("merges an exact repeat into the earlier passage, with alsoAt", () => {
-      let song = workhorseSong({denseAt: [9, 10, 11]})
-      let fp = fingerprint(song)
-      let repeats = new Map([[11, 8], [10, 7], [9, 6]])
+      // the same dense run twice over: bars 17-19 repeat bars 5-7 note for note
+      let song = workhorseSong({denseAt: [5, 6, 7, 17, 18, 19], barCount: 24})
       let scored = scoreBars(barFeatures(song))
+
+      let unmerged = findPassages(scored, {repeats: new Map()})
+      expect(unmerged.map(p => [p.start, p.end]).sort((a, b) => a[0] - b[0]))
+        .toEqual([[5, 7], [17, 19]])
+
+      let repeats = exactRepeats(fingerprint(song))
       let passages = findPassages(scored, {repeats})
-      // the repeat map above claims bars 9-11 repeat bars 6-8: either they
-      // are merged into a passage covering 6-8, or (since 6-8 themselves
-      // never scored as a passage) nothing crashes and 9-11 still flags
-      expect(() => findPassages(scored, {repeats})).not.toThrow()
+      expect(passages.map(p => [p.start, p.end])).toEqual([[5, 7]])
+      expect(passages[0].alsoAt).toEqual([[17, 19]])
+
+      let proposals = analyzePiece({song, source: null, at: 1}).proposals
+      expect(proposals.map(p => p.alsoAt)).toEqual([[[17, 19]]])
     })
 
     it("gives the same proposals and ids for the same song", () => {

@@ -3,7 +3,7 @@
 // practice tip. No Claude, no outside sources: every sentence comes from the
 // score analysis alone.
 
-import {parseNote, noteStaffOffset, KeySignature, displayNoteName} from "st/music"
+import {parseNote, noteStaffOffset, displayNoteName} from "st/music"
 
 const HAND_WORD = {upper: "right", lower: "left"}
 
@@ -11,8 +11,8 @@ function capitalize(text) {
   return text.charAt(0).toUpperCase() + text.slice(1)
 }
 
-// a one-staff piece (a melody) never names a hand (AGENTS.md: "no reason or
-// flag on it ever names a hand")
+// a one-staff piece (a melody) has no hand to name: its reasons and flags
+// speak of the line instead
 function handLabel(hand, ctx, capitalized=true) {
   if (ctx && ctx.singleStaff) { return capitalized ? "The line" : "the line" }
   let word = hand ? `${HAND_WORD[hand]} hand` : "both hands"
@@ -60,9 +60,10 @@ function accidentalPhrase(fifths) {
   return `${numberWord(count)} ${fifths > 0 ? "sharp" : "flat"}${count > 1 ? "s" : ""}`
 }
 
-function keyName(fifths) {
-  let key = KeySignature.forCount(fifths)
-  return key ? key.name() : "C"
+// the key signature itself, never a mode: the analysis never reads
+// MusicXML's <mode>, so it can't tell a major key from its relative minor
+function signatureName(fifths) {
+  return accidentalPhrase(fifths) || "no sharps or flats"
 }
 
 function magnitudeOf(kind, detail) {
@@ -144,7 +145,7 @@ function chordSizeSentence(detail, bar, hand, ctx) {
 
 function chromaticSentence(detail, bar) {
   let count = detail.count == 1 ? "One note" : `${detail.count} notes`
-  let suffix = detail.hasDouble ? ", a double sharp among them" : ""
+  let suffix = detail.hasDouble ? ", a double accidental among them" : ""
   return `${count} outside the key in bar ${bar.number}${suffix}.`
 }
 
@@ -153,15 +154,12 @@ function ledgerSentence(detail, bar) {
 }
 
 function keyChangeSentence(detail, bar) {
-  let name = keyName(detail.fifths)
+  let name = signatureName(detail.fifths)
   if (detail.seenBefore) {
-    return `The key turns back to ${name} major at bar ${bar.number}.`
+    return `The key signature turns back to ${name} at bar ${bar.number}.`
   }
 
-  let accidentals = accidentalPhrase(detail.fifths)
-  return accidentals ?
-    `The key changes to ${name} major, ${accidentals}, at bar ${bar.number}.` :
-    `The key changes to ${name} major at bar ${bar.number}.`
+  return `The key signature changes to ${name} at bar ${bar.number}.`
 }
 
 function remoteKeySentence(detail, bar) {

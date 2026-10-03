@@ -27,7 +27,7 @@ const WEIGHTS = {
 const HAND_FEATURES = new Set(["reach", "leap", "sweep", "span", "chordSize", "holdMove", "held"])
 const BAR_FEATURES = new Set(["density", "chromatic", "independence", "crossing", "ledger"])
 
-// a reading signal never carries a passage to Hardest/Hard on its own
+// signals about reading the page rather than playing it
 const READING_KINDS = new Set(["chromatic", "ledger", "keyChange", "timeChange", "clefChange", "remoteKey"])
 
 const KIND_OF = {
@@ -255,6 +255,9 @@ function levelFor(peakPercentile, onlyReading) {
   return 1
 }
 
+// whether a run's evidence keeps it at Worth a look however high it scores
+// (report 2.6): a run resting on a single signal, or on reading signals
+// alone, never reaches Hard or Hardest on that
 function runIsOnlyReading(run) {
   let signals = new Set()
   for (let bar of run) {

@@ -375,11 +375,11 @@ export function barFeatures(song, extras = {tempo: null, doubleAccidentals: []})
 
     let isPickup = number == 0
     let isLast = i == numbers.length - 1
-    let timeChange = (!isPickup && lastFullBarBeats != null &&
+    let timeChange = (!isPickup && !isLast && lastFullBarBeats != null &&
       Math.abs(barBeats - lastFullBarBeats) > EPSILON)
 
     let clefChange = false
-    for (let [trackIndices, notes] of [[hands.treble, upperNotes], [hands.bass, lowerNotes]]) {
+    for (let trackIndices of [hands.treble, hands.bass]) {
       for (let trackIdx of trackIndices) {
         let cleffs = [...((song.tracks[trackIdx] && song.tracks[trackIdx].cleffs) || [])]
           .sort((a, b) => a[0] - b[0])

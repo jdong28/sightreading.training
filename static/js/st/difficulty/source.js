@@ -2,8 +2,8 @@
 // source MusicXML that the song model drops on import: the tempo (st/musicxml
 // never keeps one) and how many notes were written with a double accidental
 // (the importer respells them to the nearest single-accidental enharmonic,
-// st/musicxml's spellNote, so the song model can't say "a double sharp among
-// them" on its own).
+// st/musicxml's spellNote, so the song model can't say "a double accidental
+// among them" on its own).
 //
 // Never throws: a piece may have no stored source, or the source may fail to
 // parse, and neither should ever fail an import or a page.
