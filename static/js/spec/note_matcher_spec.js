@@ -3,7 +3,7 @@ import NoteMatcher, {EARLY_KEY_WINDOW, LATE_REPEAT_WINDOW, ORNAMENT_GAP} from "s
 import {parseMusicXML} from "st/musicxml"
 import {extractSectionColumns, staffTracks} from "st/song_sections"
 import {cardColumn} from "st/measure_cards"
-import {nocturneBars5to6} from "spec/helpers"
+import {nocturneBars5to6, tiedTrillScore} from "spec/helpers"
 
 // A matcher over an explicit run of columns: the generator hands out the
 // columns still to come, and empty ones once they run out. Every judgement
@@ -634,6 +634,23 @@ describe("note matcher", function() {
     // a trilled note whose trill stops with it: the columns after it carry no
     // trailing of their own, so its pitches reach them only as the carried T
     let releaseColumn = () => ornamented(["F#5"], ["G#5"], ["F#5", "G#5"])
+
+    // An ornament written on a tie's continuation sounds from there, so it
+    // overlaps the column its note was struck at without being written at it:
+    // that column's trailing carries the trill's notes while its allowed
+    // carries nothing (tiedTrillScore, right hand alone). Every key of the
+    // ornament in play is excused however the head came by it (D2), so the
+    // trill anticipated before its own note is no slip
+    it("excuses a pitch only in the head's own trailing ornament", function() {
+      let song = parseMusicXML(tiedTrillScore())
+      let columns = extractSectionColumns(song,
+        {startMeasure: 1, endMeasure: 2, track: staffTracks(song).treble, notation: true})
+      expect(columns.map(column => [column.allowed ?? null, column.trailing ?? null]))
+        .toEqual([[null, ["C5", "D5"]]])
+
+      let matcher = matcherFor(columns)
+      expect(run(matcher, [["on", "D5", 0], ["on", "C5", 110]])).toEqual(["hit C5"])
+    })
 
     it("excuses a trailing note at the release column outright when it isn't the release's own", function() {
       let matcher = matcherFor([releaseColumn(), ["C#5"]])

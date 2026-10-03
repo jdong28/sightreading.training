@@ -391,15 +391,15 @@ export default class NoteMatcher {
   // is over, so the head's own key is its own at once.
   //
   // Ambiguous for the next column means a key not the head's own, in the
-  // head's allowed or T (the carried trailing set), that is the next column's
-  // own: struck early for it (T5) once resolved, as credited(). A trill, turn
-  // or mordent surrounds its note, so its pitches are ambiguous throughout; a
-  // pitch that is only a grace into the head precedes its note, so it is the
-  // grace before any of the head's own keys are down and the next column's
-  // key only after. Any other key in the head's allowed or T is excused
-  // outright. Neither kind of ambiguity, nor the excuse, applies to a press
-  // with no timeStamp (the on-screen keyboard): at the head it is the head's
-  // own at once, excused as today
+  // ornament in play (inOrnamentPlay), that is the next column's own: struck
+  // early for it (T5) once resolved, as credited(). A trill, turn or mordent
+  // surrounds its note, so its pitches are ambiguous throughout; a pitch that
+  // is only a grace into the head precedes its note, so it is the grace
+  // before any of the head's own keys are down and the next column's key only
+  // after. Any other key of the ornament in play is excused outright.
+  // Neither kind of ambiguity, nor the excuse, applies to a press with no
+  // timeStamp (the on-screen keyboard): at the head it is the head's own at
+  // once, excused as today
   classifyOrnamentKey(note, timeStamp) {
     let column = this.notes.currentColumn()
     let next = this.columnAt(1)
@@ -413,8 +413,7 @@ export default class NoteMatcher {
       return null
     }
 
-    let inPlay = this.inSet(column.allowed, note) || this.inSet(this.trailing, note)
-    if (!inPlay) { return null }
+    if (!this.inOrnamentPlay(note)) { return null }
 
     if (timeStamp != null && this.inColumn(next, note)) {
       let trillPitch = this.inSet(column.trailing, note) || this.inSet(this.headAmbiguous, note)
@@ -432,13 +431,13 @@ export default class NoteMatcher {
     return !!list && list.some(n => this.notes.sameNote(note, n, this.anyOctave))
   }
 
-  // whether note is one of the ornament pitches in play over the head: a
-  // pitch already pending, the head's own allowed and trailing
-  // (column.allowed, column.trailing) and the carried trailing set T. Used to
-  // tell an ornament going on from a real strike at settlePending and to keep
-  // the ornament live; classifyOrnamentKey's own sets are narrower (a
-  // column's own key, trailing only at its own column, never makes it an
-  // ornament key here, since it is already handled by headAmbiguous there)
+  // The one set of the ornament keys in play over the head: a pitch already
+  // pending, the head's own allowed and trailing (column.allowed,
+  // column.trailing) and the carried trailing set T. A key of it is never
+  // touched, required or a slip (D2), so classifyOrnamentKey reads the same
+  // set as settlePending and the ornament clock do — the head's own keys,
+  // which the inHead branch answers for first, are the only ones it tells
+  // apart (headAmbiguous there)
   inOrnamentPlay(note) {
     let column = this.notes.currentColumn()
     return !!this.pending[note] || this.inSet(column.allowed, note) ||
