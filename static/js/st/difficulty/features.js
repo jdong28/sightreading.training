@@ -288,7 +288,7 @@ function chromaticFeature(barNotes, fifths, doubleAccidentals) {
   let count = barNotes.reduce((sum, note) =>
     sum + (key.accidentalsForNote(note.note) != null ? 1 : 0), 0)
   let doubled = doubleAccidentals.reduce((sum, n) => sum + (n || 0), 0)
-  return {count: count + doubled, hasDouble: doubled > 0}
+  return {count, hasDouble: doubled > 0}
 }
 
 function ledgerFeature(barNotesWithClef) {

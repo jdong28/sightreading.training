@@ -39,6 +39,20 @@ function workhorseSong({denseAt=[9, 10, 11], barCount=16}={}) {
   return parseMusicXML(pianoScore({bars}))
 }
 
+// one already-scored bar as scoreBars leaves it, for the findPassages tests
+// that need a given shape of scores across a piece
+function scoredBar(number, score, top=null) {
+  return {
+    number,
+    indices: [number - 1, number - 1],
+    beats: [number - 1, number],
+    hands: {upper: {}, lower: null},
+    density: {notes: 4, perBeat: 1, perSecond: null},
+    score,
+    top: top || [{kind: "density", hand: null, contribution: score, detail: {perBeat: 1, perSecond: null}}],
+  }
+}
+
 function uniformSong(barCount=16) {
   let bars = []
   for (let i = 0; i < barCount; i++) { bars.push(quietBar()) }
@@ -162,6 +176,42 @@ describe("st/difficulty", () => {
       expect(bars[1].ledger).toBeGreaterThanOrEqual(1)
     })
 
+    it("a pickup and the short final bar that compensates it are no meter change", () => {
+      let shortBar = beats => ({
+        upper: QUIET_UPPER.slice(0, beats).map(name => ({name})),
+        lower: QUIET_LOWER.slice(0, beats).map(name => ({name})),
+        beats,
+      })
+
+      let compensated = Array.from({length: 10}, () => quietBar())
+      compensated[0] = shortBar(1)
+      compensated[9] = shortBar(3)
+      let withPickup = parseMusicXML(pianoScore({bars: compensated})
+        .replace('<measure number="1">', '<measure number="0" implicit="yes">'))
+
+      let bars = barFeatures(withPickup)
+      expect(bars[0].number).toEqual(0)
+      expect(bars[bars.length - 1].number).toEqual(9)
+      expect(bars.filter(b => b.timeChange).map(b => b.number)).toEqual([])
+
+      let inside = Array.from({length: 10}, () => quietBar())
+      inside[4] = shortBar(3)
+      let interior = barFeatures(parseMusicXML(pianoScore({bars: inside})))
+      expect(interior.filter(b => b.timeChange).map(b => b.number)).toContain(5)
+    })
+
+    it("counts a note written with a double accidental once, naming it as one", () => {
+      let xml = pianoScore({bars: [
+        quietBar(),
+        {
+          upper: [{name: "B4", alter: 2}, {name: "D4"}, {name: "E4"}, {name: "F4"}],
+          lower: QUIET_LOWER.map(name => ({name})),
+        },
+      ]})
+      let bars = barFeatures(parseMusicXML(xml), scoreExtras(xml))
+      expect(bars[1].chromatic).toEqual({count: 1, hasDouble: true})
+    })
+
     it("a printed bar split in two measure indices is one bar; a pickup is bar 0", () => {
       let song = parseMusicXML(pianoScore({bars: [quietBar(), quietBar()]})
         .replace('<measure number="1">', '<measure number="0" implicit="yes">'))
@@ -176,18 +226,18 @@ describe("st/difficulty", () => {
       let metronome = scoreExtras(pianoScore({bars: [
         {directions: [{metronome: {unit: "quarter", dot: true, perMinute: 60}}], upper: QUIET_UPPER.map(name => ({name}))},
       ]}))
-      expect(metronome.tempo).toEqual({bpm: 90, from: "metronome", text: null})
+      expect(metronome.tempo).toEqual({bpm: 90, from: "metronome", word: null})
 
       let sound = scoreExtras(pianoScore({bars: [
         {directions: [{sound: 76}], upper: QUIET_UPPER.map(name => ({name}))},
         {directions: [{sound: 120}], upper: QUIET_UPPER.map(name => ({name}))},
       ]}))
-      expect(sound.tempo).toEqual({bpm: 76, from: "sound", text: null})
+      expect(sound.tempo).toEqual({bpm: 76, from: "sound", word: null})
 
       let words = scoreExtras(pianoScore({bars: [
         {directions: [{words: "Andantino sognando"}], upper: QUIET_UPPER.map(name => ({name}))},
       ]}))
-      expect(words.tempo).toEqual({bpm: 88, from: "words", text: "Andantino sognando"})
+      expect(words.tempo).toEqual({bpm: 88, from: "words", word: "andantino"})
 
       expect(scoreExtras(null).tempo).toBeNull()
       expect(scoreExtras("not xml at all <<<").tempo).toBeNull()
@@ -262,6 +312,30 @@ describe("st/difficulty", () => {
       expect(findPassages(scoredShort, {repeats: new Map()})).toEqual([])
     })
 
+    it("keeps the strictest threshold's passages when a looser one blows the budget", () => {
+      // bars 5-7 are this piece's hard run; at a looser threshold the
+      // middling bars around them bridge into one run wider than the budget,
+      // which flags nothing
+      let scores = [1, 2.2, 3, 1.6, 5.5, 4, 5.5, 0.2, 3, 0.2, 0.2, 4, 2.2, 0.2, 2.2, 4]
+      let scored = scores.map((score, i) => scoredBar(i + 1, score))
+      expect(findPassages(scored, {repeats: new Map()}).map(p => [p.start, p.end]))
+        .toEqual([[5, 7]])
+    })
+
+    it("a run resting on one signal stays Worth a look however high it scores", () => {
+      let scores = [0.2, 0.2, 0.2, 0.2, 9, 9, 9, 0.2, 0.2, 0.2, 0.2, 0.2]
+      let oneSignal = scores.map((score, i) => scoredBar(i + 1, score))
+      expect(findPassages(oneSignal, {repeats: new Map()}).map(p => [p.start, p.end, p.level]))
+        .toEqual([[4, 7, 1]])
+
+      let twoSignals = scores.map((score, i) => scoredBar(i + 1, score, [
+        {kind: "density", hand: null, contribution: score / 2, detail: {perBeat: 1, perSecond: null}},
+        {kind: "leap", hand: "upper", contribution: score / 2, detail: {semitones: 20, from: "C4", to: "G5"}},
+      ]))
+      expect(findPassages(twoSignals, {repeats: new Map()}).map(p => [p.start, p.end, p.level]))
+        .toEqual([[4, 7, 3]])
+    })
+
     it("heat buckets a percentile into the strip's 0-4 ramp", () => {
       expect(heat(0.95)).toEqual(4)
       expect(heat(0.75)).toEqual(3)
@@ -322,6 +396,22 @@ describe("st/difficulty", () => {
       expect(intervalWords("C2", "C4")).toEqual("two octaves")
       expect(intervalWords("G2", "Bb3")).toEqual("a tenth")
       expect(intervalWords("A2", "F#4")).toEqual("a thirteenth")
+    })
+
+    it("a tempo guessed from a marking is named as an estimate, a metronome mark is not", () => {
+      function densityReason(direction) {
+        let bars = Array.from({length: 16}, (_, i) => (i >= 8 && i <= 10) ? denseBar() : quietBar())
+        bars[0] = {...bars[0], directions: [direction]}
+        let xml = pianoScore({bars})
+        let analysis = analyzePiece({song: parseMusicXML(xml), source: xml, at: 1})
+        return analysis.proposals.flatMap(p => p.reasons).find(r => r.includes("notes a second"))
+      }
+
+      expect(densityReason({words: "Allegro con brio"})).toContain("at Allegro, taken as ♩ = 132")
+
+      let stated = densityReason({metronome: {unit: "quarter", perMinute: 92}})
+      expect(stated).toContain("at ♩ = 92")
+      expect(stated).not.toContain("taken as")
     })
 
     it("every passage has a title, one to three reasons and a tip", () => {

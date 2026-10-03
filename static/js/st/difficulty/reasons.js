@@ -97,10 +97,21 @@ function winningBar(run, kind, hand) {
   return best
 }
 
+// a tempo guessed from a marking is named as the estimate it is; only a
+// <metronome> or <sound tempo> is the score's own mark
+function tempoPhrase(tempo) {
+  if (!tempo) { return "" }
+  let mark = `♩ = ${Math.round(tempo.bpm)}`
+  if (tempo.from == "words") {
+    return ` at ${capitalize(tempo.word)}, taken as ${mark}`
+  }
+  return ` at ${mark}`
+}
+
 function densitySentence(detail, bar, hand, ctx) {
   let unit = ctx.tempo ? "second" : "beat"
   let rate = formatRate(ctx.tempo ? detail.perSecond : detail.perBeat)
-  let tempoSuffix = ctx.tempo ? ` at ♩ = ${Math.round(ctx.tempo.bpm)}` : ""
+  let tempoSuffix = tempoPhrase(ctx.tempo)
 
   if (ctx.isDensest) {
     return `The densest writing in the piece, ${rate} notes a ${unit}${tempoSuffix} (bar ${bar.number}).`

@@ -1,10 +1,10 @@
 // Turns st/difficulty/features.js's per-bar measurements into scores and
-// groups the hardest bars into passages. The numbers here (ANALYZER_ALGO 1)
+// groups the hardest bars into passages. The numbers here (ANALYZER_ALGO 2)
 // are a first guess (report section 9): tune them freely, but bump
 // ANALYZER_ALGO whenever a change would relabel an existing piece's flags,
 // so a stale record is recomputed rather than silently kept.
 
-export const ANALYZER_ALGO = 1
+export const ANALYZER_ALGO = 2
 
 const MIN_ANALYSIS_BARS = 8
 
@@ -27,7 +27,8 @@ const WEIGHTS = {
 const HAND_FEATURES = new Set(["reach", "leap", "sweep", "span", "chordSize", "holdMove", "held"])
 const BAR_FEATURES = new Set(["density", "chromatic", "independence", "crossing", "ledger"])
 
-// signals about reading the page rather than playing it
+// a run resting on a single signal, or on reading signals alone, never
+// reaches Hard or Hardest on that (runRestsOnOneSignal)
 const READING_KINDS = new Set(["chromatic", "ledger", "keyChange", "timeChange", "clefChange", "remoteKey"])
 
 const KIND_OF = {
@@ -248,8 +249,8 @@ function passageKinds(run) {
   return [...totals.entries()].sort((a, b) => b[1] - a[1]).map(([kind]) => kind)
 }
 
-function levelFor(peakPercentile, onlyReading) {
-  if (onlyReading) { return 1 }
+function levelFor(peakPercentile, restsOnOneSignal) {
+  if (restsOnOneSignal) { return 1 }
   if (peakPercentile >= 0.9) { return 3 }
   if (peakPercentile >= 0.7) { return 2 }
   return 1
@@ -258,7 +259,7 @@ function levelFor(peakPercentile, onlyReading) {
 // whether a run's evidence keeps it at Worth a look however high it scores
 // (report 2.6): a run resting on a single signal, or on reading signals
 // alone, never reaches Hard or Hardest on that
-function runIsOnlyReading(run) {
+function runRestsOnOneSignal(run) {
   let signals = new Set()
   for (let bar of run) {
     for (let c of bar.top) { signals.add(c.kind) }
@@ -311,16 +312,23 @@ export function findPassages(scored, {repeats} = {}) {
   let floorCount = Math.floor(notedBars.length / 4)
   let budget = Math.ceil(notedBars.length / 3)
 
-  let result = null
+  // the strictest threshold that flags at least floorCount bars, else the
+  // one that flagged the most: a looser threshold whose runs the budget
+  // drops wholesale must never lose the passages a stricter one found
+  let result = []
+  let mostFlagged = 0
   for (let pct of [0.7, 0.65, 0.6]) {
     let threshold = percentile(notedScores, pct)
     let candidate = passagesAtThreshold(scored, notedScores, threshold, budget)
     let flaggedBars = candidate.reduce((sum, p) => sum + p.run.length, 0)
-    result = candidate
+    if (flaggedBars > mostFlagged) {
+      mostFlagged = flaggedBars
+      result = candidate
+    }
     if (flaggedBars >= floorCount) { break }
   }
 
-  let passages = result || []
+  let passages = result
 
   // hand and kinds
   passages = passages.map(p => ({
@@ -374,7 +382,7 @@ function passagesAtThreshold(scored, notedScores, threshold, budget) {
     .map(run => {
       let str = strength(run)
       let peakPct = Math.max(...run.map(bar => barPercentile(bar, notedScores)))
-      let onlyReading = runIsOnlyReading(run)
+      let restsOnOneSignal = runRestsOnOneSignal(run)
       return {
         run,
         start: run[0].number,
@@ -382,7 +390,7 @@ function passagesAtThreshold(scored, notedScores, threshold, budget) {
         startIndex: run[0].indices[0],
         endIndex: run[run.length - 1].indices[1],
         strength: str,
-        level: levelFor(peakPct, onlyReading),
+        level: levelFor(peakPct, restsOnOneSignal),
       }
     })
     .sort((a, b) => b.strength - a.strength)

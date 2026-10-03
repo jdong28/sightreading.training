@@ -59,13 +59,13 @@ const TEMPO_WORDS = [
 ]
 
 // a tempo word at the start of text (case-insensitive), eg. "Andantino
-// sognando" -> 88; checked longest-first so "andantino" never matches as
-// "andante"
+// sognando" -> {bpm: 88, word: "andantino"}; checked longest-first so
+// "andantino" never matches as "andante"
 function tempoFromWords(text) {
   let lower = text.trim().toLowerCase()
   let byLength = [...TEMPO_WORDS].sort((a, b) => b[0].length - a[0].length)
   for (let [word, bpm] of byLength) {
-    if (lower.startsWith(word)) { return bpm }
+    if (lower.startsWith(word)) { return {bpm, word} }
   }
   return null
 }
@@ -82,14 +82,16 @@ function beatUnitBeats(metronomeEl) {
 
 // the first explicit tempo marking only (never averaged, never the latest):
 // a <metronome>, else the first <sound tempo>, else the first recognised
-// tempo word. {bpm, from: "metronome" | "sound" | "words", text} or null.
+// tempo word. {bpm, from: "metronome" | "sound" | "words", word} or null;
+// `word` is the marking a words tempo was guessed from, so a reason can say
+// the figure is an estimate rather than the score's own mark.
 function firstTempo(root) {
   for (let direction of root.getElementsByTagName("direction")) {
     for (let metronome of direction.getElementsByTagName("metronome")) {
       let unitBeats = beatUnitBeats(metronome)
       let perMinute = +(childText(metronome, "per-minute") || 0)
       if (unitBeats && perMinute > 0) {
-        return {bpm: Math.round(perMinute * unitBeats), from: "metronome", text: null}
+        return {bpm: Math.round(perMinute * unitBeats), from: "metronome", word: null}
       }
     }
   }
@@ -98,16 +100,15 @@ function firstTempo(root) {
     let sound = childEl(direction, "sound")
     let tempo = sound && +(sound.getAttribute("tempo") || 0)
     if (tempo > 0) {
-      return {bpm: Math.round(tempo), from: "sound", text: null}
+      return {bpm: Math.round(tempo), from: "sound", word: null}
     }
   }
 
   for (let direction of root.getElementsByTagName("direction")) {
     for (let words of direction.getElementsByTagName("words")) {
-      let text = words.textContent || ""
-      let bpm = tempoFromWords(text)
-      if (bpm != null) {
-        return {bpm, from: "words", text: text.trim()}
+      let guess = tempoFromWords(words.textContent || "")
+      if (guess) {
+        return {bpm: guess.bpm, from: "words", word: guess.word}
       }
     }
   }
