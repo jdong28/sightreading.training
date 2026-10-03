@@ -467,11 +467,20 @@ export class RandomNotes extends Generator {
     return groups.map(g => g[this.generator.int() % g.length])
   }
 
+  // the pitches one hand can reach from a window handSize wide placed left
+  // halfsteps above the lowest. A sparse pool (eg. a focus on one pitch
+  // class, whose notes sit an octave apart) can leave that window empty, so
+  // it is moved onto the nearest pitch at or below it: a hand group is never
+  // empty and never wider than one hand
   getNotesForHand(pitches, left) {
     let start = pitches[0] + left
-    return pitches.map(p => p - start)
-      .filter(p => p >= 0 && p < this.handSize)
-      .map(p => p + start) // put it back
+    let inHand = p => p >= start && p < start + this.handSize
+
+    if (!pitches.some(inHand)) {
+      start = pitches.filter(p => p < start).pop() ?? pitches[0]
+    }
+
+    return pitches.filter(inHand)
   }
 
   // generate random number [0,n[ with skew towards 0 based on normal dist
@@ -564,14 +573,6 @@ export class RandomNotes extends Generator {
     }
 
     let hands = this.handGroups(notes)
-
-    // a sparse pool (eg. a one- or two-note focus spread across octaves)
-    // can leave a hand group empty, however many hands were asked for: fall
-    // back to the whole pool rather than draw a column from a hand group
-    // that can't fill it
-    if (hands.some(hand => !hand.length)) {
-      return this.pickNDist(notes, perColumn)
-    }
 
     if (hands.length == 1) {
       return this.pickNDist(hands[0], perColumn)

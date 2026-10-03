@@ -287,26 +287,54 @@ describe("a focused pool of notes", function() {
 describe("random notes created with a focus", function() {
   let random = GENERATORS.find(g => g.name == "random")
   let treble = STAVES.find(s => s.name == "treble")
+  let grand = STAVES.find(s => s.name == "grand")
   let key = new KeySignature(0)
 
-  // C over the default treble staff (A3-C6) gives C4, C5, C6: a pool wider
-  // than one hand, so the hand windows handGroups draws can miss every note
-  // of it
-  it("never emits an empty column from a sparse focus pool", function() {
-    for (let notes = 1; notes <= 5; notes++) {
-      for (let hands = 1; hands <= 2; hands++) {
-        let generator = random.create(treble, key, {notes, hands, focus: {C: true}})
+  // RandomNotes#handSize: the halfsteps one hand reaches, so the pitches of
+  // one hand span at most handSize - 1
+  let HAND_SIZE = 11
 
-        for (let i = 0; i < 200; i++) {
-          let column = generator.nextNote()
-          expect(column.length).withContext(`notes ${notes}, hands ${hands}`).toBeGreaterThan(0)
-          for (let note of column) {
-            expect(note).toMatch(/^C\d+$/)
+  // the fewest hands the column needs, walking its pitches low to high and
+  // starting a new hand whenever the next note is out of the current one's
+  // reach (greedy is optimal for covering a line with fixed-width windows)
+  let handsNeeded = column => {
+    let pitches = column.map(parseNote).sort((a, b) => a - b)
+    let hands = 1
+    let lowest = pitches[0]
+
+    for (let pitch of pitches) {
+      if (pitch - lowest >= HAND_SIZE) {
+        hands += 1
+        lowest = pitch
+      }
+    }
+
+    return hands
+  }
+
+  // C over a staff gives one note per octave (C2-C6 on the grand staff, C4-C6
+  // on the treble): a pool wider than one hand and sparser than one hand's
+  // reach, so the hand windows handGroups draws can miss every note of it
+  for (let staff of [grand, treble]) {
+    it(`keeps every column of a sparse focus pool playable on the ${staff.name} staff`, function() {
+      for (let notes = 1; notes <= 5; notes++) {
+        for (let hands = 1; hands <= 2; hands++) {
+          let generator = random.create(staff, key, {notes, hands, focus: {C: true}})
+          let context = `notes ${notes}, hands ${hands}`
+
+          for (let i = 0; i < 200; i++) {
+            let column = generator.nextNote()
+            expect(column.length).withContext(context).toBeGreaterThan(0)
+            for (let note of column) {
+              expect(note).withContext(context).toMatch(/^C\d+$/)
+            }
+            expect(handsNeeded(column)).withContext(context).not.toBeGreaterThan(hands)
+            expect(new Set(column).size).withContext(context).toEqual(column.length)
           }
         }
       }
-    }
-  })
+    })
+  }
 
   it("falls back to the unfocused pool with every note off, or none in range", function() {
     let allOff = random.create(treble, key, {notes: 3, hands: 1, focus: {"F#": false}})

@@ -24,12 +24,7 @@ export class SessionSummary extends React.Component {
     // (Pill to=), a function as a button
     onNewProgramme: types.func,
     newProgrammeTo: types.string,
-    progressTo: types.string,
     onClose: types.func.isRequired,
-  }
-
-  static defaultProps = {
-    progressTo: "/stats",
   }
 
   componentDidMount() {
@@ -108,7 +103,7 @@ export class SessionSummary extends React.Component {
             className={styles.action}
             onClick={this.props.onNewProgramme}>New programme</Pill>}
 
-          <Link className={styles.progress_link} to={this.props.progressTo}>
+          <Link className={styles.progress_link} to="/stats">
             See all progress →
           </Link>
         </div>

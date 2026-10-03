@@ -659,9 +659,10 @@ const ALL_GENERATORS = [
       // a focus narrowed by the note range can come back empty; fall back
       // to the unfocused pool rather than drill nothing
       if (notes && notes.length) {
-        // a chord filter on top of an already-narrow focus pool could empty
-        // it, so musical is ignored while focused
-        return new RandomNotes(notes, {...options, musical: false})
+        // returning here skips the musical block below, which is the only
+        // thing that attaches the scale: a chord filter on top of an
+        // already-narrow focus pool could empty it
+        return new RandomNotes(notes, options)
       }
 
       notes = scale.getLooseRange(...range)
