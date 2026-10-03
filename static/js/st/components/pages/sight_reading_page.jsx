@@ -70,7 +70,8 @@ const STAFF_TWO_HEIGHT = 150
 // both renderers draw the staff this much smaller inside the staff plate
 export const PLATE_STAFF_SCALE = 0.8
 
-// the legacy renderer's scale for the window's width
+// the staff's scale for the window's width: the legacy renderer draws at
+// it, and StaffTwo spaces its columns by it too (see its columnDx)
 function staffScale() {
   return (window.innerWidth < 1000 ? 0.8 : 1) * PLATE_STAFF_SCALE
 }
@@ -774,8 +775,9 @@ export default class SightReadingPage extends React.Component {
     return this.setState(state => ({ notes, droppedPitches, cardSeq: state.cardSeq + 1 }))
   }
 
-  // keeps state.staffWidth up to date with the staff wrapper's width, which
-  // an engine draws a piece's card to
+  // keeps the measurements of the staff wrapper up to date: its width,
+  // which an engine draws a piece's card to, and the scroll-mode hit
+  // band's centre (see measureStaffWrapper)
   observeStaffWrapper(el) {
     if (this.staffResizeObserver) {
       this.staffResizeObserver.disconnect()
