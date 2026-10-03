@@ -245,6 +245,57 @@ export const tiedTrillScore = () => {
 </score-partwise>`
 }
 
+// Two bars of a descending chain of trills in G major (one sharp), 4/4, as
+// MuseScore Studio 4.7 exports it, with layout, stems and beams left out: one
+// trill line runs from the right hand's E5 across the bar line and a system
+// break to its C5. MuseScore writes the trill mark and the line's start on
+// the first note and its stop on the last, nothing on the notes between, and
+// no <wavy-line type="continue"/> at the system break:
+//   1: staff 1 voice 1 E5 (half, trill mark and line start), D5 (half); voice
+//     2 G4 (whole); staff 2 voice 5 the eighths G2 D3 B3 D3 twice
+//   2 (a new system): staff 1 voice 1 C5 (half, line stop), B4 (half); voice
+//     2 F#4 (half), G4 (half); staff 2 voice 5 the eighths D2 A2 F#3 A2 G2 D3
+//     B3 D3
+export const trillLineScore = () => {
+  let pitch = (step, alter, octave) =>
+    `<pitch><step>${step}</step>${alter ? `<alter>${alter}</alter>` : ""}<octave>${octave}</octave></pitch>`
+  let note = (step, alter, octave, duration, type, voice, staff, notations="") =>
+    `<note>${pitch(step, alter, octave)}<duration>${duration}</duration><voice>${voice}</voice><type>${type}</type><staff>${staff}</staff>${notations}</note>`
+  let half = (step, alter, octave, notations="") => note(step, alter, octave, 4, "half", 1, 1, notations)
+  let eighths = pitches => pitches.map(([step, alter, octave]) =>
+    note(step, alter, octave, 1, "eighth", 5, 2)).join("\n      ")
+  let line = type => `<notations><ornaments>${type == "start" ? "<trill-mark/>" : ""}<wavy-line type="${type}" number="1"/></ornaments></notations>`
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <work><work-title>Trill Line</work-title></work>
+  <part-list>
+    <score-part id="P1"><part-name>Piano</part-name></score-part>
+  </part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes><divisions>2</divisions><key><fifths>1</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><staves>2</staves><clef number="1"><sign>G</sign><line>2</line></clef><clef number="2"><sign>F</sign><line>4</line></clef></attributes>
+      ${half("E", 0, 5, line("start"))}
+      ${half("D", 0, 5)}
+      <backup><duration>8</duration></backup>
+      ${note("G", 0, 4, 8, "whole", 2, 1)}
+      <backup><duration>8</duration></backup>
+      ${eighths([["G", 0, 2], ["D", 0, 3], ["B", 0, 3], ["D", 0, 3], ["G", 0, 2], ["D", 0, 3], ["B", 0, 3], ["D", 0, 3]])}
+    </measure>
+    <measure number="2">
+      <print new-system="yes"/>
+      ${half("C", 0, 5, line("stop"))}
+      ${half("B", 0, 4)}
+      <backup><duration>8</duration></backup>
+      ${note("F", 1, 4, 4, "half", 2, 1)}
+      ${note("G", 0, 4, 4, "half", 2, 1)}
+      <backup><duration>8</duration></backup>
+      ${eighths([["D", 0, 2], ["A", 0, 2], ["F", 1, 3], ["A", 0, 2], ["G", 0, 2], ["D", 0, 3], ["B", 0, 3], ["D", 0, 3]])}
+    </measure>
+  </part>
+</score-partwise>`
+}
+
 // The Nocturne's repeated C#4 (the report's beats 9.5 and 10, see
 // sr-note-detection-l3) as one 4/4 bar on two staves: treble G#4 (dotted
 // quarter), C#4 (eighth), C#4 (half); bass C#3 (half), G#2 (half). Its

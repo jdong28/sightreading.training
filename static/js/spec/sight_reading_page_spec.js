@@ -31,7 +31,9 @@ import NoteStats, {addNoteListener} from "st/note_stats"
 import {ORNAMENT_GAP} from "st/note_matcher"
 import {parseNote} from "st/music"
 import {KEYBOARD_MAP, SYMBOL_MAP_INVERSE} from "st/keyboard_input"
-import {openTestStore, noteXML, reverieOpening, keyChangeScore, nocturneBars5to6, repeatedNoteBar} from "spec/helpers"
+import {
+  openTestStore, noteXML, reverieOpening, keyChangeScore, nocturneBars5to6, repeatedNoteBar, trillLineScore
+} from "spec/helpers"
 
 // a two staff 3/4 piece, measures 1 and 2
 let minuetXML = `<?xml version="1.0" encoding="UTF-8"?>
@@ -1477,6 +1479,89 @@ describe("sight reading page", function() {
 
       expect(() => flushSync(() => root.unmount())).not.toThrow()
       root = null
+    })
+
+    // sr-detect-trill-lines-n7b: a trill line over several notes (see
+    // trillLineScore) trills every one of them, not just the note carrying
+    // its mark
+    describe("a trill line over several notes", function() {
+      // the two bars as a pianist plays them at 60 bpm: each note under the
+      // line trilled with the note above it, 110 ms apart from the upper one,
+      // up to the next note; the B4 after the line, the second voice's held
+      // notes and the left hand's eighths as written. extra adds [ms, note]
+      // presses of 50 ms, and left: false leaves the left hand out. Returns
+      // [ms, "on" | "off", note] in time order
+      let asWritten = (extra=[], {left=true}={}) => {
+        let events = []
+        let key = (note, on, off) => events.push([on, "on", note], [off, "off", note])
+
+        let trilled = (note, upper, from) => {
+          for (let idx = 0; idx < 18; idx++) {
+            key(idx % 2 ? note : upper, from + idx * 110, from + idx * 110 + 90)
+          }
+        }
+        trilled("E5", "F#5", 0)
+        trilled("D5", "E5", 2000)
+        trilled("C5", "D5", 4000)
+        key("B4", 6000, 7985)
+
+        key("G4", 0, 3985)
+        key("F#4", 4000, 5985)
+        key("G4", 6000, 7985)
+
+        let bass = left ? ["G2", "D3", "B3", "D3", "G2", "D3", "B3", "D3", "D2", "A2", "F#3", "A2", "G2", "D3", "B3", "D3"] : []
+        bass.forEach((note, idx) => key(note, idx * 500, (idx + 1) * 500 - 15))
+
+        for (let [at, note] of extra) {
+          key(note, at, at + 50)
+        }
+
+        return events.sort((a, b) => a[0] - b[0])
+      }
+
+      let perform = events => {
+        for (let [at, what, note] of events) {
+          let status = what == "on" ? 0x90 : 0x80
+          flushSync(() => page.onMidiMessage({data: new Uint8Array([status, parseNote(note), 100]), timeStamp: at}))
+        }
+      }
+
+      let renderTrillLine = async (render, settings={}) => {
+        let {piece} = await importMusicXMLPiece("trill_line.musicxml", trillLineScore(), store)
+        window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+          piece: piece.id, startMeasure: 1, endMeasure: 2, hand: BOTH_HANDS, measuresPerCard: "all",
+          ...settings,
+        }))
+        return render()
+      }
+
+      it("counts no slip for the line played as written", async function() {
+        await renderTrillLine(() => renderPage(ScorePage))
+        await waitFor(() => page.state.engineSource && page.state.engineSource.status == "ready",
+          "the engine's source")
+        await waitFor(() => page.state.notes.currentColumn().includes("G2"), "the section's columns")
+
+        flushSync(() => page.beginSession())
+        perform(asWritten())
+        expect([page.state.stats.hits, page.state.stats.misses]).toEqual([16, 0])
+      })
+
+      it("counts no slip for the right hand alone played as written", async function() {
+        await renderTrillLine(renderScorePage, {hand: RIGHT_HAND})
+        flushSync(() => page.beginSession())
+        perform(asWritten([], {left: false}))
+        expect([page.state.stats.hits, page.state.stats.misses]).toEqual([4, 0])
+      })
+
+      // the line stops on C5, so the B4 after it is trilled by nothing: C5,
+      // the note above it, struck there long after the line's last trill is
+      // still a wrong key
+      it("still counts a slip for the note above one the line doesn't run over", async function() {
+        await renderTrillLine(renderScorePage, {hand: RIGHT_HAND})
+        flushSync(() => page.beginSession())
+        perform(asWritten([[7000, "C5"]], {left: false}))
+        expect([page.state.stats.hits, page.state.stats.misses]).toEqual([4, 1])
+      })
     })
   })
 

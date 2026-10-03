@@ -4,7 +4,9 @@ import {
   DAMAGED_ARCHIVE_MESSAGE, NO_SCORE_MESSAGE
 } from "st/musicxml"
 import {SongNote, measureStartsUntil, clickStartsMeasure} from "st/song_note_list"
-import {reverieOpening, nocturneBars5to6, tiedTrillScore, LITTLE_WALTZ_XML, littleWaltzMXL} from "spec/helpers"
+import {
+  reverieOpening, nocturneBars5to6, tiedTrillScore, trillLineScore, LITTLE_WALTZ_XML, littleWaltzMXL
+} from "spec/helpers"
 
 // [note, start, duration] tuples of a note list, in document order
 let tuples = notes => [...notes].map(n => [n.note, n.start, n.duration])
@@ -909,5 +911,21 @@ describe("musicxml ornaments", function() {
 
     expect(tuples(song)).toEqual([["C5", 0, 8]])
     expect(ornaments(song)).toEqual([["C5", 0, {graces: ["B4"], neighbours: ["D5"]}]])
+  })
+
+  // sr-detect-trill-lines-n7b: a trill line runs from the note carrying the
+  // trill mark to the one its stop is written on, here across a bar line and
+  // a system break, and trills every note of that note's voice and staff it
+  // runs over with the note above it, spelled in force: G major's F#5 above
+  // E5. The other voice of the staff, the other staff and the B4 after the
+  // line's stop are trilled by nothing
+  it("trills every note of the marked note's voice and staff a trill line runs over", function() {
+    let song = parseMusicXML(trillLineScore())
+
+    expect(ornaments(song)).toEqual([
+      ["E5", 0, {neighbours: ["F#5"]}],
+      ["D5", 2, {neighbours: ["E5"]}],
+      ["C5", 4, {neighbours: ["D5"]}],
+    ])
   })
 })
