@@ -809,7 +809,7 @@ export default class SightReadingPage extends React.Component {
   // plate's ink smudge marks: the staff's own, else the staff wrapper
   // (mid-staff), see PlateFeedback
   headElements() {
-    let heads = this.staff && this.staff.headElements ? this.staff.headElements() : []
+    let heads = this.staff ? this.staff.headElements() : []
     return heads.length ? heads : [this.staffWrapper].filter(Boolean)
   }
 

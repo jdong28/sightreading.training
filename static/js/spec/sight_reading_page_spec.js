@@ -2209,6 +2209,9 @@ describe("sight reading page", function() {
 
       play([WRONG_NOTE])
       let heads = page.staff.headElements()
+      // located, so the same-position check below isn't vacuous: an empty
+      // return would leave the smudge on the staff wrapper instead
+      expect(heads.length).toBeGreaterThan(0)
       let lefts = new Set(heads.map(h => h.getBoundingClientRect().left))
       expect(lefts.size).toBeLessThan(2)
       expect(smudge(el).dataset.smudge).toEqual("on")
