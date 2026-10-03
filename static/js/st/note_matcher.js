@@ -63,22 +63,30 @@
 // column it is written at (column.allowed) through the columns its own note
 // still sounds over (column.trailing, both from extractSectionColumns in
 // st/song_sections) goes down with nothing judged about it, carried on past
-// the head as T once the column completes (see hit). A key that could belong
-// to either the ornament or a real column (the trill's own pitch, repeating
-// into the next note, or a grace struck early for the column after the head)
-// is ambiguous: held pending rather than judged at once, until what follows
-// within ORNAMENT_GAP decides it (see noteOn, settlePending) — another
-// ornament key in play means it was the ornament going on, no strike and no
-// slip; anything else (a key outside it, the gap elapsing, the page's tick)
-// means it was the real strike, judged at its own timeStamp. A key pending
-// for the head completes it as if struck then, and is dropped as part of an
-// ornament only for one still rolling from an earlier column (T), never for
-// one the head's own trill, turn or mordent sounds (its trailing), which runs
-// from the head's own note; one pending for the next column, ambiguous
-// because it is also the next column's own key, is credited early (T5) once
-// resolved, excused rather than a slip when it goes stale instead. A column's
-// own key is only ever ambiguous this way while a grace note only ever
-// excuses, never holding a melody note back.
+// the head as T once the column completes (see hit).
+//
+// A key that could belong to either the ornament or a real column (the
+// trill's own pitch, repeating into the next note, or a grace struck for the
+// column after the head) is ambiguous, and nothing in the keys — pitch,
+// order or time — tells the two readings apart, so the matcher makes the
+// error that cannot cost a slip: the key is held pending rather than judged
+// at once, and a pending key is never dropped by another ornament key. The
+// ornament is live for ORNAMENT_GAP after the last of its keys, the hit that
+// opened T counting as one, and the keys pending are settled by what follows
+// (see noteOn, settlePending): a key outside the ornament means the player
+// has moved on, so every pending key was real; a strike of a pending pitch is
+// the ornament going on and refreshes it, the latest strike being the real
+// one; and when the ornament goes quiet (the gap, the page's tick) the
+// pending key whose pitch it ended on is the note it resolved onto, the
+// others its alternation, dropped. A key pending for the head completes it as
+// if struck at its own timeStamp; one pending for the next column is credited
+// early (T5), excused rather than a slip when it goes stale instead, and is
+// excused there afterwards (ambiguousOwn) so the player's own strike of it
+// never slips. Past the gap the ornament is over, so the head's own key is
+// its own at once. A trill, turn or mordent surrounds its note, so its
+// pitches are ambiguous throughout; a grace precedes its note, so a pitch
+// that is only a grace into the head excuses before any of the head's own
+// keys are down and is the next column's early key only after.
 //
 // Each hit also measures the column for the grade (rule 8 of the report):
 // its latency, from the moment it became the head to the first of its own
@@ -169,12 +177,20 @@ export default class NoteMatcher {
     // hits after it, not a list taken on afresh
     this.restrikes = {}
 
-    // a key down ambiguous between an ornament going on and a real strike
-    // (see noteOn): {note, at, target}, target "head" when the key is the
-    // head's own, "next" when it is the next column's; settled by what
-    // follows within ORNAMENT_GAP (settlePending) or the page's tick. Never
-    // set without a timeStamp
-    this.pending = null
+    // the keys down ambiguous between an ornament going on and a real strike
+    // (see noteOn), one entry a pitch: {at, target}, target "head" when the
+    // key is the head's own, "next" when it is the next column's; settled by
+    // a key outside the ornament, or by the ornament going quiet for
+    // ORNAMENT_GAP (settlePending, resolveByGap, the page's tick). Never set
+    // without a timeStamp, and never dropped by another ornament key
+    this.pending = {}
+
+    // when a key of the ornament last went down, counting the hit that opened
+    // T as one, and which pitch it was: the ornament is live for
+    // ORNAMENT_GAP after it (ornamentLive), and the pending key whose pitch
+    // it ended on is the real strike once it goes quiet (resolveByGap)
+    this.ornamentAt = null
+    this.ornamentLastNote = null
 
     // T, the ornament keys carried on past the column just completed (see
     // hit): its own allowed and trailing pitches, plus its own keys a pending
@@ -189,8 +205,10 @@ export default class NoteMatcher {
     // repeating its pitch doesn't wait for one)
     this.headAmbiguous = []
 
-    // the head's own keys a pending resolution judged real this tenure (see
-    // settlePending), carried into trailing and headAmbiguous at the hit
+    // the head's keys an ambiguous press gave it this tenure (see
+    // settlePending): its own keys a pending resolution judged real, and the
+    // keys a resolution credited to it early, carried into trailing and
+    // headAmbiguous at the hit
     this.ambiguousOwn = {}
 
     // whether one of the head column's own keys has gone down at it, and
@@ -243,7 +261,9 @@ export default class NoteMatcher {
   clearTouched() {
     this.startHead(this.now())
     this.restrikes = {}
-    this.pending = null
+    this.pending = {}
+    this.ornamentAt = null
+    this.ornamentLastNote = null
     this.trailing = []
     this.headAmbiguous = []
   }
@@ -280,19 +300,28 @@ export default class NoteMatcher {
     this.lastEventAt = timeStamp ?? null
 
     if (this.mode == "notes" && this.notes) {
-      // a key pending from an earlier press is settled first, against this
-      // one, at its own timeStamp: its events (a hit, a miss) reach the page
-      // before this key's (see settlePending)
-      this.settlePending(note, timeStamp)
+      // the keys pending from earlier presses are settled first, against this
+      // one, at their own timeStamps: their events (a hit, a miss) reach the
+      // page before this key's. A strike of a pending pitch is the ornament
+      // going on and is consumed there (see settlePending)
+      if (this.settlePending(note, timeStamp)) {
+        return this.result()
+      }
 
       // an ornament the score writes (a grace note, or a note of a trill,
       // turn or mordent) played as written is allowed, excused independent
       // of the head (T7, redesigned): the key goes down, but nothing about
       // it is judged, unless it is ambiguous with a real column's own key,
-      // which holds it pending instead (see classifyOrnamentKey)
+      // which holds it pending instead (see classifyOrnamentKey). Classified
+      // against the ornament as it stood before this key, which then becomes
+      // the last of it, keeping it live
       let ornament = this.classifyOrnamentKey(note, timeStamp)
+      if (timeStamp != null && this.inOrnamentPlay(note)) {
+        this.ornamentAt = timeStamp
+        this.ornamentLastNote = note
+      }
       if (ornament == "head" || ornament == "next") {
-        this.pending = {note, at: timeStamp, target: ornament}
+        this.pending = {...this.pending, [note]: {at: timeStamp, target: ornament}}
         this.held = {...this.held, [note]: true}
         return this.result()
       }
@@ -355,22 +384,30 @@ export default class NoteMatcher {
   // key at all, to carry on to the ordinary try/slip logic and judgePress.
   //
   // Ambiguous at the head means a key of the head's own, not yet touched,
-  // that is in headAmbiguous (A): the previous column's trailing pitches and
-  // its own keys a pending resolution judged real, never its allowed, so a
-  // melody note repeating a grace note's pitch isn't held up by it. Ambiguous
-  // for the next column means a key not the head's own, in the head's allowed
-  // or T (the carried trailing set), that is the next column's own: struck
-  // early for it (T5) once resolved, as credited(). Any other key in the
-  // head's allowed or T is excused outright. Neither kind of ambiguity, nor
-  // the excuse, applies to a press with no timeStamp (the on-screen
-  // keyboard): at the head it is the head's own at once, excused as today
+  // that is in headAmbiguous (A) while the ornament is live: the previous
+  // column's trailing pitches and its own keys a pending resolution judged
+  // real, never its allowed, so a melody note repeating a grace note's pitch
+  // isn't held up by it. Once the ornament has been quiet for ORNAMENT_GAP it
+  // is over, so the head's own key is its own at once.
+  //
+  // Ambiguous for the next column means a key not the head's own, in the
+  // head's allowed or T (the carried trailing set), that is the next column's
+  // own: struck early for it (T5) once resolved, as credited(). A trill, turn
+  // or mordent surrounds its note, so its pitches are ambiguous throughout; a
+  // pitch that is only a grace into the head precedes its note, so it is the
+  // grace before any of the head's own keys are down and the next column's
+  // key only after. Any other key in the head's allowed or T is excused
+  // outright. Neither kind of ambiguity, nor the excuse, applies to a press
+  // with no timeStamp (the on-screen keyboard): at the head it is the head's
+  // own at once, excused as today
   classifyOrnamentKey(note, timeStamp) {
     let column = this.notes.currentColumn()
     let next = this.columnAt(1)
     let inHead = this.inColumn(column, note)
 
     if (inHead) {
-      if (!this.touched[note] && timeStamp != null && this.inSet(this.headAmbiguous, note)) {
+      if (!this.touched[note] && timeStamp != null && this.inSet(this.headAmbiguous, note) &&
+          this.ornamentLive(timeStamp)) {
         return "head"
       }
       return null
@@ -380,7 +417,10 @@ export default class NoteMatcher {
     if (!inPlay) { return null }
 
     if (timeStamp != null && this.inColumn(next, note)) {
-      return "next"
+      let trillPitch = this.inSet(column.trailing, note) || this.inSet(this.headAmbiguous, note)
+      if (trillPitch || (this.inSet(column.allowed, note) && this.firstDown)) {
+        return "next"
+      }
     }
 
     return "excused"
@@ -392,81 +432,120 @@ export default class NoteMatcher {
     return !!list && list.some(n => this.notes.sameNote(note, n, this.anyOctave))
   }
 
-  // whether note is one of the ornament pitches in play over the head: its
-  // own allowed and trailing (column.allowed, column.trailing) and the
-  // carried trailing set T. Used only to tell an ornament going on from a
-  // real strike at settlePending; classifyOrnamentKey's own sets are narrower
-  // (a column's own key, trailing only at its own column, never makes it an
+  // whether note is one of the ornament pitches in play over the head: a
+  // pitch already pending, the head's own allowed and trailing
+  // (column.allowed, column.trailing) and the carried trailing set T. Used to
+  // tell an ornament going on from a real strike at settlePending and to keep
+  // the ornament live; classifyOrnamentKey's own sets are narrower (a
+  // column's own key, trailing only at its own column, never makes it an
   // ornament key here, since it is already handled by headAmbiguous there)
   inOrnamentPlay(note) {
     let column = this.notes.currentColumn()
-    return this.inSet(column.allowed, note) || this.inSet(column.trailing, note) || this.inSet(this.trailing, note)
+    return !!this.pending[note] || this.inSet(column.allowed, note) ||
+      this.inSet(column.trailing, note) || this.inSet(this.trailing, note)
   }
 
-  // A key pending from an earlier press (see noteOn) is settled against note,
-  // this one, before it is itself judged: within ORNAMENT_GAP of the pending
-  // key and itself an ornament key in play, the pending key was the ornament
-  // going on, dropped with no strike and no slip; otherwise it was the real
-  // strike, judged (or credited) at its own timeStamp, before this key's.
+  // whether a key of the ornament went down within ORNAMENT_GAP before time,
+  // the hit that opened T counting as one: while it did the ornament may
+  // still be going on, and after it the ornament is over
+  ornamentLive(time) {
+    return this.ornamentAt != null && time != null && time - this.ornamentAt <= ORNAMENT_GAP
+  }
+
+  // The keys pending from earlier presses (see noteOn) are settled against
+  // note, this one, before it is itself judged. A pending key is never
+  // dropped by another ornament key, since the two readings of the key
+  // sequence cannot be told apart and striking late costs no slip while
+  // dropping a real strike does:
   //
-  // A key pending for the head is required there, so what settles it has to
-  // be an ornament still rolling from an earlier column (T): one the head's
-  // own trill, turn or mordent sounds (its trailing) runs from the head's own
-  // note, which the pending key was, so that key is the real strike. The
-  // head's allowed decides nothing, since a grace leading into the head comes
-  // before its note rather than out of it
+  // - the ornament has been quiet for ORNAMENT_GAP: it is over, so the
+  //   pending key whose pitch it ended on was the note it resolved onto and
+  //   held, and the others were the alternation (resolveByGap)
+  // - this key is itself a pending pitch: the ornament going on, which
+  //   refreshes that key's time, the latest strike being the real one
+  // - this key is another key of the ornament: the ornament may still be
+  //   going on, so every pending key stays pending
+  // - this key is outside the ornament: the player has moved on, so every
+  //   pending key was real (resolveAll)
+  //
+  // Answers whether this key was consumed as the ornament going on
   settlePending(note, timeStamp) {
-    let pending = this.pending
-    if (!pending) { return }
+    if (!Object.keys(this.pending).length) { return false }
 
-    let withinGap = timeStamp != null && timeStamp - pending.at <= ORNAMENT_GAP
-    let ornamentOn = pending.target == "head"
-      ? !this.inSet(this.notes.currentColumn().trailing, note) && this.inSet(this.trailing, note)
-      : this.inOrnamentPlay(note)
-    if (withinGap && ornamentOn) {
-      this.pending = null
-      return
+    if (!this.ornamentLive(timeStamp)) {
+      this.resolveByGap()
+      return false
     }
 
-    this.resolvePending()
+    if (this.pending[note]) {
+      this.pending = {...this.pending, [note]: {...this.pending[note], at: timeStamp}}
+      this.ornamentAt = timeStamp
+      this.ornamentLastNote = note
+      this.held = {...this.held, [note]: true}
+      return true
+    }
+
+    if (this.inOrnamentPlay(note)) { return false }
+
+    this.resolveAll()
+    return false
   }
 
-  // the pending key was the real strike (settlePending, tick): judged at its
-  // own timeStamp when it is the head's own (recorded as one of this head's
-  // ambiguousOwn keys first, so the hit after it carries it on in T), or
-  // credited early to the next column, as any T5 early key, when it is the
-  // next column's: excused rather than required, so it slips only if the
-  // head doesn't complete within EARLY_KEY_WINDOW of it, and is dropped
-  // silently, never a slip, if it goes stale instead (expireEarly)
-  resolvePending() {
+  // the ornament went quiet (settlePending, tick): the pending key whose
+  // pitch it ended on was the real strike, the rest were the alternation
+  resolveByGap() {
     let pending = this.pending
-    this.pending = null
-    if (!pending) { return }
+    this.pending = {}
+    let last = this.ornamentLastNote
+    this.applyReal(Object.keys(pending)
+      .filter(n => last != null && this.notes.sameNote(n, last, this.anyOctave))
+      .map(n => [n, pending[n]]))
+  }
 
-    if (pending.target == "head") {
-      this.ambiguousOwn[pending.note] = true
+  // a key outside the ornament: every pending key was a real strike
+  resolveAll() {
+    let pending = this.pending
+    this.pending = {}
+    this.applyReal(Object.keys(pending).map(n => [n, pending[n]]))
+  }
+
+  // The pending keys that were real strikes: each judged at its own
+  // timeStamp, the head's own (recorded as one of this head's ambiguousOwn
+  // keys first, so the hit after it carries it on in T) in the order they
+  // went down, and the next column's credited early to it first, as any T5
+  // early key, so the head's hit finds them: excused rather than required, so
+  // one slips only if the head doesn't complete within EARLY_KEY_WINDOW of
+  // it, and is dropped silently, never a slip, if it goes stale instead
+  // (expireEarly)
+  applyReal(entries) {
+    let inOrder = [...entries].sort((a, b) => a[1].at - b[1].at)
+
+    for (let [note, pending] of inOrder.filter(e => e[1].target == "next")) {
+      this.early = {...this.early, [note]: {at: pending.at, kind: "excused"}}
+    }
+
+    for (let [note, pending] of inOrder.filter(e => e[1].target == "head")) {
+      this.ambiguousOwn[note] = true
       // struck at it, as noteOn marks any head's own key before judgePress
-      this.touched = {...this.touched, [pending.note]: true}
-      this.judgePress(pending.note, pending.at)
-    } else {
-      this.early = {...this.early, [pending.note]: {at: pending.at, kind: "excused"}}
+      this.touched = {...this.touched, [note]: true}
+      this.judgePress(note, pending.at)
     }
   }
 
-  // how long until the pending key (if any) is settled by itself, were no
-  // further key to decide it first (see tick)
+  // how long until the keys pending (if any) are settled by themselves, were
+  // no further key to decide them first (see tick)
   pendingUntil() {
-    return this.pending ? this.pending.at + ORNAMENT_GAP : null
+    return Object.keys(this.pending).length ? this.ornamentAt + ORNAMENT_GAP : null
   }
 
   // The page's timer calls this once pendingUntil() has passed with no key
-  // down to settle it first (ORNAMENT_GAP elapsed on a column ending on
-  // ornament pitches alone, eg. a looping card's last column): resolves it as
-  // the real strike and returns the result to render, or null, unchanged,
-  // when there was nothing to resolve
+  // down to settle the keys pending first (ORNAMENT_GAP elapsed on a column
+  // ending on ornament pitches alone, eg. a looping card's last column):
+  // resolves them by the gap and returns the result to render, or null,
+  // unchanged, when there was nothing to resolve
   tick(time) {
-    if (!this.pending || time < this.pending.at + ORNAMENT_GAP) { return null }
-    this.resolvePending()
+    if (!Object.keys(this.pending).length || time < this.ornamentAt + ORNAMENT_GAP) { return null }
+    this.resolveByGap()
     return this.result()
   }
 
@@ -527,7 +606,7 @@ export default class NoteMatcher {
       // the next column's own ornament, struck while this one is under way
       // (a leading hand's grace note, or a trill started early): buffered
       // early like a T5 key, but never credited, since it isn't the next
-      // column's note (classifyOrnamentKey, resolvePending)
+      // column's note (classifyOrnamentKey, applyReal)
       this.early = {...this.early, [note]: {at: timeStamp, kind: "ornament"}}
     } else {
       this.strays = {...this.strays, [note]: true}
@@ -653,6 +732,18 @@ export default class NoteMatcher {
     this.trailing = [...(column.allowed || []), ...trailingOf, ...ambiguousOwn]
     this.headAmbiguous = [...trailingOf, ...ambiguousOwn]
 
+    // the ornament this column opens is live from its hit, and a key pending
+    // for the next column is now pending for the head
+    if (this.trailing.length) {
+      this.ornamentAt = Math.max(this.ornamentAt ?? -Infinity, at)
+    }
+    let pending = {}
+    for (let n of Object.keys(this.pending)) {
+      let entry = this.pending[n]
+      pending[n] = entry.target == "next" ? {...entry, target: "head"} : entry
+    }
+    this.pending = pending
+
     // the next column is played afresh, but for its keys struck early: the
     // keys still down stay held, and count toward it only as held credit,
     // lazily, where the score still sounds them. After a settled column of
@@ -678,6 +769,10 @@ export default class NoteMatcher {
       this.touched[n] = true
       this.firstDown = true
       this.firstAt = this.firstAt == null ? early[n].at : Math.min(this.firstAt, early[n].at)
+      // a key credited from an ornament-ambiguous press stays excused at the
+      // column after this one, so the player's own strike of it is never a
+      // slip, and is pending where the new head's own key would be
+      if (early[n].kind == "excused") { this.ambiguousOwn[n] = true }
     }
     this.credited = credited
 
@@ -832,7 +927,7 @@ export default class NoteMatcher {
   // within EARLY_KEY_WINDOW of, at a key down at timeStamp, were wrong: they
   // count as one slip on the head, and aren't credited to the next column.
   // An excused key (kind "excused": a pending key resolved for the next
-  // column, see resolvePending) is never one of them, dropped silently
+  // column, see applyReal) is never one of them, dropped silently
   // instead, since it was never really a slip to begin with
   expireEarly(timeStamp) {
     let stale = this.staleEarly(timeStamp)

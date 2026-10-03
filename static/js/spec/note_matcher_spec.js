@@ -485,10 +485,37 @@ describe("note matcher", function() {
     // ornament note at that column and the next column's own, so it is
     // credited early as any key of the next column is, not swallowed
     it("credits an ornament key that is the next column's own as an early key", function() {
-      let matcher = matcherFor([ornamented(["C#4"], ["F#5", "G#5"]), ["C#3", "G#5"], ["G#3"]])
+      let matcher = matcherFor([
+        ornamented(["C#4"], ["F#5", "G#5"], ["F#5", "G#5"]), ["C#3", "G#5"], ["G#3"],
+      ])
       expect(run(matcher, [["on", "G#5", 3950], ["on", "C#4", 3980], ["on", "C#3", 4000]]))
         .toEqual(["hit C#4", "hit C#3+G#5 (early G#5)"])
       expect(head(matcher)).toEqual(["G#3"])
+    })
+
+    // A grace note precedes the note it leads into, so a pitch that is only a
+    // grace into the head is the grace while none of the head's own keys are
+    // down — excused, never credited to the column after it (which the real
+    // strike of that pitch plays, see below) — and the next column's key
+    // played early only once one of the head's keys is down. A trill, turn or
+    // mordent surrounds its note, so its pitches are ambiguous throughout
+    it("excuses a grace into the head without crediting it to the next column", function() {
+      let matcher = matcherFor([ornamented(["C5"], ["B4"]), ["B4"], ["D5"]])
+      expect(run(matcher, [
+        ["on", "B4", 0], ["on", "C5", 30], ["on", "B4", 500], ["on", "D5", 600],
+      ])).toEqual(["hit C5", "hit B4", "hit D5"])
+
+      // the player's own B4 is the strike of its column, timed from its press
+      let hit = matcher.judged.find(event => event.type == "hit" && event.hitNotes.includes("B4"))
+      expect(hit.latency).toEqual(470)
+    })
+
+    it("credits a grace pitch to the next column once the head's own key is down", function() {
+      let matcher = matcherFor([ornamented(["C#3", "G#5"], ["E5", "F#5"]), ["F#5"], ["E5"]])
+      expect(run(matcher, [
+        ["on", "E5", 3870], ["on", "F#5", 3935], ["on", "G#5", 4000],
+        ["on", "F#5", 4100], ["on", "C#3", 4200], ["on", "E5", 4600],
+      ])).toEqual(["hit C#3+G#5", "hit F#5 (early F#5)", "hit E5"])
     })
 
     // the resolution is dropped outright (no strike, no early credit) when
@@ -502,8 +529,110 @@ describe("note matcher", function() {
       expect(run(matcher, [["on", "G#5", 4010]])).toEqual(["hit C#3+G#5"])
     })
 
-    // the release column's own trailing pitch waits, pending, for what
-    // follows to decide it: a plain column with no trailing of its own
+    // A trilled note written out, as extractSectionColumns gives it: the
+    // trill's pitches are the two columns after it, which carry no ornament of
+    // their own. The keys of such a figure read the same whether they are the
+    // ornament or the written notes, so each is held pending and struck, never
+    // dropped, as soon as the player moves off the ornament's pitches — an
+    // ornament is never required (D2), so leaving it out must cost nothing
+    let trilledThenWritten = () => [
+      ornamented(["F#5"], ["G#5"], ["F#5", "G#5"]), ["G#5"], ["F#5"], ["C#5"],
+    ]
+
+    it("hits the written notes of a trilled figure played plainly, with no ornament", function() {
+      let matcher = matcherFor(trilledThenWritten())
+      expect(run(matcher, [
+        ["on", "F#5", 0], ["on", "G#5", 110], ["on", "F#5", 220], ["on", "C#5", 330],
+      ])).toEqual(["hit F#5", "hit G#5", "hit F#5 (early F#5)", "hit C#5"])
+      expect(head(matcher)).toEqual([])
+    })
+
+    it("hits the written notes of a trill flowing straight into them", function() {
+      let matcher = matcherFor(trilledThenWritten())
+      let trill = Array.from({length: 8}, (_, idx) => ["on", idx % 2 ? "G#5" : "F#5", 110 + idx * 110])
+      expect(run(matcher, [
+        ["on", "F#5", 0], ...trill,
+        ["on", "G#5", 990], ["on", "F#5", 1100], ["on", "C#5", 1210],
+      ])).toEqual(["hit F#5", "hit G#5", "hit F#5 (early F#5)", "hit C#5"])
+      expect(head(matcher)).toEqual([])
+    })
+
+    it("hits the written notes of a mordent figure whose ornament wasn't played", function() {
+      let matcher = matcherFor([
+        ornamented(["C5"], ["B4"], ["B4", "C5"]), ["B4"], ["C5"], ["D5"],
+      ])
+      expect(run(matcher, [
+        ["on", "C5", 0], ["on", "B4", 110], ["on", "C5", 220], ["on", "D5", 330],
+      ])).toEqual(["hit C5", "hit B4", "hit C5 (early C5)", "hit D5"])
+      expect(head(matcher)).toEqual([])
+    })
+
+    // the Nocturne's right hand with a sixteenth after bar 6's G#5: the real
+    // G#5 is pending while the graces sharing the trill's pitches are in play,
+    // and the F#5 after it is the next column's own, so both are struck when
+    // the player moves off the ornament at C#5 — bar 6 still timed from its
+    // own press, with the wait the grade reads as a hesitation
+    it("hits bar 6 and the note after it played straight on from the Nocturne's graces", function() {
+      let matcher = matcherFor([
+        ["G#5"],
+        ornamented(["F#5"], ["G#5"], ["F#5", "G#5"]),
+        ornamented(["G#5"], ["E5", "F#5"]),
+        ["F#5"], ["C#5"],
+      ])
+      expect(run(matcher, pressed([
+        ...trilled(),
+        [3870, 3925, "E5"], [3935, 3990, "F#5"],
+        [4000, 4100, "G#5"], [4110, 4210, "F#5"], [4220, 5000, "C#5"],
+      ]))).toEqual(["hit G#5", "hit F#5", "hit G#5", "hit F#5 (early F#5)", "hit C#5"])
+
+      let hits = matcher.judged.filter(event => event.type == "hit")
+      expect(hits[2].latency).toEqual(1890)
+    })
+
+    // the shape nothing can tell apart: the trill's tail spells the two
+    // columns after it and the player stops there. Neither column advances —
+    // the pitch the trill ended on is the only strike it can claim, and the
+    // written notes played after the pause are hits, with no slip anywhere
+    it("advances nothing when a trill's tail spells the columns after it and the player stops", function() {
+      let matcher = matcherFor([
+        ["G#5"],
+        ornamented(["F#5"], ["G#5"], ["F#5", "G#5"]),
+        ["G#5"], ["F#5"], ["C#5"],
+      ])
+      expect(run(matcher, pressed(trilled()))).toEqual(["hit G#5", "hit F#5"])
+
+      matcher.judged.length = 0
+      matcher.tick(3210 + ORNAMENT_GAP + 1)
+      expect(matcher.judged).toEqual([])
+      expect(head(matcher)).toEqual(["G#5"])
+
+      expect(run(matcher, [["on", "G#5", 4000], ["on", "F#5", 4500], ["on", "C#5", 5000]]))
+        .toEqual(["hit G#5", "hit F#5", "hit C#5"])
+    })
+
+    // the price of keeping a pending key rather than dropping it: a card
+    // ending on the trill's own pitches, played plainly and fast, leaves the
+    // columns the trill didn't end on waiting for a re-strike, which completes
+    // them with no slip either way (D2)
+    it("waits for a re-strike, with no slip, when a card ends on the trill's pitches", function() {
+      let columns = [
+        ornamented(["F#5"], ["G#5"], ["F#5", "G#5"]), ["G#5"], ["F#5"],
+      ].map((column, idx) => Object.assign(column, {cardIndex: idx}))
+      let matcher = matcherFor(columns)
+
+      expect(run(matcher, [["on", "F#5", 0], ["on", "G#5", 110], ["on", "F#5", 220]]))
+        .toEqual(["hit F#5"])
+
+      matcher.judged.length = 0
+      matcher.tick(220 + ORNAMENT_GAP + 1)
+      expect(matcher.judged).toEqual([])
+
+      expect(run(matcher, [["on", "G#5", 3000]])).toEqual(["hit G#5"])
+      expect(run(matcher, [["on", "F#5", 3500]])).toEqual(["hit F#5"])
+    })
+
+    // a trilled note whose trill stops with it: the columns after it carry no
+    // trailing of their own, so its pitches reach them only as the carried T
     let releaseColumn = () => ornamented(["F#5"], ["G#5"], ["F#5", "G#5"])
 
     it("excuses a trailing note at the release column outright when it isn't the release's own", function() {
@@ -513,7 +642,9 @@ describe("note matcher", function() {
       ])).toEqual(["hit F#5", "hit C#5"])
     })
 
-    it("waits, pending, when the trailing note is the release column's own", function() {
+    // past ORNAMENT_GAP from the last of the trill's keys the ornament is over,
+    // so the head's own pitch is its own strike at once
+    it("strikes the trailing note that is the head's own once the ornament is over", function() {
       let matcher = matcherFor([releaseColumn(), ["G#5"], ["C#5"]])
       let judged = run(matcher, [
         ["on", "F#5", 0], ["on", "G#5", 110], ["on", "F#5", 220], ["on", "G#5", 1000], ["on", "C#5", 2000],
@@ -525,55 +656,47 @@ describe("note matcher", function() {
       expect(hit.latency).toEqual(1000)
     })
 
-    it("drops a pending key with no strike when another ornament key follows within the gap", function() {
+    // the trill running at the head, which its own pitch is pending at: the
+    // pitch it ended on is the strike, and the key it only ran through was the
+    // alternation, dropped with no strike and no slip
+    it("drops the keys pending that the trill didn't end on, once it goes quiet", function() {
       let matcher = matcherFor([releaseColumn(), ["G#5"], ["C#5"]])
-      expect(run(matcher, [["on", "F#5", 0], ["on", "G#5", 1000], ["on", "F#5", 1100]]))
-        .toEqual(["hit F#5"])
+      expect(run(matcher, [
+        ["on", "F#5", 0], ["on", "G#5", 110], ["on", "F#5", 220],
+        ["on", "G#5", 330], ["on", "F#5", 440],
+      ])).toEqual(["hit F#5"])
+
+      matcher.judged.length = 0
+      expect(matcher.tick(440 + ORNAMENT_GAP + 1)).not.toBeNull()
+      expect(matcher.judged).toEqual([])
       expect(head(matcher)).toEqual(["G#5"])
     })
 
-    // a trill written at a column whose own notes the columns after it play
-    // too (trailingAt gives every column its span overlaps its own trailing):
-    // the head's own key is the real strike there, with the trill going on
-    // from it, so the trill note that follows must not drop it — the column
-    // would wait for a key already played and the next press would slip it
-    let trillRun = () => [
-      ornamented(["C5"], ["D5"], ["C5", "D5"]),
-      ornamented(["D5"], ["C5"], ["C5", "D5"]),
-      ornamented(["C5"], ["D5"], ["C5", "D5"]),
-    ]
+    // the page's timer settles the keys pending once the ornament has been
+    // quiet for ORNAMENT_GAP with no further key to do it (a looping card's
+    // last column, or the player simply stopping)
+    it("settles the keys pending by itself once the page's tick finds the gap elapsed", function() {
+      let matcher = matcherFor([releaseColumn(), ["G#5"], ["F#5"], ["C#5"]])
+      run(matcher, [
+        ["on", "F#5", 0], ["on", "G#5", 110], ["on", "F#5", 220], ["on", "G#5", 330],
+      ])
 
-    it("strikes a pending head key when the trill the head itself writes follows", function() {
-      let matcher = matcherFor(trillRun())
-      expect(run(matcher, [["on", "C5", 0], ["on", "D5", 110], ["on", "C5", 220]]))
-        .toEqual(["hit C5", "hit D5"])
-      expect(head(matcher)).toEqual(["C5"])
-
-      // timed from its own strike, not from the trill note that resolved it
-      let hit = matcher.judged.find(event => event.type == "hit" && event.hitNotes.includes("D5"))
-      expect(hit.latency).toEqual(110)
-
-      // and the last press, pending in its turn, is struck rather than lost
-      matcher.judged.length = 0
-      expect(matcher.tick(220 + ORNAMENT_GAP + 1)).not.toBeNull()
-      expect(matcher.judged.map(event => event.type)).toEqual(["hit"])
-      expect(matcher.judged[0].hitNotes).toEqual(["C5"])
-    })
-
-    it("resolves a pending key by itself once the page's tick finds the gap elapsed", function() {
-      let matcher = matcherFor([releaseColumn(), ["G#5"], ["C#5"]])
-      run(matcher, [["on", "F#5", 0], ["on", "G#5", 1000]])
-      expect(matcher.pendingUntil()).toEqual(1000 + ORNAMENT_GAP)
+      // one entry a pitch: the head's own G#5 and the next column's F#5
+      expect(Object.keys(matcher.pending).sort()).toEqual(["F#5", "G#5"])
+      expect(matcher.pendingUntil()).toEqual(330 + ORNAMENT_GAP)
 
       matcher.judged.length = 0
-      expect(matcher.tick(1000 + ORNAMENT_GAP - 50)).toBeNull()
+      expect(matcher.tick(330 + ORNAMENT_GAP - 50)).toBeNull()
       expect(matcher.judged).toEqual([])
 
-      let result = matcher.tick(1000 + ORNAMENT_GAP + 50)
+      let result = matcher.tick(330 + ORNAMENT_GAP + 50)
       expect(matcher.judged.map(event => event.type)).toEqual(["hit"])
       expect(matcher.judged[0].hitNotes).toEqual(["G#5"])
-      expect(matcher.judged[0].latency).toEqual(1000)
+      // struck at its own press, the trill having ended on it
+      expect(matcher.judged[0].latency).toEqual(330)
       expect(result).not.toBeNull()
+      // and the F#5 the trill ran through is dropped, so its column waits
+      expect(head(matcher)).toEqual(["F#5"])
     })
 
     // the column completed by the tick carries its grace notes and its own
@@ -585,8 +708,9 @@ describe("note matcher", function() {
         ["C#5"],
       ])
 
-      run(matcher, [["on", "F#5", 0], ["on", "G#5", 1000]])
-      matcher.tick(1000 + ORNAMENT_GAP + 50)
+      // the trill running at the next head, ending on that column's own pitch
+      run(matcher, [["on", "F#5", 0], ["on", "G#5", 110], ["on", "F#5", 220], ["on", "G#5", 330]])
+      matcher.tick(330 + ORNAMENT_GAP + 50)
 
       expect(run(matcher, [["on", "F#5", 5000], ["on", "E5", 5100], ["on", "G#5", 5200]]))
         .toEqual([])
@@ -596,7 +720,9 @@ describe("note matcher", function() {
     // an excused early key (a pending key resolved for the next column) goes
     // stale silently: no slip, and the next column still waits for its key
     it("drops an excused early key gone stale without a slip", function() {
-      let matcher = matcherFor([ornamented(["C#4"], ["F#5", "G#5"]), ["C#3", "G#5"], ["G#3"]])
+      let matcher = matcherFor([
+        ornamented(["C#4"], ["F#5", "G#5"], ["F#5", "G#5"]), ["C#3", "G#5"], ["G#3"],
+      ])
       expect(run(matcher, [["on", "G#5", 3950], ["on", "C#4", 3980 + EARLY_KEY_WINDOW + 1], ["on", "C#3", 4100]]))
         .toEqual(["hit C#4"])
       expect(head(matcher)).toEqual(["C#3", "G#5"])
@@ -624,14 +750,14 @@ describe("note matcher", function() {
       expect(head(matcher)).toEqual(["C#5"])
     })
 
-    it("drops a pending key and the carried trailing set when another list takes over", function() {
+    it("drops the keys pending and the carried trailing set when another list takes over", function() {
       let matcher = matcherFor([releaseColumn(), ["G#5"], ["C#5"]])
-      run(matcher, [["on", "F#5", 0], ["on", "G#5", 1000]])
-      expect(matcher.pending).not.toBeNull()
+      run(matcher, [["on", "F#5", 0], ["on", "G#5", 110]])
+      expect(Object.keys(matcher.pending)).toEqual(["G#5"])
 
       let rebuilt = new NoteList([["G#5"], ["C#5"]], {generator: {nextNote: () => []}})
       matcher.setNotes(rebuilt)
-      expect(matcher.pending).toBeNull()
+      expect(matcher.pending).toEqual({})
       expect(matcher.trailing).toEqual([])
       expect(matcher.tick(10000)).toBeNull()
 
@@ -660,7 +786,7 @@ describe("note matcher", function() {
       let matcher = matcherFor(columns)
 
       run(matcher, [["on", "Bb3", 0], ["on", "F#5", 10]])
-      run(matcher, [["on", "G#5", 2000]])
+      run(matcher, [["on", "G#5", 200]])
       expect(run(matcher, [["on", "D4", 2500]])).toEqual([
         "hit G#5", "hit Bb3 (held Bb3)",
       ])
