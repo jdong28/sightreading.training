@@ -105,6 +105,16 @@ describe("app routing", function() {
       return container
     }
 
+    // the staff lines StaffTwo drew into the plate: its hidden asset svgs
+    // (display: none, so a zero rect) and its own canvas are both in the
+    // wrapper before any staff is drawn into it, so the lines are the
+    // evidence that the plate isn't empty
+    let staffLines = el => {
+      let svg = [...el.querySelectorAll(`.${staffStyles.staff_wrapper} svg`)]
+        .find(svg => svg.getBoundingClientRect().height > 0)
+      return svg ? [...svg.querySelectorAll(".staffLine")] : []
+    }
+
     let drawerText = el => el.querySelector(`.${drawerStyles.drawer}`).textContent
     let activeNav = el => [...el.querySelectorAll("nav a.active")].map(a => a.textContent)
 
@@ -225,7 +235,7 @@ describe("app routing", function() {
       // the exercises programme's staffTwo field switches the staff plate to
       // StaffTwo (see sight_reading_page.jsx's EXERCISES_PROGRAMME), not the
       // legacy renderer
-      expect(el.querySelector("svg")).not.toBe(null)
+      expect(staffLines(el).length).toBeGreaterThan(0)
       expect(el.querySelector(`.${staffStyles.staff_notes}`)).toBe(null)
     })
 

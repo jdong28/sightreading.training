@@ -2072,6 +2072,13 @@ describe("sight reading page", function() {
     let staffSvg = el => [...el.querySelectorAll(`.${staffStyles.staff_wrapper} svg`)]
       .find(svg => svg.getBoundingClientRect().height > 0) || null
 
+    // that canvas is in the DOM before any staff is drawn into it, so the
+    // staff lines are the evidence that the plate isn't empty
+    let staffLines = el => {
+      let svg = staffSvg(el)
+      return svg ? [...svg.querySelectorAll(".staffLine")] : []
+    }
+
     let bandCentre = el => {
       let wrapper = el.querySelector(`.${staffStyles.staff_wrapper}`)
       let rect = wrapper.getBoundingClientRect()
@@ -2087,7 +2094,7 @@ describe("sight reading page", function() {
       let el
       expect(() => { el = renderPage(SightReadingPage) }).not.toThrow()
       expect(page.state.mode).toEqual("scroll")
-      expect(el.querySelector("svg")).not.toBe(null)
+      expect(staffLines(el).length).toBeGreaterThan(0)
     })
 
     it("waits the head column on the scroll-mode hit band", async function() {
@@ -2119,13 +2126,13 @@ describe("sight reading page", function() {
 
     it("draws StaffTwo for every notes-mode staff, and the legacy chord staff for chords", function() {
       let el = renderPage(SightReadingPage)
-      expect(staffSvg(el)).not.toBe(null)
+      expect(staffLines(el).length).toBe(5)
 
       flushSync(() => page.setStaff(STAVES.find(s => s.name == "bass")))
-      expect(staffSvg(el)).not.toBe(null)
+      expect(staffLines(el).length).toBe(5)
 
       flushSync(() => page.setStaff(STAVES.find(s => s.name == "grand")))
-      expect(staffSvg(el)).not.toBe(null)
+      expect(staffLines(el).length).toBe(10)
 
       flushSync(() => page.setStaff(STAVES.find(s => s.name == "chord")))
       expect(staffSvg(el)).toBe(null)

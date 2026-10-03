@@ -896,9 +896,10 @@ export class StaffTwo extends React.PureComponent {
   }
 
   // the staff-local vertical extent [top, bottom] of a clef and a range of
-  // notes (with their ledger lines) on the given staff type: used by
-  // computeFit to size the plate from a staff's note range rather than its
-  // current notes
+  // notes on the given staff type: used by computeFit to size the plate from
+  // a staff's note range rather than its current notes. A note's own head
+  // reaches past every ledger line addLedgerLines draws under it, so the
+  // heads alone give the extent
   rangeExtent(type, notes) {
     const settings = StaffGroup.STAFF_TYPES[type]
     const clef = this.getAsset(settings.clefAsset)
@@ -907,19 +908,10 @@ export class StaffTwo extends React.PureComponent {
     let {top, bottom} = clef.getBoundingClientRect()
 
     for (const note of notes) {
-      const row = rowForNote(type, note)
       const y = yForNote(type, note)
 
       top = Math.min(top, y)
       bottom = Math.max(bottom, y + LINE_DY)
-
-      if (row < 0) {
-        let lines = Math.floor(Math.abs(row) / 2)
-        top = Math.min(top, -lines * LINE_DY)
-      } else if (row > 8) {
-        let lines = Math.floor((row - 8) / 2)
-        bottom = Math.max(bottom, 4 * LINE_DY + lines * LINE_DY + LINE_HEIGHT)
-      }
     }
 
     return {top, bottom}
