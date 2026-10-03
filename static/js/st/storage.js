@@ -882,6 +882,18 @@ export class LocalStore {
     return this.cache.sessions
   }
 
+  /**
+   * Sessions since a time, read from the database (never only the
+   * recentSessions cache, so a session just ended or written by another tab
+   * is never missed), oldest first.
+   * @param {number} since
+   * @returns {Promise<SessionRecord[]>}
+   */
+  sessionsSince(since) {
+    return this.mutate(async () =>
+      (await this.backend.getAllFrom("sessions", "startedAt", since)).sort(byStart))
+  }
+
   /** @returns {SchedulerSettings} the scheduler's parameters (st/srs/schedule) */
   schedulerSettings() {
     return this.cache.settings.scheduler

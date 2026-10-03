@@ -21,6 +21,10 @@
     --salon-piano-lid: #4a2c1c;
     --salon-piano-lid-dark: #2f1b11;
 
+    /* a weak By note tile (Progress screen) */
+    --salon-weak-ground: #f3e2df;
+    --salon-weak-rule: #dcc3bf;
+
     /* the difficulty strip's ramp (st/difficulty), easier to harder */
     --salon-heat-0: #f1e8d8;
     --salon-heat-1: #e6d6b8;

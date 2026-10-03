@@ -247,6 +247,31 @@ export function fixGeneratorSettings(generator, settings) {
   return out
 }
 
+// every pitch in [lower, upper] whose pitch class matches one of names (eg.
+// "F#", "Bb"), spelled with that exact name (Bb gives Bb3, Bb4…, never A#),
+// so a session seeded on the player's weak notes (see
+// SightReadingPage#practiseNotes) draws them the way they were missed. A
+// name parseNote can't read (anything but a single #/b) is skipped. [] when
+// nothing in range matches, sorted low to high
+export function focusPool([lower, upper], names) {
+  let low = parseNote(lower)
+  let high = parseNote(upper)
+  let pool = []
+
+  for (let name of names) {
+    if (!/^[A-G](#|b)?$/.test(name)) { continue }
+
+    for (let octave = -2; octave <= 10; octave++) {
+      let pitch = parseNote(`${name}${octave}`)
+      if (pitch >= low && pitch <= high) {
+        pool.push(`${name}${octave}`)
+      }
+    }
+  }
+
+  return pool.sort((a, b) => parseNote(a) - parseNote(b))
+}
+
 export function testRandomNotes() {
   let scale = new MajorScale("C")
   // let notes = scale.getLooseRange("A3", "C6")
@@ -414,6 +439,11 @@ export class RandomNotes extends Generator {
       return []
     }
 
+    // never ask for more groups than there are items, eg. a sparse focus
+    // pool with few notes: the group-dividing loop below divides by
+    // items.length - 1, which is 0 when items.length <= n > 1
+    n = Math.min(n, items.length)
+
     if (n == 0) {
       return []
     }
@@ -437,11 +467,20 @@ export class RandomNotes extends Generator {
     return groups.map(g => g[this.generator.int() % g.length])
   }
 
+  // the pitches one hand can reach from a window handSize wide placed left
+  // halfsteps above the lowest. A sparse pool (eg. a focus on one pitch
+  // class, whose notes sit an octave apart) can leave that window empty, so
+  // it is moved onto the nearest pitch at or below it: a hand group is never
+  // empty and never wider than one hand
   getNotesForHand(pitches, left) {
     let start = pitches[0] + left
-    return pitches.map(p => p - start)
-      .filter(p => p >= 0 && p < this.handSize)
-      .map(p => p + start) // put it back
+    let inHand = p => p >= start && p < start + this.handSize
+
+    if (!pitches.some(inHand)) {
+      start = pitches.filter(p => p < start).pop() ?? pitches[0]
+    }
+
+    return pitches.filter(inHand)
   }
 
   // generate random number [0,n[ with skew towards 0 based on normal dist
@@ -468,7 +507,11 @@ export class RandomNotes extends Generator {
     if (this.hands == 1) {
       let rootRange = range - this.handSize
       return [
-        this.getNotesForHand(pitches, this.generator.int() % rootRange).map(noteName)
+        // .map(noteName) would pass each pitch's index as noteName's sharpen
+        // argument (Array#map calls back with (value, index, array)), which
+        // falsifies it for the first pitch and spells it flat (eg. "Gb"
+        // instead of "F#")
+        this.getNotesForHand(pitches, this.generator.int() % rootRange).map(p => noteName(p))
       ]
     }
 
@@ -500,8 +543,8 @@ export class RandomNotes extends Generator {
     }
 
     return [
-      leftHand.map(noteName),
-      rightHand.map(noteName),
+      leftHand.map(p => noteName(p)),
+      rightHand.map(p => noteName(p)),
     ]
   }
 
@@ -517,23 +560,30 @@ export class RandomNotes extends Generator {
     this.lastChord = null
     let notes = this.scale ? this.notesInRandomChord() : this.notes
 
-    if (this.notesPerColumn < (this.hands == 1 ? 2 : 3)) {
+    // never ask for more notes than the pool holds, eg. a sparse focus
+    // pool: a column must have at least one note when the pool does
+    let perColumn = Math.min(this.notesPerColumn, notes.length)
+    if (perColumn <= 0) {
+      return []
+    }
+
+    if (perColumn < (this.hands == 1 ? 2 : 3)) {
       // skip the hand stuff since it messes with the distribution
-      return this.pickNDist(notes, this.notesPerColumn)
+      return this.pickNDist(notes, perColumn)
     }
 
     let hands = this.handGroups(notes)
 
     if (hands.length == 1) {
-      return this.pickNDist(hands[0], this.notesPerColumn)
+      return this.pickNDist(hands[0], perColumn)
     }
 
     // take some notes from each hand group
-    let notesForLeft = Math.floor(this.notesPerColumn / 2)
-    let notesForRight = Math.floor(this.notesPerColumn / 2)
+    let notesForLeft = Math.floor(perColumn / 2)
+    let notesForRight = Math.floor(perColumn / 2)
 
     // odd amount, randomly assign last note
-    if (this.notesPerColumn % 2 == 1) {
+    if (perColumn % 2 == 1) {
       if (this.generator.int() % 2 == 0) {
         notesForLeft += 1
       } else {
