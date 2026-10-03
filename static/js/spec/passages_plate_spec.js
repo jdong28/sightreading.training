@@ -14,6 +14,7 @@ import {SCORE_DRILL_STORAGE_KEY} from "st/generators"
 import {loadScoreEngines} from "st/score_render/load"
 import scoreCardStyles from "st/components/score_card.module.css"
 import pageStyles from "st/components/pages/sight_reading_page.module.css"
+import passagesStyles from "st/components/sight_reading/passages_plate.module.css"
 
 import {openTestStore, pianoScore} from "spec/helpers"
 
@@ -225,6 +226,45 @@ describe("the passages view (st/difficulty)", function() {
     expect(pane.querySelector("h3").textContent).not.toEqual(before)
     // the rail's own detail plate reads the same selection
     expect(plate().querySelector("h3").textContent).toEqual(pane.querySelector("h3").textContent)
+  })
+
+  // the pane's own layout: the score is the tall thing in the pane's single
+  // scroller, so the passage detail and the tap legend stay above it rather
+  // than scrolling away with it (see .pane_detail, which also sticks to the
+  // top of the pane once there is room for the two columns)
+  it("keeps the passage detail and the legend above the pane's score", async function() {
+    await drillPiece(workhorseScore({barCount: 48, denseAt: [5, 6, 7], alsoDenseAt: [40, 41, 42]}))
+    renderScorePage()
+    await waitFor(() => plate(), {message: "the passages plate"})
+    await waitFor(() => page.state.engineSource?.status == "ready", {message: "the engine source"})
+
+    openScorePane()
+    let pane = await waitFor(() => scorePane(), {message: "the score pane"})
+    let overview = await waitFor(() => pane.querySelector("[data-score-overview]"), {message: "the drawn overview"})
+    await waitFor(() => overview.getAttribute("aria-busy") == "false", {message: "the overview to settle"})
+
+    let top = el => el.getBoundingClientRect().top
+    let detail = pane.querySelector(`.${passagesStyles.pane_detail}`)
+    let score = pane.querySelector(`.${passagesStyles.pane_score}`)
+    let legend = pane.querySelector(`.${passagesStyles.legend}`)
+    expect(detail).toBeTruthy()
+    expect(legend.textContent).toContain("Tap a shaded passage")
+
+    // neither is below the score, stacked or side by side
+    expect(top(detail)).not.toBeGreaterThan(top(score))
+    expect(top(legend)).toBeLessThan(top(overview))
+
+    // and with room for the two columns the detail is sticky, so scrolling
+    // the score down to a late passage leaves it on screen. The spec window
+    // may be narrower than that layout's 900px, where the detail is simply
+    // first and scrolls with the rest
+    if (window.matchMedia("(min-width: 900px)").matches) {
+      expect(getComputedStyle(detail).position).toEqual("sticky")
+      pane.scrollTop = pane.scrollHeight
+      await waitFor(() => pane.scrollTop > 0, {message: "the pane to scroll"})
+      expect(top(detail)).not.toBeLessThan(top(pane))
+      expect(top(detail)).toBeLessThan(pane.getBoundingClientRect().bottom)
+    }
   })
 
   it("selects a passage from a bracket or a list row", async function() {

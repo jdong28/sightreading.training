@@ -5,9 +5,11 @@
 // Reasons come only from the score analysis in stage 1: no Claude, no
 // outside sources, no practice records, no teacher.
 // "Show the score" opens the whole shaded piece in a right-hand pane
-// ("The score"), drawn only while it is open, so a long import's one-time
-// render (ScoreCard's shared draw queue) never blocks landing, Begin, Rest
-// or a section change
+// ("The score"), drawn only while it is open: a piece is never engraved in
+// full unless the pane is opened, which is all the deferral buys. The engines
+// draw one card at a time (ScoreCard's shared draw queue), and a draw already
+// under way runs to its end, so an overview in flight still delays the next
+// card; only draws still queued behind it are dropped when the pane closes
 
 import * as React from "react"
 import * as types from "prop-types"
@@ -354,10 +356,12 @@ export class PassagesPlate extends React.Component {
   }
 
   // "The score" pane (st/components/sight_reading/settings_panel's SidePane,
-  // right-anchored): the whole piece shaded, beside the selected passage's
-  // detail. Mounted only while open (this.state.scoreOpen): closing unmounts
-  // the ScoreCard, so a draw still queued on the shared draw queue
-  // (st/components/score_card) goes stale rather than blocking the next one
+  // right-anchored): the whole piece shaded, with the selected passage's
+  // detail and the legend kept above it as it scrolls (see .pane_detail).
+  // Mounted only while open (this.state.scoreOpen): closing unmounts the
+  // ScoreCard, so a draw of it still queued on the shared draw queue
+  // (st/components/score_card) is dropped; one already under way is not
+  // abortable and runs to its end
   renderScorePane(song, flags, selected) {
     let source = this.props.source
     let [fromMeasure, toMeasure] = measureNumberRange(song)
@@ -384,6 +388,9 @@ export class PassagesPlate extends React.Component {
       closeLabel="Close the score">
       <div className={styles.pane_body}>
         <div className={styles.pane_score} ref={this.scoreColumnRef}>
+          {showOverview && <div className={styles.legend}>
+            <span>Tap a shaded passage, or a label above it, to read why it is hard.</span>
+          </div>}
           {showOverview ?
             <ScoreCard
               overview
@@ -399,9 +406,6 @@ export class PassagesPlate extends React.Component {
               onError={() => this.setState({scoreFailed: true})} /> :
             this.state.scoreFailed ?
               <p className={styles.pane_note}>The score couldn't be engraved.</p> : null}
-          {showOverview && <div className={styles.legend}>
-            <span>Tap a shaded passage, or a label above it, to read why it is hard.</span>
-          </div>}
         </div>
         <div className={styles.pane_detail}>
           {this.renderDetail(selected, flags)}

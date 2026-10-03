@@ -243,7 +243,10 @@
 
 /* "The score" pane (st/components/sight_reading/settings_panel's SidePane,
    right-anchored): the whole piece shaded, beside the selected passage's
-   detail at about 900px of pane width, else the detail stacked below it */
+   detail at about 900px of pane width, else the detail stacked above it.
+   The pane itself is the only scroller (the aside of programme_drawer.module
+   .css), and the score is the tall thing in it, so the detail sticks to the
+   top of the pane while it scrolls rather than leaving with it */
 .pane_body {
     display: flex;
     flex-direction: column;
@@ -260,12 +263,21 @@
     flex: 1;
 }
 
+.pane_score .legend {
+    margin-top: 0;
+    margin-bottom: 12px;
+}
+
 .pane_detail {
     min-width: 0;
     flex: none;
+    order: -1;
 
     @media (min-width: 900px) {
+        order: 0;
         width: 320px;
+        position: sticky;
+        top: 0;
     }
 }
 
