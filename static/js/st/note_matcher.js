@@ -83,10 +83,11 @@
 // early (T5), excused rather than a slip when it goes stale instead, and is
 // excused there afterwards (ambiguousOwn) so the player's own strike of it
 // never slips. Past the gap the ornament is over, so the head's own key is
-// its own at once. A trill, turn or mordent surrounds its note, so its
-// pitches are ambiguous throughout; a grace precedes its note, so a pitch
-// that is only a grace into the head excuses before any of the head's own
-// keys are down and is the next column's early key only after.
+// its own at once. A trill, turn or mordent surrounds its note, and an
+// ornament carried on in T was played at the column before already, so
+// those pitches are ambiguous throughout; a grace precedes its note, so a
+// pitch that is only a grace into the head excuses before any of the head's
+// own keys are down and is the next column's early key only after.
 //
 // Each hit also measures the column for the grade (rule 8 of the report):
 // its latency, from the moment it became the head to the first of its own
@@ -159,8 +160,14 @@ export default class NoteMatcher {
     // list takes over
     this.touched = {}
 
-    // of those, the keys that slipped at the head, and the keys of the next
-    // column held early for it, each with the timeStamp it went down at
+    // of those, the keys that slipped at the head, and the keys held early
+    // for the next column: its own notes, and its own ornaments, which are
+    // buffered alike but never credited. Each entry is {at, kind}, the
+    // timeStamp it went down at and which of the three it is ("required"
+    // for the next column's own note, "ornament" for its ornament, and
+    // "excused" for a key an ornament-ambiguous press resolved to the next
+    // column, which going stale costs no slip; see judgePress, applyReal,
+    // hit and expireEarly)
     this.strays = {}
     this.early = {}
 
