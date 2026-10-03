@@ -165,7 +165,9 @@ export function shiftNoteOctave(note, octaves) {
   return `${parsed[1]}${+parsed[2] + octaves}`
 }
 
-// eg. "C#4" -> "C♯4", in the app's octave numbering like the keyboard labels
+// eg. "C#4" -> "C♯4", swapping the accidental for its glyph and leaving
+// the rest of the name alone. The one definition: the pages and
+// st/session_summary all draw note names through it
 export function displayNoteName(note) {
   return String(note).replace("#", "♯").replace(/^([A-G])b/, "$1♭")
 }

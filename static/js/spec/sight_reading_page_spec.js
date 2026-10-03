@@ -11,6 +11,7 @@ import ScorePage, {SCORE_PROGRAMME} from "st/components/pages/score_page"
 import NoteList from "st/note_list"
 import staffStyles from "st/components/staff.module.css"
 import drawerStyles from "st/components/sight_reading/programme_drawer.module.css"
+import summaryStyles from "st/components/sight_reading/session_summary.module.css"
 import {setAppStore} from "st/storage"
 import {importMusicXMLPiece, addPiece} from "st/sheet_music_deck"
 import {parseMusicXML} from "st/musicxml"
@@ -2970,6 +2971,242 @@ describe("sight reading page", function() {
     })
   })
 
+  // the session summary card (st/components/sight_reading/session_summary),
+  // built from the record "session summary record" above writes
+  describe("session summary card", function() {
+    it("opens at Rest with the session's own figures", async function() {
+      jasmine.clock().install()
+      clockInstalled = true
+      jasmine.clock().mockDate(new Date(2026, 8, 14, 20))
+
+      let el = renderPage()
+      let tick = ms => flushSync(() => jasmine.clock().tick(ms))
+
+      click(buttonNamed(el, "Begin"))
+      play(page.state.notes.currentColumn())
+      tick(65000)
+      click(buttonNamed(el, "Rest"))
+
+      let dialog = el.querySelector("dialog")
+      expect(dialog.open).toBe(true)
+      expect(dialog.querySelector("h1").textContent).toEqual("The session is ended")
+      expect(statValue(dialog, "Elapsed")).toEqual("1:05")
+      expect(statValue(dialog, "Notes read")).toEqual("1")
+      expect(statValue(dialog, "Best streak")).toEqual("1")
+
+      await waitFor(() => store.recentSessions().length == 1, "the session to be saved")
+      let record = store.recentSessions()[0]
+      expect(record.elapsedSeconds).toEqual(65)
+      expect(record.notesRead).toEqual(1)
+      expect(record.bestStreak).toEqual(1)
+    })
+
+    it("opens nothing at Rest, page hide, Clear stats or unmount when there's nothing to show", function() {
+      let el = renderPage()
+
+      click(buttonNamed(el, "Begin"))
+      click(buttonNamed(el, "Rest"))
+      expect(page.state.summary).toBe(null)
+      expect(el.querySelector("dialog")).toBe(null)
+
+      click(buttonNamed(el, "Begin"))
+      play(page.state.notes.currentColumn())
+      flushSync(() => window.dispatchEvent(new Event("pagehide")))
+      expect(page.state.summary).toBe(null)
+
+      flushSync(() => page.clearStats())
+      expect(page.state.summary).toBe(null)
+
+      play(page.state.notes.currentColumn())
+      expect(() => flushSync(() => root.unmount())).not.toThrow()
+      root = null
+    })
+
+    it("shows a 50%, oxblood trouble row for a column missed then played", function() {
+      let el = renderPage()
+      click(buttonNamed(el, "Begin"))
+
+      let column = page.state.notes.currentColumn()
+      play([WRONG_NOTE])
+      play(column)
+      click(buttonNamed(el, "Rest"))
+
+      let dialog = el.querySelector("dialog")
+      let rows = [...dialog.querySelectorAll(`.${summaryStyles.trouble_row}`)]
+      expect(rows.length).toEqual(1)
+      expect(rows[0].querySelector(`.${summaryStyles.trouble_percent}`).textContent).toEqual("50%")
+      let fill = rows[0].querySelector(`.${summaryStyles.fill}`)
+      expect(fill.style.width).toEqual("50%")
+      expect(fill.dataset.weak).toEqual("true")
+      expect(buttonNamed(dialog, "Practise these notes")).not.toBeUndefined()
+    })
+
+    it("shows no trouble section or practise pill after a clean session", function() {
+      let el = renderPage()
+      click(buttonNamed(el, "Begin"))
+      play(page.state.notes.currentColumn())
+      click(buttonNamed(el, "Rest"))
+
+      let dialog = el.querySelector("dialog")
+      expect(dialog.textContent).not.toContain("Notes that gave trouble")
+      expect(buttonNamed(dialog, "Practise these notes")).toBeUndefined()
+    })
+
+    it("practises these notes: seeds Random notes with the weak rows, staying at rest", function() {
+      let el = renderPage()
+      click(buttonNamed(el, "Begin"))
+
+      let column = page.state.notes.currentColumn()
+      play([WRONG_NOTE])
+      play(column)
+      click(buttonNamed(el, "Rest"))
+
+      let staffBefore = page.state.currentStaff
+      let keyBefore = page.state.keySignature
+
+      let dialog = el.querySelector("dialog")
+      click(buttonNamed(dialog, "Practise these notes"))
+
+      expect(el.querySelector("dialog")).toBe(null)
+      expect(page.state.session).toBe(false)
+      expect(page.state.currentStaff).toBe(staffBefore)
+      expect(page.state.keySignature).toBe(keyBefore)
+      expect(page.state.currentGenerator.name).toEqual("random")
+
+      let focusedNotes = Object.keys(page.state.currentGeneratorSettings.focus).sort()
+      let expectedPitchClasses = [...new Set(column.map(note => note.replace(/\d+$/, "")))].sort()
+      expect(focusedNotes).toEqual(expectedPitchClasses)
+
+      for (let col of page.state.notes) {
+        expect(col.every(note => focusedNotes.includes(note.replace(/\d+$/, "")))).toBe(true)
+      }
+    })
+
+    // the seed is the only writer of the generator's focus, so the drawer's
+    // row is how the player takes it off again
+    it("offers the seeded notes in the drawer, and hides the row once every one is off", function() {
+      let el = renderPage()
+      click(buttonNamed(el, "Begin"))
+
+      let column = page.state.notes.currentColumn()
+      play([WRONG_NOTE])
+      play(column)
+      click(buttonNamed(el, "Rest"))
+
+      click(buttonNamed(el.querySelector("dialog"), "Practise these notes"))
+
+      let seeded = Object.keys(page.state.currentGeneratorSettings.focus)
+      expect(seeded.length).toBeGreaterThan(0)
+      let focusedPool = page.state.notes.generator.notes.length
+
+      click(buttonLabelled(el, "Programme"))
+      let focusPills = () => el.querySelector('[role="group"][aria-label="focus notes"]')
+      expect([...focusPills().querySelectorAll("button")].map(b => b.textContent)).toEqual(seeded)
+
+      for (let name of seeded) {
+        click([...focusPills().querySelectorAll("button")].find(b => b.textContent == name))
+      }
+
+      expect(focusPills()).toBe(null)
+      expect(page.state.currentGeneratorSettings.focus).toEqual(
+        Object.fromEntries(seeded.map(name => [name, false])))
+      // back to the staff's whole scale, not the focused pool
+      expect(page.state.notes.generator.notes.length).toBeGreaterThan(focusedPool)
+    })
+
+    it("links New programme to /setup and See all progress to /stats", function() {
+      let el = renderPage()
+      click(buttonNamed(el, "Begin"))
+      play(page.state.notes.currentColumn())
+      click(buttonNamed(el, "Rest"))
+
+      let dialog = el.querySelector("dialog")
+      let newProgramme = [...dialog.querySelectorAll("a")].find(a => a.textContent == "New programme")
+      expect(newProgramme.getAttribute("href")).toEqual("/setup")
+      let progress = [...dialog.querySelectorAll("a")].find(a => a.textContent.includes("See all progress"))
+      expect(progress.getAttribute("href")).toEqual("/stats")
+    })
+
+    it("on the score page, hides Practise these notes and opens the drawer from New programme", async function() {
+      let {piece} = await importMusicXMLPiece("salon_octet.musicxml", octetXML, store)
+      window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+        piece: piece.id, startMeasure: 1, endMeasure: 8, hand: BOTH_HANDS, measuresPerCard: "all",
+      }))
+
+      let el = renderScorePage()
+      click(buttonNamed(el, "Begin"))
+      play(page.state.notes.currentColumn())
+      click(buttonNamed(el, "Rest"))
+
+      let dialog = el.querySelector("dialog")
+      expect(buttonNamed(dialog, "Practise these notes")).toBeUndefined()
+
+      click(buttonNamed(dialog, "New programme"))
+
+      expect(el.querySelector("dialog")).toBe(null)
+      expect(page.state.settingsOpen).toBe(true)
+    })
+
+    it("after a chord miss, shows the four cards but no trouble rows or practise pill", function() {
+      window.localStorage.setItem(DRILL_STORAGE_KEY, JSON.stringify({staff: "chord", generator: "random"}))
+      let el = renderPage()
+      let press = note => flushSync(() => page.pressNote(note))
+      let release = note => flushSync(() => page.releaseNote(note))
+
+      click(buttonNamed(el, "Begin"))
+      press(WRONG_NOTE)
+      release(WRONG_NOTE)
+      click(buttonNamed(el, "Rest"))
+
+      let dialog = el.querySelector("dialog")
+      expect(dialog.open).toBe(true)
+      for (let label of ["Elapsed", "Accuracy", "Notes read", "Best streak"]) {
+        expect(statValue(dialog, label)).withContext(label).toBeDefined()
+      }
+      expect(dialog.textContent).not.toContain("Notes that gave trouble")
+      expect(buttonNamed(dialog, "Practise these notes")).toBeUndefined()
+    })
+
+    it("ignores space and the grade hotkeys on window while it's open", function() {
+      let el = renderPage()
+      click(buttonNamed(el, "Begin"))
+      play(page.state.notes.currentColumn())
+      click(buttonNamed(el, "Rest"))
+
+      expect(el.querySelector("dialog")).not.toBe(null)
+
+      let notesBefore = page.state.notes
+      flushSync(() => document.body.dispatchEvent(new KeyboardEvent("keydown", {keyCode: 32, bubbles: true})))
+      expect(page.state.notes).toBe(notesBefore)
+
+      flushSync(() => document.body.dispatchEvent(new KeyboardEvent("keydown", {keyCode: 49, bubbles: true})))
+      expect(page.state.notes).toBe(notesBefore)
+    })
+
+    it("closes on Esc or the dismiss ×, and Begin then starts a fresh session", function() {
+      let el = renderPage()
+      click(buttonNamed(el, "Begin"))
+      play(page.state.notes.currentColumn())
+      click(buttonNamed(el, "Rest"))
+
+      let dialog = el.querySelector("dialog")
+      flushSync(() => dialog.dispatchEvent(new Event("cancel", {cancelable: true})))
+      expect(el.querySelector("dialog")).toBe(null)
+
+      click(buttonNamed(el, "Begin"))
+      expect(page.state.session).toBe(true)
+      play(page.state.notes.currentColumn())
+      click(buttonNamed(el, "Rest"))
+
+      let dialog2 = el.querySelector("dialog")
+      click(dialog2.querySelector(`.${summaryStyles.dismiss}`))
+      expect(el.querySelector("dialog")).toBe(null)
+
+      click(buttonNamed(el, "Begin"))
+      expect(page.state.session).toBe(true)
+    })
+  })
+
   describe("matching the notes played", function() {
     let press = note => flushSync(() => page.pressNote(note))
     let release = note => flushSync(() => page.releaseNote(note))
@@ -4402,6 +4639,32 @@ describe("sight reading page", function() {
       await waitFor(() => store.recentSessions().length == 1, "the session to be saved")
       flushSync(() => page.forceUpdate())
       expect(el.textContent).toContain("1 pass graded")
+    })
+
+    // nothing is detected, so the summary shows the three live acoustic
+    // cards and no trouble rows (NoteStats#notes stays empty)
+    it("opens the summary with the three acoustic cards and no trouble rows or practise pill", async function() {
+      let el = await renderAcoustic({measuresPerCard: "2"})
+      click(buttonNamed(el, "Begin"))
+      played()
+      click(buttonLike(el, "Clean"))
+      await finished()
+
+      click(buttonNamed(el, "Rest"))
+      let dialog = el.querySelector("dialog")
+      expect(dialog.open).toBe(true)
+      expect(statValue(dialog, "Elapsed")).toBeDefined()
+      expect(statValue(dialog, "Passes")).toEqual("1")
+      expect(statValue(dialog, "Clean")).toEqual("1")
+      expect(dialog.textContent).not.toContain("Notes that gave trouble")
+      expect(buttonNamed(dialog, "Practise these notes")).toBeUndefined()
+    })
+
+    it("opens no summary at Rest when nothing was graded", async function() {
+      let el = await renderAcoustic({measuresPerCard: "2"})
+      click(buttonNamed(el, "Begin"))
+      click(buttonNamed(el, "Rest"))
+      expect(el.querySelector("dialog")).toBe(null)
     })
   })
 
