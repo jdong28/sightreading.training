@@ -216,6 +216,14 @@ export function addInterval(note, halfSteps) {
   return noteName(parseNote(note) + halfSteps);
 }
 
+// eg. "C#4" -> "C♯4", in the app's octave numbering like the keyboard
+// labels. Kept here (rather than only in sight_reading_page.jsx, which has
+// its own copy today) so other modules, eg. st/session_summary, can use it
+// without importing the page
+export function displayNoteName(note) {
+  return String(note).replace("#", "♯").replace(/^([A-G])b/, "$1♭")
+}
+
 
 // returns 0 if notes are same
 // returns < 0 if a < b
