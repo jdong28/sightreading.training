@@ -29,8 +29,10 @@
 // this column completes it is credited to the next, which completes at once
 // if that was all it needed. It counts as a slip on this column only if this
 // one doesn't complete within EARLY_KEY_WINDOW of it (the player wasn't
-// early, they were wrong), judged at the next key down. A key of the column
-// just completed struck again within LATE_REPEAT_WINDOW of its completing (a
+// early, they were wrong), judged at the next key down — or, in tempo mode,
+// dropped uncredited as this column scrolls past (see scrollPast), which
+// counts its own miss on the column instead. A key of the column just
+// completed struck again within LATE_REPEAT_WINDOW of its completing (a
 // late duplicate, a key bounce) is ignored. Both windows are on the events'
 // timeStamps, so a press with none (the on-screen keyboard) is judged as if
 // outside them.
@@ -490,11 +492,16 @@ export default class NoteMatcher {
   // hear it), blamed on its notes not yet struck. Either way the column
   // then advances exactly as a hit does but for the hit itself: cleared
   // with nothing measured, the keys held early for the next column credited
-  // to it as before, chaining a hit when they complete it. Emits "scrolled"
+  // to it as before, chaining a hit when they complete it — all but the
+  // ones the head took longer than EARLY_KEY_WINDOW to scroll past, which
+  // are dropped uncredited (dropStaleEarly), as rule 2.4 drops them at a
+  // key down, counting no miss beyond the scroll-past's own. Emits "scrolled"
   // after the miss (if any) and before any chained hit, so the miss reaches
   // the stats, and through them the generator's columnDone, before the
   // shift below calls it
   scrollPast(time, {miss=true}={}) {
+    this.dropStaleEarly(time)
+
     let notes = this.notes
     let column = notes.currentColumn()
 
@@ -504,11 +511,7 @@ export default class NoteMatcher {
     }
 
     if (column.length && miss) {
-      let struck = [
-        ...Object.keys(this.touched).filter(n => this.strays[n] || this.inColumn(column, n)),
-        ...this.heldCredit(),
-      ]
-      let blamed = notes.blamedNotes(struck, this.anyOctave)
+      let blamed = this.blamedForHead()
       let counted = this.missedNotes == notes ? "slip" : "miss"
       this.missedNotes = notes
       this.emit({type: "miss", missed: column, blamed, counted, notes})
@@ -613,8 +616,7 @@ export default class NoteMatcher {
   // within EARLY_KEY_WINDOW of, at a key down at timeStamp, were wrong: they
   // count as one slip on the head, and aren't credited to the next column
   expireEarly(timeStamp) {
-    let stale = Object.keys(this.early).filter(n =>
-      timeStamp == null || timeStamp - this.early[n] > EARLY_KEY_WINDOW)
+    let stale = this.staleEarly(timeStamp)
     if (!stale.length) { return }
 
     this.early = {...this.early}
@@ -625,6 +627,26 @@ export default class NoteMatcher {
     }
 
     this.emitMiss()
+  }
+
+  // The same stale keys, dropped uncredited as the head scrolls past at
+  // time (D4(c)): they are never credited to the next column either, but
+  // the scroll-past counts the head's one miss, so they add no second one
+  dropStaleEarly(time) {
+    let stale = this.staleEarly(time)
+    if (!stale.length) { return }
+
+    this.early = {...this.early}
+    for (let n of stale) {
+      delete this.early[n]
+    }
+  }
+
+  // the keys held early for the next column that the head still hasn't
+  // completed at time, EARLY_KEY_WINDOW on from each of them
+  staleEarly(time) {
+    return Object.keys(this.early).filter(n =>
+      time == null || time - this.early[n] > EARLY_KEY_WINDOW)
   }
 
   // whether a key down is one struck again rather than played: one of the
@@ -657,13 +679,19 @@ export default class NoteMatcher {
   // struck at it that are its own or slipped, and the keys it credits held:
   // a note the column already has is never one the miss is put down to
   emitMiss() {
+    this.emit(this.missColumn(this.notes.currentColumn(), this.blamedForHead()))
+  }
+
+  // the head column's notes a miss on it is put down to (see emitMiss): the
+  // one rule, shared with the scroll-past's forced miss
+  blamedForHead() {
     let notes = this.notes
     let column = notes.currentColumn()
     let struck = [
       ...Object.keys(this.touched).filter(n => this.strays[n] || this.inColumn(column, n)),
       ...this.heldCredit(),
     ]
-    this.emit(this.missColumn(column, notes.blamedNotes(struck, this.anyOctave)))
+    return notes.blamedNotes(struck, this.anyOctave)
   }
 
   // the column at an index of the list, [] past its end

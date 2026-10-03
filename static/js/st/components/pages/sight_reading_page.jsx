@@ -509,6 +509,9 @@ export default class SightReadingPage extends React.Component {
     if (!this.tempoMode()) {
       slider.floor = SCROLL_WAIT
       slider.passAt = 0
+      // the floor may have been lifted below the line while the setting was
+      // on, where nothing is animating to carry the head back up to it
+      slider.checkAndStart()
       return
     }
 
@@ -1286,7 +1289,12 @@ export default class SightReadingPage extends React.Component {
         // the matcher times how long each column stands on the hit line
         // before it is played (its late), which is recorded and never a miss
         onStart: () => this.matcher.onLine(null),
-        onStop: () => this.matcher.onLine(this.matcher.now()),
+        // the staff has come to rest with the head on the line, so the head
+        // is on it from now — unless followHead already dated its arrival
+        // earlier, having found it past the line as it became the head
+        // (D4(c)): an arrival already in the past is the one it kept
+        onStop: () => this.matcher.onLine(
+          Math.min(this.matcher.onLineSince ?? Infinity, this.matcher.now())),
         // D4(c): fires only in tempo mode (the floor otherwise prevents the
         // slider ever looping) when the head column has scrolled past the
         // tolerance, judged through the matcher (NoteMatcher#scrollPast) so

@@ -1652,6 +1652,65 @@ describe("sight reading page", function() {
           playHead()
           expect(page.state.slider.floor).toEqual(SCROLL_WAIT)
         })
+
+        // the real animation's frames, to let the slider settle or resume
+        let frames = n => new Promise(resolve => {
+          let tick = left => left > 0 ?
+            window.requestAnimationFrame(() => tick(left - 1)) : resolve()
+          tick(n)
+        })
+
+        // a column that scrolls past hands the next card's opening column
+        // to the staff already behind the hit line: its lateness runs from
+        // the line it crossed, not from the staff coming to rest
+        it("records the lateness of a column that became the head past the line", async function() {
+          await renderSection({measuresPerCard: "2"}, {mode: "scroll", tempo: true})
+          let slider = page.state.slider
+
+          playHead()
+          slider.value = SCROLL_WAIT - 0.2
+          flushSync(() => slider.onLoop())
+
+          // the opening column of the next card waits, at the floor it is
+          // already past: that much of its lateness is behind it
+          let behind = (SCROLL_WAIT - slider.value) * 1000 / slider.speed
+          expect(behind).toBeGreaterThan(100)
+          expect(slider.floor).toEqual(slider.value)
+
+          // the staff comes to rest there, then the column is played 300ms on
+          let t0 = performance.now()
+          await frames(3)
+          playAt(t0, 300)
+          playAt(t0, 400)
+          await finished()
+
+          let written = await reviews()
+          let review = written.find(r => r.itemId == `${piece.id}:both:3-4`)
+          let late = review.perColumn[0][6]
+          expect(late).toBeGreaterThan(300 + behind - 50)
+          expect(late).toBeLessThan(300 + behind + 50)
+        })
+
+        // turning the setting off restores wait-at-the-line (D4(a)), which
+        // has to carry a head the setting left below the line back up to it
+        it("carries a head left below the line back to it when the setting goes off", async function() {
+          await renderSection({measuresPerCard: "2"}, {mode: "scroll", tempo: true})
+          let slider = page.state.slider
+
+          playHead()
+          slider.value = SCROLL_WAIT - 0.2
+          flushSync(() => slider.onLoop())
+
+          // the staff comes to rest below the line, where tempo mode left it
+          await frames(3)
+          expect(slider.value).toBeLessThan(SCROLL_WAIT)
+
+          flushSync(() => page.setTempo(false))
+          expect(slider.floor).toEqual(SCROLL_WAIT)
+
+          await frames(3)
+          expect(slider.value).toEqual(SCROLL_WAIT)
+        })
       })
     })
 
