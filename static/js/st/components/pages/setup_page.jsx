@@ -13,7 +13,7 @@ import {markOnboarded} from "st/onboarding"
 import {
   generatorDefaultSettings, storeCurrentDrill, storeGeneratorSettings,
   currentStaffFor, currentGeneratorFor, currentKeySignature, currentDrillMode,
-  currentScrollSpeed, allKeySignatures, DRILL_MODES, SCROLL_SPEED_RANGE,
+  currentScrollSpeed, currentScrollTempo, allKeySignatures, DRILL_MODES, SCROLL_SPEED_RANGE,
 } from "st/generators"
 import {GeneratorSettings} from "st/components/sight_reading/settings_panel"
 import {Plate, Pill, PullQuote, SectionLabel, TitleBlock, DoubleRule} from "st/components/salon"
@@ -67,7 +67,7 @@ export function keyGlyph(key) {
 }
 
 // what the summary plate shows for a programme
-export function programmeSummary({staff, generator, settings, key, mode, speed}) {
+export function programmeSummary({staff, generator, settings, key, mode, speed, tempo}) {
   let [plain, italic] = exerciseTitle(generator)
 
   let place = key.isChromatic() ?
@@ -88,7 +88,8 @@ export function programmeSummary({staff, generator, settings, key, mode, speed})
     title: [plain, italic],
     subtitle: place,
     range,
-    tempo: `${capitalize(mode)} · speed ${speed}`,
+    // D4(c): "Keep tempo" only means anything in scroll mode
+    tempo: `${capitalize(mode)}${mode == "scroll" && tempo ? " · in tempo" : ""} · speed ${speed}`,
     length: "Until you stop",
   }
 }
@@ -132,6 +133,7 @@ export default function SetupPage({staves=STAVES, generators=GENERATORS}) {
   let [key, setKey] = React.useState(() => currentKeySignature())
   let [mode, setMode] = React.useState(() => currentDrillMode())
   let [speed, setSpeed] = React.useState(() => currentScrollSpeed())
+  let [tempo, setTempo] = React.useState(() => currentScrollTempo())
 
   React.useEffect(() => {
     setTitle("Set the programme")
@@ -172,6 +174,11 @@ export default function SetupPage({staves=STAVES, generators=GENERATORS}) {
     storeCurrentDrill({speed: newSpeed})
   }
 
+  let chooseTempo = newTempo => {
+    setTempo(newTempo)
+    storeCurrentDrill({tempo: newTempo})
+  }
+
   // stores the whole programme before the link opens the trainer
   let begin = () => {
     storeCurrentDrill({
@@ -180,6 +187,7 @@ export default function SetupPage({staves=STAVES, generators=GENERATORS}) {
       key: key.name(),
       mode,
       speed,
+      tempo,
     })
 
     if (generator.storageKey) {
@@ -189,7 +197,7 @@ export default function SetupPage({staves=STAVES, generators=GENERATORS}) {
     markOnboarded()
   }
 
-  let summary = programmeSummary({staff, generator, settings: fullSettings, key, mode, speed})
+  let summary = programmeSummary({staff, generator, settings: fullSettings, key, mode, speed, tempo})
   let [minSpeed, maxSpeed] = SCROLL_SPEED_RANGE
 
   return <main className={styles.setup_page}>
@@ -276,6 +284,13 @@ export default function SetupPage({staves=STAVES, generators=GENERATORS}) {
             )}
           </div>
           <TempoSlider value={speed} min={minSpeed} max={maxSpeed} onChange={chooseSpeed} />
+          <div className={classNames(styles.pills, styles.mode_pills)}>
+            <Pill
+              variant="choice"
+              selected={tempo}
+              disabled={mode != "scroll"}
+              onClick={() => chooseTempo(!tempo)}>Keep tempo</Pill>
+          </div>
         </div>
       </section>
 

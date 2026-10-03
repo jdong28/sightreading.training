@@ -1,3 +1,10 @@
+// how long a gap between frames may run, while there's no floor, before it
+// is dropped rather than played out: requestAnimationFrame stops in a
+// hidden tab (and note-ons are dropped while document.hidden), so without
+// this the first frame back would scroll every column of the hidden time
+// past as misses (D4(c))
+const FRAME_GAP_PAUSE_MS = 500
+
 // used to control animation outside of react
 export default class SlideToZero {
   constructor(opts={}) {
@@ -9,8 +16,13 @@ export default class SlideToZero {
     this.onStop = opts.onStop || function() {}
     this.onStart = opts.onStart || function() {}
     this.onLoop = opts.onLoop || function() {}
-    // where the value waits, however long a frame runs past it
+    // where the value waits, however long a frame runs past it. Set to
+    // null (not through this default, which only fills in an unset opts.floor)
+    // for no floor, so the value runs on below it (D4(c))
     this.floor = opts.floor || 0
+    // where a looping value loops, instead of at 0 (D4(c), tempo mode's
+    // tolerance past the hit line)
+    this.passAt = opts.passAt || 0
 
     if (opts.loopPhase) {
       this.looping = true;
@@ -51,6 +63,15 @@ export default class SlideToZero {
         return;
       }
 
+      // with no floor the value runs on indefinitely, so a gap this long
+      // (the tab was hidden) is dropped instead of scrolling every column
+      // of it past as misses
+      if (this.floor == null && time - lastFrame > FRAME_GAP_PAUSE_MS) {
+        lastFrame = time;
+        window.requestAnimationFrame(frameUpdate);
+        return;
+      }
+
       let dt = (time - lastFrame) / 1000;
       lastFrame = time;
 
@@ -61,12 +82,12 @@ export default class SlideToZero {
 
       this.value = this.value - this.speed * dt;
 
-      if (this.floor && this.value < this.floor) {
+      if (this.floor != null && this.value < this.floor) {
         this.value = this.floor;
       }
 
       if (this.looping) {
-        if (this.value <= 0) {
+        if (this.value <= this.passAt) {
           this.value += this.loopPhase;
           this.onLoop();
         }
@@ -76,7 +97,10 @@ export default class SlideToZero {
 
       this.onUpdate(this.value);
 
-      if (this.value > this.floor) {
+      // this.value > this.floor is this.value > 0 when floor is null (a
+      // JS trap: null coerces to 0 in a comparison), which would stop the
+      // animation between 0 and passAt, so no floor never stops it here
+      if (this.floor == null || this.value > this.floor) {
         window.requestAnimationFrame(frameUpdate);
       } else {
         this.animating = false;

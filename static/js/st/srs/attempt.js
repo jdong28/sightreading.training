@@ -434,6 +434,14 @@ export function passAttempts(pass, {pieceId, hand, at=pass.lastAt, sessionId, de
         review.speed = speed
       }
 
+      // D4(c): the trainer's "Keep tempo" setting was on, so a column that
+      // scrolled past the hit line was missed, not waited for (see
+      // NoteMatcher#scrollPast); the tolerance is kept with the review so a
+      // revised one doesn't change how an old review reads
+      if (mode == "scroll" && pass.drill.tempo) {
+        review.tempo = pass.drill.tempo
+      }
+
       if (bars) {
         review.bars = bars.map(bar => {
           let barColumns = bar.indices.map(idx => cardColumns[idx])
