@@ -489,3 +489,318 @@ describe("staff two mount/unmount race", function() {
     flushSync(() => root.unmount())
   })
 })
+
+// StaffGroup#makeNotes computes ledger lines (StaffGroup#render draws them,
+// one LedgerLine per note that needs one, mirroring NoteGroup): these specs
+// mount into their own root for direct, synchronous access to the staff
+// refs (trebleStaffRef/bassStaffRef) and their Two.js shapes
+describe("staff two ledger lines", function() {
+  let container, root
+
+  beforeEach(function() {
+    container = document.createElement("div")
+    document.body.appendChild(container)
+    root = createRoot(container)
+  })
+
+  afterEach(function() {
+    flushSync(() => root.unmount())
+    document.body.removeChild(container)
+  })
+
+  let mount = (props) => {
+    let instance
+    flushSync(() => {
+      root.render(React.createElement(StaffTwo, {
+        ref: inst => { instance = inst },
+        keySignature: new KeySignature(0),
+        height: 150,
+        ...props,
+      }))
+    })
+    return instance
+  }
+
+  it("draws ledger lines above and below the treble staff", function() {
+    let instance = mount({
+      type: "treble",
+      notes: new NoteList([["C6"], ["A5"], ["G5"], ["F5"], ["E4"], ["D4"], ["C4"], ["A3"]]),
+    })
+
+    let lines = instance.trebleStaffRef.current.notesGroup.getByClassName("ledgerLine")
+    expect(lines.length).toBe(6)
+
+    let ys = lines.map(l => l.translation.y).sort((a, b) => a - b)
+    expect(ys).toEqual([-116, -58, -58, 290, 290, 348])
+
+    for (let line of lines) {
+      expect(line.vertices[1].x - line.vertices[0].x).toBeCloseTo(106 + 15 * 2, 5)
+    }
+  })
+
+  it("draws ledger lines above and below the bass staff", function() {
+    let instance = mount({
+      type: "bass",
+      notes: new NoteList([["C2"], ["E2"], ["G2"], ["A3"], ["C4"], ["E4"]]),
+    })
+
+    let lines = instance.bassStaffRef.current.notesGroup.getByClassName("ledgerLine")
+    expect(lines.length).toBe(6)
+  })
+
+  it("draws ledger lines above and below both staves of the grand staff", function() {
+    let bothAbove = mount({type: "grand", notes: new NoteList([["C6"], ["C6"]])})
+    expect(bothAbove.trebleStaffRef.current.notesGroup.getByClassName("ledgerLine").length).toBe(4)
+    expect(bothAbove.bassStaffRef.current.notesGroup.getByClassName("ledgerLine").length).toBe(0)
+
+    let stickToTreble = mount({type: "grand", notes: new NoteList([["E4"], ["B3"]])})
+    let trebleLines = stickToTreble.trebleStaffRef.current.notesGroup.getByClassName("ledgerLine")
+    expect(trebleLines.length).toBe(1)
+    expect(trebleLines[0].translation.y).toBe(290)
+    expect(stickToTreble.bassStaffRef.current.notesGroup.getByClassName("ledgerLine").length).toBe(0)
+
+    let stickToBass = mount({type: "grand", notes: new NoteList([["A3"], ["C4"]])})
+    let bassLines = stickToBass.bassStaffRef.current.notesGroup.getByClassName("ledgerLine")
+    expect(bassLines.length).toBe(1)
+    expect(bassLines[0].translation.y).toBe(-58)
+    expect(stickToBass.trebleStaffRef.current.notesGroup.getByClassName("ledgerLine").length).toBe(0)
+
+    let bothBelow = mount({type: "grand", notes: new NoteList([["C2"], ["C2"]])})
+    expect(bothBelow.bassStaffRef.current.notesGroup.getByClassName("ledgerLine").length).toBe(4)
+    expect(bothBelow.trebleStaffRef.current.notesGroup.getByClassName("ledgerLine").length).toBe(0)
+  })
+
+  it("fits inside the plate", function() {
+    let instance = mount({
+      type: "treble",
+      notes: new NoteList([["C6"], ["A3"]]),
+    })
+
+    // StaffTwo also renders its hidden asset svgs (display: none, so a
+    // zero rect); pick the real, visible Two.js canvas
+    let svg = [...container.querySelectorAll("svg")].find(s => s.getBoundingClientRect().height > 0)
+    let svgRect = svg.getBoundingClientRect()
+    let lines = container.querySelectorAll(".ledgerLine")
+    expect(lines.length).toBeGreaterThan(0)
+
+    for (let line of lines) {
+      let rect = line.getBoundingClientRect()
+      expect(rect.top).toBeGreaterThanOrEqual(svgRect.top)
+      expect(rect.bottom).toBeLessThanOrEqual(svgRect.bottom)
+    }
+  })
+
+  it("scroll with the notes", function() {
+    let instance = mount({
+      type: "treble",
+      notes: new NoteList([["G4"], ["C4"]]),
+    })
+
+    let staff = instance.trebleStaffRef.current
+    let ledger = staff.notesGroup.getByClassName("ledgerLine")[0]
+    let note = staff.notesGroup.getByClassName("note").find(n => !n.classList.includes("head"))
+
+    let ledgerBefore = ledger.getBoundingClientRect().left
+    let noteBefore = note.getBoundingClientRect().left
+
+    instance.setOffset(2)
+
+    let ledgerDelta = ledger.getBoundingClientRect().left - ledgerBefore
+    let noteDelta = note.getBoundingClientRect().left - noteBefore
+
+    expect(ledgerDelta).not.toBe(0)
+    expect(ledgerDelta).toBeCloseTo(noteDelta, 3)
+  })
+
+  it("are replaced, not accumulated, on a re-render", function() {
+    let instance = mount({type: "treble", notes: new NoteList([["C6"]])})
+    expect(instance.trebleStaffRef.current.notesGroup.getByClassName("ledgerLine").length).toBe(2)
+
+    instance = mount({type: "treble", notes: new NoteList([["G4"]])})
+    expect(instance.trebleStaffRef.current.notesGroup.getByClassName("ledgerLine").length).toBe(0)
+  })
+
+  it("widens a seconds-offset note's ledger line to span its offset head", function() {
+    let instance = mount({
+      type: "treble",
+      notes: new NoteList([["B3", "C4"]]),
+    })
+
+    let lines = instance.trebleStaffRef.current.notesGroup.getByClassName("ledgerLine")
+    expect(lines.length).toBe(2)
+    lines.forEach(l => expect(l.translation.y).toBe(290))
+
+    let xs = lines.map(l => l.translation.x).sort((a, b) => a - b)
+    expect(xs[1] - xs[0]).toBeCloseTo(Math.floor(106 * 0.9), 5)
+  })
+
+  it("fits the plate from the staff's range, not its current notes", function() {
+    let a = mount({
+      type: "treble", maxScale: 0.24,
+      range: ["A3", "C6"],
+      notes: new NoteList([["G4"]]),
+    })
+    let scaleA = a.renderGroup.scale
+    let yA = a.renderGroup.translation.y
+
+    let b = mount({
+      type: "treble", maxScale: 0.24,
+      range: ["A3", "C6"],
+      notes: new NoteList([["C6"], ["A3"]]),
+    })
+    let scaleB = b.renderGroup.scale
+    let yB = b.renderGroup.translation.y
+
+    expect(scaleB).toBeCloseTo(scaleA, 6)
+    expect(yB).toBe(yA)
+  })
+
+  it("spaces columns by noteWidth times scale in both modes, not the fixed legacy spacing", function() {
+    let instance = mount({
+      type: "treble",
+      range: ["A3", "C6"],
+      maxScale: 0.24,
+      notes: new NoteList([["C4"], ["D4"], ["E4"]]),
+      noteWidth: 200,
+      scale: 0.64,
+    })
+
+    let notes = instance.trebleStaffRef.current.notesGroup.getByClassName("note")
+      .sort((a, b) => a.translation.x - b.translation.x)
+    expect(notes.length).toBe(3)
+
+    let renderScale = instance.renderGroup.scale
+    let dxPx = (notes[1].translation.x - notes[0].translation.x) * renderScale
+    expect(dxPx).toBeCloseTo(200 * 0.64, 1)
+  })
+})
+
+// StaffGroup#makeNotes's parity with the legacy renderer (AGENTS.md's
+// "Legacy features StaffTwo doesn't draw", Q2 = P1): accidentals, held keys
+// and the miss shake
+describe("staff two parity", function() {
+  let container, root
+
+  beforeEach(function() {
+    container = document.createElement("div")
+    document.body.appendChild(container)
+    root = createRoot(container)
+  })
+
+  afterEach(function() {
+    flushSync(() => root.unmount())
+    document.body.removeChild(container)
+  })
+
+  let mount = (props) => {
+    let instance
+    flushSync(() => {
+      root.render(React.createElement(StaffTwo, {
+        ref: inst => { instance = inst },
+        height: 150,
+        ...props,
+      }))
+    })
+    return instance
+  }
+
+  it("draws the accidental a key signature leaves on a note", function() {
+    let instance = mount({
+      type: "treble",
+      keySignature: new KeySignature(0),
+      notes: new NoteList([["C#4"], ["Bb4"]]),
+    })
+
+    let accidentals = instance.trebleStaffRef.current.notesGroup.getByClassName("accidental")
+    expect(accidentals.map(a => a.classList.includes("sharp"))).toContain(true)
+    expect(accidentals.map(a => a.classList.includes("flat"))).toContain(true)
+  })
+
+  it("draws a natural a key signature leaves on a note", function() {
+    let instance = mount({
+      type: "treble",
+      keySignature: new KeySignature(1), // G major: F is sharp
+      notes: new NoteList([["F4"]]),
+    })
+
+    let accidentals = instance.trebleStaffRef.current.notesGroup.getByClassName("accidental")
+    expect(accidentals.length).toBe(1)
+    expect(accidentals[0].classList.includes("natural")).toBe(true)
+  })
+
+  it("draws no accidental on a note already in the key", function() {
+    let instance = mount({
+      type: "treble",
+      keySignature: new KeySignature(3), // A major: F# is in the key
+      notes: new NoteList([["F#4"]]),
+    })
+
+    expect(instance.trebleStaffRef.current.notesGroup.getByClassName("accidental").length).toBe(0)
+  })
+
+  it("draws a held key not in the head column as a faint extra head, and dims a held head note", function() {
+    let instance = mount({
+      type: "treble",
+      keySignature: new KeySignature(0),
+      notes: new NoteList([["C5"]]),
+      heldNotes: {"A5": true},
+    })
+
+    let notes = instance.trebleStaffRef.current.notesGroup.getByClassName("note")
+    let held = notes.filter(n => n.classList.includes("held"))
+    expect(held.length).toBe(1)
+    expect(held[0].opacity).toBe(0.2)
+    // drawn at column 0's x, alongside the head itself
+    let head = notes.find(n => n.classList.includes("head"))
+    expect(held[0].translation.x).toBe(head.translation.x)
+
+    // the head itself is held when the key down is its own note
+    instance = mount({
+      type: "treble",
+      keySignature: new KeySignature(0),
+      notes: new NoteList([["C5"]]),
+      heldNotes: {"C5": true},
+    })
+    let headNote = instance.trebleStaffRef.current.notesGroup.getByClassName("note")
+      .find(n => n.classList.includes("head"))
+    expect(headNote.classList.includes("held")).toBe(true)
+    expect(headNote.opacity).toBe(0.2)
+  })
+
+  it("shakes the head column's shapes while noteShaking, settling back to x 0", function() {
+    let instance = mount({
+      type: "treble",
+      keySignature: new KeySignature(0),
+      notes: new NoteList([["C6"]]), // a ledger line too, so it's in the shake
+      noteShaking: true,
+    })
+
+    let groups = instance.getFirstColumnGroups()
+    expect(groups.length).toBeGreaterThan(0)
+
+    let updater
+    instance.updaters.forEach(fn => { updater = fn })
+    expect(updater).toBeTruthy()
+
+    flushSync(() => updater(1, 16))
+    expect(groups.some(g => g.translation.x != 0)).toBe(true)
+
+    flushSync(() => updater(-1, 0))
+    expect(groups.every(g => g.translation.x == 0)).toBe(true)
+  })
+
+  it("draws a column's annotation above it", function() {
+    let notes = new NoteList([["C4"]])
+    notes[0].annotation = "1"
+
+    let instance = mount({
+      type: "treble",
+      keySignature: new KeySignature(0),
+      notes,
+    })
+
+    let annotations = instance.trebleStaffRef.current.notesGroup.getByClassName("annotation")
+    expect(annotations.length).toBe(1)
+    expect(annotations[0].value).toBe("1")
+  })
+})
