@@ -305,3 +305,24 @@ def test_assign_bars_clef_artifact_not_mistaken_for_missing_opening():
     xs = sorted(round(b["x"]) for b in bars)
     assert any(abs(x - opening_x) <= 2 for x in xs)
     assert len(sys_["measures"]) == 1
+
+
+def test_assign_bars_rest_only_system_no_heads():
+    """A system holding only a printed multi-bar rest has no notehead at
+    all to detect, so the head-based "no drawn opening line" signal can
+    never fire for it -- yet a detected system is never truly empty of a
+    measure. A system that found at most its own final bar line (no
+    heads needed as evidence) still gets the implicit left-edge
+    boundary."""
+    black = _canvas()
+    ys = _draw_staff(black, 300)
+    top, bot = ys[0], ys[-1]
+    sys_ = _one_system([ys])
+    systems = [sys_]
+
+    final_x = 900
+    black[int(top):int(bot) + 1, final_x:final_x + 2] = True
+    staves.assign_bars(black, systems, [])  # no heads: it's a rest
+    assert len(sys_["bars"]) == 2
+    assert len(sys_["measures"]) == 1
+    assert sys_["measures"][0]["x1"] <= final_x

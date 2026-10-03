@@ -127,11 +127,16 @@ def multirest_bass():
 
 
 def cross_staff_print_only():
-    """A beamed run whose notes are encoded on the right-hand's own staff
-    (staff 1) but printed, by the grand-staff layout, reaching down near
-    the left-hand staff: the geometry test's cross-staff probe reads the
-    *detected heads*, which land on whichever staff the print actually
-    shows, against this staff-1-only encoding."""
+    """A beamed run, encoded entirely on the right-hand staff (staff 1),
+    that descends far enough on ledger lines to land physically closer to
+    the left-hand staff: heads.place() assigns its lowest notes to staff
+    2 by pixel proximity, so align.head_match's cross-staff fallback must
+    find them there against their staff-1 encoding. Known limit: this is
+    an extreme-ledger proximity case, not genuine engraved cross-staff
+    notation (where the print deliberately shows a note in the other
+    staff's clef position, as a "r.h./l.h." edited passage does) --
+    synthesising the latter needs MusicXML surgery past what music21
+    exposes; real coverage of it is still open (see the corpus README)."""
     rh = _part(clef.TrebleClef())
     lh = _part(clef.BassClef())
     rh.append(_measure(1, [_n(pp, 0.5) for pp in ("C4", "B3", "A3", "G3", "F3", "E3", "D3", "C3")], new_system=True))
@@ -147,10 +152,10 @@ def cross_staff_print_only():
 
 
 def cross_staff_lh_into_rh():
-    """A second cross-staff instance: left-hand notes encoded on staff 2
-    (bass clef) but high enough that, printed, they sit on or above the
-    right-hand's staff -- the opposite direction from
-    cross_staff_print_only's right-hand-encoded run."""
+    """A second cross-staff instance, the opposite direction from
+    cross_staff_print_only (left-hand notes encoded on staff 2 but high
+    enough to land on staff 1 by pixel proximity). Same known limit:
+    extreme-ledger proximity, not genuine engraved cross-staff notation."""
     rh = _part(clef.TrebleClef())
     lh = _part(clef.BassClef())
     rh.append(_measure(1, [note.Rest(quarterLength=4.0)], new_system=True))

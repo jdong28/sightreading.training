@@ -252,7 +252,14 @@ def assign_bars(black, systems, heads):
         heads_in_system = [h for h in heads if h["system"] == si]
         bars = barlines(black, sys_, heads_in_system)
         space = float(np.mean([s["space"] for s in sys_["staves"]]))
-        if bars and not bars[0]["is_full"] and _real_content_before(heads_in_system, bars[0]["x0"], space):
+        no_opening = bars and not bars[0]["is_full"] and (
+            len(bars) <= 1  # a system that found at most its own final bar
+            # (a multi-bar rest's printed bar has no notehead to detect,
+            # so the head-based signal below never fires for it, yet a
+            # detected system is never truly empty of a measure) needs no
+            # further evidence: there's nothing left to mistake it for.
+            or _real_content_before(heads_in_system, bars[0]["x0"], space))
+        if no_opening:
             # no drawn opening stroke (a single-staff part's continuation
             # system commonly has none): synthesise one at the system's
             # own left edge, so the first measure -- otherwise unreachable,
