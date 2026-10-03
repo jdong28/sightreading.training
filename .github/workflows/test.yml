@@ -47,3 +47,23 @@ jobs:
 
     - name: specs
       run: npm test
+
+  python:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tools/fingerings
+
+    steps:
+    - uses: actions/checkout@master
+
+    - uses: astral-sh/setup-uv@v10.2.0
+      with:
+        enable-cache: true
+        cache-dependency-glob: tools/fingerings/uv.lock
+
+    - name: install
+      run: uv sync --locked
+
+    - name: specs
+      run: uv run --locked pytest -q

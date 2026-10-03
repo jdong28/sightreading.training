@@ -2,10 +2,11 @@ import * as React from "react"
 import {createRoot} from "react-dom/client"
 import {flushSync} from "react-dom"
 
-import {GStaff, FStaff, GrandStaff} from "st/components/staves"
+import {GStaff, FStaff, GrandStaff, ChordStaff} from "st/components/staves"
+import ChordList from "st/chord_list"
 import staffStyles from "st/components/staff.module.css"
 import NoteList from "st/note_list"
-import {KeySignature, noteName} from "st/music"
+import {KeySignature, noteName, Chord} from "st/music"
 import {parseMusicXML} from "st/musicxml"
 import {sectionCard, cardColumn} from "st/measure_cards"
 import {pieceSectionMeasures, BOTH_HANDS} from "st/data"
@@ -103,5 +104,67 @@ describe("staves", function() {
 
     renderStaff(GStaff, [[noteName(Bb3)]])
     expect(clefImage(container.querySelector(`.${staffStyles.staff}`))).toContain("clefs.G")
+  })
+
+  // the drawn heads of the column at the head of the drill, which the
+  // plate's ink smudge locates (see PlateFeedback)
+  describe("headElements", function() {
+    it("returns the column-0 heads of a GStaff, including a held wrong key, and none of column 1's", function() {
+      let staff
+      renderStaff(GStaff, [[noteName(C4)], [noteName(E4)]], {
+        ref: el => staff = el,
+        heldNotes: {[noteName(D4)]: true},
+      })
+
+      let heads = staff.headElements()
+      expect(heads.length).toEqual(2)
+      expect(heads.every(el => el.dataset.start == "0")).toBe(true)
+      expect(heads.map(el => el.dataset.note).sort()).toEqual([noteName(C4), noteName(D4)].sort())
+    })
+
+    it("returns [] from a staff that has drawn no notes yet", function() {
+      let staff
+      flushSync(() => root.render(React.createElement(GStaff, {
+        ref: el => staff = el,
+        notes: [],
+        heldNotes: {},
+        keySignature: new KeySignature(-1),
+        noteWidth: 60,
+        scale: 1,
+      })))
+
+      expect(staff.headElements()).toEqual([])
+    })
+
+    it("returns the column-0 heads of both staves of a GrandStaff", function() {
+      let staff
+      renderStaff(GrandStaff, [[noteName(C4), noteName(G3)], [noteName(E4), noteName(B3)]], {
+        ref: el => staff = el,
+      })
+
+      let heads = staff.headElements()
+      expect(heads.map(el => el.dataset.note).sort()).toEqual([noteName(C4), noteName(G3)].sort())
+    })
+
+    it("returns the first chord of a ChordStaff, or [] with no chords", function() {
+      let staff
+      let chords = new ChordList([new Chord("C", "M"), new Chord("D", "M")])
+      flushSync(() => root.render(React.createElement(ChordStaff, {
+        ref: el => staff = el,
+        chords,
+        touchedNotes: {},
+      })))
+
+      let heads = staff.headElements()
+      expect(heads.length).toEqual(1)
+      expect(heads[0].textContent).toEqual(chords[0].toString())
+
+      flushSync(() => root.render(React.createElement(ChordStaff, {
+        ref: el => staff = el,
+        chords: new ChordList([]),
+        touchedNotes: {},
+      })))
+      expect(staff.headElements()).toEqual([])
+    })
   })
 })

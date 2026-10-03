@@ -128,11 +128,20 @@ Main: `max-width: 1060px`, `grid-template-columns: minmax(0,1fr) 260px`, `gap: 2
 - *Correct note:* a gilt wash over the plate — `radial-gradient(70% 60% at 50% 45%,
   rgba(168,130,74,.24), transparent 72%)` inset 1px, opacity 0 → 1 → 0, `.42s ease` in,
   held 300ms. Cursor advances to the next column; the expected note is highlighted on the keyboard.
+  **Not shipped**: the owner reviewed it on the trainer and asked for it to be removed, so a correct
+  note advances the cursor with no plate effect. Only the ink smudge below ships.
 - *Wrong note:* an **ink smudge** on the plate at the cursor's horizontal position —
   78×78px `radial-gradient(42% 38% at 50% 50%, rgba(36,31,24,.4), rgba(36,31,24,.14) 56%,
   transparent 78%)`, `filter: blur(1.5px)`, fades over `.55s`, cleared after 900ms. The cursor does
   **not** advance, no sound penalty, streak resets to 0, miss count increments. Nothing else changes.
 - Reaching the end of a passage regenerates a new one after 280ms.
+- The ink smudge is implemented by `PlateFeedback`
+  (`static/js/st/components/sight_reading/plate_feedback.jsx`), which owns its hold and placement:
+  the page bumps one counter per judgement, so a wrong chord inks as a single wrong note does, and
+  every wrong key inks whether or not the stats counted it. The implementation centres the smudge on
+  the drawn heads of the head column vertically as well as horizontally, clamped inside the plate,
+  and falls back to the centre of the staff when no head is drawn. Not drawn in acoustic mode, where
+  nothing is detected to react to.
 
 **State:** `notes` (NoteList), `keySignature`, `held` (map), `clef`, `tempo`, `session` (bool),
 `cursor` (index into columns), `readCount`, `misses`, `streak`, `best`, `secs`.
@@ -184,7 +193,7 @@ and the percentage right-aligned → one italic insight sentence → actions: "P
 | Scrim / × / "Take your seat" | closes drawer; the apply button also regenerates the passage |
 | Tempo track click | sets bpm from click position across a 40–200 range; fill + knob move to `(bpm-40)/160`; the term label (Largo/Adagio/Andante/Moderato/Allegro/Presto) and `♩ = n` update live |
 | Begin / Rest | toggles the endless session and the elapsed clock (1s tick); label swaps |
-| MIDI note-on | judged against the expected column note; correct → gilt pulse + advance; wrong → ink smudge + streak reset |
+| MIDI note-on | judged against the expected column note; correct → advances the cursor; wrong → ink smudge + streak reset |
 | New passage | regenerates 8 columns, ~20% of which are two-note intervals; cursor resets |
 | End of passage | auto-regenerates after 280ms; counters persist |
 | Hover, primary pills | `#7d2c2c` → `#571d1d` |

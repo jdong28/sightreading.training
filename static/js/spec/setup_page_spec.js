@@ -8,7 +8,7 @@ import styles from "st/components/pages/setup_page.module.css"
 import {STAVES, GENERATORS, SHEET_MUSIC_STORAGE_KEY, SHEET_MUSIC_GENERATOR} from "st/data"
 import {
   DRILL_STORAGE_KEY, currentStaffFor, currentGeneratorFor, currentKeySignature,
-  currentDrillMode, currentScrollSpeed,
+  currentDrillMode, currentScrollSpeed, currentScrollTempo,
 } from "st/generators"
 import {setAppStore} from "st/storage"
 import {HomeGate} from "st/components/app"
@@ -192,6 +192,28 @@ describe("setup page", function() {
     el = rerender()
     expect(selectedPills(el)).toEqual(["Grand", "E♭", "Open sevenths", "Scroll"])
     expect(summary(el).rows[1]).toEqual(["Tempo", "Scroll · speed 175"])
+  })
+
+  // D4(c): the trainer's "Keep tempo" setting, disabled outside scroll mode
+  it("stores the scroll-mode tempo setting, shown in the summary and on return", function() {
+    let el = renderSetup()
+
+    expect(findButton(el, "Keep tempo").disabled).toBe(true)
+
+    click(findButton(el, "Scroll"))
+    changeValue(el.querySelector(`.${styles.range_input}`), "150", "input")
+    expect(findButton(el, "Keep tempo").disabled).toBe(false)
+
+    click(findButton(el, "Keep tempo"))
+    expect(selectedPills(el)).toContain("Keep tempo")
+    expect(summary(el).rows[1]).toEqual(["Tempo", "Scroll · in tempo · speed 150"])
+
+    click(findButton(el, "Begin reading"))
+    expect(currentScrollTempo()).toBe(true)
+
+    el = rerender()
+    expect(selectedPills(el)).toContain("Keep tempo")
+    expect(summary(el).rows[1]).toEqual(["Tempo", "Scroll · in tempo · speed 150"])
   })
 
   it("counts beginning from setup as onboarded, so a fresh browser lands on the trainer", async function() {

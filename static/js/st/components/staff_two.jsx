@@ -23,6 +23,14 @@ const LEDGER_EXTENT = 15 // how much ledger line extends before and past the not
 
 const STAFF_INNER_HEIGHT = LINE_DY*4 + LINE_HEIGHT
 const BAR_WIDTH = 12
+
+// the distance between the grand staff's two staff origins. It holds the
+// closest the two staves ever draw a column's notes, B3 on the lower staff
+// under C4 on the upper one with the tallest accidental glyph on each:
+// NoteList#splitForGrandStaff never draws a treble note below a bass one
+// (the keys held down included, see StaffTwo#splitHeldForGrandStaff), and
+// the room between a column's two notes only grows with the steps between
+// them, so no other pair comes closer
 const MIN_STAFF_DY = 500
 
 import {CLEF_G, CLEF_F, CLEF_C, FLAT, SHARP, NATURAL, QUARTER_NOTE, WHOLE_NOTE, BRACE} from "st/staff_assets"
@@ -32,6 +40,7 @@ import {parseNote, noteStaffOffset, KeySignature, MIDDLE_C_PITCH} from "st/music
 import styles from "./staff_two.module.css"
 
 import NoteList from "st/note_list"
+import {SCROLL_WAIT} from "st/score_render/card_scroll"
 
 // this converts static react elements to a memoized component that can take
 // ref
@@ -62,6 +71,15 @@ const makeBox = function(x,y,w,h) {
   return bar
 }
 
+// moves a persisted shape into the group its props now name (see
+// StaffGroup#render's groupFor, which flips a keyed shape between the head
+// column's group and the rest as the note list shifts)
+const reparent = function(shape, renderGroup) {
+  if (shape.parent !== renderGroup) {
+    renderGroup.add(shape)
+  }
+}
+
 const GClef = createAsset(CLEF_G, "GClef")
 const FClef = createAsset(CLEF_F, "FClef")
 const CClef = createAsset(CLEF_C, "CClef")
@@ -72,29 +90,178 @@ const Brace = createAsset(BRACE, "Brace")
 const QuarterNote = createAsset(QUARTER_NOTE, "QuarterNote")
 const WholeNote = createAsset(WHOLE_NOTE, "WholeNote")
 
+// the staff-local row of a note on a given staff type (treble/bass/alto),
+// counting half-steps down from the staff's upper line. The one definition
+// of the row a note sits on: StaffGroup draws from it, and computeFit sizes
+// the plate from a staff's note range with it, without needing an instance
+// TODO: need to convert the chromatic note to keysignature relative in
+// order to calculate accurate note position
+function rowForNote(type, note) {
+  const upperLine = StaffGroup.STAFF_TYPES[type].upperLine
+  return -noteStaffOffset(note) + noteStaffOffset(upperLine)
+}
+
+// the y an accidental's glyph is drawn from, relative to the top-left of the
+// head it belongs to: these put each glyph's own shape against the head
+const ACCIDENTAL_Y_OFFSET = {natural: 61, sharp: 58, flat: 85}
+
+// the staff-local y of an accidental's glyph top, drawn on a head at y
+function accidentalY(type, y) {
+  return y - ACCIDENTAL_Y_OFFSET[type] + LINE_HALF_DY
+}
+
+// the staff-local y of a note's head on a given staff type, its top-left
+function yForNote(type, note) {
+  // NOTE: noteStaffOffset has y axis flipped (origin on bottom), rendering has origin on top
+  // NOTE we subtract LINE_HALF_DY since we assume the the note_asset.height / 2 == LINE_HALF_DY
+  return rowForNote(type, note) * LINE_HALF_DY - LINE_HALF_DY
+}
+
 class NoteGroup extends React.PureComponent {
   static defaultProps = {
-    type: "whole"
+    type: "whole",
+    head: false,
+    held: false,
   }
 
   constructor(props) {
     super(props)
     this.noteGroup = props.getAsset("wholeNote")
-    props.renderGroup.add(this.noteGroup)
-    this.refreshPosition()
+    this.refresh()
   }
 
-  refreshPosition() {
+  refresh() {
+    reparent(this.noteGroup, this.props.renderGroup)
     this.noteGroup.translation.set(this.props.x, this.props.y)
+    this.noteGroup.className = classNames("note", {
+      head: this.props.head,
+      held: this.props.held,
+    })
+    // legacy: staff.module.css .note.held { opacity: 0.2 }
+    this.noteGroup.opacity = this.props.held ? 0.2 : 1
   }
 
   componentDidUpdate() {
-    this.refreshPosition()
+    this.refresh()
   }
 
   componentWillUnmount() {
     if (this.noteGroup) {
       this.noteGroup.remove()
+    }
+  }
+
+  render() {
+    return null
+  }
+}
+
+// one ledger line, drawn above or below a staff (see StaffGroup#makeNotes):
+// a PureComponent mirroring NoteGroup, built once and repositioned/resized
+// on update so it scrolls with the notes
+class LedgerLine extends React.PureComponent {
+  constructor(props) {
+    super(props)
+    this.box = makeBox(0, 0, Math.max(props.w, 0), props.h)
+    this.box.className = "ledgerLine"
+    this.refresh()
+  }
+
+  refresh() {
+    reparent(this.box, this.props.renderGroup)
+    this.box.translation.set(this.props.x, this.props.y)
+    let w = Math.max(this.props.w, 0)
+    this.box.vertices[1].x = w
+    this.box.vertices[2].x = w
+    this.box.vertices[2].y = this.props.h
+    this.box.vertices[3].y = this.props.h
+  }
+
+  componentDidUpdate() {
+    this.refresh()
+  }
+
+  componentWillUnmount() {
+    if (this.box) {
+      this.box.remove()
+    }
+  }
+
+  render() {
+    return null
+  }
+}
+
+// an accidental (sharp, flat or natural) drawn left of a note's head
+class Accidental extends React.PureComponent {
+  static defaultProps = {
+    held: false,
+  }
+
+  constructor(props) {
+    super(props)
+    this.shape = props.getAsset(props.type)
+    this.refresh()
+  }
+
+  refresh() {
+    reparent(this.shape, this.props.renderGroup)
+    this.shape.className = classNames("accidental", this.props.type, {
+      held: this.props.held,
+    })
+    this.shape.translation.set(this.props.x, this.props.y)
+    // legacy: staff.module.css .note.held { opacity: 0.2 } covers the
+    // note's accidental too
+    this.shape.opacity = this.props.held ? 0.2 : 1
+  }
+
+  componentDidUpdate(prevProps) {
+    if (prevProps.type != this.props.type) {
+      // the glyph itself came from the type, so it has to be rebuilt
+      this.shape.remove()
+      this.shape = this.props.getAsset(this.props.type)
+    }
+    this.refresh()
+  }
+
+  componentWillUnmount() {
+    if (this.shape) {
+      this.shape.remove()
+    }
+  }
+
+  render() {
+    return null
+  }
+}
+
+// a column's annotation (eg. the position generator's finger number),
+// drawn above it
+class Annotation extends React.PureComponent {
+  constructor(props) {
+    super(props)
+    this.text = new Two.Text(props.text, props.x, props.y, {
+      size: 36,
+      fill: "black",
+      family: "sans-serif",
+    })
+    this.text.className = "annotation"
+    this.refresh()
+  }
+
+  refresh() {
+    reparent(this.text, this.props.renderGroup)
+    this.text.translation.set(this.props.x, this.props.y)
+    this.text.value = this.props.text
+  }
+
+  componentDidUpdate() {
+    this.refresh()
+  }
+
+  componentWillUnmount() {
+    if (this.text) {
+      this.text.remove()
     }
   }
 
@@ -140,17 +307,28 @@ class StaffGroup extends React.PureComponent {
     keySignature: 0,
     width: 100,
     row: 0,
+    dx: NOTE_COLUMN_DX,
+    heldNotes: null,
   }
 
   constructor(props={}) {
     super(props)
     this.state = {}
     this.width = props.width // TODO: normalize this
+    this.marginX = 0
 
     this.getAsset = props.getAsset
+    this.getAssetWidth = props.getAssetWidth
     // this will hold all the notes for this staff
     this.notesGroup = new Two.Group()
     this.notesGroup.className = "notesGroup"
+
+    // the head column's shapes (notes, accidentals, ledger lines, and held
+    // keys drawn faintly on it): one group so NoteShaker can shake it as a
+    // whole (see StaffTwo#getFirstColumnGroups)
+    this.headGroup = new Two.Group()
+    this.headGroup.className = "headGroup"
+    this.notesGroup.add(this.headGroup)
   }
 
   render() {
@@ -159,7 +337,10 @@ class StaffGroup extends React.PureComponent {
       return null
     }), { displayName: "RefreshStaff" })
 
-    const [notes, ledgerLines] = this.makeNotes(this.props.notes || [])
+    const {notes, ledgerLines, accidentals, annotations} = this.makeNotes(
+      this.props.notes || [], this.props.heldNotes)
+
+    const groupFor = n => n.column == 0 ? this.headGroup : this.notesGroup
 
     return React.createElement(React.Fragment, {},
       <this.RefreshStaff
@@ -167,7 +348,28 @@ class StaffGroup extends React.PureComponent {
         type={this.props.type}
         row={this.props.row}
       />,
-      ...notes.map(n=> <NoteGroup renderGroup={this.notesGroup} getAsset={this.getAsset} {...n}/>)
+      ...notes.map((n, idx) => <NoteGroup
+        key={`note-${idx}`}
+        renderGroup={groupFor(n)}
+        getAsset={this.getAsset}
+        {...n}
+      />),
+      ...accidentals.map((a, idx) => <Accidental
+        key={`accidental-${idx}`}
+        renderGroup={groupFor(a)}
+        getAsset={this.getAsset}
+        {...a}
+      />),
+      ...ledgerLines.map((l, idx) => <LedgerLine
+        key={`ledger-${idx}`}
+        renderGroup={groupFor(l)}
+        {...l}
+      />),
+      ...annotations.map((a, idx) => <Annotation
+        key={`annotation-${idx}`}
+        renderGroup={groupFor(a)}
+        {...a}
+      />),
     )
   }
 
@@ -184,11 +386,39 @@ class StaffGroup extends React.PureComponent {
     }
   }
 
-  // offset is real number in number of beats (or columns)
-  // TODO: fix this
-  updateNotesTranslation(x, y) {
-    // TODO: this is not compatible with how margin is currently set on notes
-    this.notesGroup.translation.set(x, y)
+  // Moves the notes group by x (the slider's scroll translation, in
+  // staff-local units) plus this staff's own hitX offset (see hitXOffset),
+  // which keeps the head column waiting on the scroll-mode hit band
+  // regardless of this staff's own margin (clef and key signature width).
+  // Called every animation frame (via StaffTwo#setOffset) as well as
+  // whenever the staff's margin may have changed (refreshStaff), in which
+  // case x is omitted and the last scroll translation is reapplied
+  updateNotesTranslation(x, y, opts={}) {
+    if (x != null) {
+      this.scrollX = x
+    }
+    if ("hitX" in opts) { this._hitX = opts.hitX }
+    if ("dx" in opts) { this._dx = opts.dx }
+    if ("renderScale" in opts) { this._renderScale = opts.renderScale }
+
+    this.notesGroup.translation.set((this.scrollX || 0) + this.hitXOffset(), y || 0)
+  }
+
+  // the extra translation (staff-local units, always >= 0) that puts this
+  // staff's head column at hitX (pixels, StaffTwo's own coordinates) once
+  // the slider waits at SCROLL_WAIT; 0 in wait mode (hitX null), and clamped
+  // to 0 so a narrow plate never pushes the head left of the clef
+  hitXOffset() {
+    if (this._hitX == null) { return 0 }
+
+    let renderScale = this._renderScale || 1
+    let dx = this._dx || 0
+    let firstNoteX = CLEF_GAP * 2
+
+    let extra = this._hitX / renderScale - this.marginX - firstNoteX -
+      this.getAssetWidth("wholeNote") / 2 - SCROLL_WAIT * dx
+
+    return Math.max(0, extra)
   }
 
   componentWillUnmount() {
@@ -204,6 +434,11 @@ class StaffGroup extends React.PureComponent {
 
     this.staffGroup = this.makeStaff(this.notesGroup)
     this.props.targetRenderGroup.add(this.staffGroup)
+
+    // the staff's margin may have just changed (a new clef or key
+    // signature), so the scroll/hitX translation must be recomputed against
+    // it rather than left at whatever it was positioned at before
+    this.updateNotesTranslation()
   }
 
 
@@ -260,232 +495,143 @@ class StaffGroup extends React.PureComponent {
       noteOffsetGroup.add(notesGroup)
     }
 
+    this.marginX = marginX
+
     return staffGroup
   }
 
-  // convert a NoteList into group of positioned note shapes
-  makeNotes(noteList, callbackFn) {
-    const startTime = performance.now()
+  // convert a NoteList (and the keys held down) into the shapes a column of
+  // notes draws: heads, ledger lines (per note, so a seconds-offset head
+  // still gets ledger lines wide enough to run under it), accidentals and
+  // column annotations, plus the held keys not in the head column drawn
+  // faintly on it (legacy: staff_notes.jsx's heldSongNotes)
+  makeNotes(noteList, heldNotes) {
     const key = new KeySignature(this.props.keySignature)
-
-    // const notesGroup = new Two.Group()
-    // notesGroup.translation.set(this.marginX, 0)
+    const dx = this.props.dx || NOTE_COLUMN_DX
 
     const outputNotes = []
     const outputLedgerLines = []
+    const outputAccidentals = []
+    const outputAnnotations = []
 
-    let nextNoteX = CLEF_GAP * 2 // the x position of the next rendred note
-
-    // const noteAsset = this.getAsset("wholeNote")
-    // const noteAssetWidth = noteAsset.getBoundingClientRect().width // 106
-    const noteAssetWidth = 106
-
-    // column references for shaking notes
-    // let noteColumnGroups = []
-    //
+    const firstNoteX = CLEF_GAP * 2
+    const noteWidth = this.getAssetWidth("wholeNote")
+    let nextNoteX = firstNoteX
     let currentNoteColumn = 0
 
-    // the default Y (0) location is the top-most space within the staff
+    const addLedgerLines = (x, row, column) => {
+      if (row < 0) {
+        let lines = Math.floor(Math.abs(row) / 2)
+        for (let k = 1; k <= lines; k++) {
+          outputLedgerLines.push({
+            column,
+            x: x - LEDGER_EXTENT, y: -k * LINE_DY,
+            w: noteWidth + LEDGER_EXTENT * 2, h: LINE_HEIGHT,
+          })
+        }
+      } else if (row > 8) {
+        let lines = Math.floor((row - 8) / 2)
+        const lowerLineY = 4 * LINE_DY
+        for (let k = 1; k <= lines; k++) {
+          outputLedgerLines.push({
+            column,
+            x: x - LEDGER_EXTENT, y: lowerLineY + k * LINE_DY,
+            w: noteWidth + LEDGER_EXTENT * 2, h: LINE_HEIGHT,
+          })
+        }
+      }
+    }
+
+    // positions one note (a real column note, or a held key drawn faintly
+    // on the head column) and its ledger lines and accidental
+    const addNote = (rawName, x, column, head, held) => {
+      const spelled = key.enharmonic(rawName)
+      const row = rowForNote(this.props.type, spelled)
+      const y = this.getNoteY(spelled)
+
+      outputNotes.push({column, x, y, head, held})
+
+      const accidentals = key.accidentalsForNote(spelled)
+      if (accidentals != null) {
+        const type = accidentals == 0 ? "natural" : accidentals == 1 ? "sharp" : "flat"
+        const accidentalGap = 15
+        const aWidth = this.getAssetWidth(type)
+
+        outputAccidentals.push({
+          column, type, held,
+          x: x - Math.ceil(aWidth) - accidentalGap,
+          y: accidentalY(type, y),
+        })
+      }
+
+      addLedgerLines(x, row, column)
+    }
+
     for (let noteColumn of noteList) {
       if (typeof noteColumn == "string") {
         noteColumn = [noteColumn]
       }
-
-      // TODO: filter the column of notes to not include ones that don't belong on the staff
-
-      // Write the ledger lines for the column
-      const [minRow, maxRow] = this.noteColumnRowRanges(noteColumn)
-      if (minRow && minRow < 0) {
-        let lines = Math.floor(Math.abs(minRow) / 2);
-        for (let k=1; k <= lines; k++) {
-          // let ledgerLine = makeBox(
-          //   nextNoteX - LEDGER_EXTENT, -k*LINE_DY,
-          //   noteAssetWidth + LEDGER_EXTENT * 2, LINE_HEIGHT
-          // )
-          // notesGroup.add(ledgerLine)
-          outputLedgerLines.push({
-            x: nextNoteX - LEDGER_EXTENT, y: -k*LINE_DY,
-            w: noteAssetWidth + LEDGER_EXTENT * 2, h: LINE_HEIGHT
-          })
-        }
-      }
-
-      if (maxRow && maxRow > 8) {
-        let lines = Math.abs(Math.floor((maxRow - 8) / 2))
-        const lowerLineY = 4 * LINE_DY
-
-        for (let k=1; k <= lines; k++) {
-          // let ledgerLine = makeBox(
-          //   nextNoteX - LEDGER_EXTENT, lowerLineY + k*LINE_DY,
-          //   noteAssetWidth + LEDGER_EXTENT * 2, LINE_HEIGHT
-          // )
-          // notesGroup.add(ledgerLine)
-
-          outputLedgerLines.push({
-            x: nextNoteX - LEDGER_EXTENT, y: lowerLineY + k*LINE_DY,
-            w: noteAssetWidth + LEDGER_EXTENT * 2, h: LINE_HEIGHT
-          })
-        }
-      }
-
-
-      // Write the column of notes
-      // let noteColumnGroup = new Two.Group()
-      let added = 0
 
       let sortedColumn = [...noteColumn].sort((a, b) => parseNote(a) - parseNote(b))
 
       let lastRow = null
       let lastOffset = false
       for (let noteName of sortedColumn) {
-        const noteRow = this.noteStaffOffset(noteName)
+        const spelled = key.enharmonic(noteName)
+        const noteRow = rowForNote(this.props.type, spelled)
 
-        // let note = noteAsset.clone()
-        // let note = makeBox(0, 0, 10, 10)
-        const note = {
-          column: currentNoteColumn,
-          x: nextNoteX,
-          y: this.getNoteY(noteName),
-        }
+        let x = nextNoteX
 
-        // let noteY = this.getNoteY(noteName)
-        // let noteX = nextNoteX
-
-        // offset the note
-        if (!lastOffset && lastRow && Math.abs(noteRow - lastRow) == 1) {
-          note.x += Math.floor(noteAssetWidth * 0.90)
+        // offset the note: the upper note of a second stacked on the one
+        // before it
+        if (!lastOffset && lastRow != null && Math.abs(noteRow - lastRow) == 1) {
+          x += Math.floor(noteWidth * 0.90)
           lastOffset = true
         } else {
           lastOffset = false
         }
-
-        // the rendered note will contain anything else around the note (accidentals, etc.)
-        let renderedNote = note
-
-        const accidentals = key.accidentalsForNote(noteName)
-
-        let accidental = null
-        let accidentalYOffset = 0
-        if (accidentals == 0) {
-          // accidental = this.getAsset("natural")
-          accidental = "natural"
-          accidentalYOffset = 61
-        } else if (accidentals == 1) {
-          // accidental = this.getAsset("sharp")
-          accidental = "sharp"
-          accidentalYOffset = 58
-        } else if (accidentals == -1) {
-          // accidental = this.getAsset("flat")
-          accidental = "flat"
-          accidentalYOffset = 85
-        }
-
-        if (accidental) {
-          const accidentalGap = 15
-          const aWidth = 10 // PLACEHOLDER
-          // const {width: aWidth, height: aHeight} = accidental.getBoundingClientRect()
-          // accidental.translation.set(nextNoteX - Math.ceil(aWidth) - accidentalGap, noteY - accidentalYOffset + LINE_HALF_DY)
-          // TODO: since this is a new object, it will break memoized rendering, just store directly on note object
-          // note.accidental = {
-          //   type: accidental,
-          //   x: nextNoteX - Math.ceil(aWidth) - accidentalGap,
-          //   y: note.y - accidentalYOffset + LINE_HALF_DY
-          // }
-
-          note.accidental = accidental
-
-          // const g = new Two.Group()
-          // g.add(renderedNote)
-          // g.add(accidental)
-          // renderedNote = g
-        }
-
-        // noteColumnGroup.add(renderedNote)
-
-        if (callbackFn) {
-          // last arg is the column idx
-          // ignore for now
-          // callbackFn(renderedNote, noteName, noteColumnGroups.length)
-        }
-
-        added += 1
-        outputNotes.push(note)
         lastRow = noteRow
 
-        // debug indicator
-        // let bar = makeBox(nextNoteX, noteY, 10, 10)
-        // bar.fill = "red"
-        // noteColumnGroup.add(bar)
+        const head = currentNoteColumn == 0
+        const held = head && !!(heldNotes && heldNotes[noteName])
+        addNote(noteName, x, currentNoteColumn, head, held)
       }
 
-      // if (added > 0) {
-      //   noteColumnGroups.push(noteColumnGroup)
-      //   notesGroup.add(noteColumnGroup)
-      // } else {
-      //   noteColumnGroups.push(null)
-      // }
+      if (noteColumn.annotation) {
+        outputAnnotations.push({
+          column: currentNoteColumn,
+          text: noteColumn.annotation,
+          x: nextNoteX,
+          y: -LINE_DY - 20,
+        })
+      }
+
       currentNoteColumn += 1
-      nextNoteX += NOTE_COLUMN_DX
+      nextNoteX += dx
     }
 
-    console.log("makeNotes", performance.now() - startTime)
+    // held keys that aren't in the head column are drawn faintly on it too
+    // (legacy: staff_notes.jsx's convertHeldToSongNotes)
+    if (heldNotes) {
+      for (const name of Object.keys(heldNotes)) {
+        if (!heldNotes[name]) { continue }
+        if (noteList && noteList.inHead && noteList.inHead(name)) { continue }
+        addNote(name, firstNoteX, 0, false, true)
+      }
+    }
 
-    // return [notesGroup, noteColumnGroups]
-    return [outputNotes, outputLedgerLines]
+    return {
+      notes: outputNotes,
+      ledgerLines: outputLedgerLines,
+      accidentals: outputAccidentals,
+      annotations: outputAnnotations,
+    }
   }
 
-  // renders new set of notes into the primary note group. Note that the staff
-  // must be rendered first to have the render group available
-  // callback is called for every note asset after it has been added to
-  // thegroup, with positioning information
-  renderNotes(notes, callbackFn) {
-    let existingPosition
-
-    // remove existing notes if they are there
-    if (this.notesGroup) {
-      existingPosition = this.notesGroup.translation
-      this.notesGroup.remove()
-      delete this.notesGroup
-      delete this.notesByColumn
-    }
-
-    const [renderedNotes, renderedLedgerLines] = this.makeNotes(notes, callbackFn)
-    console.log("notes", renderedNotes)
-
-    // We wrap the returned notes group in a new group to allow easy
-    // translation on the entire set of notes without affecting whatever
-    // translations was set by makeNotes
-    this.notesGroup = new Two.Group()
-
-    if (existingPosition) {
-      this.notesGroup.translation.set(existingPosition.x, existingPosition.y)
-    }
-
-    // this.notesGroup.add(group)
-    this.noteColumnGroups = []
-    this.renderGroup.add(this.notesGroup)
-  }
-
-
-  // these are the notes to be animated when they press the wrong thing
+  // the head column's shapes (heads, accidentals, ledger lines, held keys
+  // drawn on it), shaken as one group by NoteShaker while noteShaking
   getFirstColumnGroup() {
-    if (this.noteColumnGroups) {
-      return this.noteColumnGroups[0]
-    }
-  }
-
-  // held note should be a NoteList
-  renderHeldNotes(heldNotes) {
-    if (this.heldNotesGroup) {
-      this.heldNotesGroup.remove()
-      delete this.heldNotesGroup
-    }
-
-    const [renderedNotes, renderedLedgerLines] = this.makeNotes(heldNotes)
-
-    // group.opacity = 0.25
-    // this.heldNotesGroup = group
-    // this.renderGroup.add(group)
+    return this.headGroup
   }
 
   makeKeySignature(type, count) {
@@ -542,45 +688,9 @@ class StaffGroup extends React.PureComponent {
     return settings
   }
 
-  // the half-step row of the upper line of the staff
-  // subtract from a note's absolute row to get staff-local row
-  getNoteOffset() {
-    return noteStaffOffset(this.getStaffSettings().upperLine)
-  }
-
   // find staff-local y coordinate for a note (centered)
   getNoteY(note) {
-    // NOTE: noteStaffOffset has y axis flipped (origin on bottom), rendering has origin on top
-    // NOTE we subtract LINE_HALF_DY since we assume the the note_asset.height / 2 == LINE_HALF_DY
-    return (-this.noteStaffOffset(note) + this.getNoteOffset()) * LINE_HALF_DY - LINE_HALF_DY
-  }
-
-  // This is a wrapper around noteStaffOffset to ensure that we have applied
-  // the key signature to the incoming chromatic note
-  noteStaffOffset(note) {
-    // TODO: need to to convert chromatic note to keysignature relative in
-    // order to calculate accurate note position
-    return noteStaffOffset(note)
-  }
-
-  // find the min and max "staff-local" row numbers for a column of chromatic notes.
-  // Suitable for rendering ledger lines
-  noteColumnRowRanges(notes) {
-    let minRow, maxRow
-
-    for (const note of notes) {
-      let row = -this.noteStaffOffset(note) + this.getNoteOffset()
-
-      if (minRow == null || row < minRow) {
-        minRow = row
-      }
-
-      if (maxRow == null || row > maxRow) {
-        maxRow = row
-      }
-    }
-
-    return [minRow, maxRow]
+    return yForNote(this.props.type, note)
   }
 
 }
@@ -597,22 +707,45 @@ export class StaffTwo extends React.PureComponent {
   static defaultProps = {
     height: 300, // pixel height of the svg element
     maxScale: 0.5, // the maximum scale size when scaling contents to fit element
+    range: [], // the staff's note range, what the fit is computed from
   }
 
   constructor(props) {
     super(props)
     this.state = {}
     this.updaters = [] // animation functions
+    this.offset = 0 // the last offset setOffset was asked to apply
 
     this.containerRef = React.createRef()
 
     this.assets = { } // this will be populated with asset refs when they are fist instantiated
     this.assetCache = {} // the parsed two.js objects
+    this.assetWidths = {} // the measured staff-local widths of those objects
   }
 
+  // the staff-local column spacing: the legacy renderer's pixel spacing
+  // (noteWidth * scale) translated into this staff's own units, or the
+  // fixed spacing of old when the page doesn't pass noteWidth
+  columnDx() {
+    if (!this.props.noteWidth) { return NOTE_COLUMN_DX }
+
+    let renderScale = (this.renderGroup && this.renderGroup.scale) || this.props.maxScale || 1
+    return this.props.noteWidth * (this.props.scale || 1) / renderScale
+  }
+
+  // offset is real number in number of beats (or columns). Always stored
+  // first so a later flush() (once Two.js setup has assigned state.two) can
+  // re-apply it, even if this call landed before state.two was ready
   setOffset(offset) {
+    this.offset = offset
+
+    if (!this.state.two) { return }
+
+    let dx = this.columnDx()
+    let renderScale = this.renderGroup.scale
+
     for (const staff of this.getRenderedStaves()) {
-      staff.updateNotesTranslation(offset * NOTE_COLUMN_DX, 0)
+      staff.updateNotesTranslation(offset * dx, 0, {hitX: this.props.hitX, dx, renderScale})
     }
 
     // it's not necessary to trigger update if twojs's own animation loop is
@@ -653,13 +786,13 @@ export class StaffTwo extends React.PureComponent {
     }
   }
 
-  updateWidth(width, force=false) {
+  updateWidth(width) {
     if (this._unmounted) return
 
     const {two} = this.state
     if (!two) return
 
-    if (force || (two && width != two.width)) {
+    if (width != two.width) {
       // setting dimensions is funky: https://github.com/jonobr1/two.js/issues/191
       two.width = width
 
@@ -672,13 +805,18 @@ export class StaffTwo extends React.PureComponent {
 
       two.renderer.setSize(two.width, two.height)
       two.update()
+
+      // the plate's resize may change the band's centre (hitX, measured by
+      // the page from the wrapper's width), so the head's position needs
+      // recomputing against it
+      this.setOffset(this.offset || 0)
     }
   }
 
   addUpdate(fn) {
     this.updaters = [...this.updaters, fn]
 
-    if (!this.state.two.playing) {
+    if (this.state.two && !this.state.two.playing) {
       // console.log("Starting playing with ", this.updaters.length, "updaters")
       this.state.two.play()
     }
@@ -688,7 +826,7 @@ export class StaffTwo extends React.PureComponent {
   removeUpdate(fn) {
     this.updaters = this.updaters.filter(f => f != fn)
 
-    if (this.updaters.length == 0 && this.state.two.playing) {
+    if (this.updaters.length == 0 && this.state.two && this.state.two.playing) {
       // console.log("Stopping playing")
       this.state.two.pause()
     }
@@ -738,36 +876,70 @@ export class StaffTwo extends React.PureComponent {
     })
   }
 
-  // this is a quick hack for development: we should really be using the note
-  // range to control the scale to prevent jumping around in size as new notes
-  // are generated
-  scaleToFit(maxScale=this.props.maxScale) {
-    const targetHeight = this.state.two.height
-    const origScale = this.renderGroup.scale
+  // the staff-local vertical extent [top, bottom] of a clef and a range of
+  // notes on the given staff type: used by computeFit to size the plate from
+  // a staff's note range rather than its current notes. A note's own head
+  // reaches past every ledger line addLedgerLines draws under it, so the
+  // heads alone give the extent
+  rangeExtent(type, notes) {
+    const settings = StaffGroup.STAFF_TYPES[type]
+    const clef = this.getAsset(settings.clefAsset)
+    clef.translation.set(0, STAFF_HEIGHT_OFFSET + settings.assetOffset)
 
-    this.renderGroup.scale = 1
-    this.renderGroup.translation.set(0,0)
+    let {top, bottom} = clef.getBoundingClientRect()
 
-    // we want to map these coordinates to the output height
-    let {top, bottom} = this.renderGroup.getBoundingClientRect()
+    for (const note of notes) {
+      const y = yForNote(type, note)
 
-    // add some padding
+      top = Math.min(top, y)
+      bottom = Math.max(bottom, y + LINE_DY)
+    }
+
+    return {top, bottom}
+  }
+
+  // the fit for the staff's note range (this.props.range): the render scale
+  // and vertical translation that fit the range's own ledger room in the
+  // plate, the grand staff's two staves MIN_STAFF_DY apart included.
+  // The fit comes from the range, not the notes on screen, so the staff
+  // never jumps as notes come and go, and is stable for as long as the
+  // type/range/height/maxScale don't change
+  computeFit() {
+    const {type, range, height, maxScale} = this.props
+    const cacheKey = [type, height, maxScale, ...range].join("/")
+
+    if (this.fitCache && this.fitCache.key == cacheKey) {
+      return this.fitCache.fit
+    }
+
+    let top, bottom
+
+    if (type == "grand") {
+      const middleC = noteStaffOffset("C4")
+      const trebleNotes = range.filter(n => noteStaffOffset(n) >= middleC)
+      const bassNotes = range.filter(n => noteStaffOffset(n) < middleC)
+
+      const treble = this.rangeExtent("treble", trebleNotes)
+      const bass = this.rangeExtent("bass", bassNotes)
+
+      top = treble.top
+      bottom = bass.bottom + MIN_STAFF_DY
+    } else {
+      const extent = this.rangeExtent(type, range)
+      top = extent.top
+      bottom = extent.bottom
+    }
+
     top = Math.min(top, -1)
     bottom += 10
 
     const sourceHeight = bottom - top
-    const scale = Math.min(maxScale, targetHeight / sourceHeight)
+    const scale = Math.min(maxScale, height / sourceHeight)
+    const translateY = Math.floor(-(top * scale))
 
-    this.renderGroup.scale = scale
-    this.renderGroup.translation.set(0, Math.floor(-(top * scale)))
+    this.fitCache = {key: cacheKey, fit: {scale, translateY}}
 
-    if (scale != origScale) {
-      // force update call to width since scale has changed
-      this.updateWidth(this.state.two.width, true)
-      return true
-    }
-
-    return false
+    return this.fitCache.fit
   }
 
   getRenderedStaves() {
@@ -788,6 +960,27 @@ export class StaffTwo extends React.PureComponent {
     return out
   }
 
+  // splits the keys held down between the grand staff's two staves by
+  // splitting them with the head column through NoteList#splitForGrandStaff,
+  // the same rule the drill's own columns use, so a held pitch is drawn on
+  // the staff of the column that holds it
+  splitHeldForGrandStaff(notes, heldNotes) {
+    if (!heldNotes) { return [null, null] }
+
+    const held = Object.keys(heldNotes).filter(name => heldNotes[name])
+    const head = (notes && notes[0]) || []
+
+    const [treble, bass] = new NoteList([head, held]).splitForGrandStaff()
+
+    const asHeld = column => {
+      const out = {}
+      for (const name of column) { out[name] = true }
+      return out
+    }
+
+    return [asHeld(treble[1]), asHeld(bass[1])]
+  }
+
   renderStaves() {
     if (!this.state.two) {
       // canvas isn't ready yet
@@ -801,18 +994,29 @@ export class StaffTwo extends React.PureComponent {
       return
     }
 
-    const startTime = performance.now()
+    // the one place the fit is applied: it only depends on props already
+    // available here (type/range/height/maxScale), not on the notes about to
+    // be laid out below, so it runs before them, which keeps makeNotes'
+    // column spacing (which reads renderGroup.scale through columnDx/dx)
+    // correct on the very first paint
+    const {scale, translateY} = this.computeFit()
+    this.renderGroup.scale = scale
+    this.renderGroup.translation.set(0, translateY)
 
     let marginX = 0
 
     const getAsset = this._getAsset || this.getAsset.bind(this)
+    const getAssetWidth = this.getAssetWidth.bind(this)
+    const dx = this.columnDx()
 
     const staffProps = {
       // two: this.state.two,
       targetRenderGroup: this.renderGroup,
       getAsset,
+      getAssetWidth,
       keySignature: this.props.keySignature.getCount(), // TODO: just pass key signature to avoid additional work
-      width: Math.floor(this.state.two.width / this.renderGroup.scale)
+      width: Math.floor(this.state.two.width / this.renderGroup.scale),
+      dx,
     }
 
     switch (this.props.type) {
@@ -823,12 +1027,15 @@ export class StaffTwo extends React.PureComponent {
           [trebleNotes, bassNotes] = this.props.notes.splitForGrandStaff()
         }
 
+        let [trebleHeld, bassHeld] = this.splitHeldForGrandStaff(this.props.notes, this.props.heldNotes)
+
         return <>
           <StaffGroup
             row={0}
             ref={this.trebleStaffRef ||= React.createRef()}
             type="treble"
             notes={trebleNotes}
+            heldNotes={trebleHeld}
             {...staffProps}
           />
           <StaffGroup
@@ -836,6 +1043,7 @@ export class StaffTwo extends React.PureComponent {
             ref={this.bassStaffRef ||= React.createRef()}
             type="bass"
             notes={bassNotes}
+            heldNotes={bassHeld}
             {...staffProps}
           />
         </>
@@ -845,6 +1053,7 @@ export class StaffTwo extends React.PureComponent {
           ref={this.trebleStaffRef ||= React.createRef()}
           type="treble"
           notes={this.props.notes}
+          heldNotes={this.props.heldNotes}
           {...staffProps}
         />
       }
@@ -853,6 +1062,7 @@ export class StaffTwo extends React.PureComponent {
           type="bass"
           ref={this.bassStaffRef ||= React.createRef()}
           notes={this.props.notes}
+          heldNotes={this.props.heldNotes}
           {...staffProps}
         />
       }
@@ -861,6 +1071,7 @@ export class StaffTwo extends React.PureComponent {
           type="alto"
           ref={this.altoStaffRef ||= React.createRef()}
           notes={this.props.notes}
+          heldNotes={this.props.heldNotes}
           {...staffProps}
         />
       }
@@ -869,85 +1080,8 @@ export class StaffTwo extends React.PureComponent {
     throw new Error("Unhandled staff type in renderStaves")
   }
 
-  // calculate positions of all rendered notes
-  refreshNotes() {
-    const startTime = performance.now()
-
-    if (this.props.notes) {
-      const heldPitches = {}
-
-      if (this.props.heldNotes) {
-        for (const k of Object.keys(this.props.heldNotes)) {
-          heldPitches[parseNote(k)] =  true
-        }
-      }
-
-      // this will make the rendereed notes that match held notes invisible, to
-      // allow the pressed status to be seen
-      const filterHeld = (g, noteName, column) => {
-        if (column == 0 && heldPitches[parseNote(noteName)]) {
-          g.opacity = 0
-        }
-      }
-
-      if (this.props.type == "grand") {
-        // split incoming notes into two NoteLists
-        const [trebleNotes, bassNotes] = this.props.notes.splitForGrandStaff()
-
-
-        this.staves[0].renderNotes(trebleNotes, filterHeld)
-        if (this.staves[1]) {
-          this.staves[1].renderNotes(bassNotes, filterHeld)
-        }
-      } else {
-        // render everything into the first staff
-        this.staves[0].renderNotes(this.props.notes, filterHeld)
-      }
-    }
-
-    if (this.props.heldNotes) {
-      const heldNotes = new NoteList([Object.keys(this.props.heldNotes)])
-
-      if (this.props.type == "grand") {
-        if (this.props.notes) {
-          heldNotes.unshift(this.props.notes.currentColumn())
-        }
-
-        const [heldTreble, heldBass] = heldNotes.splitForGrandStaff()
-        heldTreble.shift()
-        heldBass.shift()
-
-        this.staves[0].renderHeldNotes(heldTreble)
-
-        if (this.staves[1]) {
-          this.staves[1].renderHeldNotes(heldBass)
-        }
-      } else {
-        this.staves[0].renderHeldNotes(heldNotes)
-      }
-    }
-
-    console.log("Refresh notes", performance.now() - startTime)
-  }
-
-  // add StaffGroup to list of staves managed by this component
-  // TODO: remove me, now managed by react
-  addStaff(staffGroup) {
-    // TODO: the DY of each staff should be dynamically calculated to make
-    // space for ledger lines
-
-    this.staves ||= []
-    this.staves.push(staffGroup)
-
-    const g = staffGroup.renderToGroup()
-    g.translation.set(0, (this.staves.length - 1) * MIN_STAFF_DY)
-    g.addTo(this.stavesGroup)
-  }
-
   // this will return a fresh copy of the asset that can be mutated
   getAsset(name) {
-    const startTime = performance.now()
-
     this.assetCache ||= {}
 
     if (!this.assetCache[name]) {
@@ -961,10 +1095,18 @@ export class StaffTwo extends React.PureComponent {
       this.assetCache[name] = loaded
     }
 
-    const asset = this.assetCache[name].clone()
+    return this.assetCache[name].clone()
+  }
 
-    console.log("Load Asset", name, performance.now() - startTime)
-    return asset
+  // the staff-local width of an asset's glyph: it only depends on the asset,
+  // so one clone is measured and the width kept (makeNotes needs an
+  // accidental's width on every render)
+  getAssetWidth(name) {
+    if (this.assetWidths[name] == null) {
+      this.assetWidths[name] = this.getAsset(name).getBoundingClientRect().width
+    }
+
+    return this.assetWidths[name]
   }
 
   // true once every asset ref assigned in render has attached its DOM node
@@ -984,26 +1126,30 @@ export class StaffTwo extends React.PureComponent {
   flush() {
     if (this._unmounted) return
 
-    if (this._pendingAssetsRetry && this.assetsReady()) {
-      // a previous render skipped building the staves because the asset
-      // refs weren't attached yet; now that they are, try again
-      this._pendingAssetsRetry = false
-      this.forceUpdate()
+    if (this._pendingAssetsRetry) {
+      if (this.assetsReady()) {
+        // a previous render skipped building the staves because the asset
+        // refs weren't attached yet; now that they are, try again
+        this._pendingAssetsRetry = false
+        this.forceUpdate()
+      }
       return
     }
 
     if (this.flushChanges) {
-      console.log("flushing changes...")
-      this.flushChanges = false
-      this.scaleToFit()
-
-      // update not necesary if we are playing an animation, it will happen
-      // next frame
-      if (!this.state.two.playing) {
-        const startTime = performance.now()
-        this.state.two.update()
-        console.log("Single update", performance.now() - startTime)
+      if (!this.assetsReady()) {
+        // nothing has been rendered to fit yet; wait for renderStaves()'s
+        // own retry (above) to try again
+        return
       }
+
+      this.flushChanges = false
+
+      // re-apply the stored scroll/hitX offset against whatever just
+      // changed (the fit's scale, a staff's margin, the note list): see
+      // sight_reading_page_spec.js's "keeps the head on the band after a
+      // staff change at rest"
+      this.setOffset(this.offset || 0)
     }
   }
 
@@ -1016,7 +1162,9 @@ export class StaffTwo extends React.PureComponent {
         return () => {
           this.removeUpdate(updater)
           updater(-1, 0) // signal removal of animator
-          this.state.two.update() // synchronize any changes from removal of update
+          if (this.state.two) {
+            this.state.two.update() // synchronize any changes from removal of update
+          }
         }
       })
     }), { displayName })
@@ -1025,21 +1173,31 @@ export class StaffTwo extends React.PureComponent {
   getFirstColumnGroups() {
     const out = []
 
-    if (this.staves) {
-      for (const staff of this.staves) {
-        const group = staff.getFirstColumnGroup()
-        if (group) {
-          out.push(group)
-        }
+    for (const staff of this.getRenderedStaves()) {
+      const group = staff.getFirstColumnGroup()
+      if (group) {
+        out.push(group)
       }
     }
+
     return out
+  }
+
+  // the drawn heads of the column at the head of the drill, which the
+  // plate's ink smudge marks (see PlateFeedback): Two.js's SVG renderer
+  // draws each staff's head column group as one <g>. A staff with nothing
+  // in that column is left out, so its empty group's zero-sized rect never
+  // pulls the smudge off the column (the grand staff draws a head column on
+  // one staff alone whenever the split sends it there)
+  headElements() {
+    return this.getFirstColumnGroups()
+      .map(group => group.children.length ? group.renderer.elem : null)
+      .filter(Boolean)
   }
 
   render() {
     this.RefreshNotes ||= Object.assign(React.memo((props) => {
       if (this.renderGroup) {
-        // this.refreshNotes()
         this.flushChanges = true
       }
       return null
@@ -1049,7 +1207,6 @@ export class StaffTwo extends React.PureComponent {
 
     this.RefreshStaves ||= Object.assign(React.memo((props) => {
       if (this.renderGroup) {
-        // this.refreshStaves()
         this.flushChanges = true
       }
       return null
@@ -1083,6 +1240,10 @@ export class StaffTwo extends React.PureComponent {
       <this.RefreshStaves
         type={this.props.type}
         keySignature={this.props.keySignature}
+        range={this.props.range}
+        hitX={this.props.hitX}
+        noteWidth={this.props.noteWidth}
+        scale={this.props.scale}
       />
 
       {this.props.noteShaking ? <this.NoteShaker /> : null}

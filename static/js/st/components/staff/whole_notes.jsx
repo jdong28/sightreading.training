@@ -83,6 +83,7 @@ export default class WholeNotes extends React.PureComponent {
       style={style}
       data-note={note.note}
       data-midi-note={pitch}
+      data-start={note.getStart()}
       className={classes}
       >{parts}</div>
   }

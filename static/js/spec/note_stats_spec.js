@@ -2,6 +2,47 @@ import NoteStats from "st/note_stats"
 import {GOOD, HARD} from "st/srs/grade"
 
 describe("note stats", function() {
+  describe("streak", function() {
+    it("counts a run of hits, resets on a miss, and never breaks on a slip", function() {
+      let stats = new NoteStats()
+
+      stats.hitNotes(["C4"])
+      stats.hitNotes(["D4"])
+      stats.hitNotes(["E4"])
+      expect(stats.streak).toEqual(3)
+      expect(stats.bestStreak).toEqual(3)
+
+      stats.missNotes(["F4"])
+      expect(stats.streak).toEqual(0)
+      expect(stats.bestStreak).toEqual(3)
+      expect(stats.misses).toEqual(1)
+
+      stats.slipNotes(["F4"])
+      expect(stats.streak).toEqual(0)
+      expect(stats.bestStreak).toEqual(3)
+      expect(stats.misses).toEqual(1)
+
+      stats.hitNotes(["F4"])
+      expect(stats.streak).toEqual(1)
+      expect(stats.bestStreak).toEqual(3)
+    })
+  })
+
+  describe("sessionRecord", function() {
+    it("carries the session clock only when given one", function() {
+      let stats = new NoteStats()
+      stats.hitNotes(["C4"])
+
+      let record = stats.sessionRecord({elapsedSeconds: 95.7})
+      expect(record.elapsedSeconds).toEqual(95)
+
+      let withoutClock = stats.sessionRecord()
+      expect("elapsedSeconds" in withoutClock).toBe(false)
+
+      expect(stats.sessionRecord({elapsedSeconds: -5}).elapsedSeconds).toEqual(0)
+    })
+  })
+
   // acoustic mode: a self-graded pass is never detected, so selfGraded is
   // the session's only record of it (see MeasureCardGenerator#selfGrade)
   describe("self-graded passes", function() {

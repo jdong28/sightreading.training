@@ -1,0 +1,27 @@
+.feedback {
+    position: absolute;
+    inset: 1px;
+    pointer-events: none;
+    overflow: hidden;
+}
+
+.smudge {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 78px;
+    height: 78px;
+    margin: -39px 0 0 -39px;
+    opacity: 0;
+    filter: blur(1.5px);
+    transition: opacity .55s ease;
+    background: radial-gradient(42% 38% at 50% 50%,
+        color-mix(in srgb, var(--salon-ink) 40%, transparent),
+        color-mix(in srgb, var(--salon-ink) 14%, transparent) 56%,
+        transparent 78%);
+}
+
+.on {
+    opacity: 1;
+    transition: none;
+}

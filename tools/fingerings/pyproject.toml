@@ -1,0 +1,27 @@
+[project]
+name = "fingerings"
+version = "0.1.0"
+description = "Handwritten PDF fingerings into MusicXML, in bulk"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "pikepdf>=9",
+    "pypdfium2>=4",
+    "lxml>=5",
+    "numpy>=2",
+    "scipy>=1.14",
+    "pillow>=10.1",
+    "music21>=9",
+]
+
+[project.scripts]
+fingerings = "fingerings.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+]
+
+[build-system]
+requires = ["uv_build>=0.12.7,<0.13.0"]
+build-backend = "uv_build"

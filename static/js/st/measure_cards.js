@@ -348,10 +348,13 @@ export class MeasureCardGenerator {
   }
 
   /**
-   * @param {function(): {mode: string, speed?: number}} drill the drill
-   * being played, which each attempt is graded and stored by: "wait" or
-   * "scroll" mode at a scroll speed while notes are detected, or "self" with
-   * no speed in acoustic mode (see selfGrade)
+   * @param {function(): {mode: string, speed?: number, tempo?: number|null}} drill
+   * the drill being played, which each attempt is graded and stored by:
+   * "wait" or "scroll" mode at a scroll speed while notes are detected, or
+   * "self" with no speed in acoustic mode (see selfGrade). In scroll mode
+   * tempo is the trainer's "Keep tempo" setting (D4(c)), null when off: a
+   * column that scrolls past the hit line by the tolerance is missed (see
+   * NoteMatcher#scrollPast), which passAttempts stores on the review
    */
   setDrill(drill) {
     this.drill = drill
@@ -608,8 +611,9 @@ export class MeasureCardGenerator {
   // counted, which happens in the same task: its attempts when it is graded,
   // else its practice. Returns what the pass is written by (see passAttempts)
   finishPass(pass) {
-    // a pass played partly in the other mode isn't graded in either
-    if (this.drill().mode != pass.drill.mode) {
+    // a pass played partly in the other mode, or with the tempo setting
+    // changed mid-pass (D4(c)), isn't graded in either
+    if (this.drill().mode != pass.drill.mode || this.drill().tempo != pass.drill.tempo) {
       pass.continued = true
     }
 
