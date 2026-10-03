@@ -161,7 +161,8 @@ export const EXERCISES_PROGRAMME = {
   // engine, the key of the engraving engine (st/score_render) that draws an
   // imported piece's cards from its source MusicXML, in place of the app's
   // own staff (see engineCard): in wait mode card by card, in scroll mode the
-  // whole section on one line
+  // whole section on one line, save a bar today's programme offers as one
+  // hand alone, drawn as its own one-bar system
   // Preface, a component shown above the staff at rest, handed the
   // generator, its settings (defaults filled in) and a setter of them, eg.
   // the score page's "Tonight's programme" plate.
@@ -363,17 +364,6 @@ export default class SightReadingPage extends React.Component {
       }
     }
 
-    // today's programme offers a hand alone in wait mode alone, so a bar the
-    // scaffold split returns hands together once the drill scrolls, taking
-    // the practice of the pass the card it leaves was collecting
-    let playing = this.state.notes && this.state.notes.generator
-    if (prevState.mode != this.state.mode && playing && playing.replanning && playing.replanning()) {
-      this.flushPractice(playing)
-      if (playing.replan()) {
-        this.refreshNoteList(playing)
-      }
-    }
-
     // a rebuilt drill abandons the pass the old generator was collecting
     let before = prevState.notes && prevState.notes.generator
     if (before && before != (this.state.notes && this.state.notes.generator)) {
@@ -554,7 +544,9 @@ export default class SightReadingPage extends React.Component {
 
   // The engine card's props for the card at the head of the drill, or null
   // when the app's staff draws it. In scroll mode the engine draws the whole
-  // section on one line, which the slider moves along from card to card
+  // section on one line, which the slider moves along from card to card, save
+  // a bar today's programme offers as one hand alone: that bar alone, of that
+  // hand's staves, is its own one-bar system
   engineCard() {
     if (!this.engineCards()) { return null }
 
@@ -569,7 +561,7 @@ export default class SightReadingPage extends React.Component {
     let self = this.selfGraded()
     let head = self ? null : this.cardHead(this.state.notes).index
     let system = this.state.mode == "scroll"
-    let drawn = system ? this.currentPieceSection() : card
+    let drawn = system && !card.hand ? this.currentPieceSection() : card
 
     return {
       engine: this.programme.engine,
