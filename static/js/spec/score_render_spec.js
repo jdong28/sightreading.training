@@ -243,6 +243,25 @@ describe("score render", function() {
         }
       })
 
+      // the score page keeps two cards drawn at once: the passages plate's
+      // overview and the trainer's own card
+      it("leaves a card already drawn alone when another is drawn", async function() {
+        let card = opts => engine.renderCard({musicXML: twoStaffScore(), hand: "both", width: 644, ...opts})
+
+        let first = await card({fromMeasure: 1, toMeasure: 2})
+        container.appendChild(first.svg)
+        let second = await card({fromMeasure: 3, toMeasure: 4})
+        container.appendChild(second.svg)
+
+        for (let [result, from, to] of [[first, 1, 2], [second, 3, 4]]) {
+          expect(sortedKeys(result.notes)).toEqual(fixtureNotes(from, to).sort(byOrder))
+          for (let note of result.notes) {
+            expect(result.svg.contains(note.el)).toBe(true)
+            expect(note.el.getBoundingClientRect().width).toBeGreaterThan(0)
+          }
+        }
+      })
+
       it("reports a box per drawn measure, in score order, each containing its own heads", async function() {
         let result = await draw({fromMeasure: 1, toMeasure: 2})
         expect(result.measures.map(m => [m.index, m.number])).toEqual([[1, 1], [2, 2]])

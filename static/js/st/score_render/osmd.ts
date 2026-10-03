@@ -40,6 +40,10 @@ function engine(display: Display, width: number): OpenSheetMusicDisplay {
     document.body.appendChild(display.host)
   }
   display.host.style.width = `${width}px`
+  // each render appends its own svg to the host, which draw takes out of it:
+  // the host is emptied first so the svg found there is this render's own
+  // even when an earlier draw failed before taking its own out
+  display.host.replaceChildren()
 
   if (!display.osmd) {
     display.osmd = new OpenSheetMusicDisplay(display.host, {
@@ -181,8 +185,11 @@ async function draw(into: Display, opts: SystemOptions, width: number): Promise<
     }
   }
 
-  // the card leaves OSMD's host, which the next render draws into afresh
+  // the card leaves OSMD's host, and the display lets go of the backend it
+  // drew into: the next render frees its backends' svgs, which would empty a
+  // card already handed out (the score page keeps two drawn at once)
   svg.remove()
+  display.Drawer.Backends.length = 0
   return {svg, notes, measures}
 }
 
