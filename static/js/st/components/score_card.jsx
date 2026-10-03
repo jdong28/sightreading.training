@@ -137,18 +137,18 @@ export class ScoreCard extends React.Component {
     let cached = p.system ? this.systemCache.find(entry => entry.key == systemKey(p)) : null
 
     // the drawn card stays up until the next is drawn, but no longer follows
-    // the drill, whose columns are the next card's. A kept system's marks go
-    // with it as another takes the plate at once, so it comes back with none
-    // of its old current/done/missed classes
-    if (cached && this.cardJoin) {
-      markCard(this.cardJoin, {head: null, missed: []})
-    }
+    // the drill, whose columns are the next card's
     this.result = null
     this.cardJoin = null
     this.track = null
 
     if (cached) {
       this.systemCache = [cached, ...this.systemCache.filter(entry => entry != cached)]
+      // a kept system comes back with none of the current/done/missed classes
+      // it was last drilled with: the card it comes back to is one of its bars,
+      // so its own join only ever marks that bar's heads
+      markCard({heads: cached.result.notes.map(note => [note.el]), unmatched: []},
+        {head: null, missed: []})
       this.result = cached.result
       let strip = this.stripRef.current
       if (strip) { strip.replaceChildren(cached.svg) }

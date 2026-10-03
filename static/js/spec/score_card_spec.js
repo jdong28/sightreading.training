@@ -1256,6 +1256,10 @@ describe("score page engine card", function() {
     // missed marks it carried when the hand-alone card took its place
     expect(page.currentCard().card.hand).toBeUndefined()
     expect(renders).toEqual(2)
+    // the section's drawing is on the plate at once, with both staves of it:
+    // a draw of its own would have left result null until the engine answered
+    expect(page.staff.result).toBeTruthy()
+    expect(page.staff.result.notes.some(note => note.staff == 1)).toBe(true)
     expect(marked(MARK_CLASSES.missed)).toEqual([])
 
     let current = marked(MARK_CLASSES.current)
@@ -1450,6 +1454,59 @@ describe("ScoreCard", function() {
     expect(card.result).toBeTruthy()
     expect(container.querySelector("[data-score-card] svg")).toBe(card.result.svg)
     expect(card.result.notes.map(note => note.pitch)).toEqual([parseNote("G4")])
+  })
+
+  it("re-attaches a kept system with none of the marks it was drilled with", async function() {
+    let names = ["C4", "D4", "E4", "F4"]
+    let notesFor = {"1-4": names, "2-2": ["G4"]}
+    let loadEngines = () => Promise.resolve({ENGINES: {osmd: {
+      renderSystem: async ({fromMeasure, toMeasure}) => {
+        let svg = document.createElementNS(SVG_NS, "svg")
+        let notes = notesFor[`${fromMeasure}-${toMeasure}`].map((name, idx) => {
+          let note = drawn(parseNote(name), idx)
+          svg.appendChild(note.el)
+          return note
+        })
+        return {svg, notes}
+      },
+    }}})
+    let base = {
+      musicXML: "<score-partwise/>", measureStarts: [0, 4], hand: "both", width: 600,
+      system: true, loadEngines,
+    }
+    let section = cols => ({
+      ...base, fromMeasure: 1, toMeasure: 4, staves: null, columns: columnsOf(cols),
+    })
+    let bar = {
+      ...base, fromMeasure: 2, toMeasure: 2, staves: [{part: "P1", staff: 2}],
+      columns: columnsOf(notesFor["2-2"]), head: 0,
+    }
+    let marks = () => [...container.querySelectorAll("[data-score-card] svg > *")]
+      .map(el => Object.values(MARK_CLASSES).filter(cls => el.classList.contains(cls)))
+    let barDrawn = () => waitFor(() => card.result && card.result.notes.length == 1,
+      {message: "the one-bar system"})
+
+    // the section drawn, left for a one-bar system, then re-attached and
+    // drilled to its last column as the kept drawing itself
+    mountCard({...section(names), head: 0})
+    await waitFor(() => card.result, {message: "the section"})
+    rerenderCard(bar)
+    await barDrawn()
+
+    rerenderCard({...section(names), head: 3})
+    expect(card.result).toBeTruthy()
+    expect(marks()).toEqual([
+      [MARK_CLASSES.done], [MARK_CLASSES.done], [MARK_CLASSES.done], [MARK_CLASSES.current],
+    ])
+
+    // away and back on another of its bars: scroll mode joins the card's own
+    // columns alone (SightReadingPage#engineCard), so the bars the drill has
+    // left keep no mark of the pass they were drilled in
+    rerenderCard(bar)
+    await barDrawn()
+    rerenderCard({...section(names.slice(0, 1)), head: 0})
+    expect(card.result).toBeTruthy()
+    expect(marks()).toEqual([[MARK_CLASSES.current], [], [], []])
   })
 
   it("draws a system again once its score changes", async function() {
