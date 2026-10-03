@@ -1,5 +1,5 @@
 import NoteList from "st/note_list"
-import NoteMatcher, {EARLY_KEY_WINDOW, LATE_REPEAT_WINDOW} from "st/note_matcher"
+import NoteMatcher, {EARLY_KEY_WINDOW, LATE_REPEAT_WINDOW, ORNAMENT_GAP} from "st/note_matcher"
 import {parseMusicXML} from "st/musicxml"
 import {extractSectionColumns, staffTracks} from "st/song_sections"
 import {cardColumn} from "st/measure_cards"
@@ -55,8 +55,10 @@ let run = (matcher, script) => {
 
 let head = matcher => [...matcher.notes.currentColumn()]
 
-// a column with the score's ornament notes allowed at it (column.allowed)
-let ornamented = (column, allowed) => Object.assign([...column], {allowed})
+// a column with the score's ornament notes allowed at it (column.allowed),
+// and, when a trill, turn or mordent sounds on past it, column.trailing
+let ornamented = (column, allowed, trailing) =>
+  Object.assign([...column], trailing ? {allowed, trailing} : {allowed})
 
 describe("note matcher", function() {
   // Today's detection rules, one row each:
@@ -152,7 +154,10 @@ describe("note matcher", function() {
       [["on", "E4"], ["on", "C4"]],
       ["miss C4", "hit C4"], ["G4"]],
 
-    ["the next column's ornament notes are no allowance at the head",
+    // without a timeStamp a key can't be shown to fall inside ORNAMENT_GAP or
+    // EARLY_KEY_WINDOW, so it is judged as before them: the next column's
+    // ornament note is a plain stray at the head, not an excuse
+    ["the next column's ornament notes are no allowance at the head without a timeStamp",
       [["C4"], ornamented(["G4"], ["A4"])],
       [["on", "A4"], ["on", "C4"], ["on", "A4"]],
       ["miss C4", "hit C4"], ["G4"]],
@@ -467,6 +472,153 @@ describe("note matcher", function() {
       expect(run(matcher, [["on", "G#5", 3950], ["on", "C#4", 3980], ["on", "C#3", 4000]]))
         .toEqual(["hit C#4", "hit C#3+G#5 (early G#5)"])
       expect(head(matcher)).toEqual(["G#3"])
+    })
+
+    // the resolution is dropped outright (no strike, no early credit) when
+    // the ornament itself follows within the gap, unlike the row above where
+    // a plain key (C#4) resolves it
+    it("doesn't credit an ornament key that is the next column's own when another ornament key follows", function() {
+      let matcher = matcherFor([ornamented(["C#4"], ["F#5", "G#5"]), ["C#3", "G#5"], ["G#3"]])
+      expect(run(matcher, [["on", "G#5", 3400], ["on", "F#5", 3480], ["on", "C#4", 3500]]))
+        .toEqual(["hit C#4"])
+      expect(run(matcher, [["on", "C#3", 4000]])).toEqual([])
+      expect(run(matcher, [["on", "G#5", 4010]])).toEqual(["hit C#3+G#5"])
+    })
+
+    // the release column's own trailing pitch waits, pending, for what
+    // follows to decide it: a plain column with no trailing of its own
+    let releaseColumn = () => ornamented(["F#5"], ["G#5"], ["F#5", "G#5"])
+
+    it("excuses a trailing note at the release column outright when it isn't the release's own", function() {
+      let matcher = matcherFor([releaseColumn(), ["C#5"]])
+      expect(run(matcher, [
+        ["on", "F#5", 0], ["on", "G#5", 110], ["on", "F#5", 220], ["on", "G#5", 330], ["on", "C#5", 1000],
+      ])).toEqual(["hit F#5", "hit C#5"])
+    })
+
+    it("waits, pending, when the trailing note is the release column's own", function() {
+      let matcher = matcherFor([releaseColumn(), ["G#5"], ["C#5"]])
+      let judged = run(matcher, [
+        ["on", "F#5", 0], ["on", "G#5", 110], ["on", "F#5", 220], ["on", "G#5", 1000], ["on", "C#5", 2000],
+      ])
+      expect(judged).toEqual(["hit F#5", "hit G#5", "hit C#5"])
+
+      // timed from its own strike (1000), not from the key that resolved it
+      let hit = matcher.judged.find(event => event.type == "hit" && event.hitNotes.includes("G#5"))
+      expect(hit.latency).toEqual(1000)
+    })
+
+    it("drops a pending key with no strike when another ornament key follows within the gap", function() {
+      let matcher = matcherFor([releaseColumn(), ["G#5"], ["C#5"]])
+      expect(run(matcher, [["on", "F#5", 0], ["on", "G#5", 1000], ["on", "F#5", 1100]]))
+        .toEqual(["hit F#5"])
+      expect(head(matcher)).toEqual(["G#5"])
+    })
+
+    it("resolves a pending key by itself once the page's tick finds the gap elapsed", function() {
+      let matcher = matcherFor([releaseColumn(), ["G#5"], ["C#5"]])
+      run(matcher, [["on", "F#5", 0], ["on", "G#5", 1000]])
+      expect(matcher.pendingUntil()).toEqual(1000 + ORNAMENT_GAP)
+
+      matcher.judged.length = 0
+      expect(matcher.tick(1000 + ORNAMENT_GAP - 50)).toBeNull()
+      expect(matcher.judged).toEqual([])
+
+      let result = matcher.tick(1000 + ORNAMENT_GAP + 50)
+      expect(matcher.judged.map(event => event.type)).toEqual(["hit"])
+      expect(matcher.judged[0].hitNotes).toEqual(["G#5"])
+      expect(matcher.judged[0].latency).toEqual(1000)
+      expect(result).not.toBeNull()
+    })
+
+    // the column completed by the tick carries its grace notes and its own
+    // resolved pitch on to the next head, both still excused there
+    it("still excuses the resolved column's grace notes and its own pitch at the next head", function() {
+      let matcher = matcherFor([
+        releaseColumn(),
+        Object.assign(["G#5"], {allowed: ["E5", "F#5"]}),
+        ["C#5"],
+      ])
+
+      run(matcher, [["on", "F#5", 0], ["on", "G#5", 1000]])
+      matcher.tick(1000 + ORNAMENT_GAP + 50)
+
+      expect(run(matcher, [["on", "F#5", 5000], ["on", "E5", 5100], ["on", "G#5", 5200]]))
+        .toEqual([])
+      expect(run(matcher, [["on", "C#5", 6000]])).toEqual(["hit C#5"])
+    })
+
+    // an excused early key (a pending key resolved for the next column) goes
+    // stale silently: no slip, and the next column still waits for its key
+    it("drops an excused early key gone stale without a slip", function() {
+      let matcher = matcherFor([ornamented(["C#4"], ["F#5", "G#5"]), ["C#3", "G#5"], ["G#3"]])
+      expect(run(matcher, [["on", "G#5", 3950], ["on", "C#4", 3980 + EARLY_KEY_WINDOW + 1], ["on", "C#3", 4100]]))
+        .toEqual(["hit C#4"])
+      expect(head(matcher)).toEqual(["C#3", "G#5"])
+    })
+
+    // the next column's ornament struck while the head is under way is
+    // buffered early like a T5 key, but is never credited: it is only ever a
+    // possible slip on the head, excused within EARLY_KEY_WINDOW as any early
+    // key is
+    it("buffers the next column's own ornament note early without crediting it", function() {
+      expect(run(matcherFor([["C4"], ornamented(["G4"], ["A4"])]),
+        [["on", "A4", 100], ["on", "C4", 150]])).toEqual(["hit C4"])
+    })
+
+    it("slips the head on the next column's ornament note gone stale", function() {
+      expect(run(matcherFor([["C4"], ornamented(["G4"], ["A4"])]),
+        [["on", "A4", 100], ["on", "C4", 100 + EARLY_KEY_WINDOW + 1]])).toEqual(["miss C4", "hit C4"])
+    })
+
+    // a press with no timeStamp (the on-screen keyboard) is never pending: an
+    // ambiguous key at the head is the head's own at once
+    it("is never pending without a timeStamp", function() {
+      let matcher = matcherFor([releaseColumn(), ["G#5"], ["C#5"]])
+      expect(run(matcher, [["on", "F#5"], ["on", "G#5"]])).toEqual(["hit F#5", "hit G#5"])
+      expect(head(matcher)).toEqual(["C#5"])
+    })
+
+    it("drops a pending key and the carried trailing set when another list takes over", function() {
+      let matcher = matcherFor([releaseColumn(), ["G#5"], ["C#5"]])
+      run(matcher, [["on", "F#5", 0], ["on", "G#5", 1000]])
+      expect(matcher.pending).not.toBeNull()
+
+      let rebuilt = new NoteList([["G#5"], ["C#5"]], {generator: {nextNote: () => []}})
+      matcher.setNotes(rebuilt)
+      expect(matcher.pending).toBeNull()
+      expect(matcher.trailing).toEqual([])
+      expect(matcher.tick(10000)).toBeNull()
+
+      // the trill note is judged afresh: a plain required key of the new head
+      expect(run(matcher, [["on", "G#5", 1100]])).toEqual(["hit G#5"])
+    })
+
+    it("leaves chords mode unaffected by allowed or trailing columns", function() {
+      let matcher = matcherFor(
+        [ornamented(["C4", "E4", "G4"], ["D4"], ["D4"]), ["A4"]], {mode: "chords"})
+      run(matcher, [["on", "C4"], ["on", "E4"], ["on", "G4"]])
+      expect(run(matcher, [["off", "C4"], ["off", "E4"], ["off", "G4"]])).toEqual(["chordHit"])
+    })
+
+    // the matcher never finishes a lap the player hasn't played with one key
+    // down, even when that key only resolves a pending key (settleCardEnd,
+    // lastOfCard): the resolving key's judgePress still settles a card's last
+    // column completed by held credit alone, once it is reached
+    it("lets the resolving key settle a card's last column held, at the card's end", function() {
+      let asCard = columns => columns.map((column, idx) => Object.assign(column, {cardIndex: idx}))
+      let columns = asCard([
+        ornamented(["Bb3", "F#5"], ["G#5"], ["F#5", "G#5"]),
+        ["G#5"],
+        Object.assign(["Bb3"], {sustained: ["Bb3"]}),
+      ])
+      let matcher = matcherFor(columns)
+
+      run(matcher, [["on", "Bb3", 0], ["on", "F#5", 10]])
+      run(matcher, [["on", "G#5", 2000]])
+      expect(run(matcher, [["on", "D4", 2500]])).toEqual([
+        "hit G#5", "hit Bb3 (held Bb3)",
+      ])
     })
   })
 

@@ -96,6 +96,7 @@ describe("measure cards", function() {
       measures[4].columns[0].beat = 12
       measures[4].columns[0].notation = notation
       measures[4].columns[0].allowed = ["G5"]
+      measures[4].columns[0].trailing = ["G5", "A5"]
       measures[4].columns[0].sustained = ["F5"]
       let card = sectionCard(measures)
       expect(card.measures).toEqual([0, 1, 2, 3, 4])
@@ -106,6 +107,7 @@ describe("measure cards", function() {
       expect([columns[5].beat, columns[5].notation]).toEqual([12, notation])
       // and what detection reads at it (see extractSectionColumns)
       expect(columns[5].allowed).toEqual(["G5"])
+      expect(columns[5].trailing).toEqual(["G5", "A5"])
       expect(columns[5].sustained).toEqual(["F5"])
       expect(columns[0].beat).toBeUndefined()
       expect(columns[0].sustained).toBeUndefined()

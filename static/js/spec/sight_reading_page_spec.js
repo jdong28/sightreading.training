@@ -28,6 +28,7 @@ import {scopeEvent} from "st/events"
 import {MARK_CLASSES} from "st/score_render/card_join"
 import {SMUDGE_HOLD_MS} from "st/components/sight_reading/plate_feedback"
 import NoteStats, {addNoteListener} from "st/note_stats"
+import {ORNAMENT_GAP} from "st/note_matcher"
 import {parseNote} from "st/music"
 import {KEYBOARD_MAP, SYMBOL_MAP_INVERSE} from "st/keyboard_input"
 import {openTestStore, noteXML, reverieOpening, keyChangeScore, nocturneBars5to6, repeatedNoteBar} from "spec/helpers"
@@ -1358,6 +1359,17 @@ describe("sight reading page", function() {
       return events.sort((a, b) => a[0] - b[0])
     }
 
+    // bug 2 (sr-detect-ornament-span-n7d): the right hand leads into bar 6
+    // while the left hand's last eighth of bar 5 (C#4, under the trill) is
+    // still to come. The G#5 struck for it is an ornament note at that
+    // column and the next column's own, so it must be credited early rather
+    // than swallowed, or the left hand's column stalls
+    let leadingRightHand = () => asWritten().map(([at, what, note]) => {
+      if (what == "on" && note == "C#4" && at == 3500) { return [3990, what, note] }
+      if (what == "on" && note == "G#5" && at == 4000) { return [3960, what, note] }
+      return [at, what, note]
+    }).sort((a, b) => a[0] - b[0])
+
     // each MIDI message through the page's own handler, in its own task
     let perform = events => {
       for (let [at, what, note] of events) {
@@ -1415,6 +1427,56 @@ describe("sight reading page", function() {
       // A5, under the trill on F#5 whose other note is G#5
       perform(asWritten([[2560, "A5"]]))
       expect([page.state.stats.hits, page.state.stats.misses]).toEqual([16, 1])
+    })
+
+    it("counts no slip for a right hand leading into bar 6 while the left hand's last eighth is still under the trill", async function() {
+      await renderNocturne(() => renderPage(ScorePage))
+      await engineReady()
+
+      flushSync(() => page.beginSession())
+      perform(leadingRightHand())
+      expect([page.state.stats.hits, page.state.stats.misses]).toEqual([16, 0])
+    })
+
+    // the page's own timer resolves a column pending on an ornament
+    // (st/note_matcher's tick) once ORNAMENT_GAP has passed with no further
+    // key: a looping card's last column, or simply the player stopping there
+    it("completes a column pending on an ornament by the page's own timer, with no further key", async function() {
+      await renderNocturne(renderScorePage, {hand: RIGHT_HAND})
+      flushSync(() => page.beginSession())
+
+      jasmine.clock().install()
+      clockInstalled = true
+      let clock = 0
+      page.matcher.now = () => clock
+
+      // up to the real G#5 at 4000, the trill's pending key never resolved
+      // by a C#5 that never comes
+      for (let [at, what, note] of asWritten([], {left: false})) {
+        if (at >= 6000) { continue }
+        clock = at
+        let status = what == "on" ? 0x90 : 0x80
+        flushSync(() => page.onMidiMessage({data: new Uint8Array([status, parseNote(note), 100]), timeStamp: at}))
+      }
+      expect([page.state.stats.hits, page.state.stats.misses]).toEqual([2, 0])
+
+      clock = 4000 + ORNAMENT_GAP + 50
+      flushSync(() => jasmine.clock().tick(ORNAMENT_GAP + 50))
+      expect([page.state.stats.hits, page.state.stats.misses]).toEqual([3, 0])
+    })
+
+    it("throws nothing unmounting with an ornament key still pending", async function() {
+      await renderNocturne(renderScorePage, {hand: RIGHT_HAND})
+      flushSync(() => page.beginSession())
+
+      for (let [at, what, note] of asWritten([], {left: false})) {
+        if (at >= 6000) { continue }
+        let status = what == "on" ? 0x90 : 0x80
+        flushSync(() => page.onMidiMessage({data: new Uint8Array([status, parseNote(note), 100]), timeStamp: at}))
+      }
+
+      expect(() => flushSync(() => root.unmount())).not.toThrow()
+      root = null
     })
   })
 

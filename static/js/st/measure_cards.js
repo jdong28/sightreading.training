@@ -97,10 +97,11 @@ export function sectionCard(measures) {
 // score's notation of its notes and of the heads its ties run on to, for an
 // engine's card to join it to the heads it drew (see joinCard in
 // st/score_render/card_join); and for detection, the score's ornament notes
-// the matcher allows at it (column.allowed) and the notes the score still
-// sounds at its onset, which count held (column.sustained, see markSustained)
-// — both from extractSectionColumns in st/song_sections
-export const COLUMN_JOIN_KEYS = ["beat", "notation", "extras", "allowed", "sustained"]
+// the matcher allows at it (column.allowed) and still sounds on past it
+// (column.trailing), and the notes the score still sounds at its onset, which
+// count held (column.sustained, see markSustained) — all from
+// extractSectionColumns in st/song_sections
+export const COLUMN_JOIN_KEYS = ["beat", "notation", "extras", "allowed", "trailing", "sustained"]
 
 /**
  * A copy of the card's column for the drill, keeping what an engine's card
