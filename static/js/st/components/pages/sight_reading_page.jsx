@@ -259,7 +259,6 @@ export default class SightReadingPage extends React.Component {
       "2": e => this.selfGradeHotkey(2),
       "3": e => this.selfGradeHotkey(3),
       "4": e => this.selfGradeHotkey(4),
-      "esc": e => this.selfGradeEscHotkey(),
     }
 
     // the key the user picked, drawn unless the generator sets its own
@@ -1401,6 +1400,13 @@ export default class SightReadingPage extends React.Component {
     // pass it belongs to, and before stats.sessionRecord counts the passes
     this.writeSelfGrade()
 
+    // the pass a "Where?" question was asked of is abandoned below, so the
+    // question goes with it: Rest, Begin and Clear stats all leave the next
+    // sitting on the grade pills rather than a question nobody answered
+    if (!this.unmounted && this.state.selfAsking != null) {
+      this.setState({selfAsking: null, selfRecorded: null})
+    }
+
     let sectionPractice = this.takePractice()
 
     // a session already recorded at rest is left alone: recording it again
@@ -1643,16 +1649,6 @@ export default class SightReadingPage extends React.Component {
 
     let row = this.selfGradeRow.current
     if (row) { row.grade(grade) }
-  }
-
-  // Esc, only while a session is running in acoustic mode: change grade,
-  // from wherever the row's "Where?" question is open, the same path as its
-  // "‹ change grade" link
-  selfGradeEscHotkey() {
-    if (!this.selfGraded() || !this.state.session) { return }
-
-    let row = this.selfGradeRow.current
-    if (row) { row.changeGrade() }
   }
 
   titleParts() {

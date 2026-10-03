@@ -3092,7 +3092,10 @@ describe("sight reading page", function() {
       expect((await reviews()).every(r => JSON.stringify(r.slipped) == JSON.stringify(["rhythm"]))).toBe(true)
     })
 
-    it("Esc does change grade too", async function() {
+    // the question belongs to the pass on screen, which Rest abandons: the
+    // next sitting must open on the grade pills, never on a question whose
+    // pass nobody played in it
+    it("closes an unanswered Where? at Rest, so the next Begin opens on the grade pills", async function() {
       let el = await renderAcoustic({measuresPerCard: "2"})
       click(buttonNamed(el, "Begin"))
 
@@ -3100,25 +3103,23 @@ describe("sight reading page", function() {
       click(buttonLike(el, "Stumbled"))
       expect(el.querySelector("[data-self-grade-followup]")).not.toBe(null)
 
-      flushSync(() => document.body.dispatchEvent(new KeyboardEvent("keydown", {keyCode: 27, bubbles: true})))
-      expect(el.querySelector("[data-self-grade-followup]")).toBe(null)
+      click(buttonNamed(el, "Rest"))
       expect(await reviews()).toEqual([])
-    })
 
-    // Esc reaches the page from anywhere (leaving fullscreen, say), so with
-    // the pills up it has no question to leave and must not re-arm the dwell
-    it("Esc does nothing with the grade pills up, so the grade tapped after it is taken", async function() {
-      let el = await renderAcoustic({measuresPerCard: "2"})
       click(buttonNamed(el, "Begin"))
-
-      played()
-      flushSync(() => document.body.dispatchEvent(new KeyboardEvent("keydown", {keyCode: 27, bubbles: true})))
       expect(el.querySelector("[data-self-grade-followup]")).toBe(null)
+      expect(buttonLike(el, "Clean")).toBeDefined()
 
+      // the grade this sitting gives is its own, not the one the question held
+      played()
       click(buttonLike(el, "Clean"))
       flash()
       await finished()
-      expect((await reviews()).length).toEqual(3)
+      expect((await reviews()).map(r => [r.itemId, r.grade])).toEqual([
+        [`${piece.id}:both:1-1`, GOOD],
+        [`${piece.id}:both:1-2`, GOOD],
+        [`${piece.id}:both:2-2`, GOOD],
+      ])
     })
 
     it("starts the grade row fresh when the drill is rebuilt under it", async function() {

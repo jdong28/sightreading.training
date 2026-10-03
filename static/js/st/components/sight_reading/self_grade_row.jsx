@@ -23,8 +23,8 @@ import styles from "./self_grade_row.module.css"
 // open (asking) and on the grade being flashed before it is written
 // (recorded), since it needs both to draw the card's bar badges and to write
 // the grade once the flash ends. A grade() or chooseWhere() while recorded is
-// set is ignored outright (the pass has already ended), and changeGrade()
-// unless the question is what is on screen to leave.
+// set is ignored outright (the pass has already ended), and so is a grade
+// given while the question is open, which only its own chips answer.
 //
 // Nothing is graded within SELF_GRADE_DWELL_MS of the row changing what it
 // shows: a pass can't have been played in that time, and the second tap of a
@@ -93,11 +93,10 @@ export default class SelfGradeRow extends React.Component {
     this.props.onGrade(this.props.asking, {bars: value, slipped: this.state.slipped})
   }
 
-  // back to the pills, nothing graded, the tags kept: only while the
-  // question is open, so Esc with the pills up (the page's hotkey, see
-  // SightReadingPage#selfGradeEscHotkey) leaves the dwell alone
+  // back to the pills, nothing graded, the tags kept: the question's own
+  // "‹ change grade" link, the one way out of it
   changeGrade() {
-    if (this.props.recorded || this.props.asking == null) { return }
+    if (this.props.recorded) { return }
     this.props.onAsk(null)
     this.shownAt = Date.now()
   }
