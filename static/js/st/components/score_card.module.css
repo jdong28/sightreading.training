@@ -110,7 +110,6 @@
 
 .bar_badge {
     position: absolute;
-    transform: translateY(-100%);
     padding: 1px 6px;
     border: 1px solid var(--salon-gilt);
     border-radius: 999px;
