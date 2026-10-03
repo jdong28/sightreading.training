@@ -24,6 +24,9 @@ export const ITEM_STATES = [
 
 export const REVIEW_KINDS = ["attempt", "legacy", "implied"]
 
+// what a self-graded review's optional "What slipped?" tags may name
+export const SELF_ASPECTS = ["notes", "rhythm", "tempo", "fingering", "musicality"]
+
 export const STUDY_STATUSES = ["learning", "maintaining", "shelved"]
 
 // how many attempts an item keeps in recent
@@ -60,7 +63,8 @@ export const RECENT_ATTEMPTS = 5
  * @property {number} lastPracticed
  * @property {number} [elapsedMs] time spent playing it, kept once timed
  * @property {Array[]} recent the last RECENT_ATTEMPTS attempts, oldest first,
- * as [at, columns, clean, grade]
+ * as [at, columns, clean, grade]; columns and clean are null on a self-graded
+ * attempt, which counted none (see recentMissRate in st/srs/schedule)
  * @property {number} [paceMs] the item's usual pace, ms per notated beat (per
  * column without the score's rhythm), a running mean over its clean wait mode
  * attempts (see attemptPace in st/srs/grade)
@@ -104,12 +108,17 @@ export const RECENT_ATTEMPTS = 5
  * @property {number} [hesitations]
  * @property {number} [elapsedMs] pauses over 30 s left out
  * @property {number} [leadMs] reading time before the first note
- * @property {string} [mode] "wait" or "scroll"
+ * @property {string} [mode] how the pass was played: "wait" or "scroll" for a
+ * detected pass, "self" for one graded by the player on an acoustic piano,
+ * with none of this record's detection fields (see st/srs/self_grade)
  * @property {number} [speed]
  * @property {Array[]} [bars] multi-bar items: [measure, columns, clean, misses, ms] a bar
  * @property {number[]} [trouble] the indices among the item's columns of those
  * with a miss
  * @property {{upper: number, lower: number}} [staffMisses]
+ * @property {string[]} [slipped] a self-graded review only: the player's
+ * optional "What slipped?" tags, each one of SELF_ASPECTS, never read by the
+ * scheduler
  * @property {Array[]} [perColumn] an attempt's columns in order, as [slips,
  * stalled, latency, spread, early, heldCredit, late]: slips the tries gone
  * wrong on it, stalled 1 when it was skipped, then what the note matcher
@@ -200,15 +209,30 @@ export function validReview(review) {
       typeof review.itemId != "string" || !review.itemId.startsWith(`${review.pieceId}:`) ||
       !isTime(review.at) || !REVIEW_KINDS.includes(review.kind) ||
       !optional(review.sessionId, id => typeof id == "string") ||
-      !isCount(review.misses) || !optional(review.elapsedMs, isCount)) {
+      !optional(review.elapsedMs, isCount)) {
     return false
   }
 
   if (review.kind == "legacy") {
-    return review.grade === undefined && isCount(review.hits) && isCount(review.attempts)
+    return review.grade === undefined && isCount(review.hits) && isCount(review.misses) &&
+      isCount(review.attempts)
   }
 
-  return [1, 2, 3, 4].includes(review.grade) &&
+  if (review.kind == "attempt" && review.mode == "self") {
+    return [1, 2, 3, 4].includes(review.grade) &&
+      (review.was == "new" || ITEM_STATES.includes(review.was)) &&
+      optional(review.r, isTime) &&
+      optional(review.slipped, slipped => Array.isArray(slipped) && slipped.every(oneOf(SELF_ASPECTS))) &&
+      review.columns === undefined && review.clean === undefined && review.misses === undefined &&
+      review.stuck === undefined && review.skipped === undefined && review.hesitations === undefined &&
+      review.leadMs === undefined && review.speed === undefined &&
+      review.bars === undefined && review.trouble === undefined &&
+      review.staffMisses === undefined && review.perColumn === undefined &&
+      review.algo === undefined && review.hits === undefined && review.attempts === undefined
+  }
+
+  return isCount(review.misses) &&
+    [1, 2, 3, 4].includes(review.grade) &&
     (review.was == "new" || ITEM_STATES.includes(review.was)) &&
     isCount(review.columns) && isCount(review.clean) && isCount(review.stuck) &&
     isCount(review.skipped) && isCount(review.hesitations) &&
@@ -220,7 +244,7 @@ export function validReview(review) {
     optional(review.staffMisses, validStaffMisses) &&
     optional(review.perColumn, validPerColumn) &&
     optional(review.r, isTime) && isCount(review.algo) &&
-    review.hits === undefined && review.attempts === undefined
+    review.hits === undefined && review.attempts === undefined && review.slipped === undefined
 }
 
 /**
@@ -313,15 +337,17 @@ export function legacyReview(stats) {
  * An item with one practice stint on it added to its totals, as section
  * stats were added up before items.
  * @param {ItemRecord} item
- * @param {{hits: number, misses: number, at: number, elapsedMs?: number}} practice
+ * @param {{hits: number, misses: number, at: number, elapsedMs?: number, played?: boolean}} practice
+ * played forces the attempt count even without hits or misses, for a
+ * self-graded stint that played notes but recorded none (see st/srs/attempt)
  * @returns {ItemRecord}
  */
-export function itemWithPractice(item, {hits, misses, at, elapsedMs}) {
+export function itemWithPractice(item, {hits, misses, at, elapsedMs, played}) {
   let record = {
     ...item,
     hits: item.hits + hits,
     misses: item.misses + misses,
-    attempts: item.attempts + (hits || misses ? 1 : 0),
+    attempts: item.attempts + (played || hits || misses ? 1 : 0),
     lastPracticed: Math.max(item.lastPracticed, at),
   }
 

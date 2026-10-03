@@ -152,6 +152,7 @@ function ungradedWhy(pass) {
  */
 export function runReport(pass) {
   let {card} = pass
+
   let why = ungradedWhy(pass)
   let report = {
     mode: pass.drill ? pass.drill.mode : null,

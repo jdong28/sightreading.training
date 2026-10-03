@@ -64,3 +64,16 @@ A piece is drawn in the score's key signature at the start measure. A score key 
 Alternatively, pick **Pasted song notation** and paste song notation in the play along format. Measures of pasted notation count from 1, and **Track** limits the section to one track of the song, or uses all tracks.
 
 Notes that start on the same beat are shown together as one column, and the section loops once you reach its end. An imported piece is engraved from its own score, card by card while waiting and the whole section on one line while scrolling, but rhythm is never judged: play the right notes of a column to move on, whatever their length, and rests and ties are only drawn, never played. A card can be as many measures as the section has. Pasted song notation, a piece imported before the trainer kept each piece's score, and a piece whose score can't be engraved are drawn on the trainer's own staff as whole notes a column apart; import the file again to practise a piece from its engraved score. Notes outside the range of the chosen staff are skipped, and the programme drawer reports how many. Generated accompaniment from chord symbols is not included. The piece or song, section, hand or track, wait or scroll mode and speed are saved in your browser, so reloading the page returns to the same drill.
+
+### Practising on an acoustic piano
+
+If you play an acoustic piano, there is nothing for the app to listen to. Open the device setup from the instrument button in the header and pick **Acoustic piano** under **Instrument**. The sheet music page then stops detecting notes, while the Staff exercises keep listening as before: play the card on the screen, then grade the pass yourself with the row under the staff, by tapping it or with keys **1**–**4**:
+
+*   **Fell apart** — stopped, went back or lost the place
+*   **Stumbled** — kept going, but wrong notes or rhythm slipped
+*   **Clean** — right notes and rhythm, some hesitation
+*   **Easy** — right notes and rhythm, steady
+
+The grades are the same four the app works out for itself when it is listening, so a card you grade is scheduled for its next review exactly as a detected one would be. **What slipped?** optionally tags the pass with notes, rhythm, tempo, fingering or musicality; those tags are kept with the attempt but never change the schedule. **Fell apart** or **Stumbled** on a card of more than one bar asks **Where?** first, so the grade reaches the bar it belongs to rather than the whole card; **Throughout** grades every bar of it.
+
+Self-graded practice is always card by card, so there is no tempo setting and no scrolling, and today's programme stops offering a bar as one hand alone. The cards beside the staff count the passes graded and how many were clean, in place of accuracy, notes read and best streak. Pasted song notation has no cards to grade, so it keeps listening for notes even with the instrument set to acoustic.

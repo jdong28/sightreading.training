@@ -24,6 +24,9 @@ export default class DevicePickerLightbox extends Lightbox {
       selectedOutput: this.props.selectedOutputIdx,
       outputDeviceType: this.props.selectedOutputDeviceType,
       forwardMidi: this.props.forwardMidi || false,
+      // the instrument setting: acoustic piano, in place of MIDI detection
+      // (st/srs/self_grade), belongs with the device rather than the piece
+      acoustic: this.props.acoustic || false,
     }
 
     this.instrumentPickerRef = React.createRef()
@@ -38,7 +41,42 @@ export default class DevicePickerLightbox extends Lightbox {
       outputIdx: instrumentPicker ? instrumentPicker.getSelectedIdx() : null,
       outputChannel: instrumentPicker ? instrumentPicker.getCurrentChannel() : null,
       outputDeviceType: this.state.outputDeviceType,
+      acoustic: this.state.acoustic,
     }
+  }
+
+  // the instrument choice: whether the app listens to a MIDI keyboard, or
+  // the player grades their own passes on an acoustic piano. Shown even
+  // without Web MIDI support (Safari, iPad), since that's exactly who plays
+  // acoustic
+  renderInstrumentPicker() {
+    return <section>
+      <h4>Instrument</h4>
+      <div className={styles.input_row}>
+        <label>
+          <input
+            type="radio"
+            name="instrument"
+            checked={!this.state.acoustic}
+            onChange={() => this.setState({acoustic: false})}
+          />
+          {" "}
+          Digital piano or MIDI keyboard — the app listens to your keys
+        </label>
+      </div>
+      <div className={styles.input_row}>
+        <label>
+          <input
+            type="radio"
+            name="instrument"
+            checked={this.state.acoustic}
+            onChange={() => this.setState({acoustic: true})}
+          />
+          {" "}
+          Acoustic piano — play each card, then grade it yourself (sheet music)
+        </label>
+      </div>
+    </section>
   }
 
   midiInputs() {
@@ -125,6 +163,7 @@ export default class DevicePickerLightbox extends Lightbox {
     return <div>
       <h2>Device Setup</h2>
 
+      {this.renderInstrumentPicker()}
       {midiSetup}
       {this.renderOutputPicker()}
 

@@ -18,9 +18,16 @@
 // so a revised grade can be worked out again from the log. A column the
 // matcher settled by a key held (none of its keys struck at it) gets no time
 // of its own: the next column done is timed from the column before it.
+//
+// In acoustic mode nothing is detected: the player plays the card and grades
+// the pass themself (pass.selfGrade, set by the page). selfAttempts and
+// selfPractice are the self-graded counterparts of passAttempts and
+// passPractice, writing reviews with mode "self" and none of the above
+// measurements (st/srs/self_grade).
 
 import {itemId, newItem, itemWithPractice, RECENT_ATTEMPTS, STAVES} from "st/srs/records"
 import {gradeAttempt, attemptPace, hesitations, openingColumn, GRADE_ALGO} from "st/srs/grade"
+import {SELF_PAUSE_MS} from "st/srs/self_grade"
 
 // time on one column longer than this is a pause, left out of elapsed times
 export const PAUSE_MS = 30 * 1000
@@ -55,6 +62,8 @@ export class AttemptPass {
     this.lastAt = startedAt
     // the drill the pass is played in, {mode, speed}, set when first played
     this.drill = null
+    // {grade, bars, slipped} once the player grades the pass themself
+    this.selfGrade = null
     this.columns = card.columns.map(() => ({
       misses: 0, counted: 0, hit: false, done: false, settled: false, ms: null,
       staffMisses: {upper: 0, lower: 0},
@@ -299,6 +308,7 @@ function columnRecord(column, graded) {
  * score rhythm), and the bar number of each column stopped on
  */
 export function passPace(pass) {
+  if (pass.selfGrade) { return null }
   if (!pass.complete || !pass.graded || !pass.played || !pass.drill || pass.drill.mode != "wait") {
     return null
   }
@@ -450,4 +460,112 @@ export function passAttempts(pass, {pieceId, hand, at=pass.lastAt, sessionId}) {
 
     return {id: itemId(range), build}
   })
+}
+
+// the elapsed time from the card shown (or Begin) to the grade, left out
+// over SELF_PAUSE_MS, see st/srs/self_grade
+function selfElapsed(pass, at) {
+  if (pass.columnStartedAt == null) { return undefined }
+  let elapsed = Math.round(Math.max(0, at - pass.columnStartedAt))
+  return elapsed > SELF_PAUSE_MS ? undefined : elapsed
+}
+
+// a range's share of the pass's elapsed time, proportional to its columns;
+// the card's own range (range.bars set) gets all of it
+function selfElapsedOf(pass, range, total) {
+  if (total === undefined) { return undefined }
+  if (range.bars) { return total }
+  return Math.round(total * range.indices.length / pass.card.columns.length)
+}
+
+/**
+ * The attempts a self-graded pass makes (see MeasureCardGenerator#selfGrade):
+ * one for the card's own range (multi-measure cards) and one for each bar
+ * pass.selfGrade.bars names, defaulting to every bar of the card. Each
+ * writes a review with mode "self", the pass's grade and none of detection's
+ * measurements, with the same interface as passAttempts.
+ * @param {AttemptPass} pass complete, with pass.selfGrade set
+ * @param {Object} opts
+ * @param {string} opts.pieceId
+ * @param {string} opts.hand the item hand, one of HANDS
+ * @param {number} [opts.at] when it was graded, the pass's last activity by default
+ * @param {string} [opts.sessionId]
+ * @returns {{id: string, build: function(ItemRecord|null): {item: ItemRecord, review: ReviewRecord}}[]}
+ */
+export function selfAttempts(pass, {pieceId, hand, at=pass.lastAt, sessionId}) {
+  if (!pass.selfGrade || !pass.graded) { return [] }
+
+  let {grade, slipped} = pass.selfGrade
+  let selectedBars = pass.selfGrade.bars ?? pass.card.measures
+  let total = selfElapsed(pass, at)
+
+  return passRanges(pass.card)
+    .filter(range => range.bars || selectedBars.includes(range.startMeasure))
+    .map(range => {
+      let itemRange = {pieceId, hand, startMeasure: range.startMeasure, endMeasure: range.endMeasure}
+      let elapsedMs = selfElapsedOf(pass, range, total)
+
+      let build = stored => {
+        let current = stored || newItem(itemRange, at)
+        let firstSight = !current || current.attempts == 0 && !current.recent.length
+
+        let record = itemWithPractice(current, {hits: 0, misses: 0, at, elapsedMs, played: true})
+        record.recent = [...current.recent, [at, null, null, grade]].slice(-RECENT_ATTEMPTS)
+
+        let review = {
+          itemId: record.id,
+          at,
+          pieceId,
+          ...(sessionId ? {sessionId} : {}),
+          kind: "attempt",
+          mode: "self",
+          grade,
+          was: firstSight ? "new" : current.state,
+          ...(elapsedMs !== undefined ? {elapsedMs} : {}),
+          ...(slipped && slipped.length ? {slipped} : {}),
+        }
+
+        return {item: record, review}
+      }
+
+      return {id: itemId(itemRange), build}
+    })
+}
+
+/**
+ * The practice of a self-graded pass's ranges not written as an attempt (see
+ * selfAttempts): bars the "Where?" follow-up didn't name, for the totals of
+ * their items (see recordSectionPractice in st/storage), and with opts.also
+ * the ranges of those item ids as well (ranges selfAttempts wrote that
+ * MeasureCardGenerator#practiceOnly demotes to practice, eg. an off-schedule
+ * bar that didn't fail). Every range appears at most once.
+ * @param {AttemptPass} pass complete, with pass.selfGrade set
+ * @param {Object} opts
+ * @param {string} opts.pieceId
+ * @param {string} opts.hand
+ * @param {number} [opts.at]
+ * @param {string[]} [opts.also] item ids written as practice too
+ * @returns {Object[]}
+ */
+export function selfPractice(pass, {pieceId, hand, at=pass.lastAt, also}={}) {
+  if (!pass.selfGrade) { return [] }
+
+  let selectedBars = pass.selfGrade.bars ?? pass.card.measures
+  let total = selfElapsed(pass, at)
+
+  return passRanges(pass.card)
+    .filter(range => {
+      if (!range.bars && !selectedBars.includes(range.startMeasure)) { return true }
+      let id = itemId({pieceId, hand, startMeasure: range.startMeasure, endMeasure: range.endMeasure})
+      return !!also && also.includes(id)
+    })
+    .map(range => {
+      let elapsedMs = selfElapsedOf(pass, range, total)
+      return {
+        pieceId, hand,
+        startMeasure: range.startMeasure, endMeasure: range.endMeasure,
+        hits: 0, misses: 0, played: true, at,
+        ...(elapsedMs !== undefined ? {elapsedMs} : {}),
+      }
+    })
 }

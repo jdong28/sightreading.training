@@ -9,6 +9,7 @@ import {
   columnRows, runReport, formatMs, tempoOf, rangeLabel, perColumnRows, itemReviews, handItems,
   GRADE_NAMES,
 } from "st/dev_metrics"
+import {selfWord} from "st/srs/self_grade"
 
 import styles from "./dev_metrics_panel.module.css"
 
@@ -385,18 +386,25 @@ export default class DevMetricsPanel extends React.Component {
 
   renderReview(review) {
     let rows = perColumnRows(review.perColumn)
+    let self = review.mode == "self"
     return <section key={review.at} className={styles.review}>
       <h3 className={styles.heading}>
         {day(review.at)} · <strong>{GRADE_NAMES[review.grade] || review.kind}</strong>
+        {self && ` (${selfWord(review.grade)}, self-graded)`}
         {review.was && ` (was ${review.was})`} · {review.mode || "—"}{review.speed != null && ` ${review.speed}`}
         {review.algo != null && ` · algo ${review.algo}`}
       </h3>
-      <p className={styles.counts}>
-        clean {count(review.clean)}/{count(review.columns)} · misses {count(review.misses)}
-        {" "}· stuck {count(review.stuck)} · skipped {count(review.skipped)}
-        {" "}· hesitations {count(review.hesitations)} · elapsed {formatMs(review.elapsedMs)}
-        {" "}· lead {formatMs(review.leadMs)}
-      </p>
+      {self ?
+        <p className={styles.counts}>
+          elapsed {formatMs(review.elapsedMs)}
+          {review.slipped && review.slipped.length > 0 && ` · slipped: ${review.slipped.join(", ")}`}
+        </p> :
+        <p className={styles.counts}>
+          clean {count(review.clean)}/{count(review.columns)} · misses {count(review.misses)}
+          {" "}· stuck {count(review.stuck)} · skipped {count(review.skipped)}
+          {" "}· hesitations {count(review.hesitations)} · elapsed {formatMs(review.elapsedMs)}
+          {" "}· lead {formatMs(review.leadMs)}
+        </p>}
       {rows.length > 0 && <table className={styles.table}>
         <thead>
           <tr>

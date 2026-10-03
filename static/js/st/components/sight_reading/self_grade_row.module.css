@@ -1,0 +1,66 @@
+.row {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 18px;
+}
+
+.grades {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 10px;
+}
+
+.grade_pill {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    padding: 10px 14px;
+    text-align: left;
+    white-space: normal;
+}
+
+.grade_key {
+    font-family: var(--font-display);
+    color: var(--salon-gilt);
+    font-size: 12px;
+}
+
+.grade_word {
+    font-weight: 600;
+}
+
+.grade_definition {
+    font-size: 12px;
+    font-style: italic;
+    color: var(--salon-ink-muted);
+}
+
+.prompt {
+    margin: 0;
+    font-weight: 600;
+}
+
+.chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.chip {
+    padding: 6px 12px;
+}
+
+.aspects {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.aspects_label {
+    font-size: 12px;
+    font-style: italic;
+    color: var(--salon-ink-muted);
+}

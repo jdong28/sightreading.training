@@ -6,6 +6,7 @@ import SlideToZero from "st/slide_to_zero"
 import Keyboard, {KeyboardInput} from "st/components/keyboard"
 import StatsLightbox from "st/components/sight_reading/stats_lightbox"
 import DevMetricsPanel from "st/components/sight_reading/dev_metrics_panel"
+import SelfGradeRow from "st/components/sight_reading/self_grade_row"
 import Hotkeys from "st/components/hotkeys"
 
 import styles from "./sight_reading_page.module.css"
@@ -35,6 +36,9 @@ import {
   currentKeySignature, currentDrillMode, currentScrollSpeed, scoreKeySignature, storeGeneratorSettings,
   DRILL_STORAGE_KEY
 } from "st/generators"
+import {SELF_GRADES} from "st/srs/self_grade"
+import {SELF_ASPECTS} from "st/srs/records"
+import {AGAIN} from "st/srs/grade"
 
 import * as React from "react"
 import {createPortal} from "react-dom"
@@ -166,6 +170,9 @@ export const EXERCISES_PROGRAMME = {
   // the title's words for its measures; cardLabel(), the plate's for its
   // card; statusLine(), the status line while the session runs; caption(), a
   // line under the staff after a pass through its card.
+  // selfGrading, true to opt into acoustic mode (st/srs/self_grade) while the
+  // instrument setting is acoustic: nothing is detected, the player plays
+  // the card and grades the pass themself. This page ignores it.
 }
 
 export const MISSING_ENGINE_SOURCE = "Drawn on the trainer's staff: this piece was imported " +
@@ -234,8 +241,18 @@ export default class SightReadingPage extends React.Component {
       }
     }
 
+    // the grade row of acoustic mode, which the grade hotkeys go through
+    this.selfGradeRow = React.createRef()
+
+    // set while a self grade is being applied, see selfGrade
+    this.grading = false
+
     this.keyMap = {
       " ": e => this.skipCurrentNote(),
+      "1": e => this.selfGradeHotkey(1),
+      "2": e => this.selfGradeHotkey(2),
+      "3": e => this.selfGradeHotkey(3),
+      "4": e => this.selfGradeHotkey(4),
     }
 
     // the key the user picked, drawn unless the generator sets its own
@@ -297,12 +314,38 @@ export default class SightReadingPage extends React.Component {
       droppedPitches: new Set(),
 
       devMetricsOpen: devMetrics.open,
+
+      // acoustic mode: bumped whenever the drill is refilled (see
+      // refreshNoteList), which every graded pass and every rebuild of the
+      // drill does, so the grade row (keyed by it) starts fresh for the card
+      // the refill puts up (see renderSelfGrade)
+      cardSeq: 0,
     }
   }
 
   // TODO trigger this as watching component
   componentDidUpdate(prevProps, prevState) {
     this.syncMatcher()
+
+    // the instrument setting toggled on a page that can self-grade: nothing
+    // detected so far belongs to the rebuilt drill, and its stored mode comes
+    // back when detection does. A page that ignores the setting keeps playing
+    if (prevProps.acoustic != this.props.acoustic && this.programme.selfGrading) {
+      if (!this.selfGraded() && currentDrillMode(this.programme.storageKey) == "scroll") {
+        this.enterScrollMode()
+      } else {
+        this.enterWaitMode()
+      }
+
+      this.matcher.clear()
+      this.setState({heldNotes: {}, touchedNotes: {}})
+      this.refreshNoteList()
+    } else if (this.state.mode == "scroll" && this.selfGraded()) {
+      // self-graded practice is always wait mode: nothing is detected to
+      // scroll by, whether the generator was already self-grading at mount or
+      // became one with the piece now on the staff
+      this.enterWaitMode()
+    }
 
     // transitioning to new staff or generator or key signature
     if (prevState.currentStaff != this.state.currentStaff ||
@@ -522,7 +565,9 @@ export default class SightReadingPage extends React.Component {
 
     let {card} = current
     let source = this.state.engineSource
-    let head = this.cardHead(this.state.notes).index
+    // acoustic mode never awaits a key, so no column is marked as the head
+    let self = this.selfGraded()
+    let head = self ? null : this.cardHead(this.state.notes).index
     let system = this.state.mode == "scroll"
     let drawn = system ? this.currentPieceSection() : card
 
@@ -539,7 +584,7 @@ export default class SightReadingPage extends React.Component {
       width,
       columns: card.columns,
       head,
-      missed: this.state.engineMissed,
+      missed: self ? [] : this.state.engineMissed,
     }
   }
 
@@ -671,9 +716,12 @@ export default class SightReadingPage extends React.Component {
     let droppedPitches = generator.name == "sheet music" ?
       sectionDroppedPitches(staff, generatorSettings) : new Set()
 
-    // the measure cards grade each pass by the drill it is played in
+    // the measure cards grade each pass by the drill it is played in: a
+    // self grade in acoustic mode, else the detected mode and speed
     if (!keepGenerator && generatorInstance.setDrill) {
-      generatorInstance.setDrill(() => ({mode: this.state.mode, speed: this.state.scrollSpeed}))
+      generatorInstance.setDrill(() => this.selfGraded() ?
+        {mode: "self"} :
+        {mode: this.state.mode, speed: this.state.scrollSpeed})
     }
 
     // today's programme offers a bar as one hand alone only where the staff
@@ -717,7 +765,9 @@ export default class SightReadingPage extends React.Component {
     this.matcher.mode = generator.mode
     this.advanceEngineMarks(this.state.notes, notes)
 
-    return this.setState({ notes, droppedPitches })
+    // the grade row of acoustic mode is keyed by this, so a rebuilt drill
+    // starts it fresh, as a graded pass does
+    return this.setState(state => ({ notes, droppedPitches, cardSeq: state.cardSeq + 1 }))
   }
 
   // keeps state.staffWidth up to date with the staff wrapper's width, which
@@ -952,6 +1002,11 @@ export default class SightReadingPage extends React.Component {
   }
 
   skipCurrentNote() {
+    // nothing is detected in acoustic mode, so there is no column to skip
+    if (this.selfGraded()) {
+      return
+    }
+
     // Only support notes mode (not chords)
     if (this.state.currentGenerator?.mode !== "notes") {
       return
@@ -1002,6 +1057,11 @@ export default class SightReadingPage extends React.Component {
   // (the on-screen keyboard has none). The guards that aren't the matching
   // rules stay here; everything the press does to the drill is the matcher's
   pressNote(note, timeStamp) {
+    // nothing is detected in acoustic mode: the player grades the pass themself
+    if (this.selfGraded()) {
+      return
+    }
+
     // key presses at rest aren't judged
     if (!this.state.session) {
       return
@@ -1033,10 +1093,16 @@ export default class SightReadingPage extends React.Component {
   // drill's release check runs at most once an event, when the last key down
   // comes up
   releaseNote(note, timeStamp) {
+    if (this.selfGraded()) { return }
     this.judge(() => this.matcher.noteOff(note, timeStamp))
   }
 
   onMidiMessage(message) {
+    // nothing is detected in acoustic mode: the player grades the pass themself
+    if (this.selfGraded()) {
+      return
+    }
+
     let [raw, pitch, velocity] = message.data;
 
     let cmd = raw >> 4,
@@ -1352,6 +1418,7 @@ export default class SightReadingPage extends React.Component {
             <div className={styles.trainer_main}>
               {this.renderPreface()}
               {this.renderStaffPlate()}
+              {this.renderSelfGrade()}
               {this.renderTransport()}
               {this.renderStatCards()}
             </div>
@@ -1387,6 +1454,7 @@ export default class SightReadingPage extends React.Component {
           storeCurrentDrill({speed: scrollSpeed}, this.programme.storageKey)
           this.setState({scrollSpeed})
         }}
+        acoustic={this.selfGraded()}
       />
 
       {this.renderDevMetrics()}
@@ -1398,7 +1466,8 @@ export default class SightReadingPage extends React.Component {
   // the developer metrics panel and its pill in the header, only when
   // enabled (see st/dev_metrics)
   renderDevMetrics() {
-    if (!this.devMetrics) { return null }
+    // nothing is detected in acoustic mode, so there is nothing to measure
+    if (!this.devMetrics || this.selfGraded()) { return null }
 
     let pill = <Pill
       variant="ghost"
@@ -1445,6 +1514,52 @@ export default class SightReadingPage extends React.Component {
   // the generator of the notes on the staff
   currentNotesGenerator() {
     return (this.state.notes && this.state.notes.generator) || null
+  }
+
+  // Acoustic mode (st/srs/self_grade): the instrument setting is acoustic,
+  // the programme opts in, and the generator on the staff can record the
+  // player's own grade. Detection is off throughout and the drill stays in
+  // wait mode. A generator without selfGrade (pasted notation, a section with
+  // no notes) has nothing to grade, so it stays detected even with the
+  // instrument toggle on, and the whole page with it.
+  selfGraded() {
+    let generator = this.currentNotesGenerator()
+    return !!(this.props.acoustic && this.programme.selfGrading &&
+      generator && generator.selfGrade)
+  }
+
+  // Ends the pass with the player's own grade (SelfGradeRow), in place of
+  // detection: tells the generator, the session stats, and refills the
+  // staff from the next card, the same path today's programme's ready uses.
+  // A pass takes one grade, and the deck moves on as it is written. That is
+  // kept by the row rather than here: the refill below remounts it (keyed by
+  // cardSeq), and it waits out SELF_GRADE_DWELL_MS after every change of what
+  // it shows, so a repeated tap or key press can't grade the card it moved on
+  // to. The flag only stops a call made while a grade is being applied, which
+  // nothing here does and only a caller of this method could.
+  selfGrade(grade, opts={}) {
+    let generator = this.currentNotesGenerator()
+    if (this.grading || !this.selfGraded() || !generator) { return }
+
+    this.grading = true
+    try {
+      let time = Date.now()
+      generator.selfGrade(grade, {...opts, sessionId: this.state.stats.id, time})
+      this.state.stats.selfGraded(grade, time)
+      this.refreshNoteList(generator)
+    } finally {
+      this.grading = false
+    }
+  }
+
+  // Hotkeys "1"-"4", only while a session is running in acoustic mode: each
+  // goes through the grade row itself, the one path a tap on its pill takes,
+  // so a grade with a "Where?" question asks it from the keyboard too
+  selfGradeHotkey(grade) {
+    if (!this.selfGraded() || !this.state.session) { return }
+
+    let row = this.selfGradeRow.current
+    if (row) { row.grade(grade) }
   }
 
   titleParts() {
@@ -1525,6 +1640,10 @@ export default class SightReadingPage extends React.Component {
     let line = notes.generator && notes.generator.statusLine && notes.generator.statusLine()
     if (line) {
       return line
+    }
+
+    if (this.selfGraded()) {
+      return "Play the card through, then grade it"
     }
 
     if (this.state.currentGenerator?.mode == "chords") {
@@ -1627,6 +1746,34 @@ export default class SightReadingPage extends React.Component {
     return note ? <p className={styles.plate_note} data-engine-note>{note}</p> : null
   }
 
+  // the grade row (acoustic mode) between the staff plate and the transport,
+  // shown only while a card is up for grading, else the at-rest note. Keyed
+  // by cardSeq so it starts fresh (no stale "What slipped?" tags or a
+  // pending "Where?" question) for every new pass, including a looping card
+  renderSelfGrade() {
+    if (!this.selfGraded()) { return null }
+
+    if (!this.state.session) {
+      return <p className={styles.plate_note} data-self-grade-rest>
+        Acoustic piano: press Begin, play the card, then grade it.
+      </p>
+    }
+
+    let generator = this.currentNotesGenerator()
+    if (!generator.currentCard()) { return null }
+
+    let followUp = generator.selfFollowUp ? generator.selfFollowUp(AGAIN) : null
+
+    return <SelfGradeRow
+      ref={this.selfGradeRow}
+      key={this.state.cardSeq}
+      grades={SELF_GRADES}
+      followUp={followUp}
+      aspects={SELF_ASPECTS}
+      onGrade={this._onSelfGrade ||= (grade, opts) => this.selfGrade(grade, opts)}
+    />
+  }
+
   renderTransport() {
     let fullscreenButton
     if (document.body.webkitRequestFullscreen && !this.state.fullscreen) {
@@ -1637,7 +1784,7 @@ export default class SightReadingPage extends React.Component {
     }
 
     let keyboardToggle
-    if (this.state.currentStaff && this.state.currentStaff.mode == "notes") {
+    if (this.state.currentStaff && this.state.currentStaff.mode == "notes" && !this.selfGraded()) {
       keyboardToggle = <Pill
         variant="ghost"
         className={styles.transport_pill}
@@ -1661,15 +1808,28 @@ export default class SightReadingPage extends React.Component {
       {keyboardToggle}
       {fullscreenButton}
       <span className={styles.tempo_readout}>
-        {this.state.mode == "scroll" ? "Scroll" : "Wait"}
-        {" "}<span className={styles.gilt} aria-hidden="true">·</span>{" "}
-        speed {this.state.scrollSpeed}
+        {this.selfGraded() ? "Self-graded" : <>
+          {this.state.mode == "scroll" ? "Scroll" : "Wait"}
+          {" "}<span className={styles.gilt} aria-hidden="true">·</span>{" "}
+          speed {this.state.scrollSpeed}
+        </>}
       </span>
     </div>
   }
 
   renderStatCards() {
     let stats = this.state.stats
+
+    // live MIDI figures (accuracy, notes read, best streak) don't apply:
+    // nothing is detected, so they would only mislead
+    if (this.selfGraded()) {
+      return <div className={styles.stat_cards}>
+        <StatCard className={styles.stat_card} label="Elapsed" value={formatElapsed(this.elapsedSeconds())} />
+        <StatCard className={styles.stat_card} label="Passes" value={stats.passes} />
+        <StatCard className={styles.stat_card} label="Clean" value={stats.cleanPasses} />
+      </div>
+    }
+
     let accuracy = accuracyPercent(stats.hits, stats.misses)
 
     return <div className={styles.stat_cards}>
@@ -1728,15 +1888,22 @@ export default class SightReadingPage extends React.Component {
             (generator ? generatorLabel(generator) : session.generator)
 
           let parts = [staff ? `${staffLabel(staff)} staff` : session.staff, exercise].filter(Boolean)
+          // a sitting that detected notes and graded passes of its own (the
+          // instrument toggled part way through) is summed up by both
           let accuracy = accuracyPercent(session.notesRead, session.misses)
+          let {selfGraded} = session
+          let graded = selfGraded ?
+            `${selfGraded.passes} ${selfGraded.passes == 1 ? "pass" : "passes"} graded` +
+              (selfGraded.clean ? ` · ${selfGraded.clean} clean` : "") :
+            null
+          let detail = [accuracy == null ? null : `${accuracy}% accuracy`, graded]
+            .filter(Boolean).join(" · ") || "No notes read"
 
           return <li key={session.id} className={styles.evening_row}>
             <span className={styles.numeral}>{romanNumeral(idx + 1)}</span>
             <span className={styles.evening_text}>
               {parts.join(", ")}
-              <span className={styles.evening_detail}>
-                {accuracy == null ? "No notes read" : `${accuracy}% accuracy`}
-              </span>
+              <span className={styles.evening_detail}>{detail}</span>
             </span>
           </li>
         })}
@@ -1766,7 +1933,10 @@ export default class SightReadingPage extends React.Component {
 
   renderKeyboardFooter() {
     let staff = this.state.currentStaff
-    let hasKeyboard = staff && staff.mode == "notes"
+    // nothing is detected in acoustic mode: neither the on-screen keyboard
+    // nor its typing input, which maps keys "2"-"9" that would collide with
+    // the grade hotkeys "1"-"4"
+    let hasKeyboard = staff && staff.mode == "notes" && !this.selfGraded()
     let open = hasKeyboard && this.state.keyboardOpen
 
     let content

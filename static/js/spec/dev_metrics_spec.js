@@ -11,6 +11,8 @@ import {AttemptPass, passAttempts} from "st/srs/attempt"
 import {sectionCard, MeasureCardDeck, MeasureCardGenerator, IN_ORDER} from "st/measure_cards"
 import {newItem} from "st/srs/records"
 import {AGAIN, HARD, GOOD, EASY, HESITATION_MIN_MS} from "st/srs/grade"
+import {setAppStore} from "st/storage"
+import {openTestStore} from "spec/helpers"
 
 // a column of notes on the treble staff at a beat
 const col = (beat, ...names) => {
@@ -323,6 +325,65 @@ describe("dev metrics", function() {
       let el = renderPanel({})
       expect(el.textContent).toContain("keeps no attempts")
       expect(el.textContent).not.toContain("nothing to play right now")
+    })
+  })
+
+  describe("history of a self-graded review", function() {
+    let store, previousStore
+    let matcher = {inspect: () => ({
+      waiting: 0, latency: null, touched: [], held: [], early: [], credited: [], onLine: null,
+    })}
+
+    beforeEach(async function() {
+      store = await openTestStore()
+      previousStore = setAppStore(store)
+    })
+
+    afterEach(async function() {
+      setAppStore(previousStore)
+      await store.close()
+    })
+
+    let waitFor = async (fn, tries=30) => {
+      for (let i = 0; i < tries && !fn(); i++) {
+        await new Promise(resolve => setTimeout(resolve, 10))
+      }
+      return fn()
+    }
+
+    it("shows self-graded reviews with no counts line", async function() {
+      await store.putPiece({id: "p", title: "P", importedAt: 1000, song: {tracks: [], metadata: {}}})
+      let item = newItem({pieceId: "p", startMeasure: 1, endMeasure: 1}, 1000)
+      let review = {
+        itemId: item.id, at: 2000, pieceId: "p", kind: "attempt", mode: "self",
+        grade: GOOD, was: "new", elapsedMs: 4000,
+      }
+      await store.recordAttempt({item, review})
+
+      let deck = new MeasureCardDeck([sectionCard([{number: 1, columns: [col(0, "G4")]}])], {
+        pieceId: "p", order: IN_ORDER, store,
+      })
+      let generator = new MeasureCardGenerator(deck)
+
+      let container = document.createElement("div")
+      document.body.appendChild(container)
+      let root = createRoot(container)
+      try {
+        flushSync(() => root.render(React.createElement(DevMetricsPanel, {
+          generator, matcher, session: true, close: () => {},
+        })))
+
+        let historyTab = [...container.querySelectorAll("[role=tab]")].find(b => b.textContent == "History")
+        flushSync(() => historyTab.click())
+
+        await waitFor(() => container.textContent.includes("self-graded"))
+        expect(container.textContent).toContain("self-graded")
+        expect(container.textContent).not.toMatch(/clean \d+\/\d+/)
+      } finally {
+        flushSync(() => root.unmount())
+        container.remove()
+        generator.stop()
+      }
     })
   })
 

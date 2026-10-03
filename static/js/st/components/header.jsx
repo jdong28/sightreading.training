@@ -78,32 +78,38 @@ class SizedElement extends React.Component {
   }
 }
 
-export function InstrumentStatus({midiInput, pickMidi}) {
+// acoustic reads "Acoustic piano" whatever midiInput is, with its own dot
+// style distinct from connected/disconnected (st/srs/self_grade: the
+// instrument setting, not a piece setting)
+export function InstrumentStatus({midiInput, acoustic, pickMidi}) {
   return <button
     type="button"
     className={styles.instrument_status}
-    title={midiInput ? "Change MIDI device" : "Select a MIDI device"}
+    title={acoustic ? "Change instrument" : midiInput ? "Change MIDI device" : "Select a MIDI device"}
     onClick={e => {
       e.preventDefault()
       pickMidi()
     }}>
     <span className={classNames(styles.instrument_dot, {
-      [styles.connected]: !!midiInput
+      [styles.connected]: !acoustic && !!midiInput,
+      [styles.acoustic]: !!acoustic,
     })} aria-hidden="true" />
     <span className={styles.instrument_name}>
-      {midiInput ? midiInput.name : "No instrument"}
+      {acoustic ? "Acoustic piano" : midiInput ? midiInput.name : "No instrument"}
     </span>
   </button>
 }
 
 InstrumentStatus.propTypes = {
   midiInput: types.shape({name: types.string}),
+  acoustic: types.bool,
   pickMidi: types.func.isRequired,
 }
 
 export default class Header extends React.Component {
   static propTypes = {
     midiInput: types.object,
+    acoustic: types.bool,
   }
 
   constructor(props) {
@@ -166,6 +172,7 @@ export default class Header extends React.Component {
 
         <InstrumentStatus
           midiInput={this.props.midiInput}
+          acoustic={this.props.acoustic}
           pickMidi={() => {
             trigger(this, "pickMidi")
           }} />

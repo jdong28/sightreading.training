@@ -21,6 +21,10 @@
 // range are logged but give it no due date. Items keep the scheduler version
 // that wrote their schedule in algo, and replay rebuilds a schedule from the
 // log, so a revised scheduler can reschedule history.
+//
+// A self-graded review (mode "self", st/srs/self_grade) carries a grade and
+// nothing else, so applyGrade schedules it exactly as a detected review of
+// the same grade: FSRS doesn't see how the grade was arrived at.
 
 import {makeFsrs, DEFAULT_W} from "st/srs/fsrs"
 import {newItem, RECENT_ATTEMPTS} from "st/srs/records"
@@ -92,6 +96,10 @@ export const RECENT_HALF_LIFE_DAYS = 14
 // the recall taken for an item with no schedule when weighing it, so a
 // measure never played weighs 2
 export const UNSCHEDULED_RECALL = 0.75
+
+// the share missed recentMissRate counts a self-graded "Stumbled" (hard) entry
+// as: wrong notes or rhythm slipped, but not a full miss
+export const SELF_HARD_MISS_SHARE = 0.5
 
 // the least weight of an item on the ladder, as much as a measure never played
 export const LADDER_WEIGHT = 1 + 4 * (1 - UNSCHEDULED_RECALL)
@@ -318,7 +326,10 @@ export function predictedRecall(item, now, settings=DEFAULT_SCHEDULER_SETTINGS) 
 /**
  * The share of columns missed in the item's recent attempts (all of them in
  * an attempt graded again), each attempt counted at half its weight every
- * RECENT_HALF_LIFE_DAYS, so old misses fade.
+ * RECENT_HALF_LIFE_DAYS, so old misses fade. A self-graded entry (columns
+ * null) has no columns to count, so its share missed comes from its grade
+ * alone: all of it for again, SELF_HARD_MISS_SHARE for hard, none for good
+ * or easy.
  * @param {ItemRecord} item
  * @param {number} now
  * @returns {number} 0-1, 0 with no recent attempts
@@ -328,7 +339,9 @@ export function recentMissRate(item, now) {
   if (!recent.length) { return 0 }
 
   let total = recent.reduce((sum, [at, columns, clean, grade]) => {
-    let missed = grade == 1 ? 1 : columns > 0 ? (columns - clean) / columns : 0
+    let missed = columns == null ?
+      (grade == 1 ? 1 : grade == 2 ? SELF_HARD_MISS_SHARE : 0) :
+      grade == 1 ? 1 : columns > 0 ? (columns - clean) / columns : 0
     let age = Math.max(0, (now - at) / DAY)
     return sum + missed * Math.pow(0.5, age / RECENT_HALF_LIFE_DAYS)
   }, 0)
@@ -382,7 +395,7 @@ export function replay(reviews, {item, settings=DEFAULT_SCHEDULER_SETTINGS, cont
     .sort((a, b) => a.at - b.at)
 
   for (let review of graded) {
-    let recent = [...replayed.recent, [review.at, review.columns, review.clean, review.grade]]
+    let recent = [...replayed.recent, [review.at, review.columns ?? null, review.clean ?? null, review.grade]]
       .slice(-RECENT_ATTEMPTS)
     if (schedulable(replayed)) {
       replayed = applyGrade(replayed, review.grade, review.at, settings, {continuous})

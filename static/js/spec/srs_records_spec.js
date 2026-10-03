@@ -7,7 +7,7 @@ import {DECK_MIGRATION_MARKER, LIBRARY_FORMAT, LIBRARY_VERSION, DB_VERSION} from
 
 import {
   itemId, newItem, itemFromSectionStats, legacyReview, itemWithPractice, validItem,
-  validReview
+  validReview, SELF_ASPECTS
 } from "st/srs/records"
 import {applyGrade} from "st/srs/schedule"
 
@@ -57,6 +57,18 @@ let attempt = (pieceId, startMeasure, endMeasure, at, extra={}) => ({
   mode: "wait",
   staffMisses: {upper: 1, lower: 0},
   algo: 1,
+  ...extra,
+})
+
+// a self-graded review: one grade per pass, none of detection's measurements
+let selfReview = (pieceId, startMeasure, endMeasure, at, extra={}) => ({
+  itemId: itemId({pieceId, hand: "both", startMeasure, endMeasure}),
+  at,
+  pieceId,
+  kind: "attempt",
+  mode: "self",
+  grade: 3,
+  was: "new",
   ...extra,
 })
 
@@ -147,6 +159,55 @@ describe("spaced repetition records", function() {
       expect(validReview(attempt("p", 1, 1, 5, {grade: 5}))).toBe(false)
       expect(validReview(attempt("p", 1, 1, 5, {itemId: "q:both:1-1"}))).toBe(false)
       expect(validReview(attempt("p", 1, 1, 5, {mode: "free"}))).toBe(false)
+    })
+
+    // acoustic mode: the player grades the pass themself, so the review
+    // carries a grade and none of detection's measurements (st/srs/self_grade)
+    it("accepts a self-graded review with a grade and none of detection's fields", function() {
+      expect(validReview(selfReview("p", 1, 1, 5))).toBe(true)
+      expect(validReview(selfReview("p", 1, 1, 5, {elapsedMs: 900}))).toBe(true)
+      expect(validReview(selfReview("p", 1, 1, 5, {sessionId: "s1"}))).toBe(true)
+      expect(validReview(selfReview("p", 1, 1, 5, {r: 0.8}))).toBe(true)
+      expect(validReview(selfReview("p", 1, 1, 5, {slipped: ["rhythm"]}))).toBe(true)
+      expect(validReview(selfReview("p", 1, 1, 5, {was: "review"}))).toBe(true)
+    })
+
+    it("rejects a self-graded review carrying any of detection's fields, or an invalid grade or tag", function() {
+      for (let field of [
+        "columns", "clean", "misses", "stuck", "skipped", "hesitations", "perColumn",
+        "staffMisses", "bars", "trouble", "leadMs", "speed", "algo",
+      ]) {
+        expect(validReview(selfReview("p", 1, 1, 5, {[field]: 0}))).toBe(false)
+      }
+
+      expect(validReview(selfReview("p", 1, 1, 5, {grade: undefined}))).toBe(false)
+      expect(validReview(selfReview("p", 1, 1, 5, {grade: 5}))).toBe(false)
+      expect(validReview(selfReview("p", 1, 1, 5, {kind: "legacy"}))).toBe(false)
+      expect(validReview(selfReview("p", 1, 1, 5, {slipped: ["tempo", "oops"]}))).toBe(false)
+      expect(SELF_ASPECTS).toEqual(["notes", "rhythm", "tempo", "fingering", "musicality"])
+    })
+
+    it("still validates every detected or legacy review as before, rejecting one missing misses", function() {
+      expect(validReview(attempt("p", 1, 1, 5))).toBe(true)
+      expect(validReview(legacyReview(section("p", 1, 4)))).toBe(true)
+
+      let {misses, ...noMisses} = attempt("p", 1, 1, 5)
+      expect(validReview(noMisses)).toBe(false)
+
+      let {misses: legacyMisses, ...noLegacyMisses} = legacyReview(section("p", 1, 4))
+      expect(validReview(noLegacyMisses)).toBe(false)
+    })
+  })
+
+  describe("itemWithPractice", function() {
+    it("only counts an attempt without hits or misses when played is given", function() {
+      let item = newItem({pieceId: "p", startMeasure: 1, endMeasure: 1}, 10)
+      let timed = itemWithPractice(item, {hits: 0, misses: 0, at: 2000, elapsedMs: 900, played: true})
+      expect(timed.attempts).toEqual(1)
+      expect(timed.elapsedMs).toEqual(900)
+
+      let untouched = itemWithPractice(item, {hits: 0, misses: 0, at: 2000, elapsedMs: 900})
+      expect(untouched.attempts).toEqual(0)
     })
   })
 
@@ -527,7 +588,7 @@ describe("spaced repetition records", function() {
       let file = await exportLibraryFile(store)
       let data = JSON.parse(file.text)
       expect(data.version).toEqual(LIBRARY_VERSION)
-      expect(LIBRARY_VERSION).toEqual(6)
+      expect(LIBRARY_VERSION).toEqual(7)
       expect(data.items.map(item => item.id)).toEqual(["a:both:1-1", "a:upper:1-1"])
       expect(data.reviews.map(review => [review.itemId, review.at])).toEqual([["a:both:1-1", 1000], ["a:upper:1-1", 2000]])
       expect(data.studies).toEqual([{pieceId: "a", status: "learning", startedAt: 900}])

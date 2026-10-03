@@ -12,11 +12,20 @@
 // card never climbs the ladder: those passes add to its totals alone. The
 // random picks favour the measures whose recall the scheduler predicts lowest
 // and those missed lately (practiceWeight).
+//
+// In acoustic mode nothing is detected: selfGrade ends the pass with the
+// player's own grade (st/srs/self_grade) in place of a column-by-column
+// grade, written through selfAttempts/selfPractice (st/srs/attempt). The
+// off-schedule rule still applies, from the same items.
 
 import {addNoteListener} from "st/note_stats"
 import {getAppStore} from "st/storage"
-import {AttemptPass, passAttempts, passPractice, passPace, passRanges, columnClefs} from "st/srs/attempt"
-import {AGAIN} from "st/srs/grade"
+import {
+  AttemptPass, passAttempts, passPractice, passPace, passRanges, columnClefs,
+  selfAttempts, selfPractice,
+} from "st/srs/attempt"
+import {AGAIN, HARD} from "st/srs/grade"
+import {selfWord} from "st/srs/self_grade"
 import {itemId} from "st/srs/records"
 import {practiceWeight} from "st/srs/schedule"
 import {onScheduleMeasures} from "st/srs/planner"
@@ -338,8 +347,9 @@ export class MeasureCardGenerator {
 
   /**
    * @param {function(): {mode: string, speed?: number}} drill the drill
-   * being played, "wait" or "scroll" mode at a scroll speed, which each
-   * attempt is graded and stored by
+   * being played, which each attempt is graded and stored by: "wait" or
+   * "scroll" mode at a scroll speed while notes are detected, or "self" with
+   * no speed in acoustic mode (see selfGrade)
    */
   setDrill(drill) {
     this.drill = drill
@@ -383,9 +393,21 @@ export class MeasureCardGenerator {
     return this.loop || this.deck.index == null ? null : this.deck.index + 1
   }
 
-  /** @returns {string|null} the pace of the pass finished last, see paceCaption */
+  /**
+   * @returns {string|null} the pace of the pass finished last (see
+   * paceCaption), or for a self-graded pass its grade's word, with the bar
+   * named when it wasn't graded throughout, eg. "Stumbled · bar 12"
+   */
   caption() {
-    return this.lastPass && paceCaption(passPace(this.lastPass))
+    if (!this.lastPass) { return null }
+
+    let self = this.lastPass.selfGrade
+    if (self) {
+      let word = selfWord(self.grade)
+      return self.bars && self.bars.length ? `${word} · bar ${self.bars.join(", ")}` : word
+    }
+
+    return paceCaption(passPace(this.lastPass))
   }
 
   /** @returns {MeasureCard[]} every card the staff may show */
@@ -467,6 +489,65 @@ export class MeasureCardGenerator {
   }
 
   /**
+   * Ends the pass being played with the player's own grade, in acoustic mode
+   * (st/srs/self_grade) in place of detection: writes it through
+   * selfAttempts/selfPractice (see passRecords), then moves the deck on and
+   * starts the next card, restarting a looping card from its first column.
+   * @param {number} grade 1-4
+   * @param {Object} [opts]
+   * @param {number[]} [opts.bars] the measures the grade is written to (see
+   * selfFollowUp), every measure of the card by default
+   * @param {string[]} [opts.slipped] the player's optional "What slipped?" tags
+   * @param {string} [opts.sessionId] a detected pass learns this from note
+   * events, which acoustic mode never sends
+   * @param {number} [opts.time]
+   */
+  selfGrade(grade, {bars, slipped, sessionId, time}={}) {
+    if (!this.deck.card) { return }
+
+    let pass = this.playedPass()
+    pass.selfGrade = {grade, bars, slipped}
+    let at = time ?? this.now()
+    pass.lastAt = at
+    if (sessionId) { this.sessionId = sessionId }
+
+    this.finishPass(pass)
+
+    if (!this.loop) {
+      this.deck.advance()
+    }
+    this.startCard(at)
+  }
+
+  /**
+   * The follow-up question after a self grade, see SelfGradeRow: "Where?"
+   * after Fell apart or Stumbled on a card of more than one bar with notes,
+   * naming each of those bars plus "Throughout" (whose value grades every
+   * bar, as Clean or Easy already would). Only the bars a pass writes a
+   * review of are named (passRanges leaves out a bar of rests alone), so the
+   * grade always reaches the bar chosen. Null for a one-bar card, or for
+   * Clean or Easy.
+   * @param {number} grade 1-4
+   * @returns {{prompt: string, choices: {label: string, value: number[]|null}[]}|null}
+   */
+  selfFollowUp(grade) {
+    let card = this.deck.card
+    if (!card || (grade != AGAIN && grade != HARD)) { return null }
+
+    let ranges = passRanges(card)
+    let bars = ranges.find(range => range.bars)?.bars ?? ranges
+    if (bars.length < 2) { return null }
+
+    return {
+      prompt: "Where?",
+      choices: [
+        ...bars.map(({startMeasure}) => ({label: `Bar ${startMeasure}`, value: [startMeasure]})),
+        {label: "Throughout", value: null},
+      ],
+    }
+  }
+
+  /**
    * Abandons the pass being played, eg. at Rest or when the page is left, so
    * it is never graded: returns the practice on it so far, for the page to
    * add to the items' totals (see recordSectionPractice in st/storage), and
@@ -535,13 +616,22 @@ export class MeasureCardGenerator {
 
   /**
    * What a finished pass is written as: its graded attempts (see
-   * passAttempts), but the practice of its measures played off schedule that
-   * didn't fail (see practiceOnly), else its practice (see passPractice)
+   * passAttempts, or selfAttempts for a self-graded pass), but the practice
+   * of its measures played off schedule that didn't fail (see practiceOnly),
+   * else its practice (see passPractice, or selfPractice)
    * @param {AttemptPass} pass
    * @param {Object} opts as for passAttempts
    * @returns {{attempts: Object[], practice: Object[]}}
    */
   passRecords(pass, opts) {
+    if (pass.selfGrade) {
+      let practiceOnly = this.practiceOnly(pass, opts)
+      return {
+        attempts: selfAttempts(pass, opts).filter(({id}) => !practiceOnly.includes(id)),
+        practice: selfPractice(pass, {...opts, also: practiceOnly}),
+      }
+    }
+
     let attempts = passAttempts(pass, opts)
     if (!attempts.length) {
       return {attempts, practice: passPractice(pass, opts)}
@@ -571,7 +661,8 @@ export class MeasureCardGenerator {
       let onSchedule = onScheduleMeasures(pass.card.measures, measure => this.deck.item(barId(measure)), opts.at)
       let offSchedule = pass.card.measures.filter(measure => !onSchedule.includes(measure)).map(barId)
 
-      pass.practiceOnly = passAttempts(pass, opts)
+      let attemptsOf = pass.selfGrade ? selfAttempts : passAttempts
+      pass.practiceOnly = attemptsOf(pass, opts)
         .filter(({id, build}) => offSchedule.includes(id) && build(this.deck.item(id)).review.grade > AGAIN)
         .map(({id}) => id)
     }

@@ -10,6 +10,8 @@ import {
 } from "st/storage"
 
 import {compressSource, bytesToBase64, SOURCE_ENCODING} from "st/score_source"
+import {newItem} from "st/srs/records"
+import {GOOD} from "st/srs/grade"
 
 import {
   openTestStore, MemoryStorage, TEST_DB_NAME, reverieOpening, LITTLE_WALTZ_XML
@@ -656,6 +658,53 @@ describe("local store", function() {
       let result = await importLibraryFile(JSON.stringify(library), store)
       expect(result.error).toEqual("The library wasn't imported. Browser storage is full. Remove a piece from the deck and try again.")
       expect(store.pieces()).toEqual([])
+    })
+  })
+
+  // acoustic mode: a self-graded review (st/srs/self_grade) goes through the
+  // same store as any detected review
+  describe("self-graded reviews", function() {
+    it("stores and schedules a self attempt through recordAttempt", async function() {
+      let store = await open()
+      await store.putPiece(pieceData("a", "First", 1000))
+      let item = newItem({pieceId: "a", startMeasure: 1, endMeasure: 1}, 1000)
+      let review = {itemId: item.id, at: 2000, pieceId: "a", kind: "attempt", mode: "self", grade: GOOD, was: "new"}
+
+      let stored = await store.recordAttempt({item, review})
+      expect(stored.state).toEqual("learning")
+      expect(store.item(item.id)).toEqual(stored)
+      expect(await store.reviews({pieceId: "a"})).toEqual([review])
+    })
+
+    it("round trips self reviews through exportLibrary and importLibrary, version 6 libraries unaffected", async function() {
+      let store = await open()
+      await store.putPiece(pieceData("a", "First", 1000))
+      let item = newItem({pieceId: "a", startMeasure: 1, endMeasure: 1}, 1000)
+      let review = {itemId: item.id, at: 2000, pieceId: "a", kind: "attempt", mode: "self", grade: GOOD, was: "new"}
+      await store.recordAttempt({item, review})
+
+      let exported = await store.exportLibrary()
+      expect(exported.version).toEqual(LIBRARY_VERSION)
+      expect(LIBRARY_VERSION).toEqual(7)
+      expect(exported.reviews).toEqual([jasmine.objectContaining({mode: "self", grade: GOOD})])
+
+      let other = await open()
+      let result = await other.importLibrary(exported)
+      expect(result.addedReviews).toEqual(1)
+      expect((await other.reviews({pieceId: "a"})).map(r => r.mode)).toEqual(["self"])
+
+      // a union by key: importing the same library again adds nothing
+      let again = await other.importLibrary(exported)
+      expect(again.addedReviews).toEqual(0)
+
+      // a version 6 library, with none, still imports as it always did
+      let legacy = {
+        format: LIBRARY_FORMAT, version: 6,
+        pieces: [pieceData("b", "Second", 1000, ["E4"])],
+        items: [], reviews: [], studies: [], sessions: [],
+      }
+      let legacyResult = await other.importLibrary(legacy)
+      expect(legacyResult.addedPieces).toEqual(1)
     })
   })
 

@@ -65,6 +65,9 @@ export const SCORE_PROGRAMME = {
   // a piece with its source stored is drawn from its score
   engine: "osmd",
   Preface: ScorePreface,
+  // opts into acoustic mode (st/srs/self_grade): a self-graded pass in place
+  // of detection, while the instrument setting is acoustic
+  selfGrading: true,
 }
 
 // the midi input's messages reach the trainer through the forwarded ref; a

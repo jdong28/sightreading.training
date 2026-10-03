@@ -923,27 +923,33 @@ describe("today's programme on the staff", function() {
     expect(store.item(barId).lastGrade).toEqual(HARD)
   })
 
+  // an item of one bar on the ladder as of `at`, with the grades it has been
+  // given, and the review that last wrote it
+  let ladderBar = (measure, grades, at, extra={}) => ({
+    id: itemId({pieceId: piece.id, hand: "both", startMeasure: measure, endMeasure: measure}),
+    pieceId: piece.id, hand: "both", startMeasure: measure, endMeasure: measure,
+    level: "bar", state: "learning", step: 0, due: at, last: at, s: 1, d: 5,
+    reps: grades.length, lapses: grades.filter(g => g == AGAIN).length, streak: 0,
+    lastGrade: grades[grades.length - 1], hits: 3, misses: 3 * grades.length,
+    attempts: grades.length, lastPracticed: at, elapsedMs: 3000, algo: 1,
+    createdAt: at - 5 * MINUTE,
+    recent: grades.map((grade, n) => [at - (grades.length - n) * 1000, 3, 0, grade]),
+    ...extra,
+  })
+
+  let writeLadderBar = async item => store.recordAttempt({
+    item,
+    review: {
+      itemId: item.id, pieceId: piece.id, at: item.last, kind: "attempt", grade: item.lastGrade,
+      was: "learning", columns: 3, clean: 0, misses: 3, stuck: 0, skipped: 0, hesitations: 0,
+      mode: "wait", algo: 1, staffMisses: {upper: 0, lower: 3},
+    },
+  })
+
   it("leaves a resting bar as it is when a neighbour's card plays it", async function() {
     let at = time - MINUTE
-    let bar = (measure, grades, extra={}) => ({
-      id: itemId({pieceId: piece.id, hand: "both", startMeasure: measure, endMeasure: measure}),
-      pieceId: piece.id, hand: "both", startMeasure: measure, endMeasure: measure,
-      level: "bar", state: "learning", step: 0, due: at, last: at, s: 1, d: 5,
-      reps: grades.length, lapses: grades.filter(g => g == AGAIN).length, streak: 0,
-      lastGrade: grades[grades.length - 1], hits: 3, misses: 3 * grades.length,
-      attempts: grades.length, lastPracticed: at, elapsedMs: 3000, algo: 1,
-      createdAt: at - 5 * MINUTE,
-      recent: grades.map((grade, n) => [at - (grades.length - n) * 1000, 3, 0, grade]),
-      ...extra,
-    })
-    let write = async item => store.recordAttempt({
-      item,
-      review: {
-        itemId: item.id, pieceId: piece.id, at: item.last, kind: "attempt", grade: item.lastGrade,
-        was: "learning", columns: 3, clean: 0, misses: 3, stuck: 0, skipped: 0, hesitations: 0,
-        mode: "wait", algo: 1, staffMisses: {upper: 0, lower: 3},
-      },
-    })
+    let bar = (measure, grades, extra={}) => ladderBar(measure, grades, at, extra)
+    let write = writeLadderBar
 
     // bar 2 has failed three times in this sitting, so it rests; bar 1 is
     // due, and its card of two measures plays bar 2 with it
@@ -984,6 +990,38 @@ describe("today's programme on the staff", function() {
     let played1 = store.item(`${piece.id}:both:1-1`)
     expect(played1.reps).toBeGreaterThan(anchor.reps)
     expect(played1.due).not.toEqual(anchor.due)
+  })
+
+  it("adds a resting bar's practice once when a self grade doesn't name it", async function() {
+    let at = time - MINUTE
+    await writeLadderBar(ladderBar(0, [GOOD], at, {state: "review", due: time + 20 * DAY}))
+    await writeLadderBar(ladderBar(1, [GOOD], at))
+    await writeLadderBar(ladderBar(2, [AGAIN, AGAIN, AGAIN], at))
+    time += 2 * MINUTE
+
+    // acoustic mode: bar 2 rests, and the card anchored on bar 1 plays it
+    let {deck, generator} = await generatorFor(2)
+    generator.setDrill(() => ({mode: "self"}))
+    let resting = store.item(`${piece.id}:both:2-2`)
+    expect([...planState(deck.planInput()).resting]).toEqual([2])
+    expect(generator.currentCard().measures).toEqual([1, 2])
+
+    time += 1000
+    generator.selfGrade(HARD, {bars: [1]})
+    await generator.finishing
+
+    // the bar the player didn't blame is practice alone, written once: its
+    // ladder stands and its totals count the pass a single time
+    let played = store.item(`${piece.id}:both:2-2`)
+    expect([played.due, played.state, played.lapses, played.lastGrade])
+      .toEqual([resting.due, resting.state, resting.lapses, resting.lastGrade])
+    expect(played.attempts).toEqual(resting.attempts + 1)
+    expect((await store.reviews({pieceId: piece.id}))
+      .filter(review => review.itemId == `${piece.id}:both:2-2` && review.at > resting.last))
+      .toEqual([])
+
+    // the bar it named is graded
+    expect(store.item(`${piece.id}:both:1-1`).lastGrade).toEqual(HARD)
   })
 
   it("brings a failed measure back at once", async function() {
@@ -1276,6 +1314,74 @@ describe("today's programme on the staff", function() {
     expect(state.scaffolds.get(1)).toBe(undefined)
     expect([...state.failing]).toEqual([])
     expect(deck.entry && deck.entry.measure).not.toEqual(1)
+  })
+
+  // acoustic mode (st/srs/self_grade): the hand scaffold is turned off
+  // outright while it is on (Q3), rather than left active like scroll mode
+  describe("self-graded passes", function() {
+    it("plans the next entry from a self grade, captioned with the grade's word", async function() {
+      let {deck, generator} = await generatorFor(1)
+      expect(deck.entry).toEqual(jasmine.objectContaining({measure: 0, hand: "both"}))
+
+      generator.setDrill(() => ({mode: "self"}))
+      time += 1000
+      generator.selfGrade(GOOD)
+      await generator.finishing
+      await generator.studying
+
+      // planned from the item the self grade wrote
+      expect(deck.entry).toEqual(jasmine.objectContaining({measure: 1}))
+      expect(store.item(`${piece.id}:both:0-0`).lastGrade).toEqual(GOOD)
+      expect(generator.caption()).toMatch(/^Clean · /)
+    })
+
+    it("never splits a bar from self-graded failures, which stay on its hands-together ladder", async function() {
+      let {built, ...hands} = handPools()
+      let {deck, generator, notes} = await generatorFor(1, hands)
+      let stats = new NoteStats()
+      notes = await playCard({generator, notes}, stats)
+      expect(deck.entry).toEqual(jasmine.objectContaining({measure: 1, hand: "both"}))
+
+      generator.setDrill(() => ({mode: "self"}))
+      time += 1000
+      generator.selfGrade(AGAIN)
+      await generator.finishing
+      time += 1000
+      generator.selfGrade(AGAIN)
+      await generator.finishing
+
+      let bar = store.item(`${piece.id}:both:1-1`)
+      expect(bar.state).toEqual("learning")
+      expect(store.item(`${piece.id}:lower:1-1`)).toBe(null)
+      expect(store.item(`${piece.id}:upper:1-1`)).toBe(null)
+      expect(built).toEqual([])
+
+      let reviews = await store.reviews({pieceId: piece.id})
+      expect(reviews.filter(r => r.itemId == `${piece.id}:both:1-1`).every(r => r.staffMisses === undefined)).toBe(true)
+    })
+
+    it("offers hands together in a self-graded drill a bar the scaffold split after a detected failure, and the hand alone again once acoustic mode is off", async function() {
+      let {built, ...hands} = handPools()
+      let {deck, generator, notes} = await generatorFor(1, hands)
+      let stats = new NoteStats()
+      notes = await playCard({generator, notes}, stats)
+
+      stats.missNotes(["G3"])
+      stats.missNotes(["G3"])
+      notes = await playCard({generator, notes}, stats)
+      expect(deck.entry).toEqual(jasmine.objectContaining({measure: 1, hand: "lower"}))
+
+      // acoustic mode turns the scaffold off: the bar returns hands together
+      generator.setDrill(() => ({mode: "self"}))
+      expect(deck.entry).toEqual(jasmine.objectContaining({measure: 1, hand: "both"}))
+
+      // once acoustic mode is off again, the next plan offers the hand alone
+      // once more, exactly as it did before
+      generator.setDrill(() => ({mode: "wait"}))
+      deck.advance(false)
+      expect(deck.entry).toEqual(jasmine.objectContaining({measure: 1, hand: "lower"}))
+      expect(built).toEqual(["lower:1"])
+    })
   })
 
   it("keeps the plan it made when a review is beyond the planner", async function() {

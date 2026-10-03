@@ -1,5 +1,6 @@
 
 import {csrfToken} from "st/globals"
+import {GOOD} from "st/srs/grade"
 
 // generator settings worth keeping with a session: numbers, booleans, short
 // strings and short lists of those, leaving out eg. pasted song notation
@@ -75,6 +76,11 @@ export default class NoteStats {
 
     this.lastHitTime = undefined
     this.averageHitTime = 0
+
+    // acoustic mode's self-graded passes (see selfGraded): nothing is
+    // detected, so these are the session's only record of them
+    this.passes = 0
+    this.cleanPasses = 0
   }
 
   endSessionAfterPause(time) {
@@ -181,6 +187,19 @@ export default class NoteStats {
     notifyNoteListeners({type: "miss", time: now, notes, blamed, stats: this})
   }
 
+  // Counts a pass the player graded themself (acoustic mode, see
+  // MeasureCardGenerator#selfGrade): nothing was detected to hit or miss, so
+  // this is the session's only record of it. Clean counts a grade of Clean
+  // or Easy (GOOD or above)
+  selfGraded(grade, time) {
+    let now = time ?? +new Date
+    this.endSessionAfterPause(now)
+
+    this.passes += 1
+    if (grade >= GOOD) { this.cleanPasses += 1 }
+    this.markActivity(now)
+  }
+
   // A further slip on a column already counted missed: nothing more is
   // counted, but the listeners are told, eg. for the grade of the measure
   // cards, which counts every slip
@@ -211,10 +230,11 @@ export default class NoteStats {
   }
 
   // The session record for the local store (see putSession in st/storage),
-  // or null before any note is played. The record keeps this object's id, so
+  // or null before any note is played and any pass graded (acoustic mode
+  // detects none, see selfGraded). The record keeps this object's id, so
   // writing it again as the session grows replaces the earlier one
   sessionRecord({staff, generator, settings}={}) {
-    if (!this.hits && !this.misses) {
+    if (!this.hits && !this.misses && !this.passes) {
       return null
     }
 
@@ -240,6 +260,10 @@ export default class NoteStats {
     if (Object.keys(this.clefs).length) {
       record.clefs = Object.fromEntries(Object.entries(this.clefs).map(([sign, stats]) =>
         [sign, {...stats}]))
+    }
+
+    if (this.passes > 0) {
+      record.selfGraded = {passes: this.passes, clean: this.cleanPasses}
     }
 
     return record
