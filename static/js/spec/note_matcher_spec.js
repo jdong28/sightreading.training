@@ -515,6 +515,34 @@ describe("note matcher", function() {
       expect(head(matcher)).toEqual(["G#5"])
     })
 
+    // a trill written at a column whose own notes the columns after it play
+    // too (trailingAt gives every column its span overlaps its own trailing):
+    // the head's own key is the real strike there, with the trill going on
+    // from it, so the trill note that follows must not drop it — the column
+    // would wait for a key already played and the next press would slip it
+    let trillRun = () => [
+      ornamented(["C5"], ["D5"], ["C5", "D5"]),
+      ornamented(["D5"], ["C5"], ["C5", "D5"]),
+      ornamented(["C5"], ["D5"], ["C5", "D5"]),
+    ]
+
+    it("strikes a pending head key when the trill the head itself writes follows", function() {
+      let matcher = matcherFor(trillRun())
+      expect(run(matcher, [["on", "C5", 0], ["on", "D5", 110], ["on", "C5", 220]]))
+        .toEqual(["hit C5", "hit D5"])
+      expect(head(matcher)).toEqual(["C5"])
+
+      // timed from its own strike, not from the trill note that resolved it
+      let hit = matcher.judged.find(event => event.type == "hit" && event.hitNotes.includes("D5"))
+      expect(hit.latency).toEqual(110)
+
+      // and the last press, pending in its turn, is struck rather than lost
+      matcher.judged.length = 0
+      expect(matcher.tick(220 + ORNAMENT_GAP + 1)).not.toBeNull()
+      expect(matcher.judged.map(event => event.type)).toEqual(["hit"])
+      expect(matcher.judged[0].hitNotes).toEqual(["C5"])
+    })
+
     it("resolves a pending key by itself once the page's tick finds the gap elapsed", function() {
       let matcher = matcherFor([releaseColumn(), ["G#5"], ["C#5"]])
       run(matcher, [["on", "F#5", 0], ["on", "G#5", 1000]])
