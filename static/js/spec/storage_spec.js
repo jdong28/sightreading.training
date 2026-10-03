@@ -852,7 +852,7 @@ describe("local store", function() {
 
       let exported = await store.exportLibrary()
       expect(exported.version).toEqual(LIBRARY_VERSION)
-      expect(LIBRARY_VERSION).toEqual(8)
+      expect(LIBRARY_VERSION).toEqual(9)
       expect(exported.reviews).toEqual([jasmine.objectContaining({mode: "self", grade: GOOD})])
 
       let other = await open()
@@ -1014,5 +1014,33 @@ describe("local store", function() {
       await expectAsync(store.putSession({id: "s"})).toBeRejected()
       expect(store.recentSessions()).toEqual([])
     })
+
+    // read from the database, not only the recentSessions cache, so the
+    // Progress screen sees a session just ended (still queued when it
+    // mounts) and the full 28-day window it reads for the accuracy change
+    for (let persist of [true, false]) {
+      describe(`sessionsSince, ${persist ? "in IndexedDB" : "in memory"}`, function() {
+        it("returns sessions since a time, oldest first, beyond RECENT_SESSION_DAYS", async function() {
+          let store = await open({persist})
+          let now = Date.now()
+          await store.putSession({id: "old", startedAt: now - (RECENT_SESSION_DAYS + 5) * DAY})
+          await store.putSession({id: "b", startedAt: now - DAY})
+          await store.putSession({id: "a", startedAt: now - 2 * DAY})
+          await store.putSession({id: "too-old", startedAt: now - (RECENT_SESSION_DAYS + 10) * DAY})
+
+          let since = await store.sessionsSince(now - (RECENT_SESSION_DAYS + 6) * DAY)
+          expect(since.map(s => s.id)).toEqual(["old", "a", "b"])
+        })
+
+        it("includes a session put without awaiting it first", async function() {
+          let store = await open({persist})
+          let now = Date.now()
+          store.putSession({id: "s", startedAt: now})
+
+          let since = await store.sessionsSince(now - DAY)
+          expect(since.map(s => s.id)).toEqual(["s"])
+        })
+      })
+    }
   })
 })

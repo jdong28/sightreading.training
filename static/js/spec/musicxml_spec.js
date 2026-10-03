@@ -4,7 +4,9 @@ import {
   DAMAGED_ARCHIVE_MESSAGE, NO_SCORE_MESSAGE
 } from "st/musicxml"
 import {SongNote, measureStartsUntil, clickStartsMeasure} from "st/song_note_list"
-import {reverieOpening, nocturneBars5to6, tiedTrillScore, LITTLE_WALTZ_XML, littleWaltzMXL} from "spec/helpers"
+import {
+  reverieOpening, nocturneBars5to6, tiedTrillScore, trillLineScore, LITTLE_WALTZ_XML, littleWaltzMXL
+} from "spec/helpers"
 
 // [note, start, duration] tuples of a note list, in document order
 let tuples = notes => [...notes].map(n => [n.note, n.start, n.duration])
@@ -761,6 +763,9 @@ describe("musicxml ornaments", function() {
   let ornamented = (marks, extra="") =>
     `<notations><ornaments>${marks}</ornaments></notations>${extra}`
 
+  let wavyLine = (type, number=1) => `<wavy-line type="${type}" number="${number}"/>`
+  let trillStart = (number=1) => `<trill-mark/>${wavyLine("start", number)}`
+
   let treble = "<voice>1</voice><staff>1</staff>"
 
   let grace = (step, octave, extra="", alter=null) => `
@@ -909,5 +914,380 @@ describe("musicxml ornaments", function() {
 
     expect(tuples(song)).toEqual([["C5", 0, 8]])
     expect(ornaments(song)).toEqual([["C5", 0, {graces: ["B4"], neighbours: ["D5"]}]])
+  })
+
+  // sr-detect-trill-lines-n7b: a trill line runs from the note carrying the
+  // trill mark to the one its stop is written on, here across a bar line and
+  // a system break, and trills every note of that note's voice and staff it
+  // runs over with the note above it, spelled in force: G major's F#5 above
+  // E5. The other voice of the staff, the other staff and the B4 after the
+  // line's stop are trilled by nothing
+  it("trills every note of the marked note's voice and staff a trill line runs over", function() {
+    let song = parseMusicXML(trillLineScore())
+
+    expect(ornaments(song)).toEqual([
+      ["E5", 0, {neighbours: ["F#5"]}],
+      ["D5", 2, {neighbours: ["E5"]}],
+      ["C5", 4, {neighbours: ["D5"]}],
+    ])
+  })
+
+  // MuseScore writes a chord's trill mark and line on its lowest (first
+  // written) note, so the file can't say which tone trills: every tone in
+  // the line's voice and staff, the marked note's own chord included, gets
+  // its own upper neighbour (sr-detect-trill-lines-n7b plan, open question 1)
+  it("trills every tone of a chord a trill line runs over, the marked note's own chord included", function() {
+    let song = parseMusicXML(partwise(`
+<measure number="1">
+  ${attributes({})}
+  ${note("C", 5, 1, ornamented(trillStart()))}
+  ${note("E", 5, 1, "<chord/>")}
+  ${note("D", 5, 1)}
+  ${note("F", 5, 1, "<chord/>")}
+  ${note("G", 5, 1, ornamented(wavyLine("stop")))}
+</measure>`))
+
+    expect(ornaments(song)).toEqual([
+      ["C5", 0, {neighbours: ["D5"]}],
+      ["E5", 0, {neighbours: ["F5"]}],
+      ["D5", 1, {neighbours: ["E5"]}],
+      ["F5", 1, {neighbours: ["G5"]}],
+      ["G5", 2, {neighbours: ["A5"]}],
+    ])
+  })
+
+  it("trills nothing of a rest under the line, and the notes up to its stop after it", function() {
+    let song = parseMusicXML(partwise(`
+<measure number="1">
+  ${attributes({})}
+  ${note("B", 4, 1, ornamented(trillStart()))}
+  ${rest(1)}
+  ${note("C", 5, 1)}
+  ${note("D", 5, 1, ornamented(wavyLine("stop")))}
+</measure>`))
+
+    expect(ornaments(song)).toEqual([
+      ["B4", 0, {neighbours: ["C5"]}],
+      ["C5", 2, {neighbours: ["D5"]}],
+      ["D5", 3, {neighbours: ["E5"]}],
+    ])
+  })
+
+  // MuseScore writes a line's stop on the rest it ends on
+  it("reads a line's stop from the rest it ends on, trilling nothing after it", function() {
+    let song = parseMusicXML(partwise(`
+<measure number="1">
+  ${attributes({})}
+  ${note("B", 4, 1, ornamented(trillStart()))}
+  ${rest(1, ornamented(wavyLine("stop")))}
+  ${note("C", 5, 1)}
+  ${note("D", 5, 1)}
+</measure>`))
+
+    expect(ornaments(song)).toEqual([["B4", 0, {neighbours: ["C5"]}]])
+  })
+
+  it("trills a chord tone whose line stop is written on another of its tones, the chord's lowest", function() {
+    let song = parseMusicXML(partwise(`
+<measure number="1">
+  ${attributes({})}
+  ${note("A", 4, 1, ornamented(trillStart()))}
+  ${note("B", 4, 1, ornamented(wavyLine("stop")))}
+  ${note("D", 5, 1, "<chord/>")}
+</measure>`))
+
+    expect(ornaments(song)).toEqual([
+      ["A4", 0, {neighbours: ["B4"]}],
+      ["B4", 1, {neighbours: ["C5"]}],
+      ["D5", 1, {neighbours: ["E5"]}],
+    ])
+  })
+
+  // MuseScore reuses number="1" in document order: voice 1's line closes
+  // before voice 2's opens, so they never collide despite sharing a number
+  it("pairs a reused line number in document order, each voice its own line", function() {
+    let song = parseMusicXML(partwise(`
+<measure number="1">
+  ${attributes({})}
+  ${note("C", 6, 1, `<voice>1</voice>${ornamented(trillStart())}`)}
+  ${note("D", 6, 1, "<voice>1</voice>")}
+  ${note("E", 6, 1, `<voice>1</voice>${ornamented(wavyLine("stop"))}`)}
+  ${note("F", 6, 1, "<voice>1</voice>")}
+  <backup><duration>4</duration></backup>
+  ${note("E", 5, 1, "<voice>2</voice>")}
+  ${note("F", 5, 1, `<voice>2</voice>${ornamented(trillStart())}`)}
+  ${note("G", 5, 1, "<voice>2</voice>")}
+  ${note("A", 5, 1, `<voice>2</voice>${ornamented(wavyLine("stop"))}`)}
+</measure>`))
+
+    expect(ornaments(song)).toEqual([
+      ["C6", 0, {neighbours: ["D6"]}],
+      ["D6", 1, {neighbours: ["E6"]}],
+      ["F5", 1, {neighbours: ["G5"]}],
+      ["E6", 2, {neighbours: ["F6"]}],
+      ["G5", 2, {neighbours: ["A5"]}],
+      ["A5", 3, {neighbours: ["B5"]}],
+    ])
+  })
+
+  it("gives a nested line's notes their neighbour once, not the outer line's too", function() {
+    let song = parseMusicXML(partwise(`
+<measure number="1">
+  ${attributes({})}
+  ${note("C", 5, 1, ornamented(trillStart(1)))}
+  ${note("D", 5, 1, ornamented(trillStart(2)))}
+  ${note("E", 5, 1, ornamented(wavyLine("stop", 2)))}
+  ${note("F", 5, 1, ornamented(wavyLine("stop", 1)))}
+</measure>`))
+
+    expect(ornaments(song)).toEqual([
+      ["C5", 0, {neighbours: ["D5"]}],
+      ["D5", 1, {neighbours: ["E5"]}],
+      ["E5", 2, {neighbours: ["F5"]}],
+      ["F5", 3, {neighbours: ["G5"]}],
+    ])
+  })
+
+  it("gives nothing past the marked note's own trill when its line is never stopped", function() {
+    let song = parseMusicXML(partwise(`
+<measure number="1">
+  ${attributes({})}
+  ${note("C", 5, 1, ornamented(trillStart()))}
+  ${note("D", 5, 1)}
+</measure>
+<measure number="2">
+  ${note("E", 5, 1)}
+</measure>`))
+
+    expect(ornaments(song)).toEqual([["C5", 0, {neighbours: ["D5"]}]])
+  })
+
+  it("ignores a stop with nothing open", function() {
+    let song = parseMusicXML(partwise(`
+<measure number="1">
+  ${attributes({})}
+  ${note("C", 5, 1, ornamented(wavyLine("stop")))}
+  ${note("D", 5, 1)}
+</measure>`))
+
+    expect(ornaments(song)).toEqual([])
+  })
+
+  it("ignores a bare wavy-line start with no trill mark", function() {
+    let song = parseMusicXML(partwise(`
+<measure number="1">
+  ${attributes({})}
+  ${note("C", 5, 1, ornamented(wavyLine("start")))}
+  ${note("D", 5, 1, ornamented(wavyLine("stop")))}
+</measure>`))
+
+    expect(ornaments(song)).toEqual([])
+  })
+
+  it("ignores a wavy-line continue, trilling the same notes as without it", function() {
+    let song = parseMusicXML(partwise(`
+<measure number="1">
+  ${attributes({})}
+  ${note("C", 5, 1, ornamented(trillStart()))}
+  ${note("D", 5, 1, ornamented(wavyLine("continue")))}
+  ${note("E", 5, 1, ornamented(wavyLine("stop")))}
+</measure>`))
+
+    expect(ornaments(song)).toEqual([
+      ["C5", 0, {neighbours: ["D5"]}],
+      ["D5", 1, {neighbours: ["E5"]}],
+      ["E5", 2, {neighbours: ["F5"]}],
+    ])
+  })
+
+  // a start on a key already open replaces it, dropping the old line as
+  // never stopped: C5's line never reaches D5
+  it("drops a line as never stopped when its key reopens before its own stop", function() {
+    let song = parseMusicXML(partwise(`
+<measure number="1">
+  ${attributes({})}
+  ${note("C", 5, 1, ornamented(trillStart()))}
+  ${note("D", 5, 1)}
+  ${note("E", 5, 1, ornamented(trillStart()))}
+  ${note("F", 5, 1, ornamented(`${wavyLine("stop")}${trillStart()}`))}
+</measure>
+<measure number="2">
+  ${note("G", 5, 1)}
+  ${note("A", 5, 1, ornamented(wavyLine("stop")))}
+</measure>`))
+
+    expect(ornaments(song)).toEqual([
+      ["C5", 0, {neighbours: ["D5"]}],
+      ["E5", 2, {neighbours: ["F5"]}],
+      ["F5", 3, {neighbours: ["G5"]}],
+      ["G5", 4, {neighbours: ["A5"]}],
+      ["A5", 5, {neighbours: ["B5"]}],
+    ])
+  })
+
+  it("gives the other voice's note a trill line's stop is written on nothing, trilling only up to it", function() {
+    let song = parseMusicXML(partwise(`
+<measure number="1">
+  ${attributes({})}
+  ${note("C", 5, 1, `<voice>1</voice>${ornamented(trillStart())}`)}
+  ${note("D", 5, 1, "<voice>1</voice>")}
+  ${note("E", 5, 1, "<voice>1</voice>")}
+  ${note("F", 5, 1, "<voice>1</voice>")}
+  <backup><duration>2</duration></backup>
+  ${note("G", 4, 1, `<voice>2</voice>${ornamented(wavyLine("stop"))}`)}
+</measure>`))
+
+    expect(ornaments(song)).toEqual([
+      ["C5", 0, {neighbours: ["D5"]}],
+      ["D5", 1, {neighbours: ["E5"]}],
+      ["E5", 2, {neighbours: ["F5"]}],
+    ])
+  })
+
+  it("trills a line on the left hand's staff only, not the right hand's", function() {
+    let song = parseMusicXML(partwise(`
+<measure number="1">
+  ${attributes({staves: 2, clefs: [[1, "G", 2], [2, "F", 4]]})}
+  ${note("C", 3, 1, `<staff>2</staff>${ornamented(trillStart())}`)}
+  ${note("D", 3, 1, "<staff>2</staff>")}
+  ${note("E", 3, 1, `<staff>2</staff>${ornamented(wavyLine("stop"))}`)}
+  <backup><duration>3</duration></backup>
+  ${note("G", 4, 1, "<staff>1</staff>")}
+</measure>`))
+
+    expect(ornaments(song)).toEqual([
+      ["C3", 0, {neighbours: ["D3"]}],
+      ["D3", 1, {neighbours: ["E3"]}],
+      ["E3", 2, {neighbours: ["F3"]}],
+    ])
+  })
+
+  it("keeps a mordent or turn under the line to its own neighbours only", function() {
+    let song = parseMusicXML(partwise(`
+<measure number="1">
+  ${attributes({})}
+  ${note("C", 5, 1, ornamented(trillStart()))}
+  ${note("D", 5, 1, ornamented("<mordent/>"))}
+  ${note("E", 5, 1, ornamented(wavyLine("stop")))}
+</measure>`))
+
+    expect(ornaments(song)).toEqual([
+      ["C5", 0, {neighbours: ["D5"]}],
+      ["D5", 1, {neighbours: ["C5"]}],
+      ["E5", 2, {neighbours: ["F5"]}],
+    ])
+  })
+
+  it("single-note line then chain: C5; then E5 F5 G5 A5", function() {
+    let song = parseMusicXML(partwise(`
+<measure number="1">
+  ${attributes({})}
+  ${note("C", 5, 1, ornamented(`${trillStart()}${wavyLine("stop")}`))}
+  ${note("E", 5, 1, ornamented(trillStart()))}
+  ${note("F", 5, 1, ornamented(`${wavyLine("stop")}${trillStart()}`))}
+</measure>
+<measure number="2">
+  ${note("G", 5, 1)}
+  ${note("A", 5, 1, ornamented(wavyLine("stop")))}
+</measure>`))
+
+    expect(ornaments(song)).toEqual([
+      ["C5", 0, {neighbours: ["D5"]}],
+      ["E5", 1, {neighbours: ["F5"]}],
+      ["F5", 2, {neighbours: ["G5"]}],
+      ["G5", 3, {neighbours: ["A5"]}],
+      ["A5", 4, {neighbours: ["B5"]}],
+    ])
+  })
+
+  it("a start restarted before its stop drops the first key's line, not reaching the note between", function() {
+    let song = parseMusicXML(partwise(`
+<measure number="1">
+  ${attributes({})}
+  ${note("C", 5, 1, ornamented(trillStart()))}
+  ${note("D", 5, 1)}
+  ${note("E", 5, 1, ornamented(trillStart()))}
+  ${note("F", 5, 1, ornamented(wavyLine("stop")))}
+</measure>`))
+
+    expect(ornaments(song)).toEqual([
+      ["C5", 0, {neighbours: ["D5"]}],
+      ["E5", 2, {neighbours: ["F5"]}],
+      ["F5", 3, {neighbours: ["G5"]}],
+    ])
+  })
+
+  // the mark's own accidental mark spells the trill, so a re-struck or
+  // tied-on note of the marked note's pitch takes it exactly, in a later
+  // measure too, rather than its own spelled-in-force neighbour
+  it("gives a re-struck note of the marked note's own pitch its exact spelled neighbour, across a bar line too", function() {
+    let song = parseMusicXML(partwise(`
+<measure number="1">
+  ${attributes({})}
+  ${note("C", 5, 1, ornamented(`<trill-mark/><accidental-mark>sharp</accidental-mark>${wavyLine("start")}`))}
+  ${note("C", 5, 1)}
+  ${note("D", 5, 1, "", 1)}
+</measure>
+<measure number="2">
+  ${note("C", 5, 1, ornamented(wavyLine("stop")))}
+</measure>`))
+
+    expect(ornaments(song)).toEqual([
+      ["C5", 0, {neighbours: ["D#5"]}],
+      ["C5", 1, {neighbours: ["D#5"]}],
+      ["D#5", 2, {neighbours: ["E5"]}],
+      ["C5", 3, {neighbours: ["D#5"]}],
+    ])
+  })
+
+  it("spells a trill line's note from the accidental in force, or the key signature with none", function() {
+    let song = parseMusicXML(partwise(`
+<measure number="1">
+  ${attributes({fifths: -1})}
+  ${note("C", 5, 1, ornamented(trillStart()))}
+  ${note("F", 5, 1, "", 1)}
+  ${note("E", 5, 1)}
+  ${note("A", 5, 1, ornamented(wavyLine("stop")))}
+</measure>`))
+
+    expect(ornaments(song)).toEqual([
+      ["C5", 0, {neighbours: ["D5"]}],
+      ["F#5", 1, {neighbours: ["G5"]}],
+      ["E5", 2, {neighbours: ["F#5"]}],
+      ["A5", 3, {neighbours: ["Bb5"]}],
+    ])
+  })
+
+  it("gives a line's neighbours to a tie's continuation, merged into the tied note; nothing to a re-struck note after its stop", function() {
+    let song = parseMusicXML(partwise(`
+<measure number="1">
+  ${attributes({})}
+  ${note("C", 5, 4, `<tie type="start"/>${ornamented(trillStart())}`)}
+</measure>
+<measure number="2">
+  ${note("C", 5, 4, `<tie type="stop"/>${ornamented(wavyLine("stop"))}`)}
+  ${note("C", 5, 1)}
+</measure>`))
+
+    expect(tuples(song)).toEqual([["C5", 0, 8], ["C5", 8, 1]])
+    expect(ornaments(song)).toEqual([["C5", 0, {neighbours: ["D5"]}]])
+  })
+
+  it("starts a trill line opened on a tie's continuation at that continuation, as a plain trill mark there already does", function() {
+    let song = parseMusicXML(partwise(`
+<measure number="1">
+  ${attributes({})}
+  ${note("C", 5, 4, "<tie type=\"start\"/>")}
+</measure>
+<measure number="2">
+  ${note("C", 5, 4, `<tie type="stop"/>${ornamented(trillStart())}`)}
+  ${note("D", 5, 1, ornamented(wavyLine("stop")))}
+</measure>`))
+
+    expect(tuples(song)).toEqual([["C5", 0, 8], ["D5", 8, 1]])
+    expect(ornaments(song)).toEqual([
+      ["C5", 0, {neighbours: ["D5"], at: 4}],
+      ["D5", 8, {neighbours: ["E5"]}],
+    ])
   })
 })

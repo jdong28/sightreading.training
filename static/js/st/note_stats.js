@@ -1,6 +1,24 @@
 
 import {csrfToken} from "st/globals"
 import {GOOD} from "st/srs/grade"
+import {noteStaffOffset} from "st/music"
+
+const MIDDLE_C_OFFSET = noteStaffOffset("C4")
+
+// The clef signs a clefless column's notes are read in, given the staff
+// they're drilled on: complementary to columnClefs (st/srs/attempt), which
+// reads an imported score's own columns, so together they never double-count
+// (see SightReadingPage#applyEvent). The grand staff splits at middle C
+// exactly as NoteList#splitForGrandStaff places the head column
+export function staffClefs(staffName, notes) {
+  switch (staffName) {
+    case "treble": return ["g"]
+    case "bass": return ["f"]
+    case "grand": return [...new Set(notes.map(note =>
+      noteStaffOffset(note) >= MIDDLE_C_OFFSET ? "g" : "f"))]
+    default: return []
+  }
+}
 
 // generator settings worth keeping with a session: numbers, booleans, short
 // strings and short lists of those, leaving out eg. pasted song notation

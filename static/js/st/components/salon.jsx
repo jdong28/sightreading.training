@@ -65,13 +65,14 @@ Card.propTypes = {
   children: types.node,
 }
 
-export function StatCard({label, value, suffix, accent=false, warm=false, className}) {
+export function StatCard({label, value, suffix, accent=false, warm=false, className, children}) {
   return <Card warm={warm} className={className}>
     <div className={styles.stat_label}>{label}</div>
     <div className={classNames(styles.stat_value, {[styles.accent]: accent})}>
       {value}
       {suffix ? <span className={styles.stat_suffix}>{suffix}</span> : null}
     </div>
+    {children}
   </Card>
 }
 
@@ -81,6 +82,22 @@ StatCard.propTypes = {
   suffix: types.node,
   accent: types.bool,
   warm: types.bool,
+  className: types.string,
+  children: types.node,
+}
+
+// a By clef / trouble-note accuracy rule: a 5px track filled gilt, oxblood
+// when weak (eg. below the Progress screen's CLEF_ACCURACY/NOTE_ACCURACY, or
+// the session summary's TROUBLE_ACCURACY)
+export function AccuracyRule({percent, weak=false, className}) {
+  return <div className={classNames(styles.accuracy_rule, className)} data-weak={weak || undefined}>
+    <div className={styles.accuracy_fill} style={{width: `${percent ?? 0}%`}} />
+  </div>
+}
+
+AccuracyRule.propTypes = {
+  percent: types.number,
+  weak: types.bool,
   className: types.string,
 }
 

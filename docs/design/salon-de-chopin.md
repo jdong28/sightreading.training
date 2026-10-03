@@ -1,6 +1,7 @@
 # Handoff: Sight Reading Trainer — "Salon de Chopin" UX facelift
 
-(Verbatim copy of the design handoff README from the Claude Design project, 2026-09-14.)
+(Verbatim copy of the design handoff README from the Claude Design project, 2026-09-14,
+except for the **Implementation** notes added under a screen as it lands.)
 
 ## Overview
 
@@ -163,6 +164,21 @@ and the percentage right-aligned → one italic insight sentence → actions: "P
 
 **State:** `showTrouble: boolean`, `tone: 'encouraging' | 'plain'` (suppresses the insight line).
 
+**Implementation:** the card is `SessionSummary`
+(`static/js/st/components/sight_reading/session_summary.jsx`), a native `<dialog>` the trainer
+opens at Rest from the `SessionRecord` it just wrote (`NoteStats#sessionRecord`), through the pure
+derivations of `static/js/st/session_summary.js` (which the four stat cards, the trouble rows, the
+weak-below-75% rule and the insight sentence all come from). The four stat cards are the live
+Elapsed/Accuracy/Notes read/Best streak, or, for a sitting with nothing detected (acoustic
+self-graded practice), the three live acoustic cards Elapsed/Passes/Clean. The context label next
+to each trouble row is its miss count. "Practise these notes" switches the trainer to Random
+notes focused on the weak rows alone, the ones drawn in oxblood
+(`SightReadingPage#practiseNotes`), and is hidden when nothing shown is weak or on a page whose
+generator can't take a seed (the sheet music generator, so the score page never shows it). "New
+programme" is a link to `/setup` on the exercises page, and on the score page closes the card and
+opens its own drawer instead. "See all progress →" links to `/stats` until the progress screen
+(a later step) replaces it.
+
 ### 5. Progress — `screens/salon-progress/SalonProgress.dc.html`
 
 **Purpose:** practice history.
@@ -184,6 +200,21 @@ and the percentage right-aligned → one italic insight sentence → actions: "P
 - Primary pill "Tonight's programme" → setup.
 
 **State:** `range` (14 days shown), `showNoteGrid: boolean`.
+
+**Implementation:** `ProgressPage` (`static/js/st/components/pages/progress_page.jsx`) renders what
+it's handed by the pure module `st/progress.js`, which folds the session records the trainer
+already writes at Rest (`SessionRecord`, see `NoteStats#sessionRecord`); nothing here re-measures
+anything. A practice day is the scheduler's local day (`localDay`, 4 am rollover), not midnight, so
+a late evening is never split across two bars. A session's minutes are its `elapsedSeconds` (the
+Begin-to-Rest clock PR 53 added), falling back to the older `activeSeconds` for a record written
+before it. The goal line reads `practiceSettings().dailyGoalMinutes` (default 10), read-only here;
+the plot's scale keeps the goal line at or under 60% of the 150px plot, shrinking to fit a longer
+day's bar. By clef sums each session's own `clefs` counts, falling back to a clefless session's
+`treble`/`bass` staff for the ones that can be split after the fact (`grand` and `chord` can't). By
+note merges every spelling of a pitch class (`parseNoteOffset`) before taking a percentage, since a
+hit and a miss of the same note can arrive under different spellings. A backend account
+(`currentUser`) still sees the existing "Daily stats" page, unchanged; the route choice is
+`statsPageFor` in `st/components/pages/stats.jsx`.
 
 ## Interactions & behaviour
 

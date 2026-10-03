@@ -76,6 +76,10 @@ export const SCORE_PROGRAMME = {
   // opts into acoustic mode (st/srs/self_grade): a self-graded pass in place
   // of detection, while the instrument setting is acoustic
   selfGrading: true,
+  // no focusGenerator (the sheet music generator can't take a weak-note
+  // seed, see SightReadingPage#practiseNotes) and no newProgramme: the
+  // session summary's "New programme" closes the card and opens this
+  // page's own drawer instead
 }
 
 // the midi input's messages reach the trainer through the forwarded ref; a
