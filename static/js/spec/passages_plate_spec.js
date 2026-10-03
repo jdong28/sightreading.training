@@ -564,7 +564,8 @@ describe("the passages view (st/difficulty)", function() {
   // the programme plate's figures, both fit a rail column (clamp(260px,
   // 26vw, 340px), see docs/design/salon-de-chopin.md) without overflowing it
   it("fits a narrow rail column without horizontal overflow", async function() {
-    let piece = await drillPiece(workhorseScore({barCount: 101, denseAt: [9, 10, 11], alsoDenseAt: [53, 54]}))
+    let xml = workhorseScore({barCount: 101, denseAt: [9, 10, 11], alsoDenseAt: [53, 54]})
+    let piece = await drillPiece(xml)
 
     let overflowing = el => [...el.querySelectorAll('[class*="plate"]')]
       .filter(plateEl => plateEl.scrollWidth > plateEl.clientWidth + 1)
@@ -577,10 +578,16 @@ describe("the passages view (st/difficulty)", function() {
       flushSync(() => r.render(React.createElement(PassagesPlate, {
         settings: {piece: piece.id, hand: "both hands", measuresPerCard: "all", practice: "free practice"},
         setSettings: () => {},
-        source: null,
+        // a piece whose score the app still keeps, so the counts row carries
+        // both of its controls, as it does at rest in the app
+        source: {status: "ready", musicXML: xml},
         store,
       })))
       await waitFor(() => div.querySelector("[data-passages-plate]"), {message: `the plate at ${width}px`})
+
+      let labels = [...div.querySelectorAll("button")].map(b => b.textContent.trim())
+      expect(labels).toContain("Show the score")
+      expect(labels).toContain("Hide the passages")
 
       expect(overflowing(div)).toEqual([])
 
