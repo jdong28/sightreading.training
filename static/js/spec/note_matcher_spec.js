@@ -518,6 +518,17 @@ describe("note matcher", function() {
       ])).toEqual(["hit C#3+G#5", "hit F#5 (early F#5)", "hit E5"])
     })
 
+    // the resolved column's own grace pitch is carried on in T, where it is
+    // excused as its own ornament was — and credited early just the same when
+    // it is the next column's note, so a hand leading into that column never
+    // stalls it
+    it("credits a grace pitch carried past its column to the next column", function() {
+      let matcher = matcherFor([ornamented(["C5"], ["B4"]), ["E5"], ["B4"], ["D5"]])
+      expect(run(matcher, [["on", "C5", 0], ["on", "B4", 500], ["on", "E5", 530]]))
+        .toEqual(["hit C5", "hit E5", "hit B4 (early B4)"])
+      expect(head(matcher)).toEqual(["D5"])
+    })
+
     // the resolution is dropped outright (no strike, no early credit) when
     // the ornament itself follows within the gap, unlike the row above where
     // a plain key (C#4) resolves it
