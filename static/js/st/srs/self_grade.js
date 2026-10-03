@@ -25,9 +25,11 @@ export const SELF_GRADES = [
 // practice stint it would otherwise inflate
 export const SELF_PAUSE_MS = 5 * 60 * 1000
 
-// the least a card can have been up for to have been played: a grade sooner
-// than this after the card was shown is a repeat of the one before it, which
-// would grade the card the deck has just moved on to
+// the least the grade row must have shown what it is showing before it will
+// take an answer (see SelfGradeRow#settled): a tap or key press sooner than
+// this after the row changed what it shows — a new card, or the "Where?"
+// question taking the pills' place — is a repeat of the one before it, and
+// would answer for what it replaced
 export const SELF_GRADE_DWELL_MS = 500
 
 /**

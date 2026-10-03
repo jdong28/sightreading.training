@@ -315,8 +315,10 @@ export default class SightReadingPage extends React.Component {
 
       devMetricsOpen: devMetrics.open,
 
-      // acoustic mode: bumped on every self grade, so the grade row (keyed
-      // by it) starts fresh for the next pass (see renderSelfGrade)
+      // acoustic mode: bumped whenever the drill is refilled (see
+      // refreshNoteList), which every graded pass and every rebuild of the
+      // drill does, so the grade row (keyed by it) starts fresh for the card
+      // the refill puts up (see renderSelfGrade)
       cardSeq: 0,
     }
   }
@@ -1529,10 +1531,12 @@ export default class SightReadingPage extends React.Component {
   // Ends the pass with the player's own grade (SelfGradeRow), in place of
   // detection: tells the generator, the session stats, and refills the
   // staff from the next card, the same path today's programme's ready uses.
-  // A pass takes one grade, and the deck moves on as it is written: the row
-  // waits out SELF_GRADE_DWELL_MS after every change of what it shows, which
-  // the refill below is one of, and the flag stops a second grade applied
-  // before that refill renders.
+  // A pass takes one grade, and the deck moves on as it is written. That is
+  // kept by the row rather than here: the refill below remounts it (keyed by
+  // cardSeq), and it waits out SELF_GRADE_DWELL_MS after every change of what
+  // it shows, so a repeated tap or key press can't grade the card it moved on
+  // to. The flag only stops a call made while a grade is being applied, which
+  // nothing here does and only a caller of this method could.
   selfGrade(grade, opts={}) {
     let generator = this.currentNotesGenerator()
     if (this.grading || !this.selfGraded() || !generator) { return }
