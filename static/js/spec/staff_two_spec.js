@@ -700,13 +700,13 @@ describe("staff two ledger lines", function() {
     expect(loads.calls.allArgs().map(args => args[0])).not.toContain("gclef")
   })
 
-  it("draws the grand staff's two staves the distance apart the fit sized the plate from", function() {
+  it("draws the grand staff's two staves the distance apart the plate is sized from", function() {
     let instance = mount({type: "grand", range: ["C2", "C6"]})
 
     let treble = instance.trebleStaffRef.current.staffGroup
     let bass = instance.bassStaffRef.current.staffGroup
 
-    expect(bass.translation.y - treble.translation.y).toBe(instance.computeFit().staffDy)
+    expect(bass.translation.y - treble.translation.y).toBe(500)
   })
 
   // the notes between the grand staff's two staves are the closest the two

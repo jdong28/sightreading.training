@@ -308,7 +308,6 @@ class StaffGroup extends React.PureComponent {
     width: 100,
     row: 0,
     dx: NOTE_COLUMN_DX,
-    staffDy: MIN_STAFF_DY,
     heldNotes: null,
   }
 
@@ -348,7 +347,6 @@ class StaffGroup extends React.PureComponent {
         keySignature={this.props.keySignature}
         type={this.props.type}
         row={this.props.row}
-        staffDy={this.props.staffDy}
       />,
       ...notes.map((n, idx) => <NoteGroup
         key={`note-${idx}`}
@@ -448,7 +446,7 @@ class StaffGroup extends React.PureComponent {
   makeStaff(notesGroup) {
     const staffGroup = new Two.Group()
 
-    staffGroup.translation.set(0, this.props.staffDy * this.props.row)
+    staffGroup.translation.set(0, MIN_STAFF_DY * this.props.row)
 
     // the X location where the notes can be rendered from. This will be
     // incremented by initial bar line, key signature, time signature, etc.
@@ -902,7 +900,7 @@ export class StaffTwo extends React.PureComponent {
 
   // the fit for the staff's note range (this.props.range): the render scale
   // and vertical translation that fit the range's own ledger room in the
-  // plate, plus the distance the grand staff's two staves are drawn apart.
+  // plate, the grand staff's two staves MIN_STAFF_DY apart included.
   // The fit comes from the range, not the notes on screen, so the staff
   // never jumps as notes come and go, and is stable for as long as the
   // type/range/height/maxScale don't change
@@ -939,7 +937,7 @@ export class StaffTwo extends React.PureComponent {
     const scale = Math.min(maxScale, height / sourceHeight)
     const translateY = Math.floor(-(top * scale))
 
-    this.fitCache = {key: cacheKey, fit: {scale, translateY, staffDy: MIN_STAFF_DY}}
+    this.fitCache = {key: cacheKey, fit: {scale, translateY}}
 
     return this.fitCache.fit
   }
@@ -1001,7 +999,7 @@ export class StaffTwo extends React.PureComponent {
     // be laid out below, so it runs before them, which keeps makeNotes'
     // column spacing (which reads renderGroup.scale through columnDx/dx)
     // correct on the very first paint
-    const {scale, translateY, staffDy} = this.computeFit()
+    const {scale, translateY} = this.computeFit()
     this.renderGroup.scale = scale
     this.renderGroup.translation.set(0, translateY)
 
@@ -1017,7 +1015,6 @@ export class StaffTwo extends React.PureComponent {
       getAsset,
       getAssetWidth,
       keySignature: this.props.keySignature.getCount(), // TODO: just pass key signature to avoid additional work
-      staffDy,
       width: Math.floor(this.state.two.width / this.renderGroup.scale),
       dx,
     }
