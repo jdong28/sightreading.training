@@ -304,9 +304,22 @@ describe("the passages view (st/difficulty)", function() {
     expect(pane.getAttribute("aria-hidden")).toEqual("true")
   })
 
+  // the overview only begins drawing once the pane has measured its own
+  // column, so the scroll waits on the drawing itself: an engine that takes
+  // longer than a second (a long import's first engraving does) must still
+  // scroll the pane to the chosen band, not give up on a fixed budget
   it("opens the score pane at the passage shown, scrolled to it", async function() {
+    // the overview alone draws slowly, well past the second a fixed retry
+    // budget allowed: the trainer's own cards (any range but the whole
+    // piece) are left as they are
+    let slowOverview = () => loadScoreEngines().then(bundle => ({...bundle, ENGINES: {...bundle.ENGINES,
+      osmd: {...bundle.ENGINES.osmd, renderCard: args =>
+        (args.fromMeasure == 1 && args.toMeasure == 24 ?
+          new Promise(resolve => setTimeout(resolve, 2500)) : Promise.resolve())
+          .then(() => bundle.ENGINES.osmd.renderCard(args))}}}))
+
     await drillPiece(workhorseScore({barCount: 24, denseAt: [5, 6, 7], alsoDenseAt: [17, 18, 19]}))
-    renderScorePage()
+    renderScorePage({loadEngines: slowOverview})
     await waitFor(() => plate(), {message: "the passages plate"})
     await waitFor(() => page.state.engineSource?.status == "ready", {message: "the engine source"})
 
@@ -317,19 +330,28 @@ describe("the passages view (st/difficulty)", function() {
     flushSync(() => other.dispatchEvent(new MouseEvent("click", {bubbles: true})))
     let wantedBars = plate().querySelector("h3").textContent
 
-    let openInScore = [...plate().querySelectorAll("button")]
-      .find(b => b.textContent.trim() == "Show in the score")
-    expect(openInScore).toBeTruthy()
-    flushSync(() => openInScore.dispatchEvent(new MouseEvent("click", {bubbles: true})))
+    // the pane's own scrolling element, whose scrolls are recorded
+    let scrolls = []
+    let pane = scorePane()
+    expect(pane).toBeTruthy()
+    pane.scrollTo = options => scrolls.push(options)
 
-    let pane = await waitFor(() => scorePane(), {message: "the score pane"})
+    openScorePane()
     expect(pane.querySelector("h3").textContent).toEqual(wantedBars)
 
     let overview = await waitFor(() => pane.querySelector("[data-score-overview]"), {message: "the drawn overview"})
     await waitFor(() => overview.getAttribute("aria-busy") == "false", {message: "the overview to settle"})
-    await waitFor(() => overview.querySelector(`rect[data-shade].${scoreCardStyles.on}`),
-      {message: "the selected band, allowing the scroll retry"})
-  })
+
+    let band = await waitFor(() => overview.querySelector(`rect[data-shade].${scoreCardStyles.on}`),
+      {message: "the selected band"})
+    await waitFor(() => scrolls.length > 0, {message: "the pane to scroll to the selected band"})
+
+    // it scrolled to where that band is drawn (nothing moved: the scroll was
+    // recorded, not performed), a little above it
+    let wantedTop = Math.max(0,
+      band.getBoundingClientRect().top - pane.getBoundingClientRect().top + pane.scrollTop - 24)
+    expect(Math.abs(scrolls[scrolls.length - 1].top - wantedTop)).toBeLessThan(2)
+  }, 20000)
 
   it("analyses a piece added without an annotation on first open", async function() {
     // stored directly, as a piece imported before this change would be:
@@ -474,6 +496,12 @@ describe("the passages view (st/difficulty)", function() {
       {message: "the overview to come down"})
     expect(showScore()).toBeUndefined()
     expect(plate().textContent).toContain("The piece at a glance")
+
+    // the failure note stands alone: no legend telling the reader to tap
+    // bands that were never drawn
+    let pane = scorePane()
+    expect(pane.textContent).toContain("The score couldn't be engraved.")
+    expect(pane.textContent).not.toContain("Tap a shaded passage")
   })
 
   it("offers no score pane without a stored source", async function() {
@@ -494,8 +522,6 @@ describe("the passages view (st/difficulty)", function() {
 
     await waitFor(() => plate(), {message: "the passages plate"})
     expect([...plate().querySelectorAll("button")].find(b => b.textContent.trim() == "Show the score"))
-      .toBeUndefined()
-    expect([...plate().querySelectorAll("button")].find(b => b.textContent.trim() == "Show in the score"))
       .toBeUndefined()
   })
 

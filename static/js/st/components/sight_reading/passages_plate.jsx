@@ -203,16 +203,21 @@ export class PassagesPlate extends React.Component {
   }
 
   // the shaded rect may not be drawn yet (a pane just opened measures its
-  // width only after this callback, so the overview can still be mid-draw),
-  // so this tries a few times rather than only right after the selection
-  scrollToSelected(id, triesLeft=20) {
+  // width only after this callback, so the overview mounts and begins its
+  // draw after it), so this waits on the drawing rather than a fixed number
+  // of tries: a long import's overview takes as long as it takes. It gives
+  // up once the overview has settled without the band, and whenever the
+  // pane, the selection or the engraving has moved on
+  scrollToSelected(id) {
     let box = this.paneRef.current
-    if (!box) { return }
+    if (!box || this.unmounted || !this.state.scoreOpen ||
+      !this.canShowScore() || id != this.state.selectedId) { return }
 
     let rect = box.querySelector(`rect[data-shade="${id}"]`)
     if (!rect) {
-      if (triesLeft > 0 && !this.unmounted) {
-        setTimeout(() => this.scrollToSelected(id, triesLeft - 1), 50)
+      let overview = box.querySelector("[data-score-overview]")
+      if (!overview || overview.getAttribute("aria-busy") == "true") {
+        setTimeout(() => this.scrollToSelected(id), 50)
       }
       return
     }
@@ -250,7 +255,7 @@ export class PassagesPlate extends React.Component {
     let aside = `${flags.length} ${flags.length == 1 ? "passage" : "passages"} · ` +
       `${coveredCount} of ${numbers.length} bars`
 
-    return <Plate className={styles.glance_plate} header="The piece at a glance">
+    return <Plate header="The piece at a glance">
       <BarStrip
         numbers={numbers}
         heat={heat}
@@ -259,7 +264,7 @@ export class PassagesPlate extends React.Component {
         onSelect={id => this.select(id, {scroll: true})} />
 
       <div className={styles.glance_row}>
-        <span className={styles.glance_count}>{aside}</span>
+        <span>{aside}</span>
         <div className={styles.glance_actions}>
           {this.canShowScore() && <button
             type="button"
@@ -291,9 +296,8 @@ export class PassagesPlate extends React.Component {
     </Plate>
   }
 
-  // shared by the rail's detail plate and the score pane's; showOpenAction
-  // is false inside the pane, which already shows the score beside it
-  renderDetail(flag, flags, {showOpenAction=true}={}) {
+  // shared by the rail's detail plate and the score pane's
+  renderDetail(flag, flags) {
     let num = romanNumeral(flag.num)
     let total = romanNumeral(flags.length)
 
@@ -326,12 +330,6 @@ export class PassagesPlate extends React.Component {
         <Pill variant="ghost" className={styles.small_pill} onClick={() => this.practiseHand(flag)}>
           {HAND_LABEL[flag.hand]}
         </Pill>
-        {showOpenAction && this.canShowScore() && <Pill
-          variant="ghost"
-          className={styles.small_pill}
-          onClick={() => this.openScore(flag.id)}>
-          Show in the score
-        </Pill>}
       </div>
     </Plate>
   }
@@ -373,6 +371,8 @@ export class PassagesPlate extends React.Component {
     }))
 
     let ready = source && source.status == "ready" && source.musicXML
+    let showOverview = !!(this.state.scoreOpen && this.state.paneWidth > 0 &&
+      ready && !this.state.scoreFailed)
 
     return <SidePane
       side="right"
@@ -384,7 +384,7 @@ export class PassagesPlate extends React.Component {
       closeLabel="Close the score">
       <div className={styles.pane_body}>
         <div className={styles.pane_score} ref={this.scoreColumnRef}>
-          {this.state.scoreOpen && this.state.paneWidth > 0 && ready && !this.state.scoreFailed ?
+          {showOverview ?
             <ScoreCard
               overview
               musicXML={source.musicXML}
@@ -399,12 +399,12 @@ export class PassagesPlate extends React.Component {
               onError={() => this.setState({scoreFailed: true})} /> :
             this.state.scoreFailed ?
               <p className={styles.pane_note}>The score couldn't be engraved.</p> : null}
-          <div className={styles.legend}>
+          {showOverview && <div className={styles.legend}>
             <span>Tap a shaded passage, or a label above it, to read why it is hard.</span>
-          </div>
+          </div>}
         </div>
         <div className={styles.pane_detail}>
-          {this.renderDetail(selected, flags, {showOpenAction: false})}
+          {this.renderDetail(selected, flags)}
         </div>
       </div>
     </SidePane>
