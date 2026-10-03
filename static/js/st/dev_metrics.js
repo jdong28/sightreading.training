@@ -213,7 +213,7 @@ export function runReport(pass) {
         counts: graded,
         grade: graded.grade,
         rule: graded.rule,
-        reason: gradeReason(graded, {mode: grading.mode, firstSight, usualPace}),
+        reason: gradeReason(graded, {mode: grading.mode, firstSight, usualPace, beats: report.beats}),
         practiceOnly: !!(id && pass.practiceOnly && pass.practiceOnly.includes(id)),
       }
     }),
@@ -230,20 +230,22 @@ const percent = share => `${Math.round(share * 100)}%`
  * @param {string} opts.mode
  * @param {boolean} [opts.firstSight]
  * @param {number|null} [opts.usualPace] the item's pace before the attempt
+ * @param {boolean} [opts.beats] whether the card's columns carry score rhythm, see runReport
  * @returns {string} eg. "hard: slips on 1 of 6 columns"
  */
-export function gradeReason(graded, {mode, firstSight=false, usualPace=null}) {
+export function gradeReason(graded, {mode, firstSight=false, usualPace=null, beats=true}) {
   let {columns, slips, stuck, skipped, pace} = graded
   let hesitated = graded.hesitations
   let of = n => `${n} of ${columns} columns`
   let name = GRADE_NAMES[graded.grade]
+  let unit = beats ? "beat" : "column"
 
   let pacing = () => {
     if (firstSight) { return "at first sight, so no usual pace to keep" }
     if (usualPace == null) { return "no usual pace yet" }
     if (pace == null) { return "no pace (too few timed columns)" }
     let limit = EASY_PACE * usualPace
-    return `pace ${formatMs(pace)}/beat ${pace <= limit ? "≤" : ">"} ${EASY_PACE} × usual ` +
+    return `pace ${formatMs(pace)}/${unit} ${pace <= limit ? "≤" : ">"} ${EASY_PACE} × usual ` +
       `${formatMs(usualPace)} = ${formatMs(limit)}`
   }
 
