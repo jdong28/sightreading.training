@@ -2048,6 +2048,20 @@ describe("sight reading page", function() {
 
   // the chord staff's drill, a ChordList of chords judged only on the
   // release of every key
+  describe("the StaffTwo renderer", function() {
+    // scroll mode's slider sets the staff's first offset in the same commit
+    // that mounts StaffTwo, before its Two.js setup has assigned state.two
+    it("opens in scroll mode", function() {
+      window.localStorage.setItem(DRILL_STORAGE_KEY,
+        JSON.stringify({staff: "treble", generator: "random", mode: "scroll"}))
+
+      let el
+      expect(() => { el = renderPage(SightReadingPage, {useStaffTwo: true}) }).not.toThrow()
+      expect(page.state.mode).toEqual("scroll")
+      expect(el.querySelector("svg")).not.toBe(null)
+    })
+  })
+
   describe("chords mode", function() {
     let renderChords = () => {
       window.localStorage.setItem(DRILL_STORAGE_KEY,

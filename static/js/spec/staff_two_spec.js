@@ -395,6 +395,28 @@ describe("staff two mount/unmount race", function() {
     expect(() => instance.componentWillUnmount()).not.toThrow()
   })
 
+  // the trainer's scroll mode slider sets its first offset as the page
+  // mounts, which can land before the Two.js setup has assigned state.two
+  it("does not throw when the slider sets an offset before Two.js setup has assigned state.two", function() {
+    const root = createRoot(container)
+
+    let instance
+    flushSync(() => {
+      root.render(React.createElement(StaffTwo, {
+        ref: inst => { instance = inst },
+        type: "treble",
+        keySignature: new KeySignature(0),
+        notes: new NoteList([["C4"], ["E4"]])
+      }))
+    })
+
+    instance.state = {...instance.state, two: undefined}
+
+    expect(() => instance.setOffset(4)).not.toThrow()
+
+    flushSync(() => root.unmount())
+  })
+
   it("paints the scene (flushes to Two#update) when notes/type/keySignature are already set on the first render", function() {
     const root = createRoot(container)
     const updateSpy = spyOn(Two.prototype, "update").and.callThrough()
