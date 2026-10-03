@@ -139,9 +139,47 @@ def staff_position(st, y):
     return (st["lines"][-1] - y) / (st["space"] / 2)
 
 
-def place(heads, systems, max_ledger=7):
+def _ledger_positions(pos):
+    """The even half-space positions (ledger lines) a note at `pos` needs,
+    by notation convention: one at every whole space beyond the staff up
+    to and including `pos` itself if it sits on one (a note in the gap
+    just past the staff, pos 9 or -1, needs none at all)."""
+    out = []
+    if pos > 8:
+        p = 10
+        while p <= pos:
+            out.append(p)
+            p += 2
+    elif pos < 0:
+        p = -2
+        while p >= pos:
+            out.append(p)
+            p -= 2
+    return out
+
+
+def _ledger_line_present(black, x, space, y):
+    """A short horizontal run of ink near (x, y), the width a ledger line
+    actually is (a little over a notehead's own width): real notation
+    always draws one at every position _ledger_positions names, so its
+    absence marks the blob as something else -- text, an artifact --
+    rather than a genuine ledger-line note."""
+    half = max(2, int(round(0.65 * space)))
+    y0, y1 = int(round(y - 0.18 * space)), int(round(y + 0.18 * space)) + 1
+    x0, x1 = max(0, int(round(x - half))), min(black.shape[1], int(round(x + half)) + 1)
+    if y0 < 0 or y1 > black.shape[0] or x1 <= x0:
+        return False
+    band = black[y0:y1, x0:x1]
+    return bool(band.any(axis=0).mean() >= 0.6)
+
+
+def place(heads, systems, black=None, max_ledger=7):
     """Give every head its system, staff and staff position; heads outside
-    every staff's reach (text, clef dots far away) are dropped."""
+    every staff's reach (text, clef dots far away) are dropped. A head
+    that would sit on a ledger line is kept only if the page actually
+    draws one there (when `black` is given): a measure number or other
+    system-start text can otherwise read as a plausible high note, since
+    its digits alone are an ordinary notehead's size and shape."""
     out = []
     for hd in heads:
         best = None
@@ -151,9 +189,16 @@ def place(heads, systems, max_ledger=7):
                 if -max_ledger * 2 <= pos <= 8 + max_ledger * 2:
                     dist = 0 if 0 <= pos <= 8 else min(abs(pos), abs(pos - 8))
                     if best is None or dist < best[0]:
-                        best = (dist, si, k, pos)
+                        best = (dist, si, k, pos, st)
         if best is None:
             continue
-        _, si, k, pos = best
+        _, si, k, pos, st = best
+        if black is not None and (pos < 0 or pos > 8):
+            space = st["space"]
+            bot_y = st["lines"][-1]
+            needed = _ledger_positions(pos)
+            if needed and not all(_ledger_line_present(black, hd["x"], space, bot_y - p * (space / 2))
+                                   for p in needed):
+                continue
         out.append({**hd, "system": si, "staff": k + 1, "pos": pos, "step": int(round(pos))})
     return out

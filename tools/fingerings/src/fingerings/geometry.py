@@ -48,7 +48,7 @@ def analyze_page(gray, scan_kind="image-1bit"):
             G["black"] = black
 
     raw_heads, space = heads_mod.noteheads(G["black"], G["systems"])
-    placed = heads_mod.place(raw_heads, G["systems"])
+    placed = heads_mod.place(raw_heads, G["systems"], black=G["black"])
     staves.assign_bars(G["black"], G["systems"], placed)
     return G, placed, space, meta
 

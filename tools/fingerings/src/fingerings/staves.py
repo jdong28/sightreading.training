@@ -223,7 +223,22 @@ def barlines(black, system, heads_in_system=None, min_fill=0.9, min_gap_fill=0.9
         a, b = out[0], out[1]
         no_notes_between = not _real_content_between(heads_in_system, a["x1"], b["x0"], space)
         b_width = b["x1"] - b["x0"] + 1
-        if no_notes_between and b_width > 0.4 * space:
+        is_wide = b_width > 0.4 * space
+        # a header interval (clef, key signature, measure number) is
+        # reliably much narrower than this system's real measures, since
+        # it compresses notation metadata rather than laying out music by
+        # rhythm. Compared against the system's other, unambiguous
+        # measures when there are enough of them to average reliably:
+        # a key signature's accidentals (or a measure number) can read as
+        # noteheads and defeat the simpler no-notes check above, but they
+        # never widen the interval to a real measure's span.
+        header_by_width = False
+        if is_wide and len(out) >= 4:
+            other_widths = [out[i + 1]["x"] - out[i]["x"] for i in range(1, len(out) - 1)]
+            avg_other = sum(other_widths) / len(other_widths)
+            first_width = b["x"] - a["x"]
+            header_by_width = avg_other > 0 and first_width < 0.65 * avg_other
+        if is_wide and (no_notes_between or header_by_width):
             out = out[1:]  # a's "bar" was really the header before a start-repeat
     return out
 

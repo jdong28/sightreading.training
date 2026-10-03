@@ -219,6 +219,48 @@ def test_system_header_before_start_repeat():
     assert len(measures) == 2
 
 
+def test_system_header_before_start_repeat_with_false_heads_in_it():
+    """A key signature's accidentals (or a measure number) can read as
+    noteheads and defeat the simple "no notes between" header check; the
+    header is still recognised by width, since it's reliably much
+    narrower than this system's real, unambiguous measures."""
+    black = _canvas()
+    ys = _draw_staff(black, 300)
+    space = SPACE
+    top, bot = ys[0], ys[-1]
+    sys_ = _one_system([ys])
+    opening_x = 10
+    black[int(top):int(bot) + 1, opening_x:opening_x + THICK] = True
+
+    # a narrow header (3 spaces) with two spurious "heads" in it (as a
+    # misdetected key-signature accidental or measure-number digit would
+    # be), spread further apart than the no-notes check's own threshold
+    header_heads_x = [opening_x + 0.5 * space, opening_x + 2.5 * space]
+    heads_in_system = [dict(x=x, y=ys[2], w=space, system=0, staff=1) for x in header_heads_x]
+
+    repeat_x = opening_x + 3 * space
+    black[int(top):int(bot) + 1, repeat_x:repeat_x + 2] = True
+    black[int(top):int(bot) + 1, repeat_x + int(0.5 * space):repeat_x + int(0.5 * space) + 2] = True
+    rx = repeat_x + int(0.5 * space)
+
+    # three real, unambiguous measures, each a normal 8-space width
+    bar_xs = [rx + 8 * space, rx + 16 * space, rx + 24 * space]
+    for bx in bar_xs:
+        black[int(top):int(bot) + 1, bx:bx + 2] = True
+    for bx in (rx,) + tuple(bar_xs[:-1]):
+        hx = bx + 4 * space
+        _draw_head(black, hx, ys[2])
+        heads_in_system.append(dict(x=hx, y=ys[2], w=space, system=0, staff=1))
+
+    bars = staves.barlines(black, sys_, heads_in_system=heads_in_system)
+    xs = sorted(round(b["x"]) for b in bars)
+    assert opening_x not in xs  # the header (with its false heads) is still dropped
+    # the repeat sign's own two thin lines (merged into one wide group)
+    assert any(repeat_x - 2 <= x <= repeat_x + int(0.5 * space) + 2 for x in xs)
+    measures = [dict(x0=bars[i]["x1"], x1=bars[i + 1]["x0"]) for i in range(len(bars) - 1)]
+    assert len(measures) == 3
+
+
 def test_assign_bars_no_opening_line():
     """A system with no drawn opening stroke (common for a single-staff
     part's continuation system): its first measure's notes sit before
