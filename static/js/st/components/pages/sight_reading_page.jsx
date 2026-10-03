@@ -1051,6 +1051,9 @@ export default class SightReadingPage extends React.Component {
         // "miss" event just before this one
         update.notes = this.matcher.notes
         this.advanceEngineMarks(event.from, event.to)
+        // as the hit above: the new head's own arrival at the line, before
+        // the keys struck early for it complete and measure it
+        this.followHead()
         break
 
       case "chordHit":
@@ -1300,15 +1303,16 @@ export default class SightReadingPage extends React.Component {
         // tolerance, judged through the matcher (NoteMatcher#scrollPast) so
         // every detection rule stays there
         onLoop: function() {
-          let advance = this.columnAdvance(this.matcher.notes)
-          let now = this.matcher.now()
-          this.judge(() => this.matcher.scrollPast(now, {miss: this.state.session}))
-
+          // the room the column leaving the staff held, which the notes
+          // slide by, applied before the judgement so the head the matcher
+          // hands over is followed at the geometry it is drawn in
           let slider = this.state.slider
+          let advance = this.columnAdvance(this.matcher.notes)
           slider.value += advance - slider.loopPhase
           slider.loopPhase = advance
 
-          this.followHead()
+          let now = this.matcher.now()
+          this.judge(() => this.matcher.scrollPast(now, {miss: this.state.session}))
         }.bind(this)
       })
     }, () => this.followHead());

@@ -1691,6 +1691,51 @@ describe("sight reading page", function() {
           expect(late).toBeLessThan(300 + behind + 50)
         })
 
+        // the keys struck early for the next column complete it as the head
+        // scrolls past, which measures it there and then: its lateness is
+        // its own crossing of the line, not that of the column it followed
+        it("times a column the scroll-past completes from keys struck early at its own crossing", async function() {
+          await renderSection({measuresPerCard: "4"}, {mode: "scroll", tempo: true})
+          let slider = page.state.slider
+
+          let t0 = performance.now()
+          // the card's opening column waits on the line; playing it hands
+          // the head to the second, a gap right of the line, so its own
+          // crossing is a second off at speed 100
+          slider.value = SCROLL_WAIT
+          playAt(t0 - 400, 0)
+          expect(slider.floor).toBe(null)
+
+          // the player reaches the card's third column early and never
+          // plays the head's own keys
+          let next = [...page.state.notes[1]]
+          expect(next.length).toBeGreaterThan(1)
+          next.forEach((note, idx) =>
+            flushSync(() => midi(true, note, t0 - 20 + idx * 20)))
+
+          // the head scrolls past with that column already behind the line,
+          // where the keys struck early complete it
+          slider.value = SCROLL_WAIT - 0.2
+          let behind = (SCROLL_WAIT - slider.value) * 1000 / slider.speed
+          flushSync(() => slider.onLoop())
+          let elapsed = performance.now() - t0
+          expect(elapsed).toBeLessThan(behind)
+          expect([...page.state.notes.currentColumn()]).not.toEqual(next)
+
+          playAt(t0, 100)
+          await finished()
+
+          let review = await card()
+          // completed by both keys struck early, so its lateness is the time
+          // it had been past the line when they went down, never the second
+          // the column that scrolled past had been waiting for
+          expect(review.perColumn[2][4]).toEqual(next.length)
+          // stored rounded to the millisecond, so the bounds are too
+          let late = review.perColumn[2][6]
+          expect(late).toBeGreaterThanOrEqual(Math.round(behind - elapsed))
+          expect(late).toBeLessThanOrEqual(Math.round(behind))
+        })
+
         // turning the setting off restores wait-at-the-line (D4(a)), which
         // has to carry a head the setting left below the line back up to it
         it("carries a head left below the line back to it when the setting goes off", async function() {
