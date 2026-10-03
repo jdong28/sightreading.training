@@ -1889,6 +1889,41 @@ describe("sight reading page", function() {
           expect(slider.value).toEqual(SCROLL_WAIT)
         })
 
+        // the switch into scroll mode is a change of drill: its first column
+        // waits on the line, however many frames pass, rather than carrying
+        // over what was read in wait mode
+        it("waits for the first column after a switch into scroll mode", async function() {
+          let {clock, step, restore} = driveFrames()
+
+          try {
+            await renderSection({measuresPerCard: "4"}, {tempo: true})
+            expect(page.state.mode).toEqual("wait")
+            expect(page.state.tempo).toBe(true)
+
+            // a column read in wait mode, where the setting does nothing
+            expect(page.tempoMode()).toBe(false)
+            playHead()
+            expect(page.state.stats.hits).toBeGreaterThan(0)
+
+            flushSync(() => page.setMode("scroll"))
+            expect(page.tempoMode()).toBe(true)
+            let slider = page.state.slider
+            page.matcher.now = () => clock.now
+            expect(slider.floor).toEqual(SCROLL_WAIT)
+
+            // the column slides in and waits on the line unplayed
+            let head = [...page.state.notes.currentColumn()]
+            step(0)
+            for (let i = 0; i < 20; i++) { step(500) }
+
+            expect(slider.value).toEqual(SCROLL_WAIT)
+            expect(page.state.stats.misses).toEqual(0)
+            expect([...page.state.notes.currentColumn()]).toEqual(head)
+          } finally {
+            restore()
+          }
+        })
+
         // a column that scrolls past hands the next one over at the room it
         // held, which on an engine's system can be shorter than the
         // tolerance and so leave the staff past the line: a waiting column

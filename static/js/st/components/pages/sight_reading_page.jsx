@@ -1308,6 +1308,10 @@ export default class SightReadingPage extends React.Component {
       this.state.slider.cancel();
     }
 
+    // D4(c): the drill's mode changed, so its first column on the line waits
+    // however long the tempo setting is on
+    this.playedThisSegment = false
+
     this.setState({
       mode: "scroll",
       noteWidth: noteWidth,
