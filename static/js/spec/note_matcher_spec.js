@@ -1,5 +1,9 @@
 import NoteList from "st/note_list"
 import NoteMatcher, {EARLY_KEY_WINDOW, LATE_REPEAT_WINDOW} from "st/note_matcher"
+import {parseMusicXML} from "st/musicxml"
+import {extractSectionColumns, staffTracks} from "st/song_sections"
+import {cardColumn} from "st/measure_cards"
+import {nocturneBars5to6} from "spec/helpers"
 
 // A matcher over an explicit run of columns: the generator hands out the
 // columns still to come, and empty ones once they run out. Every judgement
@@ -389,6 +393,81 @@ describe("note matcher", function() {
 
     expect(matcher.held).toEqual({C4: true, D4: true})
     expect(matcher.touched).toEqual({C4: true})
+  })
+
+  // An ornament's notes are allowed while the ornamented note sounds, however
+  // far the head has moved on or not yet come (the redesign of T7's
+  // allowances, sr-detect-ornament-span-n7d)
+  describe("ornaments independent of the head", function() {
+    // the Nocturne's right hand alone, bars 5–6 (see nocturneBars5to6), over
+    // the measures given: G#5, F#5 with its trill, then G#5 after the grace
+    // notes E5 and F#5, and C#5
+    let nocturneRight = (startMeasure, endMeasure) => {
+      let song = parseMusicXML(nocturneBars5to6())
+      return extractSectionColumns(song, {startMeasure, endMeasure, track: staffTracks(song).treble, notation: true})
+    }
+
+    // [on, off, note] presses as ["on" | "off", note, timeStamp] in time order
+    let pressed = keys => keys
+      .flatMap(([on, off, note]) => [["on", note, on], ["off", note, off]])
+      .sort((a, b) => a[2] - b[2])
+
+    // the right hand of the page spec's bars 5–6 played as written at 60 bpm
+    // (the report's B5): G#5, then the trill on F#5 as twelve notes from the
+    // upper one, 110 ms apart, up to the grace notes into bar 6's G#5
+    let trilled = () => [
+      [0, 1985, "G#5"],
+      ...Array.from({length: 12}, (_, idx) =>
+        [2000 + idx * 110, 2090 + idx * 110, idx % 2 ? "F#5" : "G#5"]),
+    ]
+
+    // a looping card of the given columns, each lap's copies carrying what the
+    // drill's do (see cardColumn)
+    let loopMatcher = columns => {
+      let card = {columns}
+      let emitted = 0
+      let notes = new NoteList([], {generator: {nextNote: () => cardColumn(card, emitted++ % columns.length)}})
+      notes.fillBuffer(columns.length)
+      let judged = []
+      let matcher = new NoteMatcher(notes, {onEvent: event => judged.push(event)})
+      matcher.judged = judged
+      return matcher
+    }
+
+    // case 1: the trill sounds on after the head has moved past the last
+    // column its note sounds at, so its notes are no slips at the next one,
+    // and the G#5 it strikes doesn't complete that column (bar 6's G#5) before
+    // the player has played it
+    it("lets the Nocturne's trill run on past its column, right hand alone", function() {
+      let matcher = matcherFor(nocturneRight(1, 2))
+      expect(run(matcher, pressed([
+        ...trilled(),
+        [3870, 3925, "E5"], [3935, 3990, "F#5"], [4000, 5985, "G#5"], [6000, 8030, "C#5"],
+      ]))).toEqual(["hit G#5", "hit F#5", "hit G#5", "hit C#5"])
+    })
+
+    // case 1 on a looping card of bar 5: the trill's notes are the card's own,
+    // so judged against the head they played lap after lap from one trill
+    it("plays a looping card ending on the Nocturne's trill a lap at a time", function() {
+      let matcher = loopMatcher(nocturneRight(1, 1))
+      expect(run(matcher, pressed([
+        ...trilled(),
+        // the next lap, played as the first
+        [4000, 5985, "G#5"], [6000, 7985, "F#5"],
+      ]))).toEqual(["hit G#5", "hit F#5", "hit G#5", "hit F#5"])
+      expect(head(matcher)).toEqual(["G#5"])
+    })
+
+    // case 2: the right hand leads into bar 6 while the left hand's last
+    // eighth of bar 5 (C#4, under the trill) is still to come. The G#5 is an
+    // ornament note at that column and the next column's own, so it is
+    // credited early as any key of the next column is, not swallowed
+    it("credits an ornament key that is the next column's own as an early key", function() {
+      let matcher = matcherFor([ornamented(["C#4"], ["F#5", "G#5"]), ["C#3", "G#5"], ["G#3"]])
+      expect(run(matcher, [["on", "G#5", 3950], ["on", "C#4", 3980], ["on", "C#3", 4000]]))
+        .toEqual(["hit C#4", "hit C#3+G#5 (early G#5)"])
+      expect(head(matcher)).toEqual(["G#3"])
+    })
   })
 
   // What each hit measures for the grade besides its spread (rule 8): the

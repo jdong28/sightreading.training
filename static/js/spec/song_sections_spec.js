@@ -245,6 +245,36 @@ describe("song sections", function() {
       ])
     })
 
+    // 4/4, C major: the right hand's C5 D5 in halves over the left hand's C3
+    // G3, the G3 led into by a grace note B4 the score writes on the treble
+    // staff in the left hand's voice (a cross-staff grace), so it is kept on
+    // the bass staff's G3 (sr-detect-cross-staff-grace-n7c)
+    let crossStaffGrace = () => `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes><divisions>1</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><staves>2</staves><clef number="1"><sign>G</sign><line>2</line></clef><clef number="2"><sign>F</sign><line>4</line></clef></attributes>
+      ${noteXML("C", 5, 2, 1, "<voice>1</voice>")}
+      ${noteXML("D", 5, 2, 1, "<voice>1</voice>")}
+      <backup><duration>4</duration></backup>
+      ${noteXML("C", 3, 2, 2, "<voice>5</voice>")}
+      <note><grace slash="yes"/><pitch><step>B</step><octave>4</octave></pitch><voice>5</voice><type>eighth</type><staff>1</staff></note>
+      ${noteXML("G", 3, 2, 2, "<voice>5</voice>")}
+    </measure>
+  </part>
+</score-partwise>`
+
+    it("allows a grace note drawn on the hand drilled though it leads into the other hand's note", function() {
+      let song = parseMusicXML(crossStaffGrace())
+      let right = extractSectionColumns(song,
+        {startMeasure: 1, endMeasure: 1, track: staffTracks(song).treble, notation: true})
+
+      // the treble staff draws the B4, which the right hand plays into bar
+      // 1's beat 3 with its D5
+      expect(allowances(right)).toEqual([[["C5"], null], [["D5"], ["B4"]]])
+    })
+
     it("keeps a column's allowances through the range filter and the generator's copies", function() {
       let column = Object.assign(["C2", "C4"], {allowed: ["D4"]})
       let [[kept]] = filterColumnsToRange([column], "C3", "C6")
