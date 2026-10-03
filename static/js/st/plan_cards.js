@@ -17,7 +17,7 @@ import {itemId, newItem, itemWithPractice} from "st/srs/records"
 import {scheduledAttempt} from "st/srs/schedule"
 import {
   planNext, planState, planSummary, studyStatus, anchoredCard,
-  entryStatus, cardCaption, WAIT,
+  entryStatus, cardCaption, entryCaption, WAIT,
 } from "st/srs/planner"
 
 // keeps the later of each item's graded reviews
@@ -254,7 +254,8 @@ export class PlanDeck {
 
 // Plays the plan deck's cards. On top of the measure card generator it names
 // the card being played (statusLine) and adds to the caption after each card
-// when its measure comes back, and marks the piece in study
+// when its measure comes back, and the receipt of a self-graded pass with
+// when the bar its grade went to comes back, and marks the piece in study
 export class PlanGenerator extends MeasureCardGenerator {
   /**
    * @param {PlanDeck} deck
@@ -264,6 +265,9 @@ export class PlanGenerator extends MeasureCardGenerator {
   constructor(deck, opts) {
     super(deck, opts)
     this.lastCaption = null
+    // the bar a self-graded pass's grade went to and when it comes back,
+    // which selfReceipt reads in place of lastCaption (see finishPass)
+    this.lastWhen = null
     deck.playing = () => this.playing()
     // a deck that reads the log plans again when it lands, unless a pass is
     // in progress; it resolves to whether the page should fill the staff
@@ -376,7 +380,14 @@ export class PlanGenerator extends MeasureCardGenerator {
   /** @returns {Object[]} see MeasureCardGenerator#takePractice, the caption going with it */
   takePractice() {
     this.lastCaption = null
+    this.lastWhen = null
     return super.takePractice()
+  }
+
+  /** @returns {Object|null} see MeasureCardGenerator#selfReceipt, with when the bar the grade went to returns */
+  selfReceipt() {
+    let receipt = super.selfReceipt()
+    return receipt && {...receipt, when: this.lastWhen}
   }
 
   /** @returns {Object} what the programme holds, see planSummary */
@@ -408,8 +419,20 @@ export class PlanGenerator extends MeasureCardGenerator {
     last.hit = hit
 
     this.deck.expect(items, graded.map(attempt => attempt.review))
-    let item = entry && items.find(item => item.id == entry.itemId)
-    this.lastCaption = entry ? cardCaption(entry, item || null, planState(this.deck.planInput())) : null
+    let state = planState(this.deck.planInput())
+
+    if (pass.selfGrade) {
+      this.lastCaption = null
+      let measure = pass.selfGrade.bars?.[0] ?? entry.measure
+      let id = itemId({pieceId: opts.pieceId, hand: opts.hand, startMeasure: measure, endMeasure: measure})
+      let item = items.find(item => item.id == id) ?? this.deck.item(id)
+      let words = state.resting.has(measure) ? "rests until your next sitting" : entryCaption(item, state.now)
+      this.lastWhen = words ? {measure, words} : null
+    } else {
+      let item = entry && items.find(item => item.id == entry.itemId)
+      this.lastCaption = entry ? cardCaption(entry, item || null, state) : null
+      this.lastWhen = null
+    }
 
     if (items.length) {
       this.markStudy(opts.at)

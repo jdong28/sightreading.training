@@ -25,7 +25,6 @@ import {
   selfAttempts, selfPractice,
 } from "st/srs/attempt"
 import {AGAIN, HARD} from "st/srs/grade"
-import {selfWord} from "st/srs/self_grade"
 import {itemId} from "st/srs/records"
 import {practiceWeight} from "st/srs/schedule"
 import {onScheduleMeasures} from "st/srs/planner"
@@ -326,8 +325,11 @@ export class MeasureCardGenerator {
     this.now = now
     this.loop = deck.playableCount <= 1
     this.drill = () => ({mode: "wait"})
-    // the pass finished last, which the caption reads
+    // the pass finished last, which the caption and the receipt read
     this.lastPass = null
+    // the looping card's graded laps this sitting, which a self-graded
+    // receipt's "Pass n" reads (see selfGrade, takePractice)
+    this.lap = 0
 
     this.startCard()
 
@@ -395,19 +397,33 @@ export class MeasureCardGenerator {
 
   /**
    * @returns {string|null} the pace of the pass finished last (see
-   * paceCaption), or for a self-graded pass its grade's word, with the bar
-   * named when it wasn't graded throughout, eg. "Stumbled · bar 12"
+   * paceCaption), null for a self-graded pass: its receipt (selfReceipt)
+   * says it instead
    */
   caption() {
-    if (!this.lastPass) { return null }
-
-    let self = this.lastPass.selfGrade
-    if (self) {
-      let word = selfWord(self.grade)
-      return self.bars && self.bars.length ? `${word} · bar ${self.bars.join(", ")}` : word
-    }
-
+    if (!this.lastPass || this.lastPass.selfGrade) { return null }
     return paceCaption(passPace(this.lastPass))
+  }
+
+  /**
+   * @returns {Object|null} what the last self-graded pass recorded (see
+   * receiptParts in st/srs/self_grade), null before one is written
+   */
+  selfReceipt() {
+    if (!this.lastPass || !this.lastPass.selfGrade) { return null }
+
+    let pass = this.lastPass
+    let self = pass.selfGrade
+    return {
+      at: pass.written.at,
+      lap: this.loop ? this.lap : null,
+      startMeasure: pass.card.startMeasure,
+      endMeasure: pass.card.endMeasure,
+      grade: self.grade,
+      bars: self.bars,
+      slipped: self.slipped || [],
+      when: null,
+    }
   }
 
   /** @returns {MeasureCard[]} every card the staff may show */
@@ -510,6 +526,7 @@ export class MeasureCardGenerator {
     let at = time ?? this.now()
     pass.lastAt = at
     if (sessionId) { this.sessionId = sessionId }
+    if (this.loop) { this.lap++ }
 
     this.finishPass(pass)
 
@@ -528,7 +545,7 @@ export class MeasureCardGenerator {
    * grade always reaches the bar chosen. Null for a one-bar card, or for
    * Clean or Easy.
    * @param {number} grade 1-4
-   * @returns {{prompt: string, choices: {label: string, value: number[]|null}[]}|null}
+   * @returns {{choices: {label: string, value: number[]|null}[]}|null}
    */
   selfFollowUp(grade) {
     let card = this.deck.card
@@ -539,7 +556,6 @@ export class MeasureCardGenerator {
     if (bars.length < 2) { return null }
 
     return {
-      prompt: "Where?",
       choices: [
         ...bars.map(({startMeasure}) => ({label: `Bar ${startMeasure}`, value: [startMeasure]})),
         {label: "Throughout", value: null},
@@ -558,6 +574,7 @@ export class MeasureCardGenerator {
    */
   takePractice() {
     this.lastPass = null
+    this.lap = 0
 
     let pass = this.pass
     if (!pass) { return [] }

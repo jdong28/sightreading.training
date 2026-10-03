@@ -17,6 +17,7 @@ import NoteStats from "st/note_stats"
 import {AGAIN, HARD, GOOD, EASY} from "st/srs/grade"
 import {PAUSE_MS} from "st/srs/attempt"
 import {newItem} from "st/srs/records"
+import {receiptParts} from "st/srs/self_grade"
 import {predictedRecall, UNSCHEDULED_RECALL, DEFAULT_SCHEDULER_SETTINGS, DAY} from "st/srs/schedule"
 
 import {openTestStore, pickupScore, noteXML} from "spec/helpers"
@@ -834,18 +835,88 @@ describe("measure cards", function() {
           expect(reviews.map(r => r.grade)).toEqual([GOOD, AGAIN])
         })
 
-        it("captions a self pass with its grade's word, and takePractice leaves an untouched one untimed only", async function() {
+        it("leaves no caption for a self pass, which its receipt says instead, and takePractice leaves an untouched one untimed only", async function() {
           let {generator} = generatorFor()
           generator.setDrill(() => ({mode: "self"}))
 
           expect(generator.caption()).toBe(null)
+          expect(generator.selfReceipt()).toBe(null)
           time = 1000
           generator.selfGrade(HARD)
           await generator.finishing
-          expect(generator.caption()).toEqual("Stumbled")
+          expect(generator.caption()).toBe(null)
 
           time = 5000
           expect(generator.takePractice()).toEqual([])
+        })
+
+        it("gives a receipt of a self-graded pass, with the Where? bar if any", async function() {
+          let {generator} = generatorFor()
+          generator.setDrill(() => ({mode: "self"}))
+
+          time = 1000
+          generator.selfGrade(GOOD, {slipped: ["rhythm"]})
+          await generator.finishing
+
+          let written = (await store.reviews({pieceId: "p"}))[0]
+          expect(generator.selfReceipt()).toEqual({
+            at: written.at, lap: null, startMeasure: 0, endMeasure: 1,
+            grade: GOOD, bars: undefined, slipped: ["rhythm"], when: null,
+          })
+
+          time = 2000
+          generator.selfGrade(HARD, {bars: [1]})
+          await generator.finishing
+          expect(generator.selfReceipt().bars).toEqual([1])
+        })
+
+        it("counts a looping card's graded laps, reset by takePractice", async function() {
+          let deck = new MeasureCardDeck(measureCards([pickupMeasures()[1]], 1), {pieceId: "p", order: IN_ORDER, store})
+          let generator = track(new MeasureCardGenerator(deck, {now: () => time}))
+          generator.setDrill(() => ({mode: "self"}))
+          let notes = new NoteList([], {generator})
+          notes.fillBuffer(6)
+
+          time = 1000
+          generator.selfGrade(GOOD)
+          await generator.finishing
+          expect(generator.selfReceipt().lap).toEqual(1)
+
+          time = 2000
+          generator.selfGrade(GOOD)
+          await generator.finishing
+          expect(generator.selfReceipt().lap).toEqual(2)
+
+          expect(generator.takePractice()).toEqual([])
+          expect(generator.selfReceipt()).toBe(null)
+
+          time = 3000
+          generator.selfGrade(GOOD)
+          await generator.finishing
+          expect(generator.selfReceipt().lap).toEqual(1)
+        })
+
+        it("gives receiptParts its exact words", function() {
+          expect(receiptParts({
+            lap: null, startMeasure: 5, endMeasure: 6, grade: GOOD,
+            bars: undefined, slipped: [], when: {measure: 5, words: "again in a moment"},
+          })).toEqual({
+            head: "Recorded · bars 5–6", grade: "Clean", where: null, slipped: null,
+            when: "bar 5 again in a moment",
+          })
+
+          expect(receiptParts({
+            lap: 3, startMeasure: 1, endMeasure: 4, grade: GOOD,
+            bars: undefined, slipped: [], when: null,
+          }).head).toEqual("Pass 3 recorded · bars 1–4")
+
+          let single = receiptParts({
+            lap: null, startMeasure: 4, endMeasure: 4, grade: HARD,
+            bars: [4], slipped: ["rhythm", "tempo"], when: null,
+          })
+          expect(single.head).toEqual("Recorded · bar 4")
+          expect(single.where).toEqual("in bar 4")
+          expect(single.slipped).toEqual("rhythm, tempo slipped")
         })
 
         it("names only the bars with notes in Where?, so the grade reaches the bar chosen", async function() {
@@ -889,7 +960,6 @@ describe("measure cards", function() {
         it("asks Where? after a failing grade on a multi-bar card only", function() {
           let {generator} = generatorFor()
           let followUp = generator.selfFollowUp(AGAIN)
-          expect(followUp.prompt).toEqual("Where?")
           expect(followUp.choices.map(c => c.label)).toEqual(["Bar 0", "Bar 1", "Throughout"])
           expect(followUp.choices.map(c => c.value)).toEqual([[0], [1], null])
 
