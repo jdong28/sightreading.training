@@ -63,7 +63,8 @@
 // column it is written at (column.allowed) through the columns its own note
 // still sounds over (column.trailing, both from extractSectionColumns in
 // st/song_sections) goes down with nothing judged about it, carried on past
-// the head as T once the column completes (see hit).
+// the head as T once the column is done with, however it went: completed or
+// scrolled past (see handOver).
 //
 // A key that could belong to either the ornament or a real column (the
 // trill's own pitch, repeating into the next note, or a grace struck for the
@@ -76,18 +77,19 @@
 // (see noteOn, settlePending): a key outside the ornament means the player
 // has moved on, so every pending key was real; a strike of a pending pitch is
 // the ornament going on and refreshes it, the latest strike being the real
-// one; and when the ornament goes quiet (the gap, the page's tick) the
-// pending key whose pitch it ended on is the note it resolved onto, the
-// others its alternation, dropped. A key pending for the head completes it as
-// if struck at its own timeStamp; one pending for the next column is credited
-// early (T5), excused rather than a slip when it goes stale instead, and is
-// excused there afterwards (ambiguousOwn) so the player's own strike of it
-// never slips. Past the gap the ornament is over, so the head's own key is
-// its own at once. A trill, turn or mordent surrounds its note, and an
-// ornament carried on in T was played at the column before already, so
-// those pitches are ambiguous throughout; a grace precedes its note, so a
-// pitch that is only a grace into the head excuses before any of the head's
-// own keys are down and is the next column's early key only after.
+// one; and when the ornament goes quiet (the gap, the page's tick, or the
+// head scrolling past in tempo mode) the pending key whose pitch it ended on
+// is the note it resolved onto, the others its alternation, dropped. A key
+// pending for the head completes it as if struck at its own timeStamp; one
+// pending for the next column is credited early (T5), excused rather than a
+// slip when it goes stale instead, and is excused there afterwards
+// (ambiguousOwn) so the player's own strike of it never slips. Past the gap
+// the ornament is over, so the head's own key is its own at once. A trill,
+// turn or mordent surrounds its note, and an ornament carried on in T was
+// played at the column before already, so those pitches are ambiguous
+// throughout; a grace precedes its note, so a pitch that is only a grace into
+// the head excuses before any of the head's own keys are down and is the next
+// column's early key only after.
 //
 // Each hit also measures the column for the grade (rule 8 of the report):
 // its latency, from the moment it became the head to the first of its own
@@ -498,8 +500,9 @@ export default class NoteMatcher {
     return false
   }
 
-  // the ornament went quiet (settlePending, tick): the pending key whose
-  // pitch it ended on was the real strike, the rest were the alternation
+  // the ornament went quiet (settlePending, tick), or the head scrolled past
+  // with keys still pending (scrollPast): the pending key whose pitch it
+  // ended on was the real strike, the rest were the alternation
   resolveByGap() {
     let pending = this.pending
     this.pending = {}
