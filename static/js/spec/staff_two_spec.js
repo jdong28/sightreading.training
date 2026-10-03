@@ -700,6 +700,36 @@ describe("staff two ledger lines", function() {
     expect(loads.calls.allArgs().map(args => args[0])).not.toContain("gclef")
   })
 
+  it("keeps the grand staff's two staves the classic gap apart, not a fixed constant", function() {
+    let instance = mount({type: "grand", range: ["C2", "C6"]})
+
+    let treble = instance.trebleStaffRef.current.staffGroup
+    let bass = instance.bassStaffRef.current.staffGroup
+
+    let dy = bass.translation.y - treble.translation.y
+    // the staves are drawn the distance the fit sized the plate from
+    expect(instance.computeFit().staffDy).toBe(dy)
+
+    // the room between the two staves' five lines, counted in line gaps:
+    // the classic treble over bass layout's gap, not a constant wide enough
+    // to squeeze the staves down
+    let gap = (dy - (58 * 4 + 4)) / 58
+    expect(gap).toBeGreaterThan(2)
+    expect(gap).toBeLessThan(3)
+  })
+
+  it("draws the grand staff within a floor of a single staff's size on the same plate", function() {
+    let grand = mount({type: "grand", range: ["C2", "C6"], maxScale: 0.24})
+    let grandScale = grand.renderGroup.scale
+
+    let treble = mount({type: "treble", range: ["A3", "C6"], maxScale: 0.24})
+    let trebleScale = treble.renderGroup.scale
+
+    // the grand staff draws two staves and both their ledger rooms in the
+    // same plate, so it is smaller, but not by the margin a fixed gap cost
+    expect(grandScale).toBeGreaterThan(trebleScale * 0.65)
+  })
+
   it("spaces columns by noteWidth times scale in both modes, not the fixed legacy spacing", function() {
     let instance = mount({
       type: "treble",
@@ -720,9 +750,8 @@ describe("staff two ledger lines", function() {
   })
 })
 
-// StaffGroup#makeNotes's parity with the legacy renderer (AGENTS.md's
-// "Legacy features StaffTwo doesn't draw", Q2 = P1): accidentals, held keys
-// and the miss shake
+// StaffGroup#makeNotes's parity with the legacy renderer: accidentals,
+// held keys and the miss shake
 describe("staff two parity", function() {
   let container, root
 

@@ -23,7 +23,16 @@ const LEDGER_EXTENT = 15 // how much ledger line extends before and past the not
 
 const STAFF_INNER_HEIGHT = LINE_DY*4 + LINE_HEIGHT
 const BAR_WIDTH = 12
-const MIN_STAFF_DY = 500
+
+// the least room the grand staff keeps between its two staves' lines, what
+// the classic treble over bass layout needs for the notes between them: the
+// legacy GrandStaff's GRAND_STAFF_GAP (70 of its 30 unit line gaps, see
+// components/staves.jsx) in staff-local units
+const GRAND_STAFF_GAP = Math.round(70 / 30 * LINE_DY)
+
+// the distance between the grand staff's two staff origins when neither
+// staff reaches further than that gap into it
+const MIN_STAFF_DY = STAFF_INNER_HEIGHT + GRAND_STAFF_GAP
 
 // the raw asset width of a whole note head, in staff-local units (see
 // WHOLE_NOTE in st/staff_assets)
@@ -87,16 +96,20 @@ const QuarterNote = createAsset(QUARTER_NOTE, "QuarterNote")
 const WholeNote = createAsset(WHOLE_NOTE, "WholeNote")
 
 // the staff-local row of a note on a given staff type (treble/bass/alto),
-// counting half-steps down from the staff's upper line: used by computeFit
-// to size the plate from a staff's note range, without needing an instance
+// counting half-steps down from the staff's upper line. The one definition
+// of the row a note sits on: StaffGroup draws from it, and computeFit sizes
+// the plate from a staff's note range with it, without needing an instance
+// TODO: need to convert the chromatic note to keysignature relative in
+// order to calculate accurate note position
 function rowForNote(type, note) {
   const upperLine = StaffGroup.STAFF_TYPES[type].upperLine
   return -noteStaffOffset(note) + noteStaffOffset(upperLine)
 }
 
-// the staff-local y (top-left, centered like getNoteY) of a note on a given
-// staff type
+// the staff-local y of a note's head on a given staff type, its top-left
 function yForNote(type, note) {
+  // NOTE: noteStaffOffset has y axis flipped (origin on bottom), rendering has origin on top
+  // NOTE we subtract LINE_HALF_DY since we assume the the note_asset.height / 2 == LINE_HALF_DY
   return rowForNote(type, note) * LINE_HALF_DY - LINE_HALF_DY
 }
 
@@ -291,6 +304,7 @@ class StaffGroup extends React.PureComponent {
     width: 100,
     row: 0,
     dx: NOTE_COLUMN_DX,
+    staffDy: MIN_STAFF_DY,
     heldNotes: null,
   }
 
@@ -330,6 +344,7 @@ class StaffGroup extends React.PureComponent {
         keySignature={this.props.keySignature}
         type={this.props.type}
         row={this.props.row}
+        staffDy={this.props.staffDy}
       />,
       ...notes.map((n, idx) => <NoteGroup
         key={`note-${idx}`}
@@ -429,7 +444,7 @@ class StaffGroup extends React.PureComponent {
   makeStaff(notesGroup) {
     const staffGroup = new Two.Group()
 
-    staffGroup.translation.set(0, MIN_STAFF_DY * this.props.row)
+    staffGroup.translation.set(0, this.props.staffDy * this.props.row)
 
     // the X location where the notes can be rendered from. This will be
     // incremented by initial bar line, key signature, time signature, etc.
@@ -561,7 +576,7 @@ class StaffGroup extends React.PureComponent {
       let lastOffset = false
       for (let noteName of sortedColumn) {
         const spelled = key.enharmonic(noteName)
-        const noteRow = this.noteStaffOffset(spelled)
+        const noteRow = rowForNote(this.props.type, spelled)
 
         let x = nextNoteX
 
@@ -671,25 +686,9 @@ class StaffGroup extends React.PureComponent {
     return settings
   }
 
-  // the half-step row of the upper line of the staff
-  // subtract from a note's absolute row to get staff-local row
-  getNoteOffset() {
-    return noteStaffOffset(this.getStaffSettings().upperLine)
-  }
-
   // find staff-local y coordinate for a note (centered)
   getNoteY(note) {
-    // NOTE: noteStaffOffset has y axis flipped (origin on bottom), rendering has origin on top
-    // NOTE we subtract LINE_HALF_DY since we assume the the note_asset.height / 2 == LINE_HALF_DY
-    return (-this.noteStaffOffset(note) + this.getNoteOffset()) * LINE_HALF_DY - LINE_HALF_DY
-  }
-
-  // This is a wrapper around noteStaffOffset to ensure that we have applied
-  // the key signature to the incoming chromatic note
-  noteStaffOffset(note) {
-    // TODO: need to to convert chromatic note to keysignature relative in
-    // order to calculate accurate note position
-    return noteStaffOffset(note)
+    return yForNote(this.props.type, note)
   }
 
   // find the min and max "staff-local" row numbers for a column of chromatic notes.
@@ -698,7 +697,7 @@ class StaffGroup extends React.PureComponent {
     let minRow, maxRow
 
     for (const note of notes) {
-      let row = -this.noteStaffOffset(note) + this.getNoteOffset()
+      let row = rowForNote(this.props.type, note)
 
       if (minRow == null || row < minRow) {
         minRow = row
@@ -917,11 +916,12 @@ export class StaffTwo extends React.PureComponent {
     return {top, bottom}
   }
 
-  // the fit (render scale and vertical translation) for the staff's note
-  // range (this.props.range), stable for as long as the type/range/height/
-  // maxScale don't change: the ledger-line room it leaves always fits, and
-  // the staff never jumps as notes come and go (step 3, AGENTS.md sharp
-  // edge about StaffTwo not being usable for the exercises page yet)
+  // the fit for the staff's note range (this.props.range): the render scale
+  // and vertical translation that fit the range's own ledger room in the
+  // plate, plus the distance the grand staff's two staves are drawn apart.
+  // The fit comes from the range, not the notes on screen, so the staff
+  // never jumps as notes come and go, and is stable for as long as the
+  // type/range/height/maxScale don't change
   computeFit() {
     const {type, range, height, maxScale} = this.props
     const cacheKey = [type, height, maxScale, ...range].join("/")
@@ -931,6 +931,7 @@ export class StaffTwo extends React.PureComponent {
     }
 
     let top, bottom
+    let staffDy = MIN_STAFF_DY
 
     if (type == "grand") {
       const middleC = noteStaffOffset("C4")
@@ -940,8 +941,15 @@ export class StaffTwo extends React.PureComponent {
       const treble = this.rangeExtent("treble", trebleNotes)
       const bass = this.rangeExtent("bass", bassNotes)
 
+      // the two staves keep between them what they reach into that room,
+      // never less than the classic layout's gap: the legacy GrandStaff's
+      // gapBelow rule, so the plate isn't squeezed by a constant
+      const reach = Math.max(0, treble.bottom - STAFF_INNER_HEIGHT) +
+        Math.max(0, -bass.top)
+      staffDy = Math.max(MIN_STAFF_DY, STAFF_INNER_HEIGHT + reach)
+
       top = treble.top
-      bottom = bass.bottom + MIN_STAFF_DY
+      bottom = bass.bottom + staffDy
     } else {
       const extent = this.rangeExtent(type, range)
       top = extent.top
@@ -955,7 +963,7 @@ export class StaffTwo extends React.PureComponent {
     const scale = Math.min(maxScale, height / sourceHeight)
     const translateY = Math.floor(-(top * scale))
 
-    this.fitCache = {key: cacheKey, fit: {scale, translateY}}
+    this.fitCache = {key: cacheKey, fit: {scale, translateY, staffDy}}
 
     return this.fitCache.fit
   }
@@ -1012,12 +1020,12 @@ export class StaffTwo extends React.PureComponent {
       return
     }
 
-    // the one place the fit is applied: the range-based fit (step 3) only
-    // depends on props already available here (type/range/height/maxScale),
-    // not on the notes about to be laid out below, so it runs before them,
-    // which keeps makeNotes' column spacing (which reads renderGroup.scale
-    // through columnDx/dx) correct on the very first paint
-    const {scale, translateY} = this.computeFit()
+    // the one place the fit is applied: it only depends on props already
+    // available here (type/range/height/maxScale), not on the notes about to
+    // be laid out below, so it runs before them, which keeps makeNotes'
+    // column spacing (which reads renderGroup.scale through columnDx/dx)
+    // correct on the very first paint
+    const {scale, translateY, staffDy} = this.computeFit()
     this.renderGroup.scale = scale
     this.renderGroup.translation.set(0, translateY)
 
@@ -1033,6 +1041,7 @@ export class StaffTwo extends React.PureComponent {
       getAsset,
       getAssetWidth,
       keySignature: this.props.keySignature.getCount(), // TODO: just pass key signature to avoid additional work
+      staffDy,
       width: Math.floor(this.state.two.width / this.renderGroup.scale),
       dx,
     }
