@@ -1,7 +1,7 @@
 import NoteList from "st/note_list"
 import NoteMatcher from "st/note_matcher"
 import ChordList from "st/chord_list"
-import NoteStats from "st/note_stats"
+import NoteStats, {staffClefs} from "st/note_stats"
 import SlideToZero from "st/slide_to_zero"
 import Keyboard, {KeyboardInput} from "st/components/keyboard"
 import StatsLightbox from "st/components/sight_reading/stats_lightbox"
@@ -1205,6 +1205,13 @@ export default class SightReadingPage extends React.Component {
         // the column's measurements reached the measure cards' attempt with
         // the column as the matcher removed it (see NoteList#shift)
         this.state.stats.hitNotes(event.hitNotes)
+        // a measure card's column is already counted by clef there
+        // (columnClefs, keyed on cardIndex, cardColumn in st/measure_cards);
+        // this covers every other column, which carries none (see
+        // staffClefs)
+        if (event.from[0].cardIndex == null) {
+          this.state.stats.countClefs(staffClefs(this.state.currentStaff?.name, event.hitNotes), "hit")
+        }
         update.notes = this.matcher.notes
         // the keys it credited, for the developer metrics panel
         if (this.devMetrics) { this.lastHit = event }
@@ -1261,6 +1268,9 @@ export default class SightReadingPage extends React.Component {
     if (event.counted == "miss") {
       gaEvent("sight_reading", "note", "miss");
       this.state.stats.missNotes(event.missed, event.blamed);
+      if (event.missed.cardIndex == null) {
+        this.state.stats.countClefs(staffClefs(this.state.currentStaff?.name, event.blamed || event.missed), "miss")
+      }
     } else if (event.counted == "slip") {
       this.state.stats.slipNotes(event.missed, event.blamed)
     }

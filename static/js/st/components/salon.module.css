@@ -133,6 +133,23 @@
     }
 }
 
+.accuracy_rule {
+    position: relative;
+    height: 5px;
+    background: var(--salon-track);
+
+    .accuracy_fill {
+        position: absolute;
+        inset: 0 auto 0 0;
+        height: 100%;
+        background: var(--salon-gilt);
+    }
+
+    &[data-weak] .accuracy_fill {
+        background: var(--salon-oxblood);
+    }
+}
+
 .pill {
     display: inline-block;
     box-sizing: border-box;

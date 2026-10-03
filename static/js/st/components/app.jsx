@@ -6,7 +6,7 @@ import OnboardingPage from "st/components/pages/onboarding_page"
 import LoginPage from "st/components/pages/login_page"
 import RegisterPage from "st/components/pages/register_page"
 import {guideRoutes} from "st/components/pages/guide_pages"
-import StatsPage from "st/components/pages/stats"
+import {statsPageFor} from "st/components/pages/stats"
 import FlashCardPage from "st/components/pages/flash_card_page"
 import EarTrainingPage from "st/components/pages/ear_training_page"
 import {PlayAlongPage} from "st/components/pages/play_along_page"
@@ -18,6 +18,7 @@ import Header from "st/components/header"
 
 import DevicePickerLightbox from "st/components/device_picker_lightbox"
 
+import {getSession} from "st/app"
 import {dispatch, trigger} from "st/events"
 import {readConfig, writeConfig} from "st/config"
 import {hasOnboarded} from "st/onboarding"
@@ -167,7 +168,7 @@ class Layout extends React.Component {
 
         <Route path="/play-along" element={<SongsPage />} />
 
-        <Route path="/stats" element={<StatsPage {...pageProps} />} />
+        <Route path="/stats" element={statsPageFor(getSession(), pageProps)} />
         <Route path="/latency" element={<LatencyPage {...pageProps} />} />
         <Route path="/midi-monitor" element={<MidiMonitorPage {...pageProps} />} />
         <Route path="/new-song" element={<PlayAlongPage editorOpen={true} {...pageProps} />} />

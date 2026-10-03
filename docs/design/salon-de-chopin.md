@@ -1,6 +1,7 @@
 # Handoff: Sight Reading Trainer — "Salon de Chopin" UX facelift
 
-(Verbatim copy of the design handoff README from the Claude Design project, 2026-09-14.)
+(Verbatim copy of the design handoff README from the Claude Design project, 2026-09-14,
+except for the **Implementation** notes added under a screen as it lands.)
 
 ## Overview
 
@@ -199,6 +200,21 @@ opens its own drawer instead. "See all progress →" links to `/stats` until the
 - Primary pill "Tonight's programme" → setup.
 
 **State:** `range` (14 days shown), `showNoteGrid: boolean`.
+
+**Implementation:** `ProgressPage` (`static/js/st/components/pages/progress_page.jsx`) renders what
+it's handed by the pure module `st/progress.js`, which folds the session records the trainer
+already writes at Rest (`SessionRecord`, see `NoteStats#sessionRecord`); nothing here re-measures
+anything. A practice day is the scheduler's local day (`localDay`, 4 am rollover), not midnight, so
+a late evening is never split across two bars. A session's minutes are its `elapsedSeconds` (the
+Begin-to-Rest clock PR 53 added), falling back to the older `activeSeconds` for a record written
+before it. The goal line reads `practiceSettings().dailyGoalMinutes` (default 10), read-only here;
+the plot's scale keeps the goal line at or under 60% of the 150px plot, shrinking to fit a longer
+day's bar. By clef sums each session's own `clefs` counts, falling back to a clefless session's
+`treble`/`bass` staff for the ones that can be split after the fact (`grand` and `chord` can't). By
+note merges every spelling of a pitch class (`parseNoteOffset`) before taking a percentage, since a
+hit and a miss of the same note can arrive under different spellings. A backend account
+(`currentUser`) still sees the existing "Daily stats" page, unchanged; the route choice is
+`statsPageFor` in `st/components/pages/stats.jsx`.
 
 ## Interactions & behaviour
 
