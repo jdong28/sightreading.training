@@ -1,0 +1,102 @@
+{
+ "placements": [
+  {
+   "measure": 2,
+   "staff": 1,
+   "onset": "0",
+   "pitch": "G5",
+   "finger": "1",
+   "placement": "above"
+  },
+  {
+   "measure": 2,
+   "staff": 1,
+   "onset": "1",
+   "pitch": "G5",
+   "finger": "2",
+   "placement": "above"
+  },
+  {
+   "measure": 5,
+   "staff": 1,
+   "onset": "0",
+   "pitch": "G5",
+   "finger": "5",
+   "placement": "above"
+  },
+  {
+   "measure": 5,
+   "staff": 1,
+   "onset": "0",
+   "pitch": "E5",
+   "finger": "3",
+   "placement": "above"
+  },
+  {
+   "measure": 5,
+   "staff": 1,
+   "onset": "0",
+   "pitch": "C5",
+   "finger": "1",
+   "placement": "above"
+  },
+  {
+   "measure": 6,
+   "staff": 1,
+   "onset": "0",
+   "pitch": "E5",
+   "finger": "2",
+   "placement": "above"
+  },
+  {
+   "measure": 6,
+   "staff": 1,
+   "onset": "0",
+   "pitch": "C5",
+   "finger": "4",
+   "placement": "above"
+  },
+  {
+   "measure": 7,
+   "staff": 1,
+   "onset": "0",
+   "pitch": "G5",
+   "finger": "2-3",
+   "placement": "above"
+  },
+  {
+   "measure": 3,
+   "staff": 2,
+   "onset": "0",
+   "pitch": "C3",
+   "finger": "5",
+   "placement": "below"
+  },
+  {
+   "measure": 3,
+   "staff": 2,
+   "onset": "2",
+   "pitch": "E3",
+   "finger": "3",
+   "placement": "below"
+  }
+ ],
+ "skips": [
+  {
+   "page": 2,
+   "text": "1",
+   "reason_prefix": "hand order"
+  },
+  {
+   "page": 2,
+   "text": "3",
+   "reason_prefix": "no notehead of a staff"
+  },
+  {
+   "page": 2,
+   "text": "4",
+   "reason_prefix": "tentative"
+  }
+ ],
+ "other_count": 3
+}

@@ -14,8 +14,9 @@ import {setAppStore} from "st/storage"
 import {importMusicXMLPiece, addPiece} from "st/sheet_music_deck"
 import {parseMusicXML} from "st/musicxml"
 import {
-  GENERATORS, SHEET_MUSIC_STORAGE_KEY, BOTH_HANDS, RIGHT_HAND, WHOLE_SECTION, FREE_PRACTICE
+  GENERATORS, SHEET_MUSIC_STORAGE_KEY, BOTH_HANDS, RIGHT_HAND, WHOLE_SECTION, FREE_PRACTICE, STAVES
 } from "st/data"
+import {SCROLL_WAIT} from "st/score_render/card_scroll"
 import {PlanGenerator} from "st/plan_cards"
 import {SITTING_GAP_MS} from "st/srs/planner"
 import {AGAIN, HARD, GOOD, EASY} from "st/srs/grade"
@@ -2047,7 +2048,115 @@ describe("sight reading page", function() {
   })
 
   // the chord staff's drill, a ChordList of chords judged only on the
-  // release of every key
+  // release of every key. StaffTwo is the default programme's renderer (see
+  // EXERCISES_PROGRAMME's staffTwo field), so renderPage()'s default props
+  // already draw it; no useStaffTwo override is needed any more
+  describe("the StaffTwo renderer", function() {
+    // runs the scroll's slider down until it waits on the head column (see
+    // score_card_spec.js's settle)
+    let settle = async () => {
+      page.state.slider.speed = 20
+      await waitFor(() => page.state.slider.value == SCROLL_WAIT && !page.state.slider.animating,
+        "the slider to wait")
+    }
+
+    let centreOf = node => {
+      let rect = node.getBoundingClientRect()
+      return rect.left + rect.width / 2
+    }
+
+    let headCentre = el => centreOf(el.querySelector(".head"))
+
+    // StaffTwo also renders its hidden asset svgs (display: none, so a
+    // zero rect) inside the staff wrapper; find the real, visible one
+    let staffSvg = el => [...el.querySelectorAll(`.${staffStyles.staff_wrapper} svg`)]
+      .find(svg => svg.getBoundingClientRect().height > 0) || null
+
+    // that canvas is in the DOM before any staff is drawn into it, so the
+    // staff lines are the evidence that the plate isn't empty
+    let staffLines = el => {
+      let svg = staffSvg(el)
+      return svg ? [...svg.querySelectorAll(".staffLine")] : []
+    }
+
+    let bandCentre = el => {
+      let wrapper = el.querySelector(`.${staffStyles.staff_wrapper}`)
+      let rect = wrapper.getBoundingClientRect()
+      return rect.left + wrapper.clientWidth / 2
+    }
+
+    // scroll mode's slider sets the staff's first offset in the same commit
+    // that mounts StaffTwo, before its Two.js setup has assigned state.two
+    it("opens in scroll mode", function() {
+      window.localStorage.setItem(DRILL_STORAGE_KEY,
+        JSON.stringify({staff: "treble", generator: "random", mode: "scroll"}))
+
+      let el
+      expect(() => { el = renderPage(SightReadingPage) }).not.toThrow()
+      expect(page.state.mode).toEqual("scroll")
+      expect(staffLines(el).length).toBeGreaterThan(0)
+    })
+
+    it("waits the head column on the scroll-mode hit band", async function() {
+      window.localStorage.setItem(DRILL_STORAGE_KEY,
+        JSON.stringify({staff: "treble", generator: "random", mode: "scroll"}))
+
+      let el = renderPage(SightReadingPage)
+      await settle()
+      expect(Math.abs(headCentre(el) - bandCentre(el))).toBeLessThan(2)
+
+      click(buttonNamed(el, "Begin"))
+      play(page.state.notes.currentColumn())
+      await settle()
+      expect(Math.abs(headCentre(el) - bandCentre(el))).toBeLessThan(2)
+    })
+
+    it("keeps the head on the band after a staff change at rest", async function() {
+      window.localStorage.setItem(DRILL_STORAGE_KEY,
+        JSON.stringify({staff: "treble", generator: "random", mode: "scroll"}))
+
+      let el = renderPage(SightReadingPage)
+      await settle()
+
+      flushSync(() => page.setStaff(STAVES.find(s => s.name == "grand")))
+      await settle()
+
+      expect(Math.abs(headCentre(el) - bandCentre(el))).toBeLessThan(2)
+    })
+
+    it("draws StaffTwo for every notes-mode staff, and the legacy chord staff for chords", function() {
+      let el = renderPage(SightReadingPage)
+      expect(staffLines(el).length).toBe(5)
+
+      flushSync(() => page.setStaff(STAVES.find(s => s.name == "bass")))
+      expect(staffLines(el).length).toBe(5)
+
+      flushSync(() => page.setStaff(STAVES.find(s => s.name == "grand")))
+      expect(staffLines(el).length).toBe(10)
+
+      flushSync(() => page.setStaff(STAVES.find(s => s.name == "chord")))
+      expect(staffSvg(el)).toBe(null)
+    })
+
+    it("draws a held key not in the head column as a faint extra head", function() {
+      window.localStorage.setItem(DRILL_STORAGE_KEY,
+        JSON.stringify({staff: "treble", generator: "random"}))
+
+      let el = renderPage(SightReadingPage)
+      click(buttonNamed(el, "Begin"))
+
+      let column = [...page.state.notes.currentColumn()]
+      let strayNote = column.includes("C4") ? "D4" : "C4"
+
+      flushSync(() => page.pressNote(strayNote))
+
+      let held = [...el.querySelectorAll(".held")]
+      expect(held.length).toBeGreaterThan(0)
+
+      flushSync(() => page.releaseNote(strayNote))
+    })
+  })
+
   describe("chords mode", function() {
     let renderChords = () => {
       window.localStorage.setItem(DRILL_STORAGE_KEY,

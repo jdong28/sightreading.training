@@ -6,6 +6,7 @@ import {MemoryRouter, Routes, Route} from "react-router-dom"
 import App, {HomeGate, HeaderChrome} from "st/components/app"
 import drawerStyles from "st/components/sight_reading/programme_drawer.module.css"
 import headerStyles from "st/components/header.module.css"
+import staffStyles from "st/components/staff.module.css"
 import DevicePickerLightbox from "st/components/device_picker_lightbox"
 import {SHEET_MUSIC_STORAGE_KEY} from "st/data"
 import {DRILL_STORAGE_KEY, SCORE_DRILL_STORAGE_KEY} from "st/generators"
@@ -102,6 +103,16 @@ describe("app routing", function() {
       })
       flushSync(() => {})
       return container
+    }
+
+    // the staff lines StaffTwo drew into the plate: its hidden asset svgs
+    // (display: none, so a zero rect) and its own canvas are both in the
+    // wrapper before any staff is drawn into it, so the lines are the
+    // evidence that the plate isn't empty
+    let staffLines = el => {
+      let svg = [...el.querySelectorAll(`.${staffStyles.staff_wrapper} svg`)]
+        .find(svg => svg.getBoundingClientRect().height > 0)
+      return svg ? [...svg.querySelectorAll(".staffLine")] : []
     }
 
     let drawerText = el => el.querySelector(`.${drawerStyles.drawer}`).textContent
@@ -220,6 +231,12 @@ describe("app routing", function() {
       expect(activeNav(el)).toEqual(["Sight reading"])
       expect(drawerText(el)).toContain("Clef")
       expect(drawerText(el)).not.toContain("Import MusicXML")
+
+      // the exercises programme's staffTwo field switches the staff plate to
+      // StaffTwo (see sight_reading_page.jsx's EXERCISES_PROGRAMME), not the
+      // legacy renderer
+      expect(staffLines(el).length).toBeGreaterThan(0)
+      expect(el.querySelector(`.${staffStyles.staff_notes}`)).toBe(null)
     })
 
     // acoustic mode (st/srs/self_grade): the instrument setting, read into
