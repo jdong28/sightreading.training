@@ -18,7 +18,7 @@ import {sheetMusicPiece, passageSettings} from "st/data"
 import {pieceSong, ensureAnnotation} from "st/sheet_music_deck"
 import {getAppStore} from "st/storage"
 import {flagsInForce} from "st/difficulty/records"
-import {heat as heatLevel, ANALYZER_ALGO} from "st/difficulty/sections"
+import {heat as heatLevel} from "st/difficulty/sections"
 import {LEVEL_WORDS} from "st/difficulty/index"
 
 import styles from "./passages_plate.module.css"
@@ -75,6 +75,7 @@ export class PassagesPlate extends React.Component {
     super(props)
     this.state = {selectedId: null, folded: foldedState(), width: 0}
     this.columnRef = React.createRef()
+    this.scoreScrollRef = React.createRef()
   }
 
   componentDidMount() {
@@ -113,7 +114,14 @@ export class PassagesPlate extends React.Component {
 
   observeWidth() {
     let el = this.columnRef.current
-    if (!el || typeof ResizeObserver == "undefined") { return }
+    if (!el) { return }
+
+    // measured once synchronously too: a ResizeObserver's first callback can
+    // lag in a backgrounded tab, and the score plate needs a width to draw to
+    let initial = el.getBoundingClientRect().width
+    if (initial) { this.setState({width: initial}) }
+
+    if (typeof ResizeObserver == "undefined") { return }
 
     this.resizeObserver = new ResizeObserver(entries => {
       let width = entries[0] && entries[0].contentRect.width
@@ -127,8 +135,33 @@ export class PassagesPlate extends React.Component {
     storeFolded(folded)
   }
 
-  select(id) {
-    this.setState({selectedId: id})
+  // selecting from the strip or the list scrolls the score box to the
+  // passage; selecting the shaded band itself (already in view) does not
+  select(id, {scroll=false}={}) {
+    this.setState({selectedId: id}, () => {
+      if (scroll) { this.scrollToSelected(id) }
+    })
+  }
+
+  // the shaded rect may not be drawn yet (an overview width change can make
+  // the card redraw asynchronously instead of just restyling), so this
+  // tries a few times rather than only right after the selection's setState
+  scrollToSelected(id, triesLeft=20) {
+    let box = this.scoreScrollRef.current
+    if (!box) { return }
+
+    let rect = box.querySelector(`rect[data-shade="${id}"]`)
+    if (!rect) {
+      if (triesLeft > 0 && !this.unmounted) {
+        setTimeout(() => this.scrollToSelected(id, triesLeft - 1), 50)
+      }
+      return
+    }
+
+    let boxRect = box.getBoundingClientRect()
+    let rectRect = rect.getBoundingClientRect()
+    let top = Math.max(0, rectRect.top - boxRect.top + box.scrollTop - 24)
+    box.scrollTo({top, behavior: "smooth"})
   }
 
   practise(flag) {
@@ -166,7 +199,7 @@ export class PassagesPlate extends React.Component {
         heat={heat}
         flags={flags}
         selectedId={selected && selected.id}
-        onSelect={id => this.select(id)} />
+        onSelect={id => this.select(id, {scroll: true})} />
 
       {!this.state.folded && <div className={styles.legend}>
         <span>
@@ -186,7 +219,6 @@ export class PassagesPlate extends React.Component {
   renderDetail(flag, flags) {
     let num = romanNumeral(flag.num)
     let total = romanNumeral(flags.length)
-    let handHand = handPillHand(flag)
 
     return <Plate
       className={styles.compact_plate}
@@ -215,7 +247,7 @@ export class PassagesPlate extends React.Component {
           {`Practise ${barsLabel(flag.start, flag.end)}`}
         </Pill>
         <Pill variant="ghost" className={styles.small_pill} onClick={() => this.practiseHand(flag)}>
-          {HAND_LABEL[handHand] || HAND_LABEL[flag.hand]}
+          {HAND_LABEL[flag.hand]}
         </Pill>
       </div>
     </Plate>
@@ -228,7 +260,7 @@ export class PassagesPlate extends React.Component {
           <li
             key={flag.id}
             className={classNames({[styles.on]: flag.id == selected.id})}>
-            <button type="button" onClick={() => this.select(flag.id)}>
+            <button type="button" onClick={() => this.select(flag.id, {scroll: true})}>
               <span className={classNames(styles.list_num, styles[`level_${flag.level}`])}>
                 {romanNumeral(flag.num)}
               </span>
@@ -259,7 +291,7 @@ export class PassagesPlate extends React.Component {
       className={styles.score_plate}
       header="The score · your imported MusicXML"
       headerAside={`Bars ${selected.start}–${selected.end}`}>
-      <div className={styles.score_scroll}>
+      <div className={styles.score_scroll} ref={this.scoreScrollRef}>
         <ScoreCard
           overview
           musicXML={source.musicXML}
@@ -301,7 +333,7 @@ export class PassagesPlate extends React.Component {
 
     let selected = this.selectedFlag(flags)
 
-    return <div className={styles.passages} ref={this.columnRef} data-passages-plate data-analyzer-algo={ANALYZER_ALGO}>
+    return <div className={styles.passages} ref={this.columnRef} data-passages-plate>
       {this.renderGlance(numbers, heat, flags, coveredBars.size, selected)}
 
       {!this.state.folded && <div className={classNames(styles.detail_row, {

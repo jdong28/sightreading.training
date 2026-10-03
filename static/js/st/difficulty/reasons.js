@@ -79,9 +79,18 @@ function magnitudeOf(kind, detail) {
 function winningBar(run, kind, hand) {
   let best = null
   for (let bar of run) {
-    let detail = hand ? (bar.hands[hand] && bar.hands[hand][kind]) : bar[kind]
-    if (!detail && detail !== 0) { continue }
-    let magnitude = magnitudeOf(kind, detail)
+    let source = hand ? bar.hands[hand] : bar
+    if (!source) { continue }
+
+    let magnitudeSource = source[kind]
+    if (!magnitudeSource && magnitudeSource !== 0) { continue }
+
+    // holdMove's count ranks the bar; its sentence reads the richer detail
+    // (the held notes and direction) features.js keeps beside it
+    let detail = kind == "holdMove" ? source.holdMoveDetail : magnitudeSource
+    if (!detail) { continue }
+
+    let magnitude = magnitudeOf(kind, magnitudeSource)
     if (!best || magnitude > best.magnitude) { best = {bar, detail, magnitude} }
   }
   return best
