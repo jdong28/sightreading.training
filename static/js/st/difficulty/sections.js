@@ -1,10 +1,10 @@
 // Turns st/difficulty/features.js's per-bar measurements into scores and
-// groups the hardest bars into passages. The numbers here (ANALYZER_ALGO 2)
+// groups the hardest bars into passages. The numbers here (ANALYZER_ALGO 3)
 // are a first guess (report section 9): tune them freely, but bump
 // ANALYZER_ALGO whenever a change would relabel an existing piece's flags,
 // so a stale record is recomputed rather than silently kept.
 
-export const ANALYZER_ALGO = 2
+export const ANALYZER_ALGO = 3
 
 const MIN_ANALYSIS_BARS = 8
 
@@ -337,25 +337,8 @@ export function findPassages(scored, {repeats} = {}) {
     kinds: passageKinds(p.run),
   }))
 
-  // merge exact repeats into the earlier passage
   if (repeats && repeats.size) {
-    let merged = []
-
-    for (let p of passages) {
-      let indicesInRun = p.run.flatMap(bar => bar.indices ? rangeIndices(bar) : [])
-      let allRepeat = indicesInRun.length > 0 && indicesInRun.every(idx => repeats.has(idx))
-      if (allRepeat) {
-        let earlierIndices = indicesInRun.map(idx => repeats.get(idx))
-        let earlierPassage = passages.find(other => other != p &&
-          other.startIndex <= Math.min(...earlierIndices) && other.endIndex >= Math.max(...earlierIndices))
-        if (earlierPassage) {
-          earlierPassage.alsoAt = [...(earlierPassage.alsoAt || []), [p.start, p.end]]
-          continue
-        }
-      }
-      merged.push(p)
-    }
-    passages = merged
+    passages = mergeRepeats(passages, repeats)
   }
 
   // Hardest and Hard together at most eight; weaker ones beyond eight
@@ -364,6 +347,52 @@ export function findPassages(scored, {repeats} = {}) {
   ranked.slice(8).forEach(p => { p.level = 1 })
 
   return passages.sort((a, b) => b.strength - a.strength)
+}
+
+// the measure indices of a passage's bars, each as the index of the earliest
+// bar with the same content (fingerprints.exactRepeats), so two passages of
+// the same material carry the same indices however often it is written
+function materialIndices(passage, repeats) {
+  let out = new Set()
+  for (let bar of passage.run) {
+    if (!bar.indices) { continue }
+    for (let idx of rangeIndices(bar)) {
+      out.add(repeats.has(idx) ? repeats.get(idx) : idx)
+    }
+  }
+  return out
+}
+
+function coversMaterial(outer, inner) {
+  for (let idx of inner) {
+    if (!outer.has(idx)) { return false }
+  }
+  return true
+}
+
+// repeated material is flagged once (decision 7): a passage whose bars all
+// repeat the material of an earlier passage is dropped and its range kept on
+// that passage as alsoAt. The match is on the material itself, never on
+// where it was first written, so the first time it appears need not be
+// flagged for the later copies to merge into one passage.
+function mergeRepeats(passages, repeats) {
+  let byStart = [...passages].sort((a, b) => a.startIndex - b.startIndex)
+  let material = new Map(byStart.map(p => [p, materialIndices(p, repeats)]))
+  let kept = []
+
+  for (let p of byStart) {
+    let mine = material.get(p)
+    let carrier = mine.size ?
+      byStart.find(other => coversMaterial(material.get(other), mine)) : p
+
+    if (carrier == p) {
+      kept.push(p)
+    } else {
+      carrier.alsoAt = [...(carrier.alsoAt || []), [p.start, p.end]]
+    }
+  }
+
+  return kept
 }
 
 function rangeIndices(bar) {

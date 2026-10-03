@@ -5,6 +5,10 @@
 
 import {hash8} from "st/difficulty/fingerprints"
 
+function validRange(range) {
+  return Array.isArray(range) && range.length == 2 && range.every(Number.isFinite)
+}
+
 function validProposal(p) {
   return !!p && typeof p.id == "string" &&
     typeof p.source == "string" &&
@@ -13,6 +17,7 @@ function validProposal(p) {
     (p.hand == "upper" || p.hand == "lower" || p.hand == "both") &&
     (p.level == 1 || p.level == 2 || p.level == 3) &&
     Array.isArray(p.kinds) &&
+    (p.alsoAt == null || (Array.isArray(p.alsoAt) && p.alsoAt.every(validRange))) &&
     typeof p.title == "string" &&
     typeof p.reason == "string" &&
     Array.isArray(p.reasons) &&

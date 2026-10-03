@@ -4,6 +4,7 @@ import {flushSync} from "react-dom"
 import {MemoryRouter} from "react-router-dom"
 
 import ScorePage from "st/components/pages/score_page"
+import {PassagesPlate} from "st/components/sight_reading/passages_plate"
 import {importMusicXMLPiece, songToJSON} from "st/sheet_music_deck"
 import {parseMusicXML} from "st/musicxml"
 import {setAppStore} from "st/storage"
@@ -139,7 +140,7 @@ describe("the passages view (st/difficulty)", function() {
     let shownBars = () => plate().querySelector("h3").textContent
     let bracketBars = el => {
       let [, start, end] = el.getAttribute("aria-label").match(/bars? (\d+)(?:–(\d+))?/)
-      return `Bars ${start}–${end || start}`
+      return end ? `Bars ${start}–${end}` : `Bar ${start}`
     }
 
     let brackets = [...plate().querySelectorAll("button[aria-label^='Passage']")]
@@ -182,8 +183,10 @@ describe("the passages view (st/difficulty)", function() {
   it("analyses a piece added without an annotation on first open", async function() {
     // stored directly, as a piece imported before this change would be:
     // addPiece always annotates a freshly imported piece
-    let song = parseMusicXML(workhorseScore())
+    let xml = workhorseScore()
+    let song = parseMusicXML(xml)
     let piece = await store.putPiece({id: "old", title: "Workhorse", importedAt: 1000, song: songToJSON(song)})
+    await store.putPieceSource(piece.id, xml)
     expect(store.annotation(piece.id)).toBe(null)
 
     window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
@@ -197,6 +200,63 @@ describe("the passages view (st/difficulty)", function() {
     // detail and list plates never sit side by side
     await waitFor(() => plate().querySelector("[class*=\"side_by_side\"]"),
       {message: "the plate column to be measured"})
+    await waitFor(() => plate().querySelector("[class*=\"score_plate\"]"),
+      {message: "the shaded engraving"})
+  })
+
+  it("names a one-bar passage in the singular", async function() {
+    let piece = await drillPiece(workhorseScore())
+    let record = store.annotation(piece.id)
+    let [hardest, ...rest] = record.proposals
+    await store.putAnnotation({
+      ...record,
+      proposals: [
+        {...hardest, start: 12, end: 12, startIndex: 11, endIndex: 11, level: 3, strength: 99},
+        ...rest,
+      ],
+    })
+
+    renderScorePage()
+    await waitFor(() => plate(), {message: "the passages plate"})
+
+    expect(plate().querySelector("h3").textContent).toEqual("Bar 12")
+    expect(plate().textContent).toContain("Practise bar 12")
+
+    let score = await waitFor(() => plate().querySelector("[class*=\"score_plate\"]"),
+      {message: "the score plate"})
+    expect(score.textContent).toContain("Bar 12")
+    expect(score.textContent).not.toContain("Bars 12–12")
+  })
+
+  it("hides the score plate when the engine can't draw the piece", async function() {
+    let xml = workhorseScore()
+    let piece = await drillPiece(xml)
+
+    container = document.createElement("div")
+    container.style.width = "1100px"
+    document.body.appendChild(container)
+    root = createRoot(container)
+    flushSync(() => {
+      root.render(React.createElement(PassagesPlate, {
+        settings: {piece: piece.id, hand: "both hands", measuresPerCard: "all", practice: "free practice"},
+        setSettings: () => {},
+        source: {status: "ready", musicXML: xml},
+        engine: "osmd",
+        // the engine module never arrives, as a failed load or a throwing
+        // engine leaves the overview: ScoreCard reports it through onError
+        loadEngines: () => new Promise((resolve, reject) =>
+          setTimeout(() => reject(new Error("no engines here")), 100)),
+        store,
+      }))
+    })
+
+    let score = await waitFor(() => plate() && plate().querySelector("[class*=\"score_plate\"]"),
+      {message: "the score plate to go up"})
+    expect(score.querySelector("[aria-busy=\"true\"]")).toBeTruthy()
+
+    await waitFor(() => !plate().querySelector("[class*=\"score_plate\"]"),
+      {message: "the score plate to come down"})
+    expect(plate().textContent).toContain("The piece at a glance")
   })
 
   it("shows nothing for a piece without passages", async function() {

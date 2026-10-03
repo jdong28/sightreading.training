@@ -58,6 +58,11 @@ function barsLabel(start, end) {
   return start == end ? `bar ${start}` : `bars ${start}–${end}`
 }
 
+function barsHeading(start, end) {
+  let label = barsLabel(start, end)
+  return label.charAt(0).toUpperCase() + label.slice(1)
+}
+
 export class PassagesPlate extends React.Component {
   static propTypes = {
     generator: types.object,
@@ -73,7 +78,7 @@ export class PassagesPlate extends React.Component {
 
   constructor(props) {
     super(props)
-    this.state = {selectedId: null, folded: foldedState(), width: 0}
+    this.state = {selectedId: null, folded: foldedState(), width: 0, scoreFailed: false}
     this.columnRef = React.createRef()
     this.scoreScrollRef = React.createRef()
   }
@@ -90,7 +95,7 @@ export class PassagesPlate extends React.Component {
     let piece = sheetMusicPiece(this.props.settings)
     let prevPiece = sheetMusicPiece(prevProps.settings)
     if ((piece && piece.id) != (prevPiece && prevPiece.id)) {
-      this.setState({selectedId: null})
+      this.setState({selectedId: null, scoreFailed: false})
       this.ensure()
     }
 
@@ -235,7 +240,7 @@ export class PassagesPlate extends React.Component {
       headerAside={<span className={classNames(styles.level_label, styles[`level_${flag.level}`])}>
         {LEVEL_WORDS[flag.level]}
       </span>}>
-      <h3 className={styles.flag_title}>{`Bars ${flag.start}–${flag.end}`}</h3>
+      <h3 className={styles.flag_title}>{barsHeading(flag.start, flag.end)}</h3>
       <div className={styles.flag_sub}>{flag.title}</div>
 
       <ul className={styles.reasons}>
@@ -284,6 +289,7 @@ export class PassagesPlate extends React.Component {
   renderScore(song, flags, selected) {
     let source = this.props.source
     if (!source || source.status != "ready" || !source.musicXML) { return null }
+    if (this.state.scoreFailed) { return null }
     if (!this.state.width) { return null }
 
     let [fromMeasure, toMeasure] = measureNumberRange(song)
@@ -299,7 +305,7 @@ export class PassagesPlate extends React.Component {
     return <Plate
       className={styles.score_plate}
       header="The score · your imported MusicXML"
-      headerAside={`Bars ${selected.start}–${selected.end}`}>
+      headerAside={barsHeading(selected.start, selected.end)}>
       <div className={styles.score_scroll} ref={this.scoreScrollRef}>
         <ScoreCard
           overview
@@ -311,7 +317,8 @@ export class PassagesPlate extends React.Component {
           engine={this.props.engine}
           loadEngines={this.props.loadEngines}
           shades={shades}
-          onShade={id => this.select(id)} />
+          onShade={id => this.select(id)}
+          onError={() => this.setState({scoreFailed: true})} />
       </div>
       <div className={styles.legend}>
         <span>Tap a shaded passage, or a bracket above the strip, to read why it is hard.</span>

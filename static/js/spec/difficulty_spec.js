@@ -380,6 +380,22 @@ describe("st/difficulty", () => {
       expect(proposals.map(p => p.alsoAt)).toEqual([[[17, 19]]])
     })
 
+    it("merges a repeat into the earliest flagged copy, the first copy unflagged", () => {
+      // the same two-bar statement three times over, at bars 2-3, 6-7 and
+      // 10-11: the first scores below the flag threshold, so the merge has
+      // to key on the bars' material rather than on where it first appears
+      let scores = [0.2, 3, 3, 0.2, 0.2, 4, 4, 0.2, 0.2, 4, 4, 0.2]
+      let scored = scores.map((score, i) => scoredBar(i + 1, score))
+      let repeats = new Map([[5, 1], [6, 2], [9, 1], [10, 2]])
+
+      expect(findPassages(scored, {repeats: new Map()}).map(p => [p.start, p.end]))
+        .toEqual([[6, 7], [10, 11]])
+
+      let passages = findPassages(scored, {repeats})
+      expect(passages.map(p => [p.start, p.end])).toEqual([[6, 7]])
+      expect(passages[0].alsoAt).toEqual([[10, 11]])
+    })
+
     it("gives the same proposals and ids for the same song", () => {
       let songA = workhorseSong()
       let songB = workhorseSong()
@@ -488,6 +504,25 @@ describe("st/difficulty", () => {
           {upper: [{name: "G5"}, ...QUIET_UPPER.slice(1).map(name => ({name}))], lower: QUIET_LOWER.map(name => ({name}))} :
           (i >= 8 && i <= 10 ? denseBar() : quietBar()))}))
       expect(annotationStale(record, changedSong, {hasSource: false})).toBeTruthy()
+    })
+
+    it("validAnnotation rejects a proposal whose alsoAt is not bar ranges", () => {
+      let song = workhorseSong()
+      let analysis = analyzePiece({song, source: null, at: 1})
+      let record = annotationWith(null, "p1", analysis)
+      let proposal = record.proposals[0]
+      let withAlsoAt = alsoAt => ({
+        ...record,
+        proposals: [{...proposal, alsoAt}, ...record.proposals.slice(1)],
+      })
+
+      expect(validAnnotation(withAlsoAt([[9, 11]]))).toBeTruthy()
+      expect(validAnnotation(withAlsoAt([]))).toBeTruthy()
+      expect(validAnnotation(record)).toBeTruthy()
+
+      for (let bad of [5, "9-11", ["9-11"], [null], [[9]], [[9, 11, 13]], [[9, "11"]]]) {
+        expect(validAnnotation(withAlsoAt(bad))).toBeFalsy()
+      }
     })
 
     it("flagsInForce orders by level then strength and numbers from 1", () => {
