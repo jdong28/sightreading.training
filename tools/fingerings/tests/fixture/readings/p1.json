@@ -1,0 +1,51 @@
+{
+ "marks": {
+  "p1-01": {
+   "kind": "finger",
+   "text": "1"
+  },
+  "p1-02": {
+   "kind": "finger",
+   "text": "2"
+  },
+  "p1-03": {
+   "kind": "finger",
+   "text": "3"
+  },
+  "p1-04": {
+   "kind": "finger",
+   "text": "5"
+  },
+  "p1-05": {
+   "kind": "finger",
+   "text": "5"
+  },
+  "p1-06": {
+   "kind": "part",
+   "of": "p1-10"
+  },
+  "p1-07": {
+   "kind": "finger",
+   "text": "3"
+  },
+  "p1-08": {
+   "kind": "part",
+   "of": "p1-10"
+  },
+  "p1-09": {
+   "kind": "finger",
+   "text": "1"
+  },
+  "p1-10": {
+   "kind": "finger",
+   "text": "2-3"
+  },
+  "p1-11": {
+   "kind": "finger",
+   "text": "2/4"
+  }
+ },
+ "page": 1,
+ "reader": "make_fixture.py",
+ "sheet": "d026d882b9b7"
+}

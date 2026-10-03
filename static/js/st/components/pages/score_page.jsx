@@ -4,7 +4,9 @@
 // which hand are drilled, in its own drawer, and the trainer hands each card
 // of them to the staff to draw: the piece's own score, drawn by an engraving
 // engine from its source MusicXML (st/components/score_card), card by card in
-// wait mode and the section on one line in scroll mode, else the app's staff.
+// wait mode and the section on one line in scroll mode, save a bar today's
+// programme offers as one hand alone, drawn as its own one-bar system of that
+// hand, else the app's staff.
 // A piece is practised freely, a section picked in the drawer, or in today's
 // programme, the planned session of st/srs/planner (the default once the
 // piece is in study), which the "Tonight's programme" plate prefaces

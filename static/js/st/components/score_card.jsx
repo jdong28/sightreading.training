@@ -7,7 +7,9 @@
 // In scroll mode the card is a system drawn on one line (system), which the
 // trainer's slider moves under a fixed hit line (setOffset), placing the
 // column at the head of the drill by where its heads are drawn
-// (st/score_render/card_scroll)
+// (st/score_render/card_scroll). A system the drill comes back to (eg. the
+// section after a hand-alone scaffold bar of today's programme) is re-joined
+// to its kept drawing rather than drawn again (see systemCache in draw)
 
 import * as React from "react"
 import * as types from "prop-types"
@@ -22,6 +24,32 @@ import styles from "./score_card.module.css"
 // an engine draws one card at a time (OSMD keeps one score loaded), so the
 // cards of every ScoreCard are drawn one after another
 let drawing = Promise.resolve()
+
+// how many systems ScoreCard keeps drawn, so a return to one re-joins it
+// rather than drawing it again
+const KEPT_SYSTEMS = 3
+
+// what a system is drawn from, keyed so an equal-by-value staves array (the
+// page's handStaves cache hands back new arrays) still matches a kept one.
+// The score itself is left out: a kept system is only ever looked up or
+// inserted after the cache is filtered to the score it was drawn from
+function systemKey(props) {
+  let {engine, measureStarts, fromMeasure, toMeasure, hand, staves} = props
+  return JSON.stringify({engine, measureStarts, fromMeasure, toMeasure, hand, staves: staves ?? null})
+}
+
+// A deep, independent copy of a drawn system: OSMD's own "system" display is
+// one instance it keeps and redraws into (osmd.ts), so the svg and note
+// elements a render hands back are only good until the engine draws again,
+// even for an unrelated card. A kept system must own a copy nothing later
+// reuses or mutates
+function cloneResult({svg, notes}) {
+  let originals = [...svg.querySelectorAll("*")]
+  let clone = svg.cloneNode(true)
+  let copies = clone.querySelectorAll("*")
+  let indexOf = new Map(originals.map((el, idx) => [el, idx]))
+  return {svg: clone, notes: notes.map(note => ({...note, el: copies[indexOf.get(note.el)]}))}
+}
 
 export class ScoreCard extends React.Component {
   static propTypes = {
@@ -70,6 +98,8 @@ export class ScoreCard extends React.Component {
     this.stripRef = React.createRef()
     this.state = {drawing: true}
     this.drawCount = 0
+    // systems kept drawn, most recently used first: {key, musicXML, svg, result}
+    this.systemCache = []
   }
 
   componentDidMount() {
@@ -99,11 +129,34 @@ export class ScoreCard extends React.Component {
 
   draw() {
     let count = ++this.drawCount
+    let p = this.props
+
+    // a kept system belongs to the score it was drawn from; once that score
+    // moves on, so do they
+    this.systemCache = this.systemCache.filter(entry => entry.musicXML == p.musicXML)
+    let cached = p.system ? this.systemCache.find(entry => entry.key == systemKey(p)) : null
+
     // the drawn card stays up until the next is drawn, but no longer follows
     // the drill, whose columns are the next card's
     this.result = null
     this.cardJoin = null
     this.track = null
+
+    if (cached) {
+      this.systemCache = [cached, ...this.systemCache.filter(entry => entry != cached)]
+      // a kept system comes back with none of the current/done/missed classes
+      // it was last drilled with: the card it comes back to is one of its bars,
+      // so its own join only ever marks that bar's heads
+      markCard({heads: cached.result.notes.map(note => [note.el]), unmatched: []},
+        {head: null, missed: []})
+      this.result = cached.result
+      let strip = this.stripRef.current
+      if (strip) { strip.replaceChildren(cached.svg) }
+      this.setState({drawing: false})
+      this.join()
+      return Promise.resolve()
+    }
+
     this.setState({drawing: true})
 
     let stale = () => count != this.drawCount || this.unmounted
@@ -134,6 +187,12 @@ export class ScoreCard extends React.Component {
     if (stale()) { return }
 
     this.result = result
+    if (system) {
+      let kept = cloneResult(result)
+      this.systemCache = this.systemCache.filter(entry => entry.musicXML == musicXML)
+      this.systemCache.unshift({key: systemKey(this.props), musicXML, svg: kept.svg, result: kept})
+      this.systemCache = this.systemCache.slice(0, KEPT_SYSTEMS)
+    }
     let into = system ? this.stripRef.current : this.plateRef.current
     into.replaceChildren(result.svg)
     this.setState({drawing: false})

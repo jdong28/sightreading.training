@@ -1103,6 +1103,52 @@ describe("today's programme on the staff", function() {
     expect(built).toEqual(["lower:1"])
   })
 
+  it("offers a bar failing on one hand's notes as that hand alone while the drill scrolls", async function() {
+    let {built, ...hands} = handPools()
+    let {deck, generator, notes} = await generatorFor(1, hands)
+    generator.setDrill(() => ({mode: "scroll", speed: 100}))
+    let stats = new NoteStats()
+    notes = await playCard({generator, notes}, stats)
+
+    stats.missNotes(["G3"])
+    stats.missNotes(["G3"])
+    notes = await playCard({generator, notes}, stats)
+
+    expect(deck.entry).toEqual(jasmine.objectContaining({reason: LADDER, measure: 1, hand: "lower"}))
+    expect(generator.replanning()).toBe(false)
+    expect(generator.currentCard()).toEqual(jasmine.objectContaining({measures: [1], hand: "lower"}))
+    expect(built).toEqual(["lower:1"])
+
+    notes = await playCard({generator, notes}, stats)
+    let reviews = await store.reviews({pieceId: piece.id})
+    expect(reviews[reviews.length - 1]).toEqual(jasmine.objectContaining({
+      itemId: `${piece.id}:lower:1-1`, mode: "scroll",
+    }))
+  })
+
+  it("keeps a hand alone showing whatever mode the drill is in", async function() {
+    let {built, ...hands} = handPools()
+    let {deck, generator, notes} = await generatorFor(1, hands)
+    let stats = new NoteStats()
+    notes = await playCard({generator, notes}, stats)
+    stats.missNotes(["G3"])
+    stats.missNotes(["G3"])
+    notes = await playCard({generator, notes}, stats)
+    expect(deck.entry).toEqual(jasmine.objectContaining({measure: 1, hand: "lower"}))
+
+    let mode = "wait"
+    generator.setDrill(() => ({mode}))
+    let entry = deck.entry
+    for (let next of ["scroll", "wait"]) {
+      mode = next
+      generator.setDrill(() => ({mode}))
+      expect(deck.split()).toBe(true)
+      expect(generator.replanning()).toBe(false)
+      expect(generator.replan()).toBe(false)
+      expect(deck.entry).toEqual(entry)
+    }
+  })
+
   it("leaves the programme with no card once every bar it has left rests", async function() {
     let {deck, generator, notes} = await generatorFor(1)
     let stats = new NoteStats()
@@ -1323,9 +1369,10 @@ describe("today's programme on the staff", function() {
     await generator.ready
     expect(planState(deck.planInput()).resting.has(1)).toBe(true)
 
-    // the drill scrolls, so the scaffold isn't offered; the hand's failures
-    // still rest the bar rather than bringing it back hands together
-    generator.setDrill(() => ({mode: "scroll"}))
+    // the staff can't draw one hand alone, so the scaffold isn't offered;
+    // the hand's failures still rest the bar rather than bringing it back
+    // hands together
+    generator.setHandsApart(() => false)
     let state = planState(deck.planInput())
     expect(state.resting.has(1)).toBe(true)
     expect(state.scaffolds.get(1)).toBe(undefined)

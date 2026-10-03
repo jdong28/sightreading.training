@@ -5,11 +5,13 @@
 // the player's measures per card (anchoredCard), and the next is planned
 // when a card is done, from the piece's items as its attempts leave them. A
 // bar the hand scaffold offers hands apart is a card of that bar alone, of
-// that hand's notes, and its attempts are written to that hand's items; the
-// scaffold is offered in wait mode alone, so a failing bar returns hands
-// together while the drill scrolls. The scaffold's own passes never mark
-// their items deliberate (PlanDeck#scaffold, ItemRecord#deliberate): only a
-// session played with that hand as its own does.
+// that hand's notes, and its attempts are written to that hand's items. It is
+// offered in either drill mode wherever the staff can draw the hand (see
+// split); in scroll mode the card is drawn as its own one-bar system of that
+// hand (SightReadingPage#engineCard), not the section. The scaffold's own
+// passes never mark their items deliberate (PlanDeck#scaffold,
+// ItemRecord#deliberate): only a session played with that hand as its own
+// does.
 
 import {getAppStore} from "st/storage"
 import {MeasureCardGenerator, sectionCard} from "st/measure_cards"
@@ -90,12 +92,10 @@ export class PlanDeck {
     // the plan made again after the read waits rather than throw a pass away
     this.playing = () => false
     // what the hand scaffold needs of the page, which the generator keeps
-    // up to date: a drill that waits at each column, and a staff that can
-    // draw one hand of the piece by itself (see split). Acoustic mode turns
-    // the scaffold off outright (selfGraded): self failures never split a
-    // bar, and a bar split by an earlier detected failure returns hands
-    // together while it is on
-    this.waiting = () => true
+    // up to date: a staff that can draw one hand of the piece by itself (see
+    // split). Acoustic mode turns the scaffold off outright (selfGraded):
+    // self failures never split a bar, and a bar split by an earlier
+    // detected failure returns hands together while it is on
     this.splittable = () => true
     this.selfGraded = () => false
 
@@ -119,7 +119,7 @@ export class PlanDeck {
 
   /** @returns {boolean} whether a bar may be offered as one hand alone now */
   split() {
-    return this.waiting() && this.splittable() && !this.selfGraded()
+    return this.splittable() && !this.selfGraded()
   }
 
   /** @returns {string} the hand of the card being shown, the session's or a hand alone */
@@ -287,12 +287,11 @@ export class PlanGenerator extends MeasureCardGenerator {
 
   /**
    * @param {function(): {mode: string, speed?: number}} drill see
-   * MeasureCardGenerator#setDrill. The scaffold is offered in wait mode
-   * alone, so the card showing is planned again once the drill is known
+   * MeasureCardGenerator#setDrill. Acoustic mode turns the scaffold off
+   * outright, so the card showing is planned again once the drill is known
    */
   setDrill(drill) {
     super.setDrill(drill)
-    this.deck.waiting = () => this.drill().mode != "scroll"
     this.deck.selfGraded = () => this.drill().mode == "self"
     this.replan()
   }
@@ -421,10 +420,11 @@ export class PlanGenerator extends MeasureCardGenerator {
   /**
    * As MeasureCardGenerator#practiceOnly, save that a hand alone the scaffold
    * offers climbs its own ladder from the bar's failure, so it is on schedule
-   * unless it was played waiting, where the rule for any other card applies,
-   * and that a bar resting until the next sitting is left as it is wherever
-   * it is played, so a card anchored on a neighbour writes it as practice
-   * alone however the pass went
+   * unless the queue offered its rung before it came due (the WAIT reason of
+   * st/srs/planner, whatever drill mode it is played in), where the rule for
+   * any other card applies, and that a bar resting until the next sitting is
+   * left as it is wherever it is played, so a card anchored on a neighbour
+   * writes it as practice alone however the pass went
    * @param {AttemptPass} pass complete
    * @param {Object} opts as for passAttempts
    * @returns {string[]}

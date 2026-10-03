@@ -561,6 +561,37 @@ describe("measure cards", function() {
         expect(items.find(item => item.id == "p:both:0-0").hits).toEqual(2)
       })
 
+      // D4(c): the trainer's "Keep tempo" setting, like a change of mode
+      // mid-pass, ungrades the pass: it writes practice, never a review
+      it("writes practice only, no review, for a pass whose tempo setting changed mid-pass", async function() {
+        let deck = new MeasureCardDeck(measureCards(pickupMeasures(), 2), {
+          pieceId: "p", order: IN_ORDER, store,
+        })
+
+        let drill = {mode: "scroll", speed: 100, tempo: 1}
+        let generator = track(new MeasureCardGenerator(deck, {now: () => time}))
+        generator.setDrill(() => drill)
+        let notes = new NoteList([], {generator})
+        let stats = new NoteStats()
+        notes.fillBuffer(6)
+
+        time = 1000
+        notes = hit(notes, stats)
+        time = 1500
+        notes = hit(notes, stats)
+        // the setting is switched off partway through the card
+        drill = {mode: "scroll", speed: 100, tempo: null}
+        time = 2000
+        notes = hit(notes, stats)
+        time = 2500
+        notes = hit(notes, stats)
+        await generator.finishing
+
+        expect(await store.reviews({pieceId: "p"})).toEqual([])
+        // measure 0 is one column (D5), measure 1 is three (G3+G4, A4, B4)
+        expect(measureStats().map(s => [s.startMeasure, s.hits])).toEqual([[0, 1], [1, 3]])
+      })
+
       it("abandons a pass for the page, never grading the rest of its card", async function() {
         let {generator, notes} = generatorFor()
         generator.setDrill(() => ({mode: "wait"}))

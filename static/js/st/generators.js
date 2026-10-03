@@ -163,6 +163,13 @@ export function currentScrollSpeed(storageKey=DRILL_STORAGE_KEY) {
   return Math.round(Math.min(max, Math.max(min, speed)))
 }
 
+// the stored scroll-mode tempo setting (D4(c)), the trainer's "Keep tempo"
+// toggle: a column that scrolls past the hit line by the tolerance is
+// missed, rather than waited for. Off by default
+export function currentScrollTempo(storageKey=DRILL_STORAGE_KEY) {
+  return loadGeneratorSettings(storageKey).tempo === true
+}
+
 // strip any values that don't make sense
 export function fixGeneratorSettings(generator, settings) {
   let out = {}
