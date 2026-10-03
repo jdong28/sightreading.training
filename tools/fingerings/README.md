@@ -259,7 +259,13 @@ a filter pikepdf can't decode (JBIG2 without `jbig2dec`, for example;
 real IMSLP-style scans are mostly JBIG2, so a render fallback for it, like
 the one a stacked-image/mixed-raster PDF already needs, is a natural
 follow-up); a scan below about 300 dpi (the resolution floor is measured
-and recorded per page in `geometry.json`). The geometry/head-match
+and recorded per page in `geometry.json`; swept against a real passing
+scan downsampled to 20/18/16/14/12/10px staff spaces, every page at or
+above the 16px floor still runs — head match holds in the high 80s/low
+90s%, with some resampling-dependent noise rather than a smooth decline
+— and every page below it stops cleanly with the floor's own message
+rather than running anyway; see the PR for the full table). The
+geometry/head-match
 pipeline (`fingerings geometry`, and `run`'s own gates) fully supports a
 voice-plus-piano or other multi-part score and a one-part score of up to
 3 staves; *placing* fingerings (`run`'s stage 3) is still the two-hand
@@ -278,23 +284,29 @@ reading handwritten marks on a skewed real scan needs that pipeline
 corrected too, which is follow-up work for whenever a real scan actually
 carries handwritten markup to read.
 
-Measured gaps the corpus run (below) still shows, not yet closed:
-- A dense, dissonant passage can still miscount a system by one bar even
-  after the fixes above (the MuseScore Maple Leaf Rag's trio, page 3
-  system 6): the interval holding the measure has genuine notes, so the
-  header-drop rule correctly leaves it alone, and the actual cause isn't
-  yet isolated. It cascades: the piece's own bar-count gate, and every
-  page after the wrong system, fail from it.
-- The real 1899 LoC scan reaches 88% head match on its first music page
-  (page gate passes) but stays under the 90% floor; its next two pages
-  (the trio and the D strain, both six-system pages) still miscount
-  several systems and weren't root-caused in this pass. Both are
-  genuinely hard, dense engravings; see the PR's per-page table.
+Every corpus system/bar count is now correct (the dense-passage
+miscounts a prior pass of this work left open — the MuseScore Maple Leaf
+Rag's trio, and the real 1899 LoC scan's own three pages — are root-caused
+and fixed below); the three LoC pages still fail only the head-match
+gate, by under a point each. Measured gaps the corpus run (below) still
+shows, not yet closed:
+- The real 1899 LoC scan's three pages (89.3%, 89.2%, 89.8% head match;
+  every bar/system count on all three is correct) stay just under the
+  90% floor. The shortfall is a handful of notes per page (3, 5 and 1
+  respectively) whose detected centre lands within about half a staff
+  space of the integer position the gate needs exactly, which 125-year-
+  old letterpress and a 380dpi scan explain well enough on their own:
+  the deltas are centred on zero with no systematic bias (confirmed by
+  comparing every matched head's measured position against its
+  MusicXML-expected one), so nudging the match tolerance to close the
+  gap would be fitting noise, not fixing a bug. See the PR's per-page
+  table and known-gaps section for the investigation.
 - Genuine engraved cross-staff notation (a print that deliberately shows
   a note in the other staff's clef position, as a "r.h./l.h." edited
   passage does) has no synthetic corpus coverage: synthesising it needs
   MusicXML surgery past what music21 exposes. The committed synthetic
-  cross-staff fixtures instead exercise heads.place's extreme-ledger
+  cross-staff fixtures (now passing at 100%, after this pass's chord-
+  geometry fixes) instead exercise heads.place's extreme-ledger
   staff-proximity assignment, a related but different case.
 
 ## Development
@@ -305,11 +317,16 @@ uv run pytest -q
 ```
 
 Tests are offline and deterministic (`PYTHONHASHSEED` is fixed per test
-where byte-identity matters) and use only the committed synthetic fixture
-under `tests/fixture/` — a public-domain piece, generated with music21 and
-engraved by MuseScore, with a drawn-on ink layer whose every answer is
-known (`tests/fixture/ink.json`, `expected.json`). Never commit a real
-scan, a teacher's PDF, or any other private input.
+where byte-identity matters) and use only committed fixtures: the main
+synthetic one under `tests/fixture/` — a public-domain piece, generated
+with music21 and engraved by MuseScore, with a drawn-on ink layer whose
+every answer is known (`tests/fixture/ink.json`, `expected.json`) — and
+`tests/fixture/geometry/`'s small, hand-encoded crops for
+`test_geometry.py` (`make_geometry_fixtures.py` documents how each was
+cropped, including the one real public-domain scan crop among them).
+Never commit a real scan, a teacher's PDF, or any other private input —
+the LoC scan crop is small, licensed public domain, and square with
+`corpus.json`'s own recorded provenance for that source.
 
 Golden files live under `tests/golden/`. If a test's output changed on
 purpose, regenerate them:
@@ -345,6 +362,11 @@ geometry` on every piece, grades each page's detected systems against
 truth (a scan's hand-counted `systems` in corpus.json, or a MuseScore
 re-export's own `<print new-system/new-page>` breaks), and writes
 `corpus/files/results/<label>.{json,md}`.
+`resolution_sweep.py [piece-id] [--spaces 16 14 12 10]` downsamples one
+corpus scan to a series of target staff spaces and runs geometry (and,
+at every resolution that doesn't stop, the real head-match gate) at
+each, to check the resolution floor against a real scan rather than
+just the unit test.
 
 Rebuilding the fixture itself (`tests/fixture/score.musicxml`,
 `fixture.pdf`, `fixture-vector.pdf`, `readings/*.json`) needs MuseScore 4's
