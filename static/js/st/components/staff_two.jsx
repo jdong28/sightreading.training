@@ -24,19 +24,14 @@ const LEDGER_EXTENT = 15 // how much ledger line extends before and past the not
 const STAFF_INNER_HEIGHT = LINE_DY*4 + LINE_HEIGHT
 const BAR_WIDTH = 12
 
-// the least room the grand staff keeps between its two staves' lines, what
-// the classic treble over bass layout needs for the notes between them: the
-// legacy GrandStaff's GRAND_STAFF_GAP (70 of its 30 unit line gaps, see
-// components/staves.jsx) in staff-local units
-const GRAND_STAFF_GAP = Math.round(70 / 30 * LINE_DY)
+// the notes the grand staff's two staves draw between them: the lowest the
+// upper staff can carry, on its first ledger, and the highest the lower one
+// can, just above its lines (see StaffTwo#grandStaffDy)
+const GRAND_STAFF_UPPER_LOW = "C4"
+const GRAND_STAFF_LOWER_HIGH = "B3"
 
-// the distance between the grand staff's two staff origins when neither
-// staff reaches further than that gap into it
-const MIN_STAFF_DY = STAFF_INNER_HEIGHT + GRAND_STAFF_GAP
-
-// the raw asset width of a whole note head, in staff-local units (see
-// WHOLE_NOTE in st/staff_assets)
-const NOTE_ASSET_WIDTH = 106
+// the room kept past those two, so they are never drawn touching
+const GRAND_STAFF_MARGIN = LINE_HALF_DY
 
 import {CLEF_G, CLEF_F, CLEF_C, FLAT, SHARP, NATURAL, QUARTER_NOTE, WHOLE_NOTE, BRACE} from "st/staff_assets"
 
@@ -104,6 +99,15 @@ const WholeNote = createAsset(WHOLE_NOTE, "WholeNote")
 function rowForNote(type, note) {
   const upperLine = StaffGroup.STAFF_TYPES[type].upperLine
   return -noteStaffOffset(note) + noteStaffOffset(upperLine)
+}
+
+// the y an accidental's glyph is drawn from, relative to the top-left of the
+// head it belongs to: these put each glyph's own shape against the head
+const ACCIDENTAL_Y_OFFSET = {natural: 61, sharp: 58, flat: 85}
+
+// the staff-local y of an accidental's glyph top, drawn on a head at y
+function accidentalY(type, y) {
+  return y - ACCIDENTAL_Y_OFFSET[type] + LINE_HALF_DY
 }
 
 // the staff-local y of a note's head on a given staff type, its top-left
@@ -304,7 +308,7 @@ class StaffGroup extends React.PureComponent {
     width: 100,
     row: 0,
     dx: NOTE_COLUMN_DX,
-    staffDy: MIN_STAFF_DY,
+    staffDy: 0,
     heldNotes: null,
   }
 
@@ -414,7 +418,7 @@ class StaffGroup extends React.PureComponent {
     let firstNoteX = CLEF_GAP * 2
 
     let extra = this._hitX / renderScale - this.marginX - firstNoteX -
-      NOTE_ASSET_WIDTH / 2 - SCROLL_WAIT * dx
+      this.getAssetWidth("wholeNote") / 2 - SCROLL_WAIT * dx
 
     return Math.max(0, extra)
   }
@@ -513,6 +517,7 @@ class StaffGroup extends React.PureComponent {
     const outputAnnotations = []
 
     const firstNoteX = CLEF_GAP * 2
+    const noteWidth = this.getAssetWidth("wholeNote")
     let nextNoteX = firstNoteX
     let currentNoteColumn = 0
 
@@ -523,7 +528,7 @@ class StaffGroup extends React.PureComponent {
           outputLedgerLines.push({
             column,
             x: x - LEDGER_EXTENT, y: -k * LINE_DY,
-            w: NOTE_ASSET_WIDTH + LEDGER_EXTENT * 2, h: LINE_HEIGHT,
+            w: noteWidth + LEDGER_EXTENT * 2, h: LINE_HEIGHT,
           })
         }
       } else if (row > 8) {
@@ -533,7 +538,7 @@ class StaffGroup extends React.PureComponent {
           outputLedgerLines.push({
             column,
             x: x - LEDGER_EXTENT, y: lowerLineY + k * LINE_DY,
-            w: NOTE_ASSET_WIDTH + LEDGER_EXTENT * 2, h: LINE_HEIGHT,
+            w: noteWidth + LEDGER_EXTENT * 2, h: LINE_HEIGHT,
           })
         }
       }
@@ -543,7 +548,7 @@ class StaffGroup extends React.PureComponent {
     // on the head column) and its ledger lines and accidental
     const addNote = (rawName, x, column, head, held) => {
       const spelled = key.enharmonic(rawName)
-      const row = this.noteColumnRowRanges([spelled])[0]
+      const row = rowForNote(this.props.type, spelled)
       const y = this.getNoteY(spelled)
 
       outputNotes.push({column, x, y, head, held})
@@ -551,14 +556,13 @@ class StaffGroup extends React.PureComponent {
       const accidentals = key.accidentalsForNote(spelled)
       if (accidentals != null) {
         const type = accidentals == 0 ? "natural" : accidentals == 1 ? "sharp" : "flat"
-        const accidentalYOffset = {natural: 61, sharp: 58, flat: 85}[type]
         const accidentalGap = 15
         const aWidth = this.getAssetWidth(type)
 
         outputAccidentals.push({
           column, type, held,
           x: x - Math.ceil(aWidth) - accidentalGap,
-          y: y - accidentalYOffset + LINE_HALF_DY,
+          y: accidentalY(type, y),
         })
       }
 
@@ -583,7 +587,7 @@ class StaffGroup extends React.PureComponent {
         // offset the note: the upper note of a second stacked on the one
         // before it
         if (!lastOffset && lastRow != null && Math.abs(noteRow - lastRow) == 1) {
-          x += Math.floor(NOTE_ASSET_WIDTH * 0.90)
+          x += Math.floor(noteWidth * 0.90)
           lastOffset = true
         } else {
           lastOffset = false
@@ -691,26 +695,6 @@ class StaffGroup extends React.PureComponent {
     return yForNote(this.props.type, note)
   }
 
-  // find the min and max "staff-local" row numbers for a column of chromatic notes.
-  // Suitable for rendering ledger lines
-  noteColumnRowRanges(notes) {
-    let minRow, maxRow
-
-    for (const note of notes) {
-      let row = rowForNote(this.props.type, note)
-
-      if (minRow == null || row < minRow) {
-        minRow = row
-      }
-
-      if (maxRow == null || row > maxRow) {
-        maxRow = row
-      }
-    }
-
-    return [minRow, maxRow]
-  }
-
 }
 
 export class StaffTwo extends React.PureComponent {
@@ -738,7 +722,7 @@ export class StaffTwo extends React.PureComponent {
 
     this.assets = { } // this will be populated with asset refs when they are fist instantiated
     this.assetCache = {} // the parsed two.js objects
-    this.assetWidths = {} // the measured staff-local widths of those objects
+    this.assetSizes = {} // the measured staff-local sizes of those objects
   }
 
   // the staff-local column spacing: the legacy renderer's pixel spacing
@@ -916,6 +900,25 @@ export class StaffTwo extends React.PureComponent {
     return {top, bottom}
   }
 
+  // the distance between the grand staff's two staff origins: what the notes
+  // between the staves draw, the upper staff's C4 on its first ledger and the
+  // lower staff's B3 above its lines, each with the tallest accidental glyph
+  // it can be drawn with, and a margin past that
+  grandStaffDy() {
+    const upperY = yForNote("treble", GRAND_STAFF_UPPER_LOW)
+    const lowerY = yForNote("bass", GRAND_STAFF_LOWER_HIGH)
+
+    let below = upperY + this.getAssetHeight("wholeNote")
+    let above = lowerY
+
+    for (const type of Object.keys(ACCIDENTAL_Y_OFFSET)) {
+      below = Math.max(below, accidentalY(type, upperY) + this.getAssetHeight(type))
+      above = Math.min(above, accidentalY(type, lowerY))
+    }
+
+    return Math.ceil(below - above + GRAND_STAFF_MARGIN)
+  }
+
   // the fit for the staff's note range (this.props.range): the render scale
   // and vertical translation that fit the range's own ledger room in the
   // plate, plus the distance the grand staff's two staves are drawn apart.
@@ -931,7 +934,7 @@ export class StaffTwo extends React.PureComponent {
     }
 
     let top, bottom
-    let staffDy = MIN_STAFF_DY
+    const staffDy = this.grandStaffDy()
 
     if (type == "grand") {
       const middleC = noteStaffOffset("C4")
@@ -940,13 +943,6 @@ export class StaffTwo extends React.PureComponent {
 
       const treble = this.rangeExtent("treble", trebleNotes)
       const bass = this.rangeExtent("bass", bassNotes)
-
-      // the two staves keep between them what they reach into that room,
-      // never less than the classic layout's gap: the legacy GrandStaff's
-      // gapBelow rule, so the plate isn't squeezed by a constant
-      const reach = Math.max(0, treble.bottom - STAFF_INNER_HEIGHT) +
-        Math.max(0, -bass.top)
-      staffDy = Math.max(MIN_STAFF_DY, STAFF_INNER_HEIGHT + reach)
 
       top = treble.top
       bottom = bass.bottom + staffDy
@@ -1125,15 +1121,24 @@ export class StaffTwo extends React.PureComponent {
     return this.assetCache[name].clone()
   }
 
-  // the staff-local width of an asset's glyph: it only depends on the asset,
-  // so one clone is measured and the width kept (makeNotes needs an
+  // the staff-local size of an asset's glyph: it only depends on the asset,
+  // so one clone is measured and the size kept (makeNotes needs an
   // accidental's width on every render)
-  getAssetWidth(name) {
-    if (this.assetWidths[name] == null) {
-      this.assetWidths[name] = this.getAsset(name).getBoundingClientRect().width
+  getAssetSize(name) {
+    if (!this.assetSizes[name]) {
+      const {width, height} = this.getAsset(name).getBoundingClientRect()
+      this.assetSizes[name] = {width, height}
     }
 
-    return this.assetWidths[name]
+    return this.assetSizes[name]
+  }
+
+  getAssetWidth(name) {
+    return this.getAssetSize(name).width
+  }
+
+  getAssetHeight(name) {
+    return this.getAssetSize(name).height
   }
 
   // true once every asset ref assigned in render has attached its DOM node

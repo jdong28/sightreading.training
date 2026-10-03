@@ -700,34 +700,46 @@ describe("staff two ledger lines", function() {
     expect(loads.calls.allArgs().map(args => args[0])).not.toContain("gclef")
   })
 
-  it("keeps the grand staff's two staves the classic gap apart, not a fixed constant", function() {
+  it("draws the grand staff's two staves the distance apart the fit sized the plate from", function() {
     let instance = mount({type: "grand", range: ["C2", "C6"]})
 
     let treble = instance.trebleStaffRef.current.staffGroup
     let bass = instance.bassStaffRef.current.staffGroup
 
-    let dy = bass.translation.y - treble.translation.y
-    // the staves are drawn the distance the fit sized the plate from
-    expect(instance.computeFit().staffDy).toBe(dy)
-
-    // the room between the two staves' five lines, counted in line gaps:
-    // the classic treble over bass layout's gap, not a constant wide enough
-    // to squeeze the staves down
-    let gap = (dy - (58 * 4 + 4)) / 58
-    expect(gap).toBeGreaterThan(2)
-    expect(gap).toBeLessThan(3)
+    expect(bass.translation.y - treble.translation.y).toBe(instance.computeFit().staffDy)
   })
 
-  it("draws the grand staff within a floor of a single staff's size on the same plate", function() {
-    let grand = mount({type: "grand", range: ["C2", "C6"], maxScale: 0.24})
-    let grandScale = grand.renderGroup.scale
+  // the notes between the grand staff's two staves are the closest the two
+  // ever draw: the upper staff's C4 sits on its first ledger and the lower
+  // staff's B3 just above its lines, each with whatever accidental its key
+  // signature leaves on it
+  it("never draws the grand staff's two staves' notes overlapping, with or without accidentals", function() {
+    let spans = staff => [
+      ...staff.notesGroup.getByClassName("note"),
+      ...staff.notesGroup.getByClassName("accidental"),
+    ].map(shape => shape.getBoundingClientRect())
 
-    let treble = mount({type: "treble", range: ["A3", "C6"], maxScale: 0.24})
-    let trebleScale = treble.renderGroup.scale
+    for (let fifths of [-5, -3, -1, 0, 1, 3, 5]) {
+      for (let column of [["B3", "C4"], ["Bb3", "C#4"], ["B3", "C#4"], ["Bb3", "C4"]]) {
+        let instance = mount({
+          type: "grand",
+          range: ["C2", "C6"],
+          keySignature: new KeySignature(fifths),
+          notes: new NoteList([column]),
+        })
 
-    // the grand staff draws two staves and both their ledger rooms in the
-    // same plate, so it is smaller, but not by the margin a fixed gap cost
-    expect(grandScale).toBeGreaterThan(trebleScale * 0.65)
+        let upper = spans(instance.trebleStaffRef.current)
+        let lower = spans(instance.bassStaffRef.current)
+        let where = `${column.join("+")} in ${fifths}`
+
+        expect(upper.length).toBeGreaterThan(0, where)
+        expect(lower.length).toBeGreaterThan(0, where)
+
+        let lowest = Math.max(...upper.map(rect => rect.bottom))
+        let highest = Math.min(...lower.map(rect => rect.top))
+        expect(lowest).toBeLessThan(highest, where)
+      }
+    }
   })
 
   it("spaces columns by noteWidth times scale in both modes, not the fixed legacy spacing", function() {
@@ -976,7 +988,7 @@ describe("staff two parity", function() {
       notes: new NoteList([["C#4"]]),
     })
 
-    expect(instance.assetWidths.sharp).toBeGreaterThan(0)
+    expect(instance.getAssetWidth("sharp")).toBeGreaterThan(0)
 
     let loads = spyOn(instance, "getAsset").and.callThrough()
 
