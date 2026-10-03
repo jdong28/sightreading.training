@@ -1,10 +1,10 @@
 // Turns st/difficulty/features.js's per-bar measurements into scores and
-// groups the hardest bars into passages. The numbers here (ANALYZER_ALGO 5)
+// groups the hardest bars into passages. The numbers here (ANALYZER_ALGO 6)
 // are a first guess (report section 9): tune them freely, but bump
 // ANALYZER_ALGO whenever a change would relabel an existing piece's flags,
 // so a stale record is recomputed rather than silently kept.
 
-export const ANALYZER_ALGO = 5
+export const ANALYZER_ALGO = 6
 
 const MIN_ANALYSIS_BARS = 8
 
@@ -268,10 +268,21 @@ function runRestsOnOneSignal(run) {
   return [...signals].every(kind => READING_KINDS.has(kind))
 }
 
-function barPercentile(bar, notedScores) {
-  let sorted = [...notedScores].sort((a, b) => a - b)
-  let rank = sorted.filter(s => s <= bar.score).length
-  return sorted.length ? rank / sorted.length : 0
+// a score's percentile rank among scores, the one rank the strip's heat and
+// a passage's level are both read from: the middle of its tie block (the
+// scores below it, plus half the ones equal to it), so bars that score the
+// same share a rank and the easiest of them is never reported as the
+// hardest of them
+export function percentileRank(score, scores) {
+  if (!scores.length) { return 0 }
+
+  let below = 0
+  let equal = 0
+  for (let v of scores) {
+    if (v < score) { below += 1 } else if (v == score) { equal += 1 }
+  }
+
+  return (below + equal / 2) / scores.length
 }
 
 function buildRuns(scored, threshold) {
@@ -396,42 +407,68 @@ function rangeIndices(bar) {
   return out
 }
 
+// the passage a run of hot bars makes
+function passageOf(run, notedScores) {
+  let peakPct = Math.max(...run.map(bar => percentileRank(bar.score, notedScores)))
+
+  return {
+    run,
+    start: run[0].number,
+    end: run[run.length - 1].number,
+    startIndex: run[0].indices[0],
+    endIndex: run[run.length - 1].indices[1],
+    strength: strength(run),
+    level: levelFor(peakPct, runRestsOnOneSignal(run)),
+  }
+}
+
+// the contiguous window of size bars whose strength is the greatest, the
+// earliest of them when two are equally strong
+function strongestWindow(run, size) {
+  let best = run.slice(0, size)
+  let bestStrength = strength(best)
+
+  for (let i = 1; i + size <= run.length; i++) {
+    let window = run.slice(i, i + size)
+    let str = strength(window)
+    if (str > bestStrength) {
+      bestStrength = str
+      best = window
+    }
+  }
+
+  return best
+}
+
 function passagesAtThreshold(scored, notedScores, threshold, budget) {
   let runs = buildRuns(scored, threshold)
-  let split = runs.flatMap(splitRun)
+    .flatMap(splitRun)
+    .filter(run => run.length > 1 || percentileRank(run[0].score, notedScores) >= 0.9)
 
-  let candidates = split
-    .filter(run => run.length > 1 || barPercentile(run[0], notedScores) >= 0.9)
-    .map(run => {
-      let str = strength(run)
-      let peakPct = Math.max(...run.map(bar => barPercentile(bar, notedScores)))
-      let restsOnOneSignal = runRestsOnOneSignal(run)
-      return {
-        run,
-        start: run[0].number,
-        end: run[run.length - 1].number,
-        startIndex: run[0].indices[0],
-        endIndex: run[run.length - 1].indices[1],
-        strength: str,
-        level: levelFor(peakPct, restsOnOneSignal),
-      }
-    })
-    .sort((a, b) => b.strength - a.strength)
-
-  let budgeted = []
-  let flaggedBars = 0
-  // keep the strongest passages first; when trimming to budget, Worth a
-  // look passages are the first to go
-  let ordered = [...candidates].sort((a, b) => {
+  // the strongest passages first; Worth a look ones are the first to lose
+  // their room in the budget
+  let ordered = runs.map(run => passageOf(run, notedScores)).sort((a, b) => {
     if (a.level != b.level) { return b.level - a.level }
     return b.strength - a.strength
   })
 
+  let budgeted = []
+  let flaggedBars = 0
+
   for (let candidate of ordered) {
-    let bars = candidate.run.length
-    if (flaggedBars + bars > budget) { continue }
-    budgeted.push(candidate)
-    flaggedBars += bars
+    let room = budget - flaggedBars
+    if (room <= 0) { break }
+
+    // a run with no room left for all of it is trimmed to its hardest bars
+    // rather than dropped, so a piece always gets its hardest passage
+    let fitted = candidate
+    if (candidate.run.length > room) {
+      if (room < 2) { continue }
+      fitted = passageOf(strongestWindow(candidate.run, room), notedScores)
+    }
+
+    budgeted.push(fitted)
+    flaggedBars += fitted.run.length
   }
 
   return budgeted

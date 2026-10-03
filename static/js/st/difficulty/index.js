@@ -6,7 +6,7 @@ import {measureNumberList} from "st/song_sections"
 import {fingerprint, exactRepeats} from "st/difficulty/fingerprints"
 import {scoreExtras} from "st/difficulty/source"
 import {barFeatures} from "st/difficulty/features"
-import {scoreBars, findPassages, ANALYZER_ALGO} from "st/difficulty/sections"
+import {scoreBars, findPassages, percentileRank, ANALYZER_ALGO} from "st/difficulty/sections"
 import {passageReasons, rankedSignals} from "st/difficulty/reasons"
 import {flagProposalId} from "st/difficulty/records"
 
@@ -19,11 +19,9 @@ export const LEVEL_WORDS = {1: "Worth a look", 2: "Hard", 3: "Hardest"}
 // never a middling cell on the strip
 function heatRanks(scored) {
   let noted = scored.filter(bar => bar.density.notes > 0).map(bar => bar.score)
-  let sorted = [...noted].sort((a, b) => a - b)
   return scored.map(bar => {
-    if (!sorted.length || !(bar.density.notes > 0)) { return 0 }
-    let rank = sorted.filter(v => v <= bar.score).length
-    return Math.round((rank / sorted.length) * 100) / 100
+    if (!noted.length || !(bar.density.notes > 0)) { return 0 }
+    return Math.round(percentileRank(bar.score, noted) * 100) / 100
   })
 }
 

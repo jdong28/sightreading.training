@@ -312,14 +312,24 @@ describe("st/difficulty", () => {
       expect(findPassages(scoredShort, {repeats: new Map()})).toEqual([])
     })
 
-    it("keeps the strictest threshold's passages when a looser one blows the budget", () => {
-      // bars 5-7 are this piece's hard run; at a looser threshold the
-      // middling bars around them bridge into one run wider than the budget,
-      // which flags nothing
-      let scores = [1, 2.2, 3, 1.6, 5.5, 4, 5.5, 0.2, 3, 0.2, 0.2, 4, 2.2, 0.2, 2.2, 4]
+    it("trims a run wider than the budget to its hardest bars", () => {
+      // bars 3, 5 and 7 are hard and the bars between them easy, so bridging
+      // makes one five-bar run — one bar more than this 12-bar piece's
+      // budget, which must still flag its hardest bars
+      let scores = [0, 0, 5, 0, 5, 0, 5, 0, 0, 0, 0, 0]
       let scored = scores.map((score, i) => scoredBar(i + 1, score))
-      expect(findPassages(scored, {repeats: new Map()}).map(p => [p.start, p.end]))
-        .toEqual([[5, 7]])
+      let passages = findPassages(scored, {repeats: new Map()})
+
+      expect(passages.map(p => [p.start, p.end])).toEqual([[3, 6]])
+      expect(passages[0].run.length).toEqual(4)
+
+      // and a piece whose looser thresholds bridge nearly everything into
+      // one run still flags within its budget of six bars
+      let wide = [1, 2.2, 3, 1.6, 5.5, 4, 5.5, 0.2, 3, 0.2, 0.2, 4, 2.2, 0.2, 2.2, 4]
+        .map((score, i) => scoredBar(i + 1, score))
+      let widePassages = findPassages(wide, {repeats: new Map()})
+      expect(widePassages.length).toBeGreaterThan(0)
+      expect(widePassages.reduce((sum, p) => sum + p.run.length, 0)).toBeLessThanOrEqual(6)
     })
 
     it("a run resting on one signal stays Worth a look however high it scores", () => {
@@ -333,7 +343,7 @@ describe("st/difficulty", () => {
         {kind: "leap", hand: "upper", contribution: score / 2, detail: {semitones: 20, from: "C4", to: "G5"}},
       ]))
       expect(findPassages(twoSignals, {repeats: new Map()}).map(p => [p.start, p.end, p.level]))
-        .toEqual([[4, 7, 3]])
+        .toEqual([[4, 7, 2]])
     })
 
     it("ranks the heat strip over the bars that strike a note only", () => {
@@ -345,8 +355,29 @@ describe("st/difficulty", () => {
       expect(heatPct.length).toEqual(16)
       expect([heatPct[12], heatPct[13]]).toEqual([0, 0])
       expect(heatPct.filter(pct => pct == 0).length).toEqual(2)
-      expect(heatPct[8]).toEqual(1)
+      expect(heatPct[8]).toEqual(Math.max(...heatPct))
       expect(heatPct[0]).toBeGreaterThan(0)
+      expect(heatPct[0]).toBeLessThan(heatPct[8])
+    })
+
+    it("ranks bars that score alike at the middle of their tie", () => {
+      // the workhorse's 13 quiet bars all score the same, so they share one
+      // rank: the easiest bars must not read as the hardest of the tie
+      let analysis = analyzePiece({song: workhorseSong(), source: null, at: 1})
+      let heatPct = analysis.runs.score.heat
+
+      let flagged = new Set()
+      for (let p of analysis.proposals) {
+        for (let n = p.start; n <= p.end; n++) { flagged.add(n) }
+      }
+      expect([...flagged].sort((a, b) => a - b)).toEqual([9, 10, 11])
+
+      for (let number of [9, 10, 11]) {
+        expect(heat(heatPct[number - 1])).toEqual(4)
+      }
+      for (let number of [1, 2, 3, 4, 5, 6, 7, 8, 12, 13, 14, 15, 16]) {
+        expect(heat(heatPct[number - 1])).toBeLessThanOrEqual(1)
+      }
     })
 
     it("heat buckets a percentile into the strip's 0-4 ramp", () => {
