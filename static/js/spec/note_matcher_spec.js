@@ -578,6 +578,102 @@ describe("note matcher", function() {
     })
   })
 
+  // D4(c): the trainer's "Keep tempo" setting, a column that scrolls past
+  // the hit line by TEMPO_TOLERANCE counts as a miss and the staff moves on
+  describe("scroll mode's tempo setting, scrollPast (D4(c))", function() {
+    it("misses an untouched column that scrolls past, then advances with nothing measured", function() {
+      let matcher = matcherFor([["C4"], ["E4"]], {scroll: true, tempo: true})
+      let measured = []
+      matcher.notes.generator.columnDone = (column, list, m) => measured.push(m)
+
+      let result = matcher.scrollPast(1000)
+
+      expect(matcher.judged.map(e => [e.type, e.counted])).toEqual([
+        ["miss", "miss"], ["scrolled", undefined],
+      ])
+      expect(matcher.judged[0].blamed).toEqual(["C4"])
+      expect(measured).toEqual([undefined])
+      expect(head(matcher)).toEqual(["E4"])
+      expect(result.notes).toBe(matcher.notes)
+
+      // the next key down is judged at the new head, not the one that scrolled past
+      expect(run(matcher, [["on", "E4", 1100]])).toEqual(["hit E4"])
+    })
+
+    it("counts a second scroll-past on an already-missed column as a slip, never a second miss", function() {
+      let matcher = matcherFor([["C4"], ["E4"]], {scroll: true, tempo: true})
+      // a wrong key counts the column's first miss
+      run(matcher, [["on", "D4", 100]])
+      matcher.judged.length = 0
+
+      matcher.scrollPast(1000)
+      expect(matcher.judged.map(e => [e.type, e.counted])).toEqual([
+        ["miss", "slip"], ["scrolled", undefined],
+      ])
+    })
+
+    it("is a hit, not a miss, when the keys held already complete the column (held credit, rule 1)", function() {
+      let sustain = (column, ...notes) => Object.assign(column, {sustained: notes})
+      let matcher = matcherFor([["Bb3"], sustain(["Bb3"], "Bb3")], {scroll: true, tempo: true})
+      run(matcher, [["on", "Bb3", 0]])
+      matcher.judged.length = 0
+
+      matcher.scrollPast(1000)
+      expect(matcher.judged.map(e => e.type)).toEqual(["hit"])
+      expect(matcher.judged[0].settled).toBe(true)
+      expect(head(matcher)).toEqual([])
+    })
+
+    it("credits keys of the next column struck early, chaining a hit when they complete it", function() {
+      let matcher = matcherFor([["C4"], ["E4", "G4"]], {scroll: true, tempo: true})
+      run(matcher, [["on", "E4", 100], ["on", "G4", 150]])
+      matcher.judged.length = 0
+
+      matcher.scrollPast(1000)
+      expect(matcher.judged.map(e => e.type)).toEqual(["miss", "scrolled", "hit"])
+      expect([...matcher.judged[2].credited].sort()).toEqual(["E4", "G4"])
+    })
+
+    it("counts nothing on an empty head column, and just advances", function() {
+      let matcher = matcherFor([[]], {scroll: true, tempo: true})
+      matcher.scrollPast(1000)
+      expect(matcher.judged.map(e => e.type)).toEqual(["scrolled"])
+    })
+
+    it("advances without a miss when miss is false (the at-rest guard)", function() {
+      let matcher = matcherFor([["C4"], ["E4"]], {scroll: true, tempo: true})
+      matcher.scrollPast(1000, {miss: false})
+      expect(matcher.judged.map(e => e.type)).toEqual(["scrolled"])
+      expect(head(matcher)).toEqual(["E4"])
+    })
+
+    it("measures a column's lateness unclamped from when it crossed the line", function() {
+      let clock = 0
+      let matcher = matcherFor([["C4"], ["E4"]], {now: () => clock, scroll: true, tempo: true})
+      matcher.onLine(1000)
+      clock = 1300
+      matcher.noteOn("C4", 1300)
+      clock = 1500
+      matcher.noteOn("E4", 1500)
+
+      let hit = matcher.judged.find(e => e.type == "hit" && e.hitNotes.includes("E4"))
+      expect(hit.late).toEqual(500)
+    })
+
+    it("clamps lateness to becoming the head when tempo is off, as today (D4(a))", function() {
+      let clock = 0
+      let matcher = matcherFor([["C4"], ["E4"]], {now: () => clock, scroll: true})
+      matcher.onLine(1000)
+      clock = 1300
+      matcher.noteOn("C4", 1300)
+      clock = 1500
+      matcher.noteOn("E4", 1500)
+
+      let hit = matcher.judged.find(e => e.type == "hit" && e.hitNotes.includes("E4"))
+      expect(hit.late).toEqual(200)
+    })
+  })
+
   // T6 of the note detection report, rule 1's held credit: a key the score
   // still sounds at a column's onset from an earlier one (column.sustained,
   // see extractSectionColumns), held rather than struck again, counts toward

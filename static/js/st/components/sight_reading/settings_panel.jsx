@@ -107,8 +107,11 @@ export class SettingsDrawer extends React.PureComponent {
 }
 
 // the page's wait or scroll mode and scroll speed. The speed applies when
-// scroll mode is entered, so it is fixed while scrolling
-function TempoSettings({mode, setMode, scrollSpeed, setScrollSpeed}) {
+// scroll mode is entered, so it is fixed while scrolling. tempo is the
+// scroll-mode "Keep tempo" setting (D4(c)): a column that scrolls past the
+// hit line by the tolerance is missed, rather than waited for. Disabled in
+// wait mode, which it has no effect on
+function TempoSettings({mode, setMode, scrollSpeed, setScrollSpeed, tempo, setTempo}) {
   return <SettingsGroup label="Tempo" aside={scrollSpeed}>
     <div className={styles.pills}>
       {[["wait", "Wait"], ["scroll", "Scroll"]].map(([value, label]) =>
@@ -134,6 +137,15 @@ function TempoSettings({mode, setMode, scrollSpeed, setScrollSpeed}) {
       <span>Largo</span>
       <span>Presto</span>
     </div>
+
+    <div className={styles.pills}>
+      <Pill
+        variant="choice"
+        selected={!!tempo}
+        disabled={mode != "scroll"}
+        onClick={() => setTempo(!tempo)}>Keep tempo</Pill>
+    </div>
+    <div className={styles.input_hint}>Notes that pass the line unplayed are missed</div>
   </SettingsGroup>
 }
 
@@ -158,6 +170,8 @@ export class ProgrammeDrawer extends React.PureComponent {
     setMode: types.func.isRequired,
     scrollSpeed: types.number.isRequired,
     setScrollSpeed: types.func.isRequired,
+    tempo: types.bool,
+    setTempo: types.func.isRequired,
   }
 
   constructor(props) {
@@ -188,7 +202,9 @@ export class ProgrammeDrawer extends React.PureComponent {
         mode={this.props.mode}
         setMode={this.props.setMode}
         scrollSpeed={this.props.scrollSpeed}
-        setScrollSpeed={this.props.setScrollSpeed} />
+        setScrollSpeed={this.props.setScrollSpeed}
+        tempo={this.props.tempo}
+        setTempo={this.props.setTempo} />
 
       <SettingsGroup label="Key">
         {this.renderKeys()}
@@ -385,6 +401,8 @@ export class ScoreDrawer extends React.PureComponent {
     setMode: types.func.isRequired,
     scrollSpeed: types.number.isRequired,
     setScrollSpeed: types.func.isRequired,
+    tempo: types.bool,
+    setTempo: types.func.isRequired,
     // acoustic mode (st/srs/self_grade): each card waits for the player's own
     // grade, so there is no tempo to set
     acoustic: types.bool,
@@ -415,7 +433,9 @@ export class ScoreDrawer extends React.PureComponent {
           mode={this.props.mode}
           setMode={this.props.setMode}
           scrollSpeed={this.props.scrollSpeed}
-          setScrollSpeed={this.props.setScrollSpeed} />}
+          setScrollSpeed={this.props.setScrollSpeed}
+          tempo={this.props.tempo}
+          setTempo={this.props.setTempo} />}
 
       <Pill
         variant="primary"

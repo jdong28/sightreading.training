@@ -145,6 +145,17 @@ describe("spaced repetition records", function() {
       expect(validReview(attempt("p", 1, 1, 5, {perColumn: {}}))).toBe(false)
     })
 
+    // D4(c): the trainer's "Keep tempo" setting, stored on the review as the
+    // tolerance a column past the hit line was missed at (see
+    // NoteMatcher#scrollPast), only for a scroll-mode review
+    it("keeps a scroll-mode review's tempo tolerance, rejecting it elsewhere or invalid", function() {
+      expect(validReview(attempt("p", 1, 1, 5, {mode: "scroll", tempo: 1}))).toBe(true)
+      expect(validReview(attempt("p", 1, 1, 5, {mode: "wait", tempo: 1}))).toBe(false)
+      expect(validReview(attempt("p", 1, 1, 5, {mode: "scroll", tempo: 0}))).toBe(false)
+      expect(validReview(attempt("p", 1, 1, 5, {mode: "scroll", tempo: "yes"}))).toBe(false)
+      expect(validReview(attempt("p", 1, 1, 5, {mode: "scroll"}))).toBe(true)
+    })
+
     it("tells stored items and reviews from other data", function() {
       let item = newItem({pieceId: "p", startMeasure: 2, endMeasure: 4}, 10)
       expect(item.level).toEqual("span")
@@ -175,7 +186,7 @@ describe("spaced repetition records", function() {
     it("rejects a self-graded review carrying any of detection's fields, or an invalid grade or tag", function() {
       for (let field of [
         "columns", "clean", "misses", "stuck", "skipped", "hesitations", "perColumn",
-        "staffMisses", "bars", "trouble", "leadMs", "speed", "algo",
+        "staffMisses", "bars", "trouble", "leadMs", "speed", "algo", "tempo",
       ]) {
         expect(validReview(selfReview("p", 1, 1, 5, {[field]: 0}))).toBe(false)
       }

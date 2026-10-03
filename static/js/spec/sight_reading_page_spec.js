@@ -21,6 +21,7 @@ import {SITTING_GAP_MS} from "st/srs/planner"
 import {AGAIN, HARD, GOOD, EASY} from "st/srs/grade"
 import {IN_ORDER, RANDOM_ORDER, MeasureCardGenerator} from "st/measure_cards"
 import {DRILL_STORAGE_KEY, SCORE_DRILL_STORAGE_KEY} from "st/generators"
+import {SCROLL_WAIT} from "st/score_render/card_scroll"
 import {DEV_METRICS_KEY} from "st/dev_metrics"
 import {SELF_GRADE_DWELL_MS} from "st/srs/self_grade"
 import {scopeEvent} from "st/events"
@@ -671,6 +672,29 @@ describe("sight reading page", function() {
     click(buttonNamed(drawer, "Take your seat"))
     expect(isOpen()).toBe(false)
     expect(page.refreshNoteList).toHaveBeenCalled()
+  })
+
+  // D4(c): the trainer's "Keep tempo" setting, a scroll-mode-only toggle
+  // kept under the same storage key as mode and speed
+  it("keeps tempo as a scroll-mode setting, disabled in wait mode and stored like mode and speed", function() {
+    let el = renderPage()
+    click(buttonLabelled(el, "Programme"))
+    let drawer = el.querySelector(`.${drawerStyles.drawer}`)
+
+    expect(buttonNamed(drawer, "Keep tempo").disabled).toBe(true)
+
+    click(buttonNamed(drawer, "Scroll"))
+    expect(buttonNamed(drawer, "Keep tempo").disabled).toBe(false)
+    expect(el.textContent).not.toContain("in tempo")
+
+    click(buttonNamed(drawer, "Keep tempo"))
+    expect(page.state.tempo).toBe(true)
+    expect(page.tempoMode()).toBe(true)
+    expect(JSON.parse(window.localStorage.getItem(DRILL_STORAGE_KEY)).tempo).toBe(true)
+    expect(el.textContent).toContain("in tempo")
+
+    click(buttonNamed(drawer, "Wait"))
+    expect(buttonNamed(drawer, "Keep tempo").disabled).toBe(true)
   })
 
   it("toggles the session and the elapsed clock", function() {
@@ -1596,6 +1620,39 @@ describe("sight reading page", function() {
           mode: "scroll", misses: 0, clean: 4, skipped: 0, hesitations: 0, grade: GOOD,
         }))
       })
+
+      // D4(c): the trainer's "Keep tempo" setting
+      describe("the tempo setting", function() {
+        it("waits for the opening column, then misses a column that scrolls past the line", async function() {
+          await renderSection({measuresPerCard: "2"}, {mode: "scroll", tempo: true})
+          expect(page.tempoMode()).toBe(true)
+          // the opening column (cardIndex 0) still waits
+          expect(page.state.slider.floor).not.toBe(null)
+
+          playHead()
+          // the next column isn't an opening column: it scrolls past
+          expect(page.state.slider.floor).toBe(null)
+
+          flushSync(() => page.state.slider.onLoop())
+          await finished()
+
+          let written = await reviews()
+          let review = written.find(r => r.itemId == `${piece.id}:both:1-2`)
+          expect(review.mode).toEqual("scroll")
+          expect(review.tempo).toEqual(1)
+          expect(review.misses).toEqual(1)
+          expect(review.skipped).toEqual(0)
+          expect(review.perColumn[1][6]).toBe(null)
+        })
+
+        it("never gives the drill a null floor without the setting on", async function() {
+          await renderSection({measuresPerCard: "2"}, {mode: "scroll"})
+          expect(page.tempoMode()).toBe(false)
+
+          playHead()
+          expect(page.state.slider.floor).toEqual(SCROLL_WAIT)
+        })
+      })
     })
 
     it("writes one hand's card under its hand", async function() {
@@ -2072,6 +2129,24 @@ describe("sight reading page", function() {
       expect([page.state.stats.hits, page.state.stats.misses]).toEqual([1, 0])
       expect(page.state.notes[0]).not.toBe(chord)
       expect(page.state.heldNotes).toEqual({})
+    })
+
+    // D4(c): ChordList has no currentColumn, so the chord drill never
+    // scrolls past, whatever the tempo setting
+    it("never gives the chord drill a null floor, even with scroll and tempo on", function() {
+      renderChords()
+      flushSync(() => page.setMode("scroll"))
+      flushSync(() => page.setTempo(true))
+
+      expect(page.state.mode).toEqual("scroll")
+      expect(page.tempoMode()).toBe(false)
+      expect(page.state.slider.floor).not.toBe(null)
+
+      let chord = page.state.notes[0]
+      let keys = chord.getRange(4, 3)
+      flushSync(() => keys.forEach(note => page.pressNote(note)))
+      flushSync(() => keys.forEach(note => page.releaseNote(note)))
+      expect(page.state.slider.floor).not.toBe(null)
     })
 
     it("misses a chord whose keys don't match on their release", function() {
