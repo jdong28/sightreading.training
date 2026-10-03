@@ -1,0 +1,357 @@
+{
+ "piece": "fixture",
+ "inputs": {
+  "pdf": {
+   "path": "inputs/fixture.pdf",
+   "sha1": "20d38809b4b855021ef556aa3dbc822915d0885e"
+  },
+  "musicxml": {
+   "path": "inputs/score.musicxml",
+   "sha1": "8a979efa528a54e6c64b6c3561d77c1a7daa0fbf"
+  }
+ },
+ "pages": [
+  {
+   "page": 1,
+   "ink_sources": [
+    "image-smask"
+   ],
+   "ink_px": 7691,
+   "bars": [
+    1,
+    8
+   ],
+   "heads_matched": "65/65",
+   "clef_shifts": [],
+   "marks": 11,
+   "readings": {
+    "finger": 9,
+    "part": 2
+   }
+  },
+  {
+   "page": 2,
+   "ink_sources": [
+    "image-smask"
+   ],
+   "ink_px": 4467,
+   "bars": [
+    9,
+    16
+   ],
+   "heads_matched": "65/65",
+   "clef_shifts": [],
+   "marks": 6,
+   "readings": {
+    "finger": 2,
+    "other": 3,
+    "ambiguous": 1
+   }
+  }
+ ],
+ "placements": [
+  {
+   "mark": "p1-01",
+   "digits": "1",
+   "measure": 2,
+   "staff": 1,
+   "onset": "0",
+   "pitch": "G5",
+   "placement": "above",
+   "how": "rank 1 of 2",
+   "review": false,
+   "stack": null,
+   "head_x": 951.8,
+   "head_y": 517.9,
+   "page": 1,
+   "proof": 4
+  },
+  {
+   "mark": "p1-02",
+   "digits": "2",
+   "measure": 2,
+   "staff": 1,
+   "onset": "1",
+   "pitch": "G5",
+   "placement": "above",
+   "how": "rank 2 of 2",
+   "review": false,
+   "stack": null,
+   "head_x": 1065.8,
+   "head_y": 518.0,
+   "page": 1,
+   "proof": 5
+  },
+  {
+   "mark": "p1-03",
+   "digits": "3",
+   "measure": 3,
+   "staff": 2,
+   "onset": "2",
+   "pitch": "E3",
+   "placement": "below",
+   "how": "unique",
+   "review": false,
+   "stack": null,
+   "head_x": 1667.0,
+   "head_y": 776.0,
+   "page": 1,
+   "proof": 6
+  },
+  {
+   "mark": "p1-04",
+   "digits": "5",
+   "measure": 3,
+   "staff": 2,
+   "onset": "0",
+   "pitch": "C3",
+   "placement": "below",
+   "how": "unique",
+   "review": false,
+   "stack": null,
+   "head_x": 1438.3,
+   "head_y": 797.0,
+   "page": 1,
+   "proof": 7
+  },
+  {
+   "mark": "p1-05+p1-07+p1-09",
+   "digits": "5",
+   "measure": 5,
+   "staff": 1,
+   "onset": "0",
+   "pitch": "G5",
+   "placement": "above",
+   "how": "unique",
+   "review": false,
+   "stack": "5/3/1",
+   "head_x": 316.5,
+   "head_y": 1308.7,
+   "page": 1,
+   "proof": 8
+  },
+  {
+   "mark": "p1-05+p1-07+p1-09",
+   "digits": "3",
+   "measure": 5,
+   "staff": 1,
+   "onset": "0",
+   "pitch": "E5",
+   "placement": "above",
+   "how": "rank 1 of 2",
+   "review": false,
+   "stack": "5/3/1",
+   "head_x": 316.5,
+   "head_y": 1330.0,
+   "page": 1,
+   "proof": 9
+  },
+  {
+   "mark": "p1-05+p1-07+p1-09",
+   "digits": "1",
+   "measure": 5,
+   "staff": 1,
+   "onset": "0",
+   "pitch": "C5",
+   "placement": "above",
+   "how": "unique",
+   "review": false,
+   "stack": "5/3/1",
+   "head_x": 316.5,
+   "head_y": 1351.3,
+   "page": 1,
+   "proof": 10
+  },
+  {
+   "mark": "p1-06+p1-08+p1-10",
+   "digits": "2-3",
+   "measure": 7,
+   "staff": 1,
+   "onset": "0",
+   "pitch": "G5",
+   "placement": "above",
+   "how": "unique",
+   "review": false,
+   "stack": null,
+   "head_x": 1363.8,
+   "head_y": 1308.4,
+   "page": 1,
+   "proof": 11
+  },
+  {
+   "mark": "p1-11",
+   "digits": "2",
+   "measure": 6,
+   "staff": 1,
+   "onset": "0",
+   "pitch": "E5",
+   "placement": "above",
+   "how": "unique",
+   "review": false,
+   "stack": "2/4",
+   "head_x": 840.5,
+   "head_y": 1329.0,
+   "page": 1,
+   "proof": 12
+  },
+  {
+   "mark": "p1-11",
+   "digits": "4",
+   "measure": 6,
+   "staff": 1,
+   "onset": "0",
+   "pitch": "C5",
+   "placement": "above",
+   "how": "unique",
+   "review": false,
+   "stack": "2/4",
+   "head_x": 840.5,
+   "head_y": 1351.0,
+   "page": 1,
+   "proof": 13
+  },
+  {
+   "mark": "p2-01",
+   "digits": "1",
+   "measure": 9,
+   "staff": 2,
+   "onset": "0",
+   "pitch": "G3",
+   "placement": "below",
+   "how": "unique",
+   "review": false,
+   "stack": null,
+   "head_x": 316.5,
+   "head_y": 550.3,
+   "page": 2,
+   "proof": 14
+  }
+ ],
+ "skipped": [
+  {
+   "page": 2,
+   "mark": "p2-06",
+   "text": "4",
+   "why": "tentative, marked 'try'",
+   "proof": 3
+  },
+  {
+   "page": 2,
+   "mark": "p2-02",
+   "text": "3",
+   "why": "no notehead of a staff the digit may belong to within 1.6 spaces across",
+   "proof": 2
+  },
+  {
+   "page": 2,
+   "mark": "p2-01",
+   "text": "1",
+   "why": "hand order: LH 1 on G3 with B3, D4 struck with it",
+   "proof": 1
+  }
+ ],
+ "other": [
+  {
+   "page": 2,
+   "mark": "p2-03",
+   "text": "C",
+   "mark_desc": "UC (una corda)",
+   "proof": 15
+  },
+  {
+   "page": 2,
+   "mark": "p2-04",
+   "text": null,
+   "mark_desc": "circle round a note",
+   "proof": 16
+  },
+  {
+   "page": 2,
+   "mark": "p2-05",
+   "text": null,
+   "mark_desc": "rit.",
+   "proof": 17
+  }
+ ],
+ "checks": [
+  {
+   "check": "bar lines: the pages' measures add up to the MusicXML's",
+   "ok": true,
+   "detail": "16 on pages 1-2, 16 in the MusicXML"
+  },
+  {
+   "check": "p1: noteheads matched a MusicXML note",
+   "ok": true,
+   "detail": "65/65 (100%, need 90%)"
+  },
+  {
+   "check": "p1: every mark has a reading",
+   "ok": true,
+   "detail": "11 marks"
+  },
+  {
+   "check": "p2: noteheads matched a MusicXML note",
+   "ok": true,
+   "detail": "65/65 (100%, need 90%)"
+  },
+  {
+   "check": "p2: every mark has a reading",
+   "ok": true,
+   "detail": "6 marks"
+  },
+  {
+   "check": "markup: at least one page has ink",
+   "ok": true,
+   "detail": "ink on page(s) [1, 2]"
+  },
+  {
+   "check": "hand order of 1 and 5",
+   "ok": true,
+   "detail": "1 left for review"
+  },
+  {
+   "check": "one fingering per note",
+   "ok": true,
+   "detail": "0 notes with two readings"
+  },
+  {
+   "check": "well-formed",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "check": "MusicXML 4.0 schema (same verdict as the source)",
+   "ok": true,
+   "detail": "skipped: no xsd in the manifest"
+  },
+  {
+   "check": "diff: insertions only",
+   "ok": true,
+   "detail": "51 lines inserted"
+  },
+  {
+   "check": "notes unchanged",
+   "ok": true,
+   "detail": "130 notes before, 130 after"
+  },
+  {
+   "check": "every planned fingering on its note",
+   "ok": true,
+   "detail": "10/10"
+  },
+  {
+   "check": "no other fingering added",
+   "ok": true,
+   "detail": "11 fingerings, expected 11"
+  },
+  {
+   "check": "music21 parses",
+   "ok": true,
+   "detail": "11 fingerings, 16 measures"
+  }
+ ],
+ "inserted": {
+  "added": 10
+ },
+ "ok": true
+}
