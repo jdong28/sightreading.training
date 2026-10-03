@@ -732,12 +732,12 @@ describe("staff two ledger lines", function() {
         let lower = spans(instance.bassStaffRef.current)
         let where = `${column.join("+")} in ${fifths}`
 
-        expect(upper.length).toBeGreaterThan(0, where)
-        expect(lower.length).toBeGreaterThan(0, where)
+        expect(upper.length).withContext(where).toBeGreaterThan(0)
+        expect(lower.length).withContext(where).toBeGreaterThan(0)
 
         let lowest = Math.max(...upper.map(rect => rect.bottom))
         let highest = Math.min(...lower.map(rect => rect.top))
-        expect(lowest).toBeLessThan(highest, where)
+        expect(lowest).withContext(where).toBeLessThan(highest)
       }
     }
   })
