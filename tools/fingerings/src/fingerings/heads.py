@@ -179,26 +179,36 @@ def place(heads, systems, black=None, max_ledger=7):
     that would sit on a ledger line is kept only if the page actually
     draws one there (when `black` is given): a measure number or other
     system-start text can otherwise read as a plausible high note, since
-    its digits alone are an ordinary notehead's size and shape."""
+    its digits alone are an ordinary notehead's size and shape. Tries
+    every staff within reach in order of increasing ledger distance, not
+    just the single closest one: a note near the midpoint between two
+    staves (a deep chord note reaching several ledger lines up from the
+    staff below) can be numerically closer to the *other* staff's own
+    range while still genuinely belonging, ledger lines and all, to the
+    one it was written for."""
     out = []
     for hd in heads:
-        best = None
+        candidates = []
         for si, sys_ in enumerate(systems):
             for k, st in enumerate(sys_["staves"]):
                 pos = staff_position(st, hd["y"])
                 if -max_ledger * 2 <= pos <= 8 + max_ledger * 2:
                     dist = 0 if 0 <= pos <= 8 else min(abs(pos), abs(pos - 8))
-                    if best is None or dist < best[0]:
-                        best = (dist, si, k, pos, st)
-        if best is None:
+                    candidates.append((dist, si, k, pos, st))
+        candidates.sort(key=lambda c: c[0])
+        chosen = None
+        for _dist, si, k, pos, st in candidates:
+            if black is not None and (pos < 0 or pos > 8):
+                space = st["space"]
+                bot_y = st["lines"][-1]
+                needed = _ledger_positions(pos)
+                if needed and not all(_ledger_line_present(black, hd["x"], space, bot_y - p * (space / 2))
+                                       for p in needed):
+                    continue  # try the next-closest staff instead of giving up
+            chosen = (si, k, pos)
+            break
+        if chosen is None:
             continue
-        _, si, k, pos, st = best
-        if black is not None and (pos < 0 or pos > 8):
-            space = st["space"]
-            bot_y = st["lines"][-1]
-            needed = _ledger_positions(pos)
-            if needed and not all(_ledger_line_present(black, hd["x"], space, bot_y - p * (space / 2))
-                                   for p in needed):
-                continue
+        si, k, pos = chosen
         out.append({**hd, "system": si, "staff": k + 1, "pos": pos, "step": int(round(pos))})
     return out
