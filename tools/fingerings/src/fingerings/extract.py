@@ -137,12 +137,11 @@ def _as_pil_array(xobj):
 
 
 def _scan_gray(xobj):
+    # pikepdf's as_pil_image() already applies /Decode (a 1-bit scan with
+    # Decode [1 0] comes back correctly inverted); inverting again here
+    # would double-apply it.
     pil = _as_pil_array(xobj).convert("L")
-    arr = np.asarray(pil, dtype=np.uint8)
-    decode = xobj.get("/Decode")
-    if decode is not None and [int(v) for v in decode] == [1, 0]:
-        arr = 255 - arr
-    return arr
+    return np.asarray(pil, dtype=np.uint8)
 
 
 def _ink_alpha(xobj):
