@@ -719,7 +719,7 @@ describe("staff two ledger lines", function() {
       ...staff.notesGroup.getByClassName("accidental"),
     ].map(shape => shape.getBoundingClientRect())
 
-    for (let fifths of [-5, -3, -1, 0, 1, 3, 5]) {
+    for (let fifths of [-6, -5, -3, -1, 0, 1, 3, 5]) {
       for (let column of [["B3", "C4"], ["Bb3", "C#4"], ["B3", "C#4"], ["Bb3", "C4"]]) {
         let instance = mount({
           type: "grand",
