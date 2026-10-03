@@ -13,6 +13,7 @@ import {SHEET_MUSIC_STORAGE_KEY} from "st/data"
 import {SCORE_DRILL_STORAGE_KEY} from "st/generators"
 import {loadScoreEngines} from "st/score_render/load"
 import scoreCardStyles from "st/components/score_card.module.css"
+import pageStyles from "st/components/pages/sight_reading_page.module.css"
 
 import {openTestStore, pianoScore} from "spec/helpers"
 
@@ -530,6 +531,33 @@ describe("the passages view (st/difficulty)", function() {
     renderScorePage()
     await waitFor(() => container.querySelector("[data-score-card]"), {message: "the page to settle"})
     expect(plate()).toBe(null)
+  })
+
+  // the rail's plates stand in for its engraving only while they show
+  // something: in free practice there is no programme plate, so a piece with
+  // no flagged passages leaves the rail as it has always been
+  it("keeps the rail's engraving while the rail's plates show nothing", async function() {
+    let engravingShown = () => {
+      let img = container.querySelector(`.${pageStyles.rail} .${pageStyles.engraving} img`)
+      return !!img && img.getClientRects().length > 0
+    }
+
+    await drillPiece(pianoScore({bars: [{upper: [{name: "C4"}]}]}))
+    renderScorePage()
+    await waitFor(() => container.querySelector("[data-score-card]"), {message: "the page to settle"})
+
+    expect(plate()).toBe(null)
+    expect(engravingShown()).toBe(true)
+
+    flushSync(() => root.unmount())
+    container.remove()
+
+    // the same page with a flagged piece: its plate takes the slot
+    await drillPiece(workhorseScore())
+    renderScorePage()
+    await waitFor(() => plate(), {message: "the passages plate"})
+
+    expect(engravingShown()).toBe(false)
   })
 
   // the sheet-music UI polish: the glance plate's header and counts row, and

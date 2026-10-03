@@ -273,6 +273,25 @@
     min-width: 0;
 }
 
+/* the head of the rail: the programme's own plates (see the score page's
+   Rail), which replace the engraving below only while they draw something.
+   A Rail whose plates all render nothing leaves this empty, and knows
+   nothing of the fallback */
+.rail_top {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    min-width: 0;
+}
+
+.rail_top:empty {
+    display: none;
+}
+
+.rail_top:not(:empty) + .engraving {
+    display: none;
+}
+
 .engraving {
     margin: 0;
     padding: 10px;

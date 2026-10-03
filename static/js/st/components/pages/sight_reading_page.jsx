@@ -2305,29 +2305,32 @@ export default class SightReadingPage extends React.Component {
       evening = <p className={styles.evening_empty}>Nothing played yet</p>
     }
 
-    // the programme's own plates at the head of the rail, in place of the
-    // engraving, while a generator is up at rest; in session the rail is
-    // always the default one below
+    // the programme's own plates at the head of the rail, while a generator
+    // is up at rest; in session the rail is always the default one below.
+    // They stand in for the engraving only while they render something: the
+    // slot is left empty otherwise, and the engraving below it shows as ever
+    // (see .rail_top in the stylesheet)
     let Rail = this.programme.Rail
     let generator = this.currentNotesGenerator()
-    let top
 
-    if (Rail && !this.state.session && generator) {
-      top = <Rail
-        generator={generator}
-        settings={this.currentSettings()}
-        setSettings={this._setSettings ||= settings => {
-          let generator = this.state.currentGenerator
-          if (generator.storageKey) {
-            storeGeneratorSettings(generator.storageKey, settings)
-          }
-          this.setGenerator(generator, settings)
-        }}
-        source={this.state.engineSource}
-        engine={this.programme.engine}
-        loadEngines={this.props.loadEngines} />
-    } else {
-      top = <figure className={styles.engraving}>
+    return <aside className={styles.rail}>
+      <div className={styles.rail_top}>
+        {Rail && !this.state.session && generator ? <Rail
+          generator={generator}
+          settings={this.currentSettings()}
+          setSettings={this._setSettings ||= settings => {
+            let generator = this.state.currentGenerator
+            if (generator.storageKey) {
+              storeGeneratorSettings(generator.storageKey, settings)
+            }
+            this.setGenerator(generator, settings)
+          }}
+          source={this.state.engineSource}
+          engine={this.programme.engine}
+          loadEngines={this.props.loadEngines} /> : null}
+      </div>
+
+      <figure className={styles.engraving}>
         <div className={styles.engraving_slot}>
           <img
             src={SALON_IMAGE}
@@ -2335,10 +2338,6 @@ export default class SightReadingPage extends React.Component {
         </div>
         <figcaption className={styles.engraving_caption}>Soirée at the Hôtel Lambert</figcaption>
       </figure>
-    }
-
-    return <aside className={styles.rail}>
-      {top}
 
       <div className={styles.evening}>
         <SectionLabel ornament="❧">This evening</SectionLabel>

@@ -382,6 +382,13 @@ describe("sight reading page", function() {
   // the engine card has its own specs (see score_card_spec)
   let renderScorePage = () => renderPage(ScorePage, {programme: {...SCORE_PROGRAMME, engine: null}})
 
+  // whether the rail's engraving is on show: the programme's plates stand in
+  // for it while they draw something, so it is in the tree either way
+  let engravingShown = rail => {
+    let img = rail.querySelector(`.${pageStyles.engraving} img`)
+    return !!img && img.getClientRects().length > 0
+  }
+
   let click = button => flushSync(() => button.click())
 
   // the number picker (st/components/number_picker) of the label in el
@@ -2473,11 +2480,11 @@ describe("sight reading page", function() {
       expect(rail.contains(plate(el))).toBe(true)
       expect(main.contains(plate(el))).toBe(false)
       expect(main.firstElementChild.classList.contains(pageStyles.staff_plate)).toBe(true)
-      expect(rail.querySelector("img")).toBe(null)
+      expect(engravingShown(rail)).toBe(false)
 
       click(buttonNamed(el, "Begin"))
       expect(plate(el)).toBeUndefined()
-      expect(el.querySelector(`.${pageStyles.rail}`).querySelector("img")).toBeTruthy()
+      expect(engravingShown(el.querySelector(`.${pageStyles.rail}`))).toBe(true)
     })
 
     it("names each card and says when its measure comes back", async function() {
