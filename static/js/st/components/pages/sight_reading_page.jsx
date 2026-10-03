@@ -33,8 +33,8 @@ import {dispatch, trigger} from "st/events"
 import {NOTE_EVENTS} from "st/midi"
 import {
   generatorDefaultSettings, storeCurrentDrill, currentStaffFor, currentGeneratorFor,
-  currentKeySignature, currentDrillMode, currentScrollSpeed, scoreKeySignature, storeGeneratorSettings,
-  DRILL_STORAGE_KEY
+  currentKeySignature, currentDrillMode, currentScrollSpeed, currentScrollTempo, scoreKeySignature,
+  storeGeneratorSettings, DRILL_STORAGE_KEY
 } from "st/generators"
 import {SELF_GRADES} from "st/srs/self_grade"
 import {SELF_ASPECTS} from "st/srs/records"
@@ -53,7 +53,7 @@ import {StaffTwo} from "st/components/staff_two"
 import {ScoreCard} from "st/components/score_card"
 import {loadScoreEngines} from "st/score_render/load"
 import {joinable} from "st/score_render/card_join"
-import {SCROLL_WAIT} from "st/score_render/card_scroll"
+import {SCROLL_WAIT, TEMPO_TOLERANCE} from "st/score_render/card_scroll"
 
 const DEFAULT_NOTE_WIDTH = 100
 const DEFAULT_SPEED = 4
@@ -253,6 +253,12 @@ export default class SightReadingPage extends React.Component {
     // set while a self grade is being applied, see selfGrade
     this.grading = false
 
+    // D4(c), the "Keep tempo" setting: whether anything has been played
+    // since Begin or the drill was last rebuilt, read by headWaits so an
+    // opening column still waits however long the setting is on (see
+    // followHead)
+    this.playedThisSegment = false
+
     this.keyMap = {
       " ": e => this.skipCurrentNote(),
       "1": e => this.selfGradeHotkey(1),
@@ -291,6 +297,8 @@ export default class SightReadingPage extends React.Component {
       touchedNotes: {},
 
       scrollSpeed: currentScrollSpeed(this.programme.storageKey),
+      // D4(c): the scroll-mode "Keep tempo" setting, off by default
+      tempo: currentScrollTempo(this.programme.storageKey),
 
       noteWidth: DEFAULT_NOTE_WIDTH,
 
@@ -439,6 +447,108 @@ export default class SightReadingPage extends React.Component {
     this.matcher.mode = currentGenerator ? currentGenerator.mode : "notes"
     this.matcher.anyOctave = anyOctave
     this.matcher.scroll = this.state.mode == "scroll"
+    this.matcher.tempo = this.tempoMode()
+  }
+
+  // D4(c): whether the trainer's "Keep tempo" setting is in effect for the
+  // head column: a column that scrolls past the hit line by the tolerance
+  // is missed and the slider moves on. False outside scroll mode, and for
+  // the chord drill (ChordList has no currentColumn, so it never scrolls
+  // past). A generator's own tempoMode() hook (the seam for Learning 4's
+  // tempo rung) takes over when it answers with a boolean, else the setting
+  tempoMode() {
+    if (this.state.mode != "scroll") { return false }
+    if (!this.state.currentGenerator || this.state.currentGenerator.mode != "notes") { return false }
+
+    let generator = this.currentNotesGenerator()
+    let hook = generator && generator.tempoMode && generator.tempoMode()
+    if (typeof hook == "boolean") { return hook }
+
+    return !!this.state.tempo
+  }
+
+  // D4(c): whether the head column isn't being read yet: at rest, or
+  // nothing played since Begin or the drill was rebuilt
+  // (this.playedThisSegment). The staff starts such a column over on the
+  // hit line, as it stands with the setting off (see followHead)
+  headRests() {
+    return !this.state.session || !this.playedThisSegment
+  }
+
+  // D4(c): whether the head column still waits at the line (as D4(a)
+  // always does) rather than scroll past it: it isn't being read yet
+  // (headRests), or it opens a card or a lap of a looping card (cardIndex
+  // 0). A generator without cardIndex (the random-note exercises, pasted
+  // notation) is therefore only ever exempt by headRests
+  headWaits() {
+    if (this.headRests()) { return true }
+
+    let notes = this.matcher.notes
+    let column = notes && notes.length ? notes.currentColumn() : []
+    return column.cardIndex === 0
+  }
+
+  // D4(c): keeps the slider's floor and the matcher's line arrival in step
+  // with the head column. Called after every change of head or session,
+  // never on every render: while a waiting column stands at the floor,
+  // followLine would otherwise keep moving its arrival forward, resetting
+  // its lateness (the slider rests there, so no frame of it moves either).
+  // Off, this restores wait-at-the-line (D4(a)) and never touches onLine,
+  // so that behaviour stays bit-identical. On, a column not being read yet
+  // (headRests: at rest, at Begin, on a rebuilt drill) is carried back to
+  // the line the same way, since there is no reading of it to keep the
+  // staff where it stands for; a column handed over mid-list that waits
+  // keeps its floor where the staff already stands, with the loop point
+  // kept below that floor so a slider the floor holds never loops however
+  // far past the line the floor sits; a scrolling column's floor is lifted
+  // (null) and the slider's loop point moves to the tolerance short of the
+  // line, restarting the animation if it had stopped. Either way the matcher
+  // is told when the new head reaches, or reached, the line, which can be in
+  // the past
+  followHead() {
+    // wait mode's slider has nothing to do with the hit line: leave it alone
+    if (this.state.mode != "scroll") { return }
+
+    let slider = this.state.slider
+    if (!slider) { return }
+
+    if (!this.tempoMode()) {
+      slider.floor = SCROLL_WAIT
+      slider.passAt = 0
+      // the floor may have been lifted below the line while the setting was
+      // on, where nothing is animating to carry the head back up to it
+      slider.checkAndStart()
+      return
+    }
+
+    if (this.headRests()) {
+      slider.floor = SCROLL_WAIT
+      slider.passAt = 0
+      slider.checkAndStart()
+    } else if (this.headWaits()) {
+      slider.floor = Math.min(SCROLL_WAIT, slider.value)
+      slider.passAt = slider.floor - TEMPO_TOLERANCE
+    } else {
+      slider.floor = null
+      slider.passAt = SCROLL_WAIT - TEMPO_TOLERANCE
+      slider.checkAndStart()
+    }
+
+    this.followLine(slider.value)
+  }
+
+  // D4(c): tells the matcher when the head column reaches, or reached, the
+  // hit line, read off where the staff stands: a column short of the line
+  // arrives in the future, one already past it arrived in the past. Told on
+  // every change of head (followHead) and on every frame that moves the
+  // staff, which gives the same answer frame after frame while it slides at
+  // its speed and so carries the crossing along with a frame gap the slider
+  // dropped rather than played out (FRAME_GAP_PAUSE_MS in st/slide_to_zero,
+  // a hidden tab). A frame the floor held still isn't one: the column stands
+  // where it stood and its crossing stays behind it (see SlideToZero)
+  followLine(value) {
+    this.matcher.onLine(this.matcher.now() +
+      (value - SCROLL_WAIT) * 1000 / this.state.slider.speed)
   }
 
   // the generator of notes and the index in its card of their head column
@@ -718,7 +828,7 @@ export default class SightReadingPage extends React.Component {
     if (!keepGenerator && generatorInstance.setDrill) {
       generatorInstance.setDrill(() => this.selfGraded() ?
         {mode: "self"} :
-        {mode: this.state.mode, speed: this.state.scrollSpeed})
+        {mode: this.state.mode, speed: this.state.scrollSpeed, tempo: this.tempoMode() ? TEMPO_TOLERANCE : null})
     }
 
     // today's programme offers a bar as one hand alone only where the staff
@@ -761,6 +871,11 @@ export default class SightReadingPage extends React.Component {
     this.matcher.setNotes(notes)
     this.matcher.mode = generator.mode
     this.advanceEngineMarks(this.state.notes, notes)
+
+    // D4(c): the drill was rebuilt, so its first column waits however long
+    // the tempo setting is on
+    this.playedThisSegment = false
+    this.followHead()
 
     // the grade row of acoustic mode is keyed by this, so a rebuilt drill
     // starts it fresh, as a graded pass does
@@ -838,11 +953,14 @@ export default class SightReadingPage extends React.Component {
     }
 
     this.matcher.clear()
+    // D4(c): the first column waits however long the tempo setting is on
+    this.playedThisSegment = false
     this.restartSession({
       session: true,
       heldNotes: {},
       touchedNotes: {},
     })
+    this.followHead()
   }
 
   // saves the stats so far and counts afresh from now, clock included
@@ -880,7 +998,7 @@ export default class SightReadingPage extends React.Component {
       clockNow: Date.now(),
       heldNotes: {},
       touchedNotes: {},
-    })
+    }, () => this.followHead())
 
     let saving = this.recordSession()
     if (saving) {
@@ -954,6 +1072,21 @@ export default class SightReadingPage extends React.Component {
         // a slip's shake plays out over the next column
         if (!event.stray) { update.noteShaking = false }
         this.state.slider.add(this.columnAdvance(event.from))
+        this.playedThisSegment = true
+        this.followHead()
+        break
+
+      case "scrolled":
+        // D4(c): the head column scrolled past the hit line (see
+        // NoteMatcher#scrollPast); its miss, if any, arrived as an ordinary
+        // "miss" event just before this one
+        update.notes = this.matcher.notes
+        this.advanceEngineMarks(event.from, event.to)
+        // as the hit above: the room the column leaving the staff held, then
+        // the new head's own arrival at the line, before the keys struck
+        // early for it complete and measure it
+        this.state.slider.add(this.columnAdvance(event.from))
+        this.followHead()
         break
 
       case "chordHit":
@@ -963,6 +1096,8 @@ export default class SightReadingPage extends React.Component {
         this.advanceEngineMarks(event.from, this.matcher.notes)
         update.noteShaking = false
         this.state.slider.add(1)
+        this.playedThisSegment = true
+        this.followHead()
         break
 
       case "chordMiss":
@@ -1054,6 +1189,7 @@ export default class SightReadingPage extends React.Component {
     })
 
     this.state.slider.add(advance)
+    this.followHead()
   }
 
   // A key went down, with the timeStamp of the MIDI event that brought it
@@ -1145,6 +1281,14 @@ export default class SightReadingPage extends React.Component {
     }
   }
 
+  // D4(c): the "Keep tempo" setting, applied live from the next head (a
+  // pass that straddles the change isn't graded, see
+  // MeasureCardGenerator#finishPass)
+  setTempo(on) {
+    storeCurrentDrill({tempo: !!on}, this.programme.storageKey)
+    this.setState({tempo: !!on}, () => this.followHead())
+  }
+
   enterWaitMode() {
     if (this.state.slider) {
       this.state.slider.cancel();
@@ -1167,6 +1311,10 @@ export default class SightReadingPage extends React.Component {
       this.state.slider.cancel();
     }
 
+    // D4(c): the drill's mode changed, so its first column on the line waits
+    // however long the tempo setting is on
+    this.playedThisSegment = false
+
     this.setState({
       mode: "scroll",
       noteWidth: noteWidth,
@@ -1174,39 +1322,39 @@ export default class SightReadingPage extends React.Component {
         speed: this.state.scrollSpeed / 100,
         loopPhase: 1,
         initialValue: 4,
-        // the head column waits on the line, never looping past it
+        // the head column waits on the line, never looping past it, until
+        // followHead lifts the floor in tempo mode (D4(c))
         floor: SCROLL_WAIT,
-        onUpdate: value => this.setOffset(value),
+        onUpdate: value => {
+          this.setOffset(value)
+          if (this.tempoMode()) { this.followLine(value) }
+        },
         // the matcher times how long each column stands on the hit line
         // before it is played (its late), which is recorded and never a miss
         onStart: () => this.matcher.onLine(null),
-        onStop: () => this.matcher.onLine(this.matcher.now()),
+        // the staff has come to rest with the head on the line, so the head
+        // is on it from now — unless followHead already dated its arrival
+        // earlier, having found it past the line as it became the head
+        // (D4(c)): an arrival already in the past is the one it kept
+        onStop: () => this.matcher.onLine(
+          Math.min(this.matcher.onLineSince ?? Infinity, this.matcher.now())),
+        // D4(c): fires only in tempo mode (the floor otherwise prevents the
+        // slider ever looping) when the head column has scrolled past the
+        // tolerance, judged through the matcher (NoteMatcher#scrollPast) so
+        // every detection rule stays there
         onLoop: function() {
-          let column = this.state.notes.currentColumn()
-          // notes scrolling past at rest aren't misses
-          if (column.length && this.state.session) {
-            this.state.stats.missNotes(column);
-            this.markMissedCard(column.cardIndex)
-          }
-          // the room the column leaving the staff held, which the notes slide
-          // by, so a long note holds the staff for as many beats as the score
-          // gives it
-          let advance = this.columnAdvance(this.state.notes)
-          let notes = this.state.notes.clone()
-          notes.shift();
-          notes.pushRandom();
-          // the matcher judges against the looped list from the next event
-          // on, before the render that draws it
-          this.matcher.setNotes(notes)
-          this.advanceEngineMarks(this.state.notes, notes)
-          this.setState({ notes })
-
+          // the loop raised the value by loopPhase: put it back, so the room
+          // the column leaving the staff held is added by the handler of the
+          // judgement that actually shifts it off the list ("scrolled", or
+          // "hit" when the keys held settle it), exactly once either way
           let slider = this.state.slider
-          slider.value += advance - slider.loopPhase
-          slider.loopPhase = advance
+          slider.value -= slider.loopPhase
+
+          let now = this.matcher.now()
+          this.judge(() => this.matcher.scrollPast(now, {miss: this.state.session}))
         }.bind(this)
       })
-    });
+    }, () => this.followHead());
   }
 
   setKeySignature(k) {
@@ -1457,6 +1605,8 @@ export default class SightReadingPage extends React.Component {
           storeCurrentDrill({speed: scrollSpeed}, this.programme.storageKey)
           this.setState({scrollSpeed})
         }}
+        tempo={this.state.tempo}
+        setTempo={this._setTempo ||= on => this.setTempo(on)}
         acoustic={this.selfGraded()}
       />
 
@@ -1815,6 +1965,9 @@ export default class SightReadingPage extends React.Component {
       <span className={styles.tempo_readout}>
         {this.selfGraded() ? "Self-graded" : <>
           {this.state.mode == "scroll" ? "Scroll" : "Wait"}
+          {this.tempoMode() ? <>
+            {" "}<span className={styles.gilt} aria-hidden="true">·</span>{" "}in tempo
+          </> : null}
           {" "}<span className={styles.gilt} aria-hidden="true">·</span>{" "}
           speed {this.state.scrollSpeed}
         </>}

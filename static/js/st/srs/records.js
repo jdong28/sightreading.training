@@ -129,10 +129,20 @@ export const RECENT_ATTEMPTS = 5
  * stalled, latency, spread, early, heldCredit, late]: slips the tries gone
  * wrong on it, stalled 1 when it was skipped, then what the note matcher
  * measured on its hit (see NoteMatcher#measured), ms or a count of keys,
- * each null when not measured (late is null in wait mode). Absent on reviews
- * graded before GRADE_ALGO 2. From GRADE_ALGO 3 a column settled by a key
- * held (latency null, heldCredit above 0) is untimed, and the latency of the
- * next column played runs from the column played before it
+ * each null when not measured (late is null in wait mode; in scroll mode a
+ * played column always has one, so null there marks one the player never
+ * played: stalled is 1 for a clean skip with the space bar, and 0 both for
+ * one that scrolled past as a miss, ruling D4(c), and for one skipped after
+ * a wrong key, which counts as missed rather than skipped, see
+ * NoteMatcher#scrollPast and columnSkipped in st/srs/attempt). Absent
+ * on reviews graded before GRADE_ALGO 2. From GRADE_ALGO 3 a column settled
+ * by a key held (latency null, heldCredit above 0) is untimed, and the
+ * latency of the next column played runs from the column played before it
+ * @property {number} [tempo] a scroll-mode review only, set when the pass
+ * was played with the trainer's "Keep tempo" setting on (ruling D4(c)): the
+ * tolerance (slider units, st/score_render/card_scroll TEMPO_TOLERANCE) a
+ * column past the hit line was missed at, kept with the review so a revised
+ * tolerance doesn't change how an old one reads
  * @property {number} [r] the recall the scheduler predicted
  * @property {number} [algo] the grading version
  * @property {number} [hits] legacy only
@@ -152,6 +162,7 @@ export const RECENT_ATTEMPTS = 5
 
 const isCount = n => Number.isInteger(n) && n >= 0
 const isTime = n => typeof n == "number" && Number.isFinite(n)
+const isPositive = n => typeof n == "number" && Number.isFinite(n) && n > 0
 const optional = (value, test) => value === undefined || test(value)
 const oneOf = list => value => list.includes(value)
 
@@ -235,7 +246,8 @@ export function validReview(review) {
       review.leadMs === undefined && review.speed === undefined &&
       review.bars === undefined && review.trouble === undefined &&
       review.staffMisses === undefined && review.perColumn === undefined &&
-      review.algo === undefined && review.hits === undefined && review.attempts === undefined
+      review.algo === undefined && review.hits === undefined && review.attempts === undefined &&
+      review.tempo === undefined
   }
 
   return isCount(review.misses) &&
@@ -250,6 +262,7 @@ export function validReview(review) {
     optional(review.trouble, trouble => Array.isArray(trouble) && trouble.every(isCount)) &&
     optional(review.staffMisses, validStaffMisses) &&
     optional(review.perColumn, validPerColumn) &&
+    (review.tempo === undefined || (review.mode == "scroll" && isPositive(review.tempo))) &&
     optional(review.r, isTime) && isCount(review.algo) &&
     review.hits === undefined && review.attempts === undefined && review.slipped === undefined
 }

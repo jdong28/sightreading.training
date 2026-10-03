@@ -1,4 +1,7 @@
-import {ShapeGenerator, Generator, generatorDefaultSettings} from "st/generators"
+import {
+  ShapeGenerator, Generator, generatorDefaultSettings, currentScrollTempo, storeCurrentDrill,
+  DRILL_STORAGE_KEY, SCORE_DRILL_STORAGE_KEY,
+} from "st/generators"
 import {ChordGenerator, MultiKeyChordGenerator} from "st/chord_generators"
 import {
   STAVES, GENERATORS, SHEET_MUSIC_GENERATOR, SHEET_MUSIC_STORAGE_KEY, LEGACY_SHEET_MUSIC_STORAGE_KEY,
@@ -223,6 +226,44 @@ describe("octave numbering", function() {
       }))
       expect(generatorDefaultSettings(sheetMusic(), treble()).measuresPerCard)
         .toEqual(WHOLE_SECTION)
+    })
+  })
+
+  // D4(c): the trainer's "Keep tempo" setting, kept under the drill's
+  // storage key alongside mode and speed
+  describe("the scroll-mode tempo setting", function() {
+    let saved
+
+    beforeEach(function() {
+      saved = [DRILL_STORAGE_KEY, SCORE_DRILL_STORAGE_KEY].map(key => [key, window.localStorage.getItem(key)])
+      for (let [key] of saved) {
+        window.localStorage.removeItem(key)
+      }
+    })
+
+    afterEach(function() {
+      for (let [key, value] of saved) {
+        if (value == null) {
+          window.localStorage.removeItem(key)
+        } else {
+          window.localStorage.setItem(key, value)
+        }
+      }
+    })
+
+    it("is off by default, on once stored, and kept apart per storage key", function() {
+      expect(currentScrollTempo()).toBe(false)
+      expect(currentScrollTempo(SCORE_DRILL_STORAGE_KEY)).toBe(false)
+
+      storeCurrentDrill({tempo: true})
+      expect(currentScrollTempo()).toBe(true)
+      expect(currentScrollTempo(SCORE_DRILL_STORAGE_KEY)).toBe(false)
+
+      storeCurrentDrill({tempo: true}, SCORE_DRILL_STORAGE_KEY)
+      expect(currentScrollTempo(SCORE_DRILL_STORAGE_KEY)).toBe(true)
+
+      storeCurrentDrill({tempo: false})
+      expect(currentScrollTempo()).toBe(false)
     })
   })
 })

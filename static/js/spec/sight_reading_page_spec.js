@@ -674,6 +674,29 @@ describe("sight reading page", function() {
     expect(page.refreshNoteList).toHaveBeenCalled()
   })
 
+  // D4(c): the trainer's "Keep tempo" setting, a scroll-mode-only toggle
+  // kept under the same storage key as mode and speed
+  it("keeps tempo as a scroll-mode setting, disabled in wait mode and stored like mode and speed", function() {
+    let el = renderPage()
+    click(buttonLabelled(el, "Programme"))
+    let drawer = el.querySelector(`.${drawerStyles.drawer}`)
+
+    expect(buttonNamed(drawer, "Keep tempo").disabled).toBe(true)
+
+    click(buttonNamed(drawer, "Scroll"))
+    expect(buttonNamed(drawer, "Keep tempo").disabled).toBe(false)
+    expect(el.textContent).not.toContain("in tempo")
+
+    click(buttonNamed(drawer, "Keep tempo"))
+    expect(page.state.tempo).toBe(true)
+    expect(page.tempoMode()).toBe(true)
+    expect(JSON.parse(window.localStorage.getItem(DRILL_STORAGE_KEY)).tempo).toBe(true)
+    expect(el.textContent).toContain("in tempo")
+
+    click(buttonNamed(drawer, "Wait"))
+    expect(buttonNamed(drawer, "Keep tempo").disabled).toBe(true)
+  })
+
   it("toggles the session and the elapsed clock", function() {
     jasmine.clock().install()
     clockInstalled = true
@@ -1597,6 +1620,396 @@ describe("sight reading page", function() {
           mode: "scroll", misses: 0, clean: 4, skipped: 0, hesitations: 0, grade: GOOD,
         }))
       })
+
+      // D4(c): the trainer's "Keep tempo" setting
+      describe("the tempo setting", function() {
+        it("waits for the opening column, then misses a column that scrolls past the line", async function() {
+          await renderSection({measuresPerCard: "2"}, {mode: "scroll", tempo: true})
+          expect(page.tempoMode()).toBe(true)
+          // the opening column (cardIndex 0) still waits
+          expect(page.state.slider.floor).not.toBe(null)
+
+          playHead()
+          // the next column isn't an opening column: it scrolls past
+          expect(page.state.slider.floor).toBe(null)
+
+          flushSync(() => page.state.slider.onLoop())
+          await finished()
+
+          let written = await reviews()
+          let review = written.find(r => r.itemId == `${piece.id}:both:1-2`)
+          expect(review.mode).toEqual("scroll")
+          expect(review.tempo).toEqual(1)
+          expect(review.misses).toEqual(1)
+          expect(review.skipped).toEqual(0)
+          expect(review.perColumn[1][6]).toBe(null)
+        })
+
+        it("never gives the drill a null floor without the setting on", async function() {
+          await renderSection({measuresPerCard: "2"}, {mode: "scroll"})
+          expect(page.tempoMode()).toBe(false)
+
+          playHead()
+          expect(page.state.slider.floor).toEqual(SCROLL_WAIT)
+        })
+
+        // the real animation's frames, to let the slider settle or resume
+        let frames = n => new Promise(resolve => {
+          let tick = left => left > 0 ?
+            window.requestAnimationFrame(() => tick(left - 1)) : resolve()
+          tick(n)
+        })
+
+        // a column that scrolls past hands the next card's opening column
+        // to the staff already behind the hit line: its lateness runs from
+        // the line it crossed, not from the staff coming to rest
+        it("records the lateness of a column that became the head past the line", async function() {
+          await renderSection({measuresPerCard: "2"}, {mode: "scroll", tempo: true})
+          let slider = page.state.slider
+
+          playHead()
+          slider.value = SCROLL_WAIT - 0.2
+          flushSync(() => slider.onLoop())
+
+          // the opening column of the next card waits, at the floor it is
+          // already past: that much of its lateness is behind it
+          let behind = (SCROLL_WAIT - slider.value) * 1000 / slider.speed
+          expect(behind).toBeGreaterThan(100)
+          expect(slider.floor).toEqual(slider.value)
+
+          // the staff comes to rest there, then the column is played 300ms on
+          let t0 = performance.now()
+          await frames(3)
+          playAt(t0, 300)
+          playAt(t0, 400)
+          await finished()
+
+          let written = await reviews()
+          let review = written.find(r => r.itemId == `${piece.id}:both:3-4`)
+          let late = review.perColumn[0][6]
+          expect(late).toBeGreaterThan(300 + behind - 50)
+          expect(late).toBeLessThan(300 + behind + 50)
+        })
+
+        // the keys struck early for the next column complete it as the head
+        // scrolls past, which measures it there and then: its lateness is
+        // its own crossing of the line, not that of the column it followed
+        it("times a column the scroll-past completes from keys struck early at its own crossing", async function() {
+          await renderSection({measuresPerCard: "4"}, {mode: "scroll", tempo: true})
+          let slider = page.state.slider
+
+          let t0 = performance.now()
+          // the card's opening column waits on the line; playing it hands
+          // the head to the second, a gap right of the line, so its own
+          // crossing is a second off at speed 100
+          slider.value = SCROLL_WAIT
+          playAt(t0 - 400, 0)
+          expect(slider.floor).toBe(null)
+
+          // the player reaches the card's third column early and never
+          // plays the head's own keys
+          let next = [...page.state.notes[1]]
+          expect(next.length).toBeGreaterThan(1)
+          next.forEach((note, idx) =>
+            flushSync(() => midi(true, note, t0 - 20 + idx * 20)))
+
+          // the head scrolls past with that column already behind the line,
+          // where the keys struck early complete it
+          slider.value = SCROLL_WAIT - 0.2
+          let behind = (SCROLL_WAIT - slider.value) * 1000 / slider.speed
+          flushSync(() => slider.onLoop())
+          let elapsed = performance.now() - t0
+          expect(elapsed).toBeLessThan(behind)
+          expect([...page.state.notes.currentColumn()]).not.toEqual(next)
+
+          playAt(t0, 100)
+          await finished()
+
+          let review = await card()
+          // completed by both keys struck early, so its lateness is the time
+          // it had been past the line when they went down, never the second
+          // the column that scrolled past had been waiting for
+          expect(review.perColumn[2][4]).toEqual(next.length)
+          // stored rounded to the millisecond, so the bounds are too
+          let late = review.perColumn[2][6]
+          expect(late).toBeGreaterThanOrEqual(Math.round(behind - elapsed))
+          expect(late).toBeLessThanOrEqual(Math.round(behind))
+        })
+
+        // Drives the slider's frames by hand, each stamped from the clock
+        // the matcher reads, as the browser stamps them against
+        // performance.now. Returns step(ms), which runs every frame queued
+        // so far, and the frames the page queues from here on are its own
+        let driveFrames = () => {
+          let realRAF = window.requestAnimationFrame
+          let queued = []
+          let clock = {now: 0}
+          window.requestAnimationFrame = cb => queued.push(cb)
+
+          return {
+            clock,
+            restore: () => { window.requestAnimationFrame = realRAF },
+            step: ms => {
+              clock.now += ms
+              let due = queued
+              queued = []
+              due.forEach(cb => cb(clock.now))
+            },
+          }
+        }
+
+        // the frame gap a hidden tab leaves is dropped rather than played
+        // out (FRAME_GAP_PAUSE_MS), so no column is scroll-passed for the
+        // time away — and the head's crossing of the line has to move on
+        // with it, or every column of the rest of the card reads as that
+        // much later than it was
+        it("carries a scrolling head's crossing of the line along with a dropped frame gap", async function() {
+          let {clock, step, restore} = driveFrames()
+
+          try {
+            await renderSection({measuresPerCard: "4"}, {mode: "scroll", tempo: true})
+            let slider = page.state.slider
+            page.matcher.now = () => clock.now
+            expect(slider.speed).toEqual(1)
+
+            // the card's opening column stands on the line; playing it there
+            // hands the head to the second, a second short of the line
+            slider.value = SCROLL_WAIT
+            page.followHead()
+            step(0)
+            playAt(clock.now, 0)
+            expect(slider.floor).toBe(null)
+            expect(slider.value).toEqual(SCROLL_WAIT + 1)
+
+            // the tab is hidden for a minute: the gap is dropped, so the
+            // staff hasn't moved and nothing scrolled past
+            step(60000)
+            expect(slider.value).toEqual(SCROLL_WAIT + 1)
+            expect(page.state.stats.misses).toEqual(0)
+
+            // a second of frames then carries that column to the line, where
+            // it is played a tenth of a second on
+            step(500)
+            step(500)
+            expect(slider.value).toBeCloseTo(SCROLL_WAIT, 10)
+            playAt(clock.now, 100)
+            playAt(clock.now, 200)
+            playAt(clock.now, 300)
+            await finished()
+
+            let review = await card()
+            expect(review.perColumn[1][6]).toEqual(100)
+          } finally {
+            restore()
+          }
+        })
+
+        // a waiting column keeps its floor, so the hidden gap is played out
+        // instead of dropped and the staff snaps to the line on the first
+        // frame back: the column reaches the line then, not when the slider
+        // had it reaching before the gap
+        it("times a waiting head from the line it snaps to after a frame gap", async function() {
+          let {clock, step, restore} = driveFrames()
+
+          try {
+            await renderSection({measuresPerCard: "4"}, {mode: "scroll", tempo: true})
+            let slider = page.state.slider
+            page.matcher.now = () => clock.now
+
+            // the card's opening column waits, two seconds short of the line
+            slider.value = SCROLL_WAIT + 2
+            page.followHead()
+            expect(slider.floor).toEqual(SCROLL_WAIT)
+
+            // the tab is hidden for a minute, which the floor plays out
+            step(0)
+            step(60000)
+            expect(slider.value).toEqual(SCROLL_WAIT)
+
+            playAt(clock.now, 100)
+            playAt(clock.now, 200)
+            playAt(clock.now, 300)
+            playAt(clock.now, 400)
+            await finished()
+
+            let review = await card()
+            expect(review.perColumn[0][6]).toEqual(100)
+          } finally {
+            restore()
+          }
+        })
+
+        // turning the setting off restores wait-at-the-line (D4(a)), which
+        // has to carry a head the setting left below the line back up to it
+        it("carries a head left below the line back to it when the setting goes off", async function() {
+          await renderSection({measuresPerCard: "2"}, {mode: "scroll", tempo: true})
+          let slider = page.state.slider
+
+          playHead()
+          slider.value = SCROLL_WAIT - 0.2
+          flushSync(() => slider.onLoop())
+
+          // the staff comes to rest below the line, where tempo mode left it
+          await frames(3)
+          expect(slider.value).toBeLessThan(SCROLL_WAIT)
+
+          flushSync(() => page.setTempo(false))
+          expect(slider.floor).toEqual(SCROLL_WAIT)
+
+          await frames(3)
+          expect(slider.value).toEqual(SCROLL_WAIT)
+        })
+
+        // the floor that keeps the staff where it stands is for a head
+        // handed over mid-list, which is being read: Rest and Begin start a
+        // column over on the line, as the setting going off does
+        it("carries the head back to the line at Rest and at Begin", async function() {
+          let el = await renderSection({measuresPerCard: "2"}, {mode: "scroll", tempo: true})
+          let slider = page.state.slider
+
+          playHead()
+          slider.value = SCROLL_WAIT - 0.2
+          flushSync(() => slider.onLoop())
+
+          // the staff comes to rest below the line, where tempo mode left it
+          await frames(3)
+          expect(slider.value).toBeLessThan(SCROLL_WAIT)
+
+          click(buttonNamed(el, "Rest"))
+          expect(slider.floor).toEqual(SCROLL_WAIT)
+          await frames(3)
+          expect(slider.value).toEqual(SCROLL_WAIT)
+          await waitFor(() => store.recentSessions().length == 1, "the session to be saved")
+
+          // and again at Begin, which starts the drill's first column over
+          slider.value = SCROLL_WAIT - 0.2
+          click(buttonNamed(el, "Begin"))
+          expect(slider.floor).toEqual(SCROLL_WAIT)
+          await frames(3)
+          expect(slider.value).toEqual(SCROLL_WAIT)
+        })
+
+        // the switch into scroll mode is a change of drill: its first column
+        // waits on the line, however many frames pass, rather than carrying
+        // over what was read in wait mode
+        it("waits for the first column after a switch into scroll mode", async function() {
+          let {clock, step, restore} = driveFrames()
+
+          try {
+            await renderSection({measuresPerCard: "4"}, {tempo: true})
+            expect(page.state.mode).toEqual("wait")
+            expect(page.state.tempo).toBe(true)
+
+            // a column read in wait mode, where the setting does nothing
+            expect(page.tempoMode()).toBe(false)
+            playHead()
+            expect(page.state.stats.hits).toBeGreaterThan(0)
+
+            flushSync(() => page.setMode("scroll"))
+            expect(page.tempoMode()).toBe(true)
+            let slider = page.state.slider
+            page.matcher.now = () => clock.now
+            expect(slider.floor).toEqual(SCROLL_WAIT)
+
+            // the column slides in and waits on the line unplayed
+            let head = [...page.state.notes.currentColumn()]
+            step(0)
+            for (let i = 0; i < 20; i++) { step(500) }
+
+            expect(slider.value).toEqual(SCROLL_WAIT)
+            expect(page.state.stats.misses).toEqual(0)
+            expect([...page.state.notes.currentColumn()]).toEqual(head)
+          } finally {
+            restore()
+          }
+        })
+
+        // a column that scrolls past hands the next one over at the room it
+        // held, which on an engine's system can be shorter than the
+        // tolerance and so leave the staff past the line: a waiting column
+        // there waits all the same, and no frame of the staff scrolls it
+        // past unplayed
+        it("holds a waiting head left past the slider's loop point", async function() {
+          let {clock, step, restore} = driveFrames()
+
+          try {
+            await renderSection({measuresPerCard: "2"}, {mode: "scroll", tempo: true})
+            let slider = page.state.slider
+            page.matcher.now = () => clock.now
+
+            // the card is played through, so its last column hands the next
+            // card's opening column over mid-list: a wait that keeps the
+            // staff where the column before it left it
+            playHead()
+            playHead()
+            expect(page.state.notes.currentColumn().cardIndex).toEqual(0)
+
+            // the waiting head stands a tolerance and more past the line
+            slider.value = -0.2
+            page.followHead()
+            expect(page.headWaits()).toBe(true)
+            expect(slider.floor).toEqual(-0.2)
+
+            let head = [...page.state.notes.currentColumn()]
+            step(0)
+            step(500)
+            step(500)
+
+            expect(slider.value).toEqual(-0.2)
+            expect(page.state.stats.misses).toEqual(0)
+            expect([...page.state.notes.currentColumn()]).toEqual(head)
+          } finally {
+            restore()
+          }
+        })
+
+        // the keys held for a column the score sounds on complete it as the
+        // head scrolls past (rule 1), which is a hit and no miss: the staff
+        // then moves on by that one column, as it does for any hit, and
+        // never twice over for the one column it shifted off
+        it("moves the staff on once for a column the scroll-past settles from keys held", async function() {
+          let {clock, step, restore} = driveFrames()
+
+          try {
+            await renderSection({measuresPerCard: "4"}, {mode: "scroll", tempo: true})
+            let slider = page.state.slider
+            page.matcher.now = () => clock.now
+            expect(slider.speed).toEqual(1)
+
+            // the second column is sounded on by the first, so the keys
+            // struck for the first and still down are all of it
+            let head = [...page.state.notes.currentColumn()]
+            let next = page.state.notes[1]
+            expect(Array.isArray(next)).toBe(true)
+            next.splice(0, next.length, ...head)
+            next.sustained = [...head]
+
+            // the opening column stands on the line and is played there, its
+            // keys held down, handing the second the head a column right of
+            // the line
+            slider.value = SCROLL_WAIT
+            page.followHead()
+            step(0)
+            head.forEach(note => flushSync(() => page.pressNote(note, clock.now)))
+            expect([...page.state.notes.currentColumn()]).toEqual(head)
+            expect(slider.floor).toBe(null)
+            expect(slider.value).toEqual(SCROLL_WAIT + 1)
+
+            // it scrolls on to the tolerance past the line, where the keys
+            // held settle it rather than missing it
+            step(500)
+            step(500)
+            step(500)
+            step(500)
+            expect(page.state.stats.misses).toEqual(0)
+
+            // one column's width on from the line it scrolled past
+            expect(slider.value).toBeCloseTo(SCROLL_WAIT, 10)
+          } finally {
+            restore()
+          }
+        })
+      })
     })
 
     it("writes one hand's card under its hand", async function() {
@@ -2181,6 +2594,24 @@ describe("sight reading page", function() {
       expect([page.state.stats.hits, page.state.stats.misses]).toEqual([1, 0])
       expect(page.state.notes[0]).not.toBe(chord)
       expect(page.state.heldNotes).toEqual({})
+    })
+
+    // D4(c): ChordList has no currentColumn, so the chord drill never
+    // scrolls past, whatever the tempo setting
+    it("never gives the chord drill a null floor, even with scroll and tempo on", function() {
+      renderChords()
+      flushSync(() => page.setMode("scroll"))
+      flushSync(() => page.setTempo(true))
+
+      expect(page.state.mode).toEqual("scroll")
+      expect(page.tempoMode()).toBe(false)
+      expect(page.state.slider.floor).not.toBe(null)
+
+      let chord = page.state.notes[0]
+      let keys = chord.getRange(4, 3)
+      flushSync(() => keys.forEach(note => page.pressNote(note)))
+      flushSync(() => keys.forEach(note => page.releaseNote(note)))
+      expect(page.state.slider.floor).not.toBe(null)
     })
 
     it("misses a chord whose keys don't match on their release", function() {

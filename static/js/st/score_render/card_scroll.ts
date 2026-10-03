@@ -14,6 +14,17 @@ import type {CardJoin, JoinColumn} from "./card_join"
 // which the hit line then holds (see enterScrollMode in the trainer)
 export const SCROLL_WAIT = 0.5
 
+// how far past the hit line a column may scroll, in the trainer's "Keep
+// tempo" setting (ruling D4(c) of the note-detection report), before
+// NoteMatcher#scrollPast counts it a miss: one slider unit, 100/speed
+// seconds (1 s at the default speed of 100). The report gives no figure for
+// D4; this one is read from the owner's own scroll-mode practice (4 passes,
+// 90 columns, all at speed 100): the stored lateness splits into "near the
+// line" (at most 596 ms) and "stopped" (at least 1.5 s), and this tolerance
+// (1000 ms at speed 100) misses exactly the stops and none of the near-line
+// columns
+export const TEMPO_TOLERANCE = 1
+
 // the least a column moves the system on, so columns drawn at one place are
 // still passed one by one
 export const MIN_SCROLL_ADVANCE = 0.05
