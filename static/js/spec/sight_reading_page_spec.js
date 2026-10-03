@@ -2337,7 +2337,10 @@ describe("sight reading page", function() {
       tick(20000)
       click(buttonNamed(el, "Rest"))
 
-      await waitFor(() => store.recentSessions().length == 1, "the saved session")
+      // the page hide writes the session first and Rest writes over it, so
+      // waiting on the first write alone would race the second
+      await waitFor(() => store.recentSessions().some(session => session.elapsedSeconds == 30),
+        "the session Rest wrote over the page hide's")
       let sessions = store.recentSessions()
       expect(sessions.length).toEqual(1)
       expect(sessions[0].id).toEqual(sessionId)
