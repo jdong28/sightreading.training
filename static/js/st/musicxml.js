@@ -14,7 +14,10 @@
 //   - repeats, endings, and transposition are ignored
 //   - grace notes aren't notes of their own: they are kept, with the
 //     neighbours of a trill, turn or mordent, as the ornaments of the note
-//     they are played with (see addOrnaments)
+//     they are played with (see addOrnaments). A trill's <wavy-line> gives
+//     those same neighbours to every other note of its voice and staff it
+//     runs over, from its explicit start to its explicit stop (see
+//     trillLines in walkPart)
 //   - ties are merged into one note for detection,
 //     with the notes they are tied to kept as the merged note's notation.ties
 //     so an engine's drawn tied heads join the note (st/score_render)
@@ -292,6 +295,53 @@ function ornamentNeighbours(noteEl) {
   return neighbours
 }
 
+// A note's explicit wavy lines, in written order: [{number, type}]. Only
+// "start" and "stop" are a line's own events; a "continue" (some exporters
+// write one at a system break; MuseScore never does) and a missing type are
+// ignored. number defaults to "1", MusicXML's own default
+function wavyLines(noteEl) {
+  let lines = []
+
+  for (let notations of childEls(noteEl, "notations")) {
+    for (let ornaments of childEls(notations, "ornaments")) {
+      for (let el of childEls(ornaments, "wavy-line")) {
+        let type = el.getAttribute("type")
+        if (type == "start" || type == "stop") {
+          lines.push({number: el.getAttribute("number") || "1", type})
+        }
+      }
+    }
+  }
+
+  return lines
+}
+
+// whether a note carries a <trill-mark/> in any of its <ornaments>: only a
+// marked note can open a trill line (see trillLines in walkPart)
+function hasTrillMark(noteEl) {
+  return childEls(noteEl, "notations").some(notations =>
+    childEls(notations, "ornaments").some(ornaments => hasChild(ornaments, "trill-mark")))
+}
+
+// One side of an ornament's neighbour, spelled: the note a diatonic step
+// above or below parts, with alter if the ornament wrote an accidental mark
+// for this side, else the alteration in force at the note's position (at,
+// idx orders same-onset notes by the order they're written) -- the last note
+// on that letter and octave written earlier in written's measure, before at,
+// else the key signature fifths gives
+function spellNeighbour({side, alter}, {staff, parts, at, idx, fifths}, written) {
+  let neighbour = stepFrom(parts, side == "upper" ? 1 : -1)
+  let inForce = written.filter((note, noteIdx) =>
+    note.staff == staff && note.step == neighbour.step && note.octave == neighbour.octave &&
+    (note.at < at || (note.at == at && noteIdx < idx))
+  ).sort((a, b) => a.at - b.at).pop()
+
+  return spellNote({
+    ...neighbour,
+    alter: alter ?? (inForce ? inForce.alter : keyAlter(fifths, neighbour.step)),
+  })
+}
+
 function clefSign(clefEl) {
   let sign = (childText(clefEl, "sign") || "").toLowerCase()
   if (sign == "g" || sign == "f" || sign == "c") {
@@ -398,6 +448,36 @@ function walkPart(measures, partName) {
   // measure of the note it leads into, so none is kept past the end of one
   let pendingGraces = new Map()
 
+  // a trill line is an explicit start/stop pair of <wavy-line>s on one
+  // staff. openTrillLines holds the ones waiting for their stop, by
+  // "staff:number" (MusicXML's number tells concurrent lines on a staff
+  // apart; a part's two staves never share a key): {staff, voice, marked,
+  // from}, the marked event opening the line and its position
+  // [measureIdx, offset in beats]. A start on a key already open replaces
+  // it, dropping the old line as never stopped, which (with applying only
+  // closed lines, after the whole part is walked) keeps an unpaired start
+  // from ever giving an allowance past the marked note's own trill.
+  // trillLines collects the closed pairs, each with its stop position (to)
+  // added
+  let openTrillLines = new Map()
+  let trillLines = []
+
+  let closeTrillLine = (staff, number, measureIdx, offset) => {
+    let key = `${staff}:${number}`
+    let line = openTrillLines.get(key)
+    if (line) {
+      trillLines.push({...line, to: [measureIdx, offset]})
+      openTrillLines.delete(key)
+    }
+  }
+
+  // each pitched event's spelling context (see spellNeighbour), and each
+  // measure's written list (see spellNeighbour's inForce), kept to spell a
+  // trill line's notes once the whole part is walked and its lines are
+  // closed
+  let spellingContext = new Map()
+  let writtenByMeasure = []
+
   measures.forEach((measureEl, measureIdx) => {
     let position = 0 // in divisions, relative to measure start
     let maxPosition = 0
@@ -497,6 +577,14 @@ function walkPart(measures, partName) {
           }
 
           if (hasChild(el, "rest")) {
+            // MuseScore writes a trill line's stop on the rest it ends on; a
+            // rest never opens one (it reads only a trill-mark's start)
+            for (let {number, type} of wavyLines(el)) {
+              if (type == "stop") {
+                closeTrillLine(staff, number, measureIdx, start / divisions)
+              }
+            }
+
             if (duration > 0) {
               part.staves.add(staff)
               part.rests.push({
@@ -553,37 +641,74 @@ function walkPart(measures, partName) {
             ornamented.push({event, staff, parts, neighbours, at: start, idx: written.length - 1, fifths})
           }
 
+          spellingContext.set(event, {staff, parts, at: start, idx: written.length - 1, fifths})
+
+          // read in written order (every MuseScore single-note trill writes
+          // its start and stop on the same note, in that order, which must
+          // close the line there rather than leave it open): a stop closes
+          // the line of its number, and a start opens one only when this
+          // note carries the mark a trill line takes its allowance from
+          let trillMark = hasTrillMark(el)
+          for (let {number, type} of wavyLines(el)) {
+            if (type == "stop") {
+              closeTrillLine(staff, number, measureIdx, start / divisions)
+            } else if (trillMark) {
+              openTrillLines.set(`${staff}:${number}`, {staff, voice, marked: event, from: [measureIdx, start / divisions]})
+            }
+          }
+
           part.events.push(event)
           break
         }
       }
     }
 
-    // A neighbour takes the accidental mark written for it, else the
-    // alteration of the last note on its letter and octave written on the
-    // staff before the ornament in the measure (an accidental in force), else
-    // the key signature's
     for (let {event, staff, parts, neighbours, at, idx, fifths} of ornamented) {
-      event.neighbours = neighbours.map(({side, alter}) => {
-        let neighbour = stepFrom(parts, side == "upper" ? 1 : -1)
-        let inForce = written.filter((note, noteIdx) =>
-          note.staff == staff && note.step == neighbour.step && note.octave == neighbour.octave &&
-          (note.at < at || (note.at == at && noteIdx < idx))
-        ).sort((a, b) => a.at - b.at).pop()
-
-        return spellNote({
-          ...neighbour,
-          alter: alter ?? (inForce ? inForce.alter : keyAlter(fifths, neighbour.step)),
-        })
-      })
+      event.neighbours = neighbours.map(side => spellNeighbour(side, {staff, parts, at, idx, fifths}, written))
     }
 
+    writtenByMeasure[measureIdx] = written
     pendingGraces.clear()
 
     part.measureDurations[measureIdx] = maxPosition / divisions
     part.beatsPerMeasureAt[measureIdx] = beatsPerMeasure
     part.fifthsAt[measureIdx] = fifths
   })
+
+  // A closed trill line gives its upper neighbour to every event of its
+  // voice and staff from its start to its stop, inclusive (positions ordered
+  // as [measureIdx, offset], EPSILON apart counting as equal). Applied only
+  // now, after the whole part is walked and every line that ever opened is
+  // either closed or discarded, so an unpaired start (dropped when its key
+  // reopened, or never stopped at all) can never leak an allowance past the
+  // marked note's own trill.
+  let order = ([m1, o1], [m2, o2]) => m1 - m2 || (Math.abs(o1 - o2) < EPSILON ? 0 : o1 - o2)
+
+  for (let line of trillLines) {
+    for (let event of part.events) {
+      if (event.staff != line.staff || (event.voice || 0) != line.voice) { continue }
+
+      let at = [event.measureIdx, event.offset]
+      if (order(at, line.from) < 0 || order(at, line.to) > 0) { continue }
+
+      // a note with neighbours of its own (its own trill, turn or mordent,
+      // the marked note included) is never overridden: no union
+      if (event.neighbours && event.neighbours.length) { continue }
+
+      // a re-struck or tied-on note of the marked note's own pitch takes its
+      // spelled neighbours exactly (an accidental mark on the trill applies
+      // to it too, in later measures included), rather than its own, freshly
+      // spelled neighbour
+      if (parseNote(event.name) == parseNote(line.marked.name) && line.marked.neighbours) {
+        event.neighbours = [...line.marked.neighbours]
+        continue
+      }
+
+      event.neighbours = [spellNeighbour(
+        {side: "upper", alter: null}, spellingContext.get(event), writtenByMeasure[event.measureIdx]
+      )]
+    }
+  }
 
   if (part.staves.size == 0) {
     part.staves.add(1)
@@ -646,7 +771,9 @@ function scoreTitle(root) {
 // Keeps the ornaments of a note event on the song note it is played as (a
 // tied note gathers those of the notes it is tied to): note.ornaments.graces,
 // the grace notes leading into it, and note.ornaments.neighbours, the notes
-// its trill, turn or mordent alternates it with. Neither is played for the
+// its trill, turn or mordent alternates it with -- or, for a note under a
+// trill line but carrying no mark of its own, the same neighbours the line's
+// marked note gives (see trillLines in walkPart). Neither is played for the
 // note, so neither is required, but a player playing them as written doesn't
 // slip (see column.allowed in st/song_sections). An ornament written on a
 // tie's continuation, at, sounds from there on rather than over the whole

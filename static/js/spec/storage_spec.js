@@ -685,7 +685,7 @@ describe("local store", function() {
 
       let exported = await store.exportLibrary()
       expect(exported.version).toEqual(LIBRARY_VERSION)
-      expect(LIBRARY_VERSION).toEqual(7)
+      expect(LIBRARY_VERSION).toEqual(8)
       expect(exported.reviews).toEqual([jasmine.objectContaining({mode: "self", grade: GOOD})])
 
       let other = await open()
