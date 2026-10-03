@@ -1097,10 +1097,10 @@ export default class SightReadingPage extends React.Component {
   }
 
   // "Practise these notes": closes the card and switches to the programme's
-  // focusGenerator (eg. Random notes), focused on the card's own rows, same
-  // staff and key, staying at rest. Unreachable without a focusGenerator
-  // (the pill is hidden, see renderSummary) or without rows (chord sessions
-  // have none)
+  // focusGenerator (eg. Random notes), focused on the card's weak rows
+  // (focusFromRows), same staff and key, staying at rest. Unreachable
+  // without a focusGenerator (the pill is hidden, see renderSummary) or
+  // without a weak row (chord sessions have none)
   practiseNotes() {
     let summary = this.state.summary
     if (!summary) { return }
@@ -1117,7 +1117,7 @@ export default class SightReadingPage extends React.Component {
     if (!generator) { return }
 
     let settings = this.state.currentGenerator == generator ? this.state.currentGeneratorSettings : {}
-    this.setGenerator(generator, {...settings, focus, musical: false})
+    this.setGenerator(generator, {...settings, focus})
   }
 
   // "New programme" where the programme has no destination of its own (see

@@ -111,7 +111,7 @@ function parseNoteAccidentals(note) {
 }
 
 // get the octave independent offset in halfsteps (from C), used for comparison
-function parseNoteOffset(note) {
+export function parseNoteOffset(note) {
   let [, letter, accidental] = note.match(/^([A-G])(#|b)?/);
 
   if (OFFSETS[letter] == undefined) {
@@ -165,7 +165,9 @@ export function shiftNoteOctave(note, octaves) {
   return `${parsed[1]}${+parsed[2] + octaves}`
 }
 
-// eg. "C#4" -> "C♯4", in the app's octave numbering like the keyboard labels
+// eg. "C#4" -> "C♯4", swapping the accidental for its glyph and leaving
+// the rest of the name alone. The one definition: the pages and
+// st/session_summary all draw note names through it
 export function displayNoteName(note) {
   return String(note).replace("#", "♯").replace(/^([A-G])b/, "$1♭")
 }
@@ -214,14 +216,6 @@ export function notesSame(a, b) {
 
 export function addInterval(note, halfSteps) {
   return noteName(parseNote(note) + halfSteps);
-}
-
-// eg. "C#4" -> "C♯4", in the app's octave numbering like the keyboard
-// labels. Kept here (rather than only in sight_reading_page.jsx, which has
-// its own copy today) so other modules, eg. st/session_summary, can use it
-// without importing the page
-export function displayNoteName(note) {
-  return String(note).replace("#", "♯").replace(/^([A-G])b/, "$1♭")
 }
 
 

@@ -48,6 +48,30 @@ describe("session summary derivations", function() {
     expect(troubleNotes({notes: {C: {hits: 5, misses: 0}}})).toEqual([])
   })
 
+  // a hit is named from the pitch played (always sharp), a miss by the
+  // written column (flat in a flat key), so one note holds two keys
+  it("adds up the spellings of one pitch class, labelled the way it was missed", function() {
+    let rows = troubleNotes({notes: {Bb: {hits: 0, misses: 3}, "A#": {hits: 10, misses: 0}}})
+    expect(rows.length).toEqual(1)
+    expect(rows[0].note).toEqual("Bb")
+    expect(rows[0].hits).toEqual(10)
+    expect(rows[0].misses).toEqual(3)
+    expect(rows[0].accuracy).toEqual(77)
+    expect(rows[0].weak).toBe(false)
+  })
+
+  it("labels a merged row with the sharp spelling when that is the missed one", function() {
+    let rows = troubleNotes({notes: {Gb: {hits: 4, misses: 0}, "F#": {hits: 0, misses: 4}}})
+    expect(rows.map(r => [r.note, r.accuracy])).toEqual([["F#", 50]])
+  })
+
+  it("merges Cb with B, the enharmonic a flat key writes", function() {
+    let rows = troubleNotes({notes: {Cb: {hits: 1, misses: 1}, B: {hits: 1, misses: 1}}})
+    expect(rows.length).toEqual(1)
+    expect(rows[0].misses).toEqual(2)
+    expect(rows[0].accuracy).toEqual(50)
+  })
+
   it("gives the four live detected cards", function() {
     let record = {elapsedSeconds: 65, notesRead: 47, misses: 3, bestStreak: 21}
     expect(detectedSession(record)).toBe(true)
@@ -89,9 +113,17 @@ describe("session summary derivations", function() {
     expect(summaryInsight(acoustic, troubleNotes(acoustic))).toEqual("4 of 4 passes clean.")
   })
 
-  it("seeds a focus from exactly the rows shown", function() {
+  it("seeds a focus from the weak rows alone", function() {
     let rows = troubleNotes({notes: {"F#": {hits: 2, misses: 3}, Bb: {hits: 1, misses: 1}}})
     expect(focusFromRows(rows)).toEqual({"F#": true, Bb: true})
+
+    // C is shown (it has a miss) but read at 90%, above the weak line, so
+    // the seed leaves it out
+    let mixed = troubleNotes({notes: {"F#": {hits: 2, misses: 3}, C: {hits: 9, misses: 1}}})
+    expect(mixed.map(r => r.note)).toEqual(["F#", "C"])
+    expect(focusFromRows(mixed)).toEqual({"F#": true})
+
+    expect(focusFromRows(troubleNotes({notes: {C: {hits: 9, misses: 1}}}))).toEqual({})
   })
 })
 
@@ -185,6 +217,21 @@ describe("session summary card", function() {
 
   it("hides the practise pill without onPractise", function() {
     let el = renderSummary({record, newProgrammeTo: "/setup", onClose: () => {}})
+    expect(buttonNamed(el, "Practise these notes")).toBeUndefined()
+  })
+
+  it("shows a gilt row but no practise pill when nothing shown is weak", function() {
+    let gilt = {
+      elapsedSeconds: 30, notesRead: 9, misses: 1, bestStreak: 9,
+      notes: {C: {hits: 9, misses: 1}},
+    }
+    let el = renderSummary({
+      record: gilt, newProgrammeTo: "/setup", onPractise: () => {}, onClose: () => {},
+    })
+
+    let rows = [...el.querySelectorAll(`.${styles.trouble_row}`)]
+    expect(rows.length).toEqual(1)
+    expect(rows[0].querySelector(`.${styles.fill}`).dataset.weak).toEqual("false")
     expect(buttonNamed(el, "Practise these notes")).toBeUndefined()
   })
 

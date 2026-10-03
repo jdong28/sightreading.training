@@ -289,16 +289,19 @@ describe("random notes created with a focus", function() {
   let treble = STAVES.find(s => s.name == "treble")
   let key = new KeySignature(0)
 
+  // C over the default treble staff (A3-C6) gives C4, C5, C6: a pool wider
+  // than one hand, so the hand windows handGroups draws can miss every note
+  // of it
   it("never emits an empty column from a sparse focus pool", function() {
     for (let notes = 1; notes <= 5; notes++) {
       for (let hands = 1; hands <= 2; hands++) {
-        let generator = random.create(treble, key, {notes, hands, focus: {"F#": true}})
+        let generator = random.create(treble, key, {notes, hands, focus: {C: true}})
 
         for (let i = 0; i < 200; i++) {
           let column = generator.nextNote()
-          expect(column.length).toBeGreaterThan(0)
+          expect(column.length).withContext(`notes ${notes}, hands ${hands}`).toBeGreaterThan(0)
           for (let note of column) {
-            expect(note).toMatch(/^F#\d+$/)
+            expect(note).toMatch(/^C\d+$/)
           }
         }
       }

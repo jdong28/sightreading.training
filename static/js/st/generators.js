@@ -565,15 +565,16 @@ export class RandomNotes extends Generator {
 
     let hands = this.handGroups(notes)
 
-    if (hands.length == 1) {
-      return this.pickNDist(hands[0], perColumn)
+    // a sparse pool (eg. a one- or two-note focus spread across octaves)
+    // can leave a hand group empty, however many hands were asked for: fall
+    // back to the whole pool rather than draw a column from a hand group
+    // that can't fill it
+    if (hands.some(hand => !hand.length)) {
+      return this.pickNDist(notes, perColumn)
     }
 
-    // a sparse pool (eg. a one- or two-note focus spread across octaves)
-    // can leave a hand group empty: fall back to the whole pool rather
-    // than split a column the empty hand can't fill
-    if (!hands[0].length || !hands[1].length) {
-      return this.pickNDist(notes, perColumn)
+    if (hands.length == 1) {
+      return this.pickNDist(hands[0], perColumn)
     }
 
     // take some notes from each hand group
