@@ -206,9 +206,9 @@ def barlines(black, system, heads_in_system=None, min_fill=0.9, min_gap_fill=0.9
     return out
 
 
-def page_geometry(gray, threshold=128):
-    """Staves and systems only (no bar lines yet: see module docstring)."""
-    black = gray < threshold
+def from_black(black):
+    """Staves and systems only (no bar lines yet: see module docstring),
+    from an already-thresholded/preprocessed boolean ink mask."""
     lines = staff_lines(black)
     staves = staves_from_lines(lines)
     systems = systems_from_staves(black, staves)
@@ -216,6 +216,11 @@ def page_geometry(gray, threshold=128):
         sys_["top"] = sys_["staves"][0]["lines"][0]
         sys_["bottom"] = sys_["staves"][-1]["lines"][-1]
     return dict(black=black, systems=systems)
+
+
+def page_geometry(gray, threshold=128):
+    """Staves and systems only (no bar lines yet: see module docstring)."""
+    return from_black(gray < threshold)
 
 
 def assign_bars(black, systems, heads):

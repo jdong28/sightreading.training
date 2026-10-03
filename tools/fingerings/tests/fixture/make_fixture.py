@@ -81,7 +81,7 @@ def detect_pages(page_pngs):
     for i, p in enumerate(page_pngs, start=1):
         im = Image.open(p).convert("L")
         gray = np.asarray(im, dtype=np.uint8)
-        G, hs, space = geometry.analyze_page(gray)
+        G, hs, space, _meta = geometry.analyze_page(gray)
         for h in hs:
             h["page"] = i
         out.append((i, gray, G, hs, space))

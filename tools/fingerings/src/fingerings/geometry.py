@@ -5,17 +5,49 @@ subcommand both build on this, so a piece's geometry is detected exactly
 once either way."""
 from collections import defaultdict
 
-from . import align, heads as heads_mod, staves
+import numpy as np
+
+from . import align, heads as heads_mod, prep, staves
 
 
-def analyze_page(gray):
-    """Staves, systems, placed heads and bar lines for one page. Returns
-    (page geometry dict, placed heads, detected staff space in px)."""
-    G = staves.page_geometry(gray)
+def analyze_page(gray, scan_kind="image-1bit"):
+    """Preprocessing (image-sourced pages only; a born-digital render gets
+    none of it) then steps 3-4 for one page. Returns (page geometry dict,
+    placed heads, detected staff space in px, prep metadata: dict(
+    scan_kind, threshold, skew_deg, stop)). `stop` is set, and heads is
+    [], when the page is out of reach (today: its resolution is below the
+    floor)."""
+    meta = dict(scan_kind=scan_kind, threshold=128, skew_deg=0.0, stop=None)
+    if scan_kind == "render":
+        black = gray < 128
+    else:
+        threshold = prep.grey_threshold(gray) if scan_kind == "image-gray" else 128
+        meta["threshold"] = threshold
+        black = prep.clear_border(gray < threshold)
+        angle = prep.estimate_skew(black)
+        meta["skew_deg"] = angle
+        if abs(angle) >= 0.05:
+            gray, _ = prep.deskew(gray, np.zeros_like(gray, dtype=np.uint8), angle)
+            black = prep.clear_border(gray < threshold)
+
+    G = staves.from_black(black)
+    if G["systems"]:
+        space_est = float(np.median([st["space"] for s in G["systems"] for st in s["staves"]]))
+    else:
+        space_est = prep.estimate_space_from_runs(black)
+    if scan_kind != "render":
+        reason = prep.resolution_floor_reason(space_est)
+        if reason:
+            meta["stop"] = reason
+            return G, [], (space_est or 0.0), meta
+        if scan_kind == "image-gray" and space_est:
+            black = prep.pinhole_fill(black, space_est)
+            G["black"] = black
+
     raw_heads, space = heads_mod.noteheads(G["black"], G["systems"])
     placed = heads_mod.place(raw_heads, G["systems"])
     staves.assign_bars(G["black"], G["systems"], placed)
-    return G, placed, space
+    return G, placed, space, meta
 
 
 def resolve_staff_mapping(system_index, k, score_staff_count, heads_in_system, measures_for_system, by):

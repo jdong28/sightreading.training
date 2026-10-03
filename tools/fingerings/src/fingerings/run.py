@@ -86,7 +86,10 @@ def run(run_dir):
         for pno in range(first_page, last_page + 1):
             L = extract.page_layers(pdf, pno - 1, render_scale=man["render_scale"])
             layers[pno] = L
-            G, hs, space = geometry.analyze_page(L["scan"]["gray"])
+            G, hs, space, prep_meta = geometry.analyze_page(L["scan"]["gray"], scan_kind=L["scan"]["kind"])
+            if prep_meta["stop"]:
+                return _finish(run_path, report, t0,
+                                extra_check=_check(f"p{pno}: scan geometry", False, f"p{pno}: {prep_meta['stop']}"))
             for h in hs:
                 h["page"] = pno
             geoms.append((pno, G))

@@ -241,7 +241,9 @@ def page_layers(pdf, pno, render_scale=6):
         xobj = scan_im["xobj"]
         gray = _scan_gray(xobj)
         h, w = gray.shape
-        scan = dict(bbox=scan_im["bbox"], w=w, h=h, gray=gray)
+        bits = int(xobj.get("/BitsPerComponent", 8))
+        kind = "image-1bit" if bits == 1 else "image-gray"
+        scan = dict(bbox=scan_im["bbox"], w=w, h=h, gray=gray, kind=kind)
     else:
         # born-digital: rasterise with pypdfium2, ink image hidden first
         buf = io.BytesIO()
@@ -253,7 +255,7 @@ def page_layers(pdf, pno, render_scale=6):
         bmp = doc[pno].render(scale=render_scale, grayscale=True, draw_annots=False, may_draw_forms=False)
         gray = bmp.to_numpy()
         h, w = gray.shape
-        scan = dict(bbox=(0.0, 0.0, page_w, page_h), w=w, h=h, gray=gray)
+        scan = dict(bbox=(0.0, 0.0, page_w, page_h), w=w, h=h, gray=gray, kind="render")
 
     sx = scan["w"] / (scan["bbox"][2] - scan["bbox"][0])
     sy = scan["h"] / (scan["bbox"][3] - scan["bbox"][1])
