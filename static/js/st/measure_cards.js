@@ -570,7 +570,21 @@ export class MeasureCardGenerator {
 
     this.pass = new AttemptPass(pass.card, {from: pass.head, continued: true, startedAt: time})
     this.lastDone = null
-    return passPractice(pass, {pieceId: this.deck.pieceId, hand: this.deck.hand})
+    return passPractice(pass, this.writtenUnder())
+  }
+
+  /**
+   * What a pass at the card shown is written under: the piece, the hand,
+   * and deliberate (see ItemRecord) for a hand alone the player chose,
+   * which is any but the hand scaffold's own stand-in card (see
+   * PlanDeck#scaffold; a deck without that getter, eg. MeasureCardDeck, is
+   * never the scaffold)
+   * @returns {{pieceId: string, hand: string, deliberate?: boolean}}
+   */
+  writtenUnder() {
+    let {pieceId, hand} = this.deck
+    let deliberate = hand != "both" && !this.deck.scaffold
+    return {pieceId, hand, ...(deliberate ? {deliberate} : {})}
   }
 
   // Writes the pass to the store once the hit for its last column has been
@@ -592,7 +606,7 @@ export class MeasureCardGenerator {
     // what the pass is written as, and below the items as it found them,
     // which its attempts are built from: the developer metrics panel shows
     // how the pass was graded from these
-    let written = {pieceId: this.deck.pieceId, hand: this.deck.hand, at}
+    let written = {...this.writtenUnder(), at}
     pass.written = written
 
     // after the passes before it, whose items say which measures are on schedule

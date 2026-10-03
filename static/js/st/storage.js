@@ -1059,6 +1059,8 @@ export class LocalStore {
    * @param {boolean} [practice.played] counts the stint as an attempt even
    * with no hits or misses, for a self-graded stint that played notes but
    * recorded none (st/srs/attempt)
+   * @param {boolean} [practice.deliberate] a hand alone played by the
+   * player's choice, which marks its item (ItemRecord#deliberate)
    * @returns {Promise<SectionStatsRecord>} the section stats of the range
    */
   recordSectionPractice(practice) {
@@ -1072,10 +1074,10 @@ export class LocalStore {
   }
 
   // the item of the practiced range with the practice added
-  practicedItem({pieceId, hand="both", startMeasure, endMeasure, hits, misses, at=Date.now(), elapsedMs, played}) {
+  practicedItem({pieceId, hand="both", startMeasure, endMeasure, hits, misses, at=Date.now(), elapsedMs, played, deliberate}) {
     let range = {pieceId, hand, startMeasure, endMeasure}
     let current = this.item(itemId(range)) || newItem(range, at)
-    let item = itemWithPractice(current, {hits, misses, at, elapsedMs, played})
+    let item = itemWithPractice(current, {hits, misses, at, elapsedMs, played, deliberate})
 
     if (!validItem(item)) {
       throw new Error("Not a valid section practice")
@@ -1267,8 +1269,10 @@ export class LocalStore {
       let fileReviews = []
 
       // an imported item: added, or replacing the stored one when practiced
-      // more recently. totalsOnly keeps the rest of the stored item. Returns
-      // whether the item was taken
+      // more recently. totalsOnly keeps the rest of the stored item. A hand
+      // alone the player chose (ItemRecord#deliberate) stays marked whichever
+      // copy wins, so a library merge never loses it. Returns whether the
+      // item was taken
       let mergeItem = (record, {totalsOnly=false}={}) => {
         let idx = itemIndex.get(record.id)
         if (idx === undefined) {
@@ -1283,10 +1287,16 @@ export class LocalStore {
             delete current.elapsedMs
             items[idx] = elapsedMs === undefined ? current : {...current, elapsedMs}
           } else {
-            items[idx] = record
+            items[idx] = items[idx].deliberate && !record.deliberate ? {...record, deliberate: true} : record
           }
           report.updatedSections += 1
         } else {
+          // the copy kept isn't newer, but an older deliberate copy still
+          // marks it: not a replacement, so it isn't counted as one
+          if (record.deliberate && !items[idx].deliberate) {
+            items[idx] = {...items[idx], deliberate: true}
+            changedItems.add(record.id)
+          }
           return false
         }
         changedItems.add(record.id)

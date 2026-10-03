@@ -332,6 +332,35 @@ describe("srs attempt", function() {
     expect(attempts[0].review.bars).toBeUndefined()
   })
 
+  it("marks the item deliberate only when asked, never on a hands-together item", function() {
+    play(pass, 3000)
+    play(pass, 3500)
+    play(pass, 4000)
+    play(pass, 4500)
+
+    let marked = attemptsOf(pass, {hand: "lower", deliberate: true})
+    expect(marked.every(({item}) => item.deliberate)).toBe(true)
+
+    // the hand scaffold's own pass, no marker given
+    let scaffold = attemptsOf(pass, {hand: "lower"})
+    expect(scaffold.every(({item}) => item.deliberate === undefined)).toBe(true)
+
+    let together = attemptsOf(pass, {deliberate: true})
+    expect(together.every(({item}) => item.deliberate === undefined)).toBe(true)
+  })
+
+  it("carries deliberate onto a practice stint only when given", function() {
+    play(pass, 3000, {misses: [["G4"]]})
+    play(pass, 3500)
+
+    let marked = passPractice(pass, {pieceId: "p", hand: "lower", deliberate: true})
+    expect(marked.length).toBeGreaterThan(0)
+    expect(marked.every(stint => stint.deliberate)).toBe(true)
+
+    let unmarked = passPractice(pass, {pieceId: "p", hand: "lower"})
+    expect(unmarked.every(stint => stint.deliberate === undefined)).toBe(true)
+  })
+
   it("leaves out the staff misses of columns without staves", function() {
     let plain = new AttemptPass(sectionCard([{number: 1, columns: [["C4"], ["D4"]]}]), {startedAt: 0})
     plain.drill = {mode: "wait"}
@@ -402,6 +431,19 @@ describe("srs attempt", function() {
       pass.drill = {mode: "self"}
       expect(passPace(pass)).toBe(null)
       expect(passAttempts(pass, {pieceId: "p", hand: "both"})).toEqual([])
+    })
+
+    it("carries deliberate onto a self-graded attempt and its leftover practice only when given", function() {
+      pass.selfGrade = {grade: HARD, bars: [2]}
+      let marked = selfAttemptsOf(pass, {at: 5000, hand: "lower", deliberate: true})
+      expect(marked.every(({item}) => item.deliberate)).toBe(true)
+
+      let practice = selfPractice(pass, {pieceId: "p", hand: "lower", at: 5000, deliberate: true})
+      expect(practice.length).toBeGreaterThan(0)
+      expect(practice.every(stint => stint.deliberate)).toBe(true)
+
+      let unmarkedPractice = selfPractice(pass, {pieceId: "p", hand: "lower", at: 5000})
+      expect(unmarkedPractice.every(stint => stint.deliberate === undefined)).toBe(true)
     })
   })
 })
