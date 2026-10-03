@@ -244,6 +244,43 @@ describe("the passages view (st/difficulty)", function() {
       .toContain("Bar 12 · Hardest")
   })
 
+  // The whole live scenario the quick picks opened up: a section change moves
+  // the drawn range on a render before the drill's columns follow it, and in
+  // scroll mode the passage drilled first comes back from the kept system
+  // (see systemCache in st/components/score_card)
+  it("keeps the engraving when a passage already drilled in scroll mode is picked again", async function() {
+    window.localStorage.setItem(SCORE_DRILL_STORAGE_KEY, JSON.stringify({mode: "scroll"}))
+    await drillPiece(workhorseScore({barCount: 24, denseAt: [5, 6, 7], alsoDenseAt: [17, 18, 19]}))
+    renderScorePage()
+    await waitFor(() => plate(), {message: "the passages plate"})
+
+    let programme = [...container.querySelectorAll("button")]
+      .find(b => b.textContent.trim() == "Programme")
+    flushSync(() => programme.dispatchEvent(new MouseEvent("click", {bubbles: true})))
+    let picks = () => [...container.querySelectorAll('[role="group"][aria-label="difficult passages"] button')]
+    expect(picks().length).toEqual(2)
+
+    // the drawn heads of the system the pick put up, once the page has
+    // settled on it: 0 where it fell back to the trainer's own staff
+    let engrave = async which => {
+      flushSync(() => picks()[which].dispatchEvent(new MouseEvent("click", {bubbles: true})))
+      await waitFor(() => {
+        let drawn = container.querySelector("[data-score-card]")
+        return (drawn && drawn.getAttribute("aria-busy") == "false") ||
+          page.state.engineSource?.status == "failed"
+      }, {timeout: 1500, message: "the picked passage's system"})
+      let svg = container.querySelector("[data-score-card] svg")
+      return svg ? svg.querySelectorAll("path").length : 0
+    }
+
+    expect(await engrave(0)).toBeGreaterThan(0)
+    expect(await engrave(1)).toBeGreaterThan(0)
+    // back to the first passage, from the system kept for it
+    expect(await engrave(0)).toBeGreaterThan(0)
+    expect(page.state.engineSource.status).toEqual("ready")
+    expect(container.textContent).not.toContain("couldn't be engraved")
+  })
+
   it("hides the score plate when the engine can't draw the piece", async function() {
     let xml = workhorseScore()
     let piece = await drillPiece(xml)

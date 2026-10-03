@@ -1845,6 +1845,61 @@ describe("ScoreCard", function() {
     expect(shaded()).toEqual(["a"])
   })
 
+  // The page moves the drawn range on with the section setting, but rebuilds
+  // the drill's columns a render later (refreshNoteList in
+  // SightReadingPage#componentDidUpdate), and a kept system is re-attached at
+  // once rather than on a draw settling: its re-join lands on the columns of
+  // the section the card has moved on from. Returning to a flagged passage
+  // already drilled in scroll mode used to take those for a card the engine
+  // couldn't draw and fall back to the app's staff for good
+  it("keeps a kept system's drawing where the drill's columns lag its range by a render", async function() {
+    let renders = 0
+    let notesFor = {"1-4": ["C4", "D4", "E4", "F4"], "5-8": ["G4", "A4", "B4", "C5"]}
+    let beatOf = {"1-4": 0, "5-8": 4}
+    let loadEngines = () => Promise.resolve({ENGINES: {osmd: {
+      renderSystem: async ({fromMeasure, toMeasure}) => {
+        renders++
+        let range = `${fromMeasure}-${toMeasure}`
+        let svg = document.createElementNS(SVG_NS, "svg")
+        let notes = notesFor[range].map((name, idx) => {
+          let note = drawn(parseNote(name), beatOf[range] + idx)
+          svg.appendChild(note.el)
+          return note
+        })
+        return {svg, notes, measures: []}
+      },
+    }}})
+    let columnsAt = range => notesFor[range].map((name, idx) => column([name], beatOf[range] + idx))
+    let onError = jasmine.createSpy("onError")
+    let base = {
+      musicXML: "<score-partwise/>", measureStarts: [0, 4, 8, 12, 16, 20, 24, 28],
+      hand: "both", width: 600, system: true, loadEngines, onError,
+    }
+
+    mountCard({...base, fromMeasure: 1, toMeasure: 4, columns: columnsAt("1-4"), head: 0})
+    await waitFor(() => card.result, {message: "the first system"})
+
+    rerenderCard({...base, fromMeasure: 5, toMeasure: 8, columns: columnsAt("5-8"), head: 0})
+    await waitFor(() => renders == 2, {message: "the second system"})
+
+    // back to the first range with the second's columns still on the props:
+    // re-attached, and the drawing kept rather than failed
+    rerenderCard({...base, fromMeasure: 1, toMeasure: 4, columns: columnsAt("5-8"), head: 0})
+    expect(renders).toEqual(2)
+    expect(onError).not.toHaveBeenCalled()
+    expect(card.result).toBeTruthy()
+    expect(container.querySelector("[data-score-card] svg")).toBe(card.result.svg)
+
+    // the columns catch up a render later, and the kept system is joined to
+    // them without a draw of its own
+    rerenderCard({...base, fromMeasure: 1, toMeasure: 4, columns: columnsAt("1-4"), head: 1})
+    expect(renders).toEqual(2)
+    expect(onError).not.toHaveBeenCalled()
+    expect(card.result).toBeTruthy()
+    expect(card.cardJoin.heads.map(heads => heads.length)).toEqual([1, 1, 1, 1])
+    expect(card.cardJoin.heads[1].every(el => el.classList.contains(MARK_CLASSES.current))).toBe(true)
+  })
+
   it("draws a system again once its score changes", async function() {
     let renders = 0
     let loadEngines = () => Promise.resolve({ENGINES: {osmd: {

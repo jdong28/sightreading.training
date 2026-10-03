@@ -212,7 +212,7 @@ export class ScoreCard extends React.Component {
       let strip = this.stripRef.current
       if (strip) { strip.replaceChildren(cached.svg) }
       this.setState({drawing: false})
-      this.join()
+      this.join({keep: true})
       return Promise.resolve()
     }
 
@@ -307,13 +307,20 @@ export class ScoreCard extends React.Component {
     this.setState({bands})
   }
 
-  join() {
+  // Joins the columns to the drawing's heads. Pass keep for a drawing that
+  // is up before the columns are its own: the page moves the drawn range on
+  // with the section setting and rebuilds the drill's columns a render later,
+  // so a kept system, which is re-attached at once rather than on a draw
+  // settling, can be joined to the columns of the section it has moved on
+  // from. Those join nothing, and the columns change that follows joins it
+  join({keep=false}={}) {
     if (!this.result) { return }
     let {columns} = this.props
     let cardJoin = joinCard(columns, this.result.notes)
     // a card whose notes the engine drew none of (eg. the hand's notes are
     // on a staff the engine's hand doesn't keep) can't be played from it
     if (columns.some(column => column.length) && cardJoin.heads.every(heads => !heads.length)) {
+      if (keep) { return }
       this.result = null
       this.fail(new Error("None of the card's notes were drawn"))
       return
