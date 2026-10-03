@@ -149,12 +149,11 @@ export default class DevMetricsPanel extends React.Component {
       </dl>
       {pass ? this.renderPass(pass) :
         <p className={styles.note}>
-          {generator && generator.deck ?
+          {generator && "pass" in generator ?
             "No run is in progress: there is nothing to play right now, eg. today's programme is " +
-              "complete, every bar it has left rests until the next sitting, or the chosen " +
-              "section has no playable column." :
-            "This drill keeps no attempts: runs are timed and graded for imported pieces on the " +
-              "sheet music page."}
+              "complete or every bar it has left rests until the next sitting." :
+            "This drill keeps no attempts: there's nothing here to time or grade, whether because " +
+              "it's a drill outside the sheet music page or because the section has no notes to play."}
           {" The matcher's own measurements are above."}
         </p>}
     </>
@@ -254,11 +253,12 @@ export default class DevMetricsPanel extends React.Component {
         <dt>Drill</dt>
         <dd>{mode}, written {clock(report.at)}{report.hand && `, ${report.hand == "both" ? "hands together" : `${report.hand} hand`}`}</dd>
         <dt>Grade pace</dt>
-        <dd>{paced(report.pace, report.tempo)}: the median time on a column per notated beat before
+        <dd>{paced(report.pace, report.tempo)}: the median time on a column{report.beats && " per notated beat"} before
           it, the first column played and any skipped, settled or untimed one left out, a column paused on counted
           {report.mode == "scroll" && "; not read in scroll mode"}
           {report.mode == "wait" &&
-            ` · hesitations, latency over max(${formatMs(HESITATION_MIN_MS)}, ${HESITATION_PACE} × this pace × beats): ` +
+            ` · hesitations, latency over max(${formatMs(HESITATION_MIN_MS)}, ${HESITATION_PACE} × this pace` +
+            `${report.beats ? " × beats" : ""}): ` +
             (hesitated.length ? barsOf(hesitated) : "none")}</dd>
         {report.mode == "wait" && <>
           <dt>Caption pace</dt>
@@ -335,12 +335,18 @@ export default class DevMetricsPanel extends React.Component {
     let deck = this.deck()
     let store = getAppStore()
     if (!deck || !store) {
-      return <p className={styles.note}>Stored runs are kept for imported pieces on the sheet music page.</p>
+      return <p className={styles.note}>
+        Stored runs are kept for a playable section of an imported piece on the sheet music page;
+        there's nothing stored while none is loaded, eg. a rests-only section.
+      </p>
     }
 
     let hand = this.state.hand || deck.hand || "both"
     let items = handItems(store.items(deck.pieceId), hand)
     let card = deck.card
+    // whether the piece's columns carry score rhythm, same test as runReport's, over the
+    // deck's whole card list so it holds whether or not a card is being shown
+    let beats = deck.cards.every(each => each.columns.every(column => column.beat != null))
     // the first bar of the card on the staff with anything stored
     let bars = card ? card.measures.map(measure =>
       itemId({pieceId: deck.pieceId, hand, startMeasure: measure, endMeasure: measure})) : []
@@ -373,7 +379,8 @@ export default class DevMetricsPanel extends React.Component {
           <dd>{item.state}, step {item.step}, due {day(item.due)}, reps {item.reps}, lapses {item.lapses},
             {" "}attempts {item.attempts}</dd>
           <dt>Usual pace</dt>
-          <dd>{formatMs(item.paceMs)} per beat{tempoOf(item.paceMs) && ` (♩ = ${tempoOf(item.paceMs)})`}:
+          <dd>{formatMs(item.paceMs)} per {beats ? "beat" : "column"}{beats && tempoOf(item.paceMs) &&
+            ` (♩ = ${tempoOf(item.paceMs)})`}:
             the running mean of its clean wait mode runs. A review stores its elapsed time and
             each column's measurements, not a pace of its own.</dd>
         </dl>
