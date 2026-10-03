@@ -344,9 +344,9 @@ export default class DevMetricsPanel extends React.Component {
     let hand = this.state.hand || deck.hand || "both"
     let items = handItems(store.items(deck.pieceId), hand)
     let card = deck.card
-    // whether the loaded card's columns carry score rhythm, same test as runReport's; unknown
-    // (no card loaded) keeps the earlier assumption of a notated beat
-    let beats = !card || card.columns.every(column => column.beat != null)
+    // whether the piece's columns carry score rhythm, same test as runReport's, over the
+    // deck's whole card list so it holds whether or not a card is being shown
+    let beats = deck.cards.every(each => each.columns.every(column => column.beat != null))
     // the first bar of the card on the staff with anything stored
     let bars = card ? card.measures.map(measure =>
       itemId({pieceId: deck.pieceId, hand, startMeasure: measure, endMeasure: measure})) : []
