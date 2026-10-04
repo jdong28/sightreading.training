@@ -17,9 +17,10 @@
 }
 
 .drawer {
-    /* the sticky header's own height: its padding plus the close button,
-       which anything else sticking inside the drawer clears (see .pane_detail
-       in passages_plate.module.css) */
+    /* the sticky header's exact height: its padding plus the close button,
+       which the title's pinned line box never exceeds. Anything inside the
+       drawer that has to clear the header reads this (.pane_detail in
+       passages_plate.module.css, scrollToSelected in passages_plate.jsx) */
     --drawer-header-height: 64px;
 
     position: fixed;
@@ -96,6 +97,7 @@
 .drawer_title {
     font-family: var(--font-display);
     font-size: 22px;
+    line-height: 1;
     letter-spacing: -.01em;
 }
 

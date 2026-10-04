@@ -292,6 +292,13 @@ describe("the passages view (st/difficulty)", function() {
     let close = pane.querySelector('[aria-label="Close the score"]')
     expect(close).toBeTruthy()
 
+    // the pinned header is exactly as tall as the offset everything inside
+    // the drawer clears it by (the sticky detail, and the scroll to a band)
+    let header = pane.querySelector(`.${drawerStyles.drawer_header}`)
+    let offset = parseFloat(getComputedStyle(pane).getPropertyValue("--drawer-header-height"))
+    expect(offset).toBeGreaterThan(0)
+    expect(Math.abs(header.getBoundingClientRect().height - offset)).toBeLessThan(1)
+
     // the score is taller than the pane, so there is somewhere to scroll to
     expect(pane.scrollHeight).toBeGreaterThan(pane.clientHeight + 200)
     pane.scrollTop = pane.scrollHeight
@@ -395,20 +402,23 @@ describe("the passages view (st/difficulty)", function() {
     // piece) are left as they are
     let slowOverview = () => loadScoreEngines().then(bundle => ({...bundle, ENGINES: {...bundle.ENGINES,
       osmd: {...bundle.ENGINES.osmd, renderCard: args =>
-        (args.fromMeasure == 1 && args.toMeasure == 24 ?
+        (args.fromMeasure == 1 && args.toMeasure == 60 ?
           new Promise(resolve => setTimeout(resolve, 2500)) : Promise.resolve())
           .then(() => bundle.ENGINES.osmd.renderCard(args))}}}))
 
-    await drillPiece(workhorseScore({barCount: 24, denseAt: [5, 6, 7], alsoDenseAt: [17, 18, 19]}))
+    await drillPiece(workhorseScore({barCount: 60, denseAt: [5, 6, 7], alsoDenseAt: [28, 29, 30]}))
     renderScorePage({loadEngines: slowOverview})
     await waitFor(() => plate(), {message: "the passages plate"})
     await waitFor(() => page.state.engineSource?.status == "ready", {message: "the engine source"})
 
-    // select a passage other than the default (hardest) one
+    // select the piece's latest passage: far enough down the engraving that
+    // the pane has to scroll to reach it, with enough piece left below it
+    // that the scroll is never cut short by the end of the content
     let rows = [...plate().querySelectorAll('[class*="flag_list"] li button')]
-    let other = rows.find(b => !b.closest("li").className.includes("on"))
-    expect(other).toBeTruthy()
-    flushSync(() => other.dispatchEvent(new MouseEvent("click", {bubbles: true})))
+    let startBar = row => +row.querySelector('[class*="list_bars"]').textContent.match(/(\d+)/)[1]
+    let latest = rows.reduce((a, row) => startBar(row) > startBar(a) ? row : a)
+    expect(startBar(latest)).toBeGreaterThan(20)
+    flushSync(() => latest.dispatchEvent(new MouseEvent("click", {bubbles: true})))
     let wantedBars = plate().querySelector("h3").textContent
 
     // the pane's own scrolling element, whose scrolls are recorded
@@ -427,11 +437,16 @@ describe("the passages view (st/difficulty)", function() {
       {message: "the selected band"})
     await waitFor(() => scrolls.length > 0, {message: "the pane to scroll to the selected band"})
 
-    // it scrolled to where that band is drawn (nothing moved: the scroll was
-    // recorded, not performed), a little above it
-    let wantedTop = Math.max(0,
-      band.getBoundingClientRect().top - pane.getBoundingClientRect().top + pane.scrollTop - 24)
-    expect(Math.abs(scrolls[scrolls.length - 1].top - wantedTop)).toBeLessThan(2)
+    // the position it asked for (the scroll was recorded, not performed, so
+    // nothing has moved yet) puts the band just below the pane's pinned
+    // header rather than behind it
+    pane.scrollTop = scrolls[scrolls.length - 1].top
+    expect(pane.scrollTop).toBeGreaterThan(0)
+
+    let headerBottom = pane.querySelector(`.${drawerStyles.drawer_header}`).getBoundingClientRect().bottom
+    let bandTop = band.getBoundingClientRect().top
+    expect(bandTop).not.toBeLessThan(headerBottom)
+    expect(bandTop).toBeLessThan(headerBottom + 40)
   }, 20000)
 
   it("analyses a piece added without an annotation on first open", async function() {

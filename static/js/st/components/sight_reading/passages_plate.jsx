@@ -225,7 +225,10 @@ export class PassagesPlate extends React.Component {
 
     let boxRect = box.getBoundingClientRect()
     let rectRect = rect.getBoundingClientRect()
-    let top = Math.max(0, rectRect.top - boxRect.top + box.scrollTop - 24)
+    // the pane's header is pinned over the top of the scrollport, so the band
+    // clears it as well as the margin above it
+    let header = parseFloat(getComputedStyle(box).getPropertyValue("--drawer-header-height")) || 0
+    let top = Math.max(0, rectRect.top - boxRect.top + box.scrollTop - header - 24)
     box.scrollTo({top, behavior: "smooth"})
   }
 
