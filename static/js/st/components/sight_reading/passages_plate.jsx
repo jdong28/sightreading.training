@@ -94,6 +94,7 @@ export class PassagesPlate extends React.Component {
     this.state = {
       selectedId: null, folded: foldedState(), width: 0, scoreFailed: false,
       scoreOpen: false, paneWidth: 0, reviewOpen: false, reviewFlagId: null,
+      troubleError: null,
     }
     this.columnRef = React.createRef()
     this.paneRef = React.createRef()
@@ -114,6 +115,7 @@ export class PassagesPlate extends React.Component {
     if ((piece && piece.id) != (prevPiece && prevPiece.id)) {
       this.setState({
         selectedId: null, scoreFailed: false, scoreOpen: false, reviewOpen: false, reviewFlagId: null,
+        troubleError: null,
       })
       this.ensure()
     }
@@ -234,15 +236,33 @@ export class PassagesPlate extends React.Component {
   }
 
   // "Flag these bars" on a trouble-spot suggestion (decision 8): promotes
-  // it to a flag in force, waiting for the teacher in the review
+  // it to a flag in force, waiting for the teacher in the review. The
+  // annotation is ensured first (the plate is up for a suggestion alone,
+  // which needs no record), and a write that still fails says so, as the
+  // review pane's own Flag these bars does
   flagTroubleSpot(spot) {
     let piece = sheetMusicPiece(this.props.settings)
     if (!piece) { return }
 
-    let record = this.getStore().annotation(piece.id)
-    let decision = promoteTroubleSpot({record, spot, by: "", at: Date.now()})
-    decideFlags(piece.id, [decision], this.getStore()).then(result => {
-      if (!result.error) { this.props.setSettings({...this.props.settings}) }
+    let store = this.getStore()
+    let fail = text => { if (!this.unmounted) { this.setState({troubleError: text}) } }
+
+    return ensureAnnotation(piece.id, store).then(record => {
+      if (!record) {
+        fail("Couldn't flag these bars: this piece's score hasn't been analysed.")
+        return
+      }
+
+      let decision = promoteTroubleSpot({record, spot, by: "", at: Date.now()})
+      return decideFlags(piece.id, [decision], store).then(result => {
+        if (result.error) {
+          fail(result.error)
+          return
+        }
+        if (this.unmounted) { return }
+        this.setState({troubleError: null})
+        this.props.setSettings({...this.props.settings})
+      })
     })
   }
 
@@ -420,6 +440,8 @@ export class PassagesPlate extends React.Component {
             </div>
           </li>)}
       </ul>
+      {this.state.troubleError &&
+        <p className={styles.trouble_error}>{this.state.troubleError}</p>}
     </Plate>
   }
 

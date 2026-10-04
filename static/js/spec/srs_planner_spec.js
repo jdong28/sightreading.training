@@ -802,6 +802,34 @@ describe("today's programme planner", function() {
       expect(entryIn([together], {startApart}).slice(1)).toEqual([3, "both"])
     })
 
+    it("rests a start-apart bar its hand failed a third time in the sitting", function() {
+      let startApart = new Map([[3, ["lower"]]])
+      let fails = times => graded(3, times.map(minutes => [ago(minutes), AGAIN]), "lower")
+
+      // twice is no rest: the bar is still offered, on its hand's own ladder
+      let twice = stateOf([fails([10, 8])], {startApart})
+      expect(twice.resting.has(3)).toBe(false)
+      expect(entryIn([fails([10, 8])], {startApart})).toEqual([LADDER, 3, "lower"])
+
+      // the third failure sets the bar aside for the sitting, hands apart
+      // or together, and it is still counted on the ladder
+      let failing = fails([10, 8, 6])
+      let state = stateOf([failing], {startApart})
+      expect(state.resting.has(3)).toBe(true)
+      expect(state.ladder.some(slot => slot.measure == 3)).toBe(false)
+      expect(state.unseen).toEqual([])
+      expect(state.laddered).toEqual(1)
+      expect(cardCaption({reason: NEW, measure: 3, hand: "lower"}, failing, state))
+        .toEqual("Bar 3 rests until your next sitting")
+
+      let {entry} = planned([failing], {startApart})
+      expect(entry.measure).not.toEqual(3)
+
+      // the next sitting opens on it again, still on its hand alone
+      expect(entryIn([failing], {startApart, now: NOW + 2 * 3600 * 1000}))
+        .toEqual([LADDER, 3, "lower"])
+    })
+
     it("counts a start-apart hand item toward LADDER_CAP and mostOverduePiece's due count", function() {
       let startApart = new Map([[3, ["lower"]]])
 

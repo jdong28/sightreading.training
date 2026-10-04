@@ -147,6 +147,15 @@ function anchorFromFingerprint(fingerprint, startIndex, endIndex) {
   return {bars: bars.slice(startIndex, endIndex + 1)}
 }
 
+// a decision exported from an install that once imported it carries that
+// import's placement stamps (flagsFileFor ships the log verbatim). Only this
+// alignment's own may stand, or a flag placed cleanly here reads moved or
+// unplaced for ever (placeFor in st/difficulty/decisions)
+function unstamped(decision) {
+  let {moved, unplaced, ...rest} = decision
+  return rest
+}
+
 /**
  * Re-anchors a flags file's decisions onto a local piece: aligns the file's
  * fingerprint to the local record's (st/difficulty/align) and rewrites every
@@ -169,7 +178,7 @@ export function reanchorDecisions(file, record, song) {
   for (let decision of file.decisions) {
     let range = decisionRange(decision)
     if (!range) {
-      decisions.push(decision)
+      decisions.push(unstamped(decision))
       continue
     }
 
@@ -178,7 +187,7 @@ export function reanchorDecisions(file, record, song) {
     if (mapped.place == "unplaced") {
       unplaced++
       decisions.push({
-        ...decision,
+        ...unstamped(decision),
         unplaced: {
           start: numberAt(fileNumbers, range.startIndex),
           end: numberAt(fileNumbers, range.endIndex),
@@ -187,7 +196,7 @@ export function reanchorDecisions(file, record, song) {
       continue
     }
 
-    let next = {...decision}
+    let next = unstamped(decision)
     if (next.of) { next.of = {...next.of, startIndex: mapped.startIndex, endIndex: mapped.endIndex} }
     if (next.given) { next.given = withLocalRange(next.given, mapped.startIndex, mapped.endIndex, song) }
     if (next.flag && Number.isInteger(next.flag.startIndex)) {

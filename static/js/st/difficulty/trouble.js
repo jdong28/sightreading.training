@@ -57,13 +57,20 @@ function capitalize(text) {
   return text ? text[0].toUpperCase() + text.slice(1) : text
 }
 
+// how strong a signal is, by the one measurement its kind carries: the
+// count of "again" and "lapses", the difficulty of "difficulty", the pace
+// ratio of "pace". "scaffold" carries none and reads the same either way
+function strengthOf(signal) {
+  return signal.count ?? signal.ratio ?? signal.d ?? 0
+}
+
 // one sentence from a suggestion's signals, the strongest instance of each
 // kind if bars merged brought the same kind more than once
 function sentenceFor(signals) {
   let byKind = new Map()
   for (let signal of signals) {
     let existing = byKind.get(signal.kind)
-    if (!existing || (signal.ratio || 0) > (existing.ratio || 0)) { byKind.set(signal.kind, signal) }
+    if (!existing || strengthOf(signal) > strengthOf(existing)) { byKind.set(signal.kind, signal) }
   }
 
   let phrases = [...byKind.values()].map(phraseFor).filter(Boolean)

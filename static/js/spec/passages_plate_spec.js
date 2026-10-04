@@ -843,15 +843,28 @@ describe("the passages view (st/difficulty)", function() {
       let cells = () => [...reviewPane().querySelectorAll(`.${barStripStyles.cell}`)]
       let from = cells()[0]
       let to = cells()[3]
+      let middle = cell => {
+        let rect = cell.getBoundingClientRect()
+        return rect.left + rect.width / 2
+      }
 
-      flushSync(() => from.dispatchEvent(new PointerEvent("pointerdown", {bubbles: true, pointerId: 1})))
-      flushSync(() => to.dispatchEvent(new PointerEvent("pointermove", {bubbles: true, pointerId: 1})))
-      flushSync(() => to.dispatchEvent(new PointerEvent("pointerup", {bubbles: true, pointerId: 1})))
+      // a real drag captures the pointer on the cell it started in, so the
+      // browser retargets every move and up to that cell: the strip must read
+      // the cell under the pointer from the coordinates, not from the handler
+      let drag = (type, clientX) => flushSync(() => from.dispatchEvent(
+        new PointerEvent(type, {bubbles: true, pointerId: 1, clientX})))
+
+      drag("pointerdown", middle(from))
+      drag("pointermove", middle(to))
+      drag("pointerup", middle(to))
 
       clickButton(reviewPane(), "Save")
 
-      await waitFor(() => flagsInForce(store.annotation(piece.id)).some(flag => flag.sources.includes("teacher")),
+      let added = await waitFor(() =>
+        flagsInForce(store.annotation(piece.id)).find(flag => flag.sources.includes("teacher")),
         {message: "the teacher's added flag"})
+      // the bars the drag drew, not the single bar the editor opened on
+      expect([added.start, added.end]).toEqual([1, 4])
       expect(plate().textContent).toContain("Teacher")
     })
 
@@ -907,8 +920,8 @@ describe("the passages view (st/difficulty)", function() {
       expect(data.decisions.length).toBeGreaterThan(0)
     })
 
-    it("shows trouble spots and flags them from the rail and the review", async function() {
-      let piece = await drillPiece(workhorseScore())
+    // bar 1 practised badly enough for st/difficulty/trouble to suggest it
+    let recordTroubleBar = async piece => {
       let now = Date.now()
       let barId = `${piece.id}:both:1-1`
       await store.recordAttempt({
@@ -924,6 +937,11 @@ describe("the passages view (st/difficulty)", function() {
           columns: 3, clean: 0, misses: 3, stuck: 0, skipped: 0, hesitations: 0, mode: "wait", algo: 1,
         },
       })
+    }
+
+    it("shows trouble spots and flags them from the rail and the review", async function() {
+      let piece = await drillPiece(workhorseScore())
+      await recordTroubleBar(piece)
 
       mountPlate(piece)
       await waitFor(() => plate(), {message: "the plate"})
@@ -936,6 +954,24 @@ describe("the passages view (st/difficulty)", function() {
       openReview()
       await waitFor(() => reviewPane(), {message: "the review pane"})
       expect(reviewPane().textContent).toContain("Waiting for you")
+    })
+
+    it("says so on the rail when a trouble spot can't be flagged", async function() {
+      let piece = await drillPiece(workhorseScore())
+      await recordTroubleBar(piece)
+
+      mountPlate(piece)
+      await waitFor(() => plate(), {message: "the plate"})
+      expect(plate().textContent).toContain("Your trouble spots")
+
+      spyOn(store, "updateAnnotation").and.callFake(() => Promise.reject(new Error("the disk is full")))
+
+      clickButton(plate(), "Flag these bars")
+      await waitFor(() => plate().querySelector(`.${passagesStyles.trouble_error}`),
+        {message: "the error on the rail"})
+      expect(plate().querySelector(`.${passagesStyles.trouble_error}`).textContent)
+        .toContain("Couldn't save your decision")
+      expect(flagsInForce(store.annotation(piece.id)).some(flag => flag.sources.includes("player"))).toBe(false)
     })
 
     // at the test harness's default (narrower than 900px) viewport, the

@@ -77,7 +77,9 @@
 // hand items are scaffold items too (PlanDeck#scaffold is entry.hand !=
 // sessionHand), so they are never marked deliberate, and mostOverduePiece
 // already counts one while its bar has no hands-together item and stops
-// once it does, without reading flags.
+// once it does, without reading flags. The rest rule below counts these
+// hands' attempts like any other, so a bar introduced hands apart rests
+// after its third failure in the sitting too, hands apart or together.
 //
 // Rest it until the next sitting: a bar failing a third time in a sitting,
 // whichever hand it was played with, is not offered again in the sitting. Its
@@ -444,6 +446,14 @@ export function planState({
   let setAside = new Set(bars.filter(item => ["merged", "split", "suspended"].includes(item.state))
     .map(item => item.startMeasure))
 
+  let unseen = measures.filter(measure => !liveMeasures.has(measure) && !setAside.has(measure))
+
+  // decision 6: a flag's startApart bar, still unseen hands together, is
+  // introduced hands apart instead - a ladder slot of its own if its hand
+  // already has an item on schedule, else as the NEW entry newSlot gives it
+  // (see the header's start-apart paragraph)
+  let startApartIntros = startApartIntroductions({startApart, apart, split, handItems, unseen})
+
   let sitting = sittingOf(bars, handBars, now)
 
   // the measures just played in this session: every measure of the last
@@ -454,13 +464,15 @@ export function planState({
   if (previous) { recent.add(previous) }
 
   // the bars the programme has in hand, failed REST_FAILURES times in the
-  // sitting whichever hand played them, rest
+  // sitting whichever hand played them, rest. A bar introduced hands apart
+  // is in hand through its hand's item, with no hands-together one of its own
   let failures = new Map()
   for (let item of [...bars, ...handBars]) {
-    if (!liveMeasures.has(item.startMeasure)) { continue }
+    let measure = item.startMeasure
+    if (!liveMeasures.has(measure) && !startApartIntros.has(measure)) { continue }
     let failed = item.recent.filter(([at, , , grade]) =>
       grade == AGAIN && at >= sitting.startedAt && at <= now).length
-    failures.set(item.startMeasure, (failures.get(item.startMeasure) || 0) + failed)
+    failures.set(measure, (failures.get(measure) || 0) + failed)
   }
   let resting = new Set([...failures].filter(([, count]) => count >= REST_FAILURES).map(([measure]) => measure))
 
@@ -502,23 +514,23 @@ export function planState({
   let ladder = awake.filter(item => ON_LADDER.includes(item.state)).map(slotOf)
   let review = awake.filter(item => item.state == "review").map(slotOf)
   let dueReviews = review.filter(slot => slot.item.due < endOfToday)
-  let unseen = measures.filter(measure => !liveMeasures.has(measure) && !setAside.has(measure))
 
-  // decision 6: a flag's startApart bar, still unseen hands together, is
-  // introduced hands apart instead - a ladder slot of its own if its hand
-  // already has an item on schedule, else as the NEW entry newSlot gives it
-  // (see the header's start-apart paragraph)
-  let startApartIntros = startApartIntroductions({startApart, apart, split, handItems, unseen})
-  let startApartLadderSlots = [...startApartIntros.values()]
+  // a start-apart introduction whose hand is already on the ladder: counted
+  // toward LADDER_CAP whether or not its bar rests, like any rung, and
+  // offered as a slot of its own only while it is awake
+  let startApartOnLadder = [...startApartIntros.values()]
     .filter(intro => intro.item && scheduled(intro.item) && ON_LADDER.includes(intro.item.state))
+  let startApartLadderMeasures = new Set(startApartOnLadder.map(intro => intro.measure))
+  // a bar resting is offered no more in the sitting, hands apart or together
+  unseen = unseen.filter(measure =>
+    !startApartLadderMeasures.has(measure) && !resting.has(measure))
+  ladder = [...ladder, ...startApartOnLadder
+    .filter(intro => !resting.has(intro.measure))
     .map(intro => ({
       id: intro.item.id, measure: intro.measure, hand: intro.hand, item: intro.item,
       due: intro.item.due, retry: isRetry(intro.item),
-    }))
-  let startApartLadderMeasures = new Set(startApartLadderSlots.map(slot => slot.measure))
-  unseen = unseen.filter(measure => !startApartLadderMeasures.has(measure))
-  ladder = [...ladder, ...startApartLadderSlots]
-  laddered = laddered + startApartLadderSlots.length
+    }))]
+  laddered = laddered + startApartOnLadder.length
   let startApartCaptions = new Map(
     [...startApartIntros].map(([measure, intro]) => [measure, startApartCaptionFor(intro)]))
 
