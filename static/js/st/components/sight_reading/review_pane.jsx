@@ -238,8 +238,10 @@ export class ReviewPane extends React.Component {
     })
   }
 
-  evidenceFor(flag) {
-    let overlap = this.troubleList().find(spot => spot.start <= flag.end && spot.end >= flag.start)
+  // trouble is the list render worked out once: it reads every item of the
+  // piece and folds the whole decision log, so no queue card computes its own
+  evidenceFor(flag, trouble) {
+    let overlap = trouble.find(spot => spot.start <= flag.end && spot.end >= flag.start)
     return overlap ? overlap.text : null
   }
 
@@ -515,9 +517,9 @@ export class ReviewPane extends React.Component {
     </>
   }
 
-  renderQueueCard(flag) {
+  renderQueueCard(flag, trouble) {
     let selected = flag.id == this.state.selectedId
-    let evidence = this.evidenceFor(flag)
+    let evidence = this.evidenceFor(flag, trouble)
     let place = placeLine(flag)
 
     return <li key={flag.id} className={classNames(styles.queue_card, {[styles.on]: selected})}>
@@ -754,7 +756,7 @@ export class ReviewPane extends React.Component {
         <div className={classNames(styles.columns, {[styles.side_by_side]: this.state.paneWidth >= SIDE_BY_SIDE_WIDTH})}>
           <Plate header="Queue" className={styles.queue_plate}>
             {queue.length ?
-              <ul className={styles.queue}>{queue.map(flag => this.renderQueueCard(flag))}</ul> :
+              <ul className={styles.queue}>{queue.map(flag => this.renderQueueCard(flag, trouble))}</ul> :
               <p className={styles.hint}>Nothing flagged yet.</p>}
           </Plate>
 

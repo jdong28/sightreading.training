@@ -25,6 +25,26 @@ function sketchTokens(sketch) {
   return tokens
 }
 
+// a bar as the alignment compares it: its hash and its sketch tokenized
+// once, since the DP asks about the same bar O(n) times over
+function tokenized(hash, sketch) {
+  return {hash, tokens: new Set(sketchTokens(sketch))}
+}
+
+// the one comparison rule, over bars tokenized by `tokenized`
+function similarity(a, b) {
+  if (a.hash == b.hash) { return 1 }
+  if (!a.tokens.size && !b.tokens.size) { return 1 }
+  if (!a.tokens.size || !b.tokens.size) { return 0 }
+
+  let intersection = 0
+  for (let token of a.tokens) {
+    if (b.tokens.has(token)) { intersection++ }
+  }
+  let union = a.tokens.size + b.tokens.size - intersection
+  return intersection / union
+}
+
 /**
  * How alike two bars are: 1 for an exact hash match or two empty bars,
  * otherwise the Jaccard index of their sketches' pitch-class-by-beat tokens,
@@ -35,19 +55,7 @@ function sketchTokens(sketch) {
  * @returns {number} 0 to 1
  */
 export function barSimilarity(a, b) {
-  if (a.hash == b.hash) { return 1 }
-
-  let tokensA = new Set(sketchTokens(a.sketch))
-  let tokensB = new Set(sketchTokens(b.sketch))
-  if (!tokensA.size && !tokensB.size) { return 1 }
-  if (!tokensA.size || !tokensB.size) { return 0 }
-
-  let intersection = 0
-  for (let token of tokensA) {
-    if (tokensB.has(token)) { intersection++ }
-  }
-  let union = tokensA.size + tokensB.size - intersection
-  return intersection / union
+  return similarity(tokenized(a.hash, a.sketch), tokenized(b.hash, b.sketch))
 }
 
 // identical bars and numbering: the fast path, which is also what makes
@@ -80,8 +88,8 @@ export function alignBars(fromFp, toFp) {
 
   let n = fromFp.bars.length
   let m = toFp.bars.length
-  let fromBars = fromFp.bars.map((hash, i) => ({hash, sketch: fromFp.sketches && fromFp.sketches[i]}))
-  let toBars = toFp.bars.map((hash, i) => ({hash, sketch: toFp.sketches && toFp.sketches[i]}))
+  let fromBars = fromFp.bars.map((hash, i) => tokenized(hash, fromFp.sketches && fromFp.sketches[i]))
+  let toBars = toFp.bars.map((hash, i) => tokenized(hash, toFp.sketches && toFp.sketches[i]))
 
   // dp[i][j]: best score aligning fromBars[0..i) with toBars[0..j).
   // move[i][j]: 0 diagonal (a match), 1 up (fromBars[i-1] is a gap),
@@ -97,7 +105,7 @@ export function alignBars(fromFp, toFp) {
     let key = i * m + j
     let cached = simCache.get(key)
     if (cached != null) { return cached }
-    let sim = barSimilarity(fromBars[i], toBars[j])
+    let sim = similarity(fromBars[i], toBars[j])
     simCache.set(key, sim)
     return sim
   }

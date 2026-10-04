@@ -25,17 +25,18 @@ function indexOfNumber(numbers, number) {
 const AXIS_MARKS = 5
 
 export function BarStrip({numbers, heat, flags, selectedId, onSelect, picking=false, onPick}) {
-  let count = numbers.length
-  if (!count) { return null }
-
   let [pickAnchor, setPickAnchor] = React.useState(null)
   let dragMoved = React.useRef(false)
+  let cellsRef = React.useRef(null)
 
   // picking is a prop that can go false mid-pick (the review pane closing,
   // or Cancel), so a stale anchor never lingers into the next time it opens
   React.useEffect(() => {
     if (!picking) { setPickAnchor(null) }
   }, [picking])
+
+  let count = numbers.length
+  if (!count) { return null }
 
   let axisIndices = new Set([0, count - 1])
   for (let i = 1; i < AXIS_MARKS - 1; i++) {
@@ -52,25 +53,44 @@ export function BarStrip({numbers, heat, flags, selectedId, onSelect, picking=fa
     onPick && onPick(numbers[from], numbers[to])
   }
 
+  // the cell under the pointer, from the cells' own rect (they are equal
+  // width): a drag's capture retargets every move and up to the cell it
+  // started in, so the handler's own index is the anchor's throughout
+  let cellAt = e => {
+    let el = cellsRef.current
+    let rect = el && el.getBoundingClientRect()
+    if (!rect || !rect.width) { return null }
+    let idx = Math.floor((e.clientX - rect.left) / rect.width * count)
+    return Math.min(count - 1, Math.max(0, idx))
+  }
+
   let cellDown = (e, idx) => {
     if (!picking) { return }
-    e.currentTarget.setPointerCapture && e.currentTarget.setPointerCapture(e.pointerId)
     dragMoved.current = false
     if (pickAnchor == null) {
       setPickAnchor(idx)
     } else {
       commitPick(pickAnchor, idx)
     }
+
+    // the release may land off the strip; capture keeps it coming here, so a
+    // drag always ends in cellUp rather than leaving the anchor behind. The
+    // pointer isn't always one the browser is tracking
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId)
+    } catch (err) {}
   }
 
-  let cellMove = (e, idx) => {
+  let cellMove = e => {
     if (!picking || pickAnchor == null) { return }
-    if (idx != pickAnchor) { dragMoved.current = true }
+    let idx = cellAt(e)
+    if (idx != null && idx != pickAnchor) { dragMoved.current = true }
   }
 
-  let cellUp = (e, idx) => {
-    if (!picking || pickAnchor == null) { return }
-    if (dragMoved.current) { commitPick(pickAnchor, idx) }
+  let cellUp = e => {
+    if (!picking || pickAnchor == null || !dragMoved.current) { return }
+    let idx = cellAt(e)
+    if (idx != null) { commitPick(pickAnchor, idx) }
   }
 
   return <div className={styles.strip}>
@@ -99,7 +119,10 @@ export function BarStrip({numbers, heat, flags, selectedId, onSelect, picking=fa
       })}
     </div>
 
-    <div className={classNames(styles.cells, {[styles.picking]: picking})} role="presentation">
+    <div
+      className={classNames(styles.cells, {[styles.picking]: picking})}
+      role="presentation"
+      ref={cellsRef}>
       {numbers.map((number, idx) =>
         <span
           key={idx}
@@ -107,8 +130,8 @@ export function BarStrip({numbers, heat, flags, selectedId, onSelect, picking=fa
             [styles.pick_anchor]: picking && idx == pickAnchor,
           })}
           onPointerDown={e => cellDown(e, idx)}
-          onPointerMove={e => cellMove(e, idx)}
-          onPointerUp={e => cellUp(e, idx)} />
+          onPointerMove={e => cellMove(e)}
+          onPointerUp={e => cellUp(e)} />
       )}
     </div>
 

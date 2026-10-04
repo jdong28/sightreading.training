@@ -1190,6 +1190,37 @@ describe("st/difficulty", () => {
       expect(unplacedDecisions[0].unplaced.start).toEqual(hardest.start)
     })
 
+    it("reanchorDecisions drops the stamps of the import before it, so a round-tripped flag places cleanly", () => {
+      let song = parseMusicXML(pianoScore({bars: barsWithDense([9, 10, 11])}))
+      let record = annotationWith(null, "p1", analyzePiece({song, source: null, at: 1}))
+      let hardest = flagsInForce(record).find(f => f.start <= 9 && f.end >= 11)
+      let accepted = withDecisions(record, [acceptDecision({record, flag: hardest, by: "Ms Laurent", at: 10})])
+      let file = flagsFileFor(accepted, {title: "t"}, song, {by: "Ms Laurent", at: 100})
+
+      // the student's edition doesn't match, so the decision lands unplaced
+      let otherSong = restSong(20)
+      let other = annotationWith(null, "p2", analyzePiece({song: otherSong, source: null, at: 2}))
+      let {decisions: stamped} = reanchorDecisions(file, other, otherSong)
+      expect(stamped[0].unplaced).toBeTruthy()
+
+      // the student exports their own flags, stamp and all, and it is opened
+      // on a copy the alignment places exactly
+      let theirs = withDecisions(other, stamped)
+      let roundTrip = flagsFileFor(theirs, {title: "t"}, otherSong, {by: "Sam", at: 200})
+      let {data} = readFlagsFile(JSON.stringify(roundTrip))
+      let {decisions, report} = reanchorDecisions(data, other, otherSong)
+
+      expect([report.unplaced, report.moved]).toEqual([0, 0])
+      expect(decisions[0].unplaced).toBeUndefined()
+      expect(decisions[0].moved).toBeUndefined()
+
+      // and the flag is in force, read as placed rather than still waiting
+      let reopened = reviewFlags({...other, decisions})
+        .find(flag => flag.id == stamped[0].flagId)
+      expect(reopened.place).toEqual("placed")
+      expect(flagsInForce({...other, decisions}).some(flag => flag.id == reopened.id)).toBe(true)
+    })
+
     it("fileMatch is the fraction of the file's bars that align well; low for an unrelated piece", () => {
       let song = workhorseSong()
       let record = annotationWith(null, "p1", analyzePiece({song, source: null, at: 1}))
@@ -1271,6 +1302,22 @@ describe("st/difficulty", () => {
       expect(scaffolded.signals.map(s => s.kind)).toContain("scaffold")
 
       expect(spots.find(s => s.start == 12)).toBeUndefined()
+    })
+
+    it("words a merged suggestion from the strongest instance of each kind, not the first", () => {
+      let measures = Array.from({length: 6}, (_, i) => i + 1)
+
+      let few = item({measure: 2, reps: 3, lapses: 2})
+      let many = item({measure: 3, reps: 3, lapses: 6})
+      let merged = troubleSpots({pieceId: "p1", items: [few, many], measures}).find(s => s.start == 2)
+      expect(merged.end).toEqual(3)
+      expect(merged.text).toEqual("Slipped back 6 times.")
+
+      // the same the other way up the piece, so it is the count that decides
+      let first = item({measure: 2, reps: 3, lapses: 6})
+      let second = item({measure: 3, reps: 3, lapses: 2})
+      let reversed = troubleSpots({pieceId: "p1", items: [first, second], measures}).find(s => s.start == 2)
+      expect(reversed.text).toEqual("Slipped back 6 times.")
     })
   })
 })

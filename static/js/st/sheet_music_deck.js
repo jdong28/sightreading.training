@@ -607,6 +607,9 @@ export async function importFlagsFile(text, store=getAppStore(), {pieceId}={}) {
         for (let candidate of store.pieces()) {
           let match = fileMatch(file, store.annotation(candidate.id))
           if (match > bestMatch) { bestMatch = match; bestPiece = candidate }
+          // nothing can beat every bar aligning, so the rest of the deck
+          // isn't aligned at all (each alignment is a full bar-for-bar DP)
+          if (bestMatch >= 1) { break }
         }
         if (bestPiece && bestMatch >= MIN_FLAGS_FILE_MATCH) {
           piece = bestPiece
