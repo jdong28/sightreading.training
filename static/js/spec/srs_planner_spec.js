@@ -702,6 +702,124 @@ describe("today's programme planner", function() {
     })
   })
 
+  describe("hands apart from the start", function() {
+    const APART = {upper: MEASURES, lower: MEASURES}
+    const ago = minutes => NOW - minutes * MINUTE
+
+    // a single measure item of piece p's hand, as the scheduler leaves it
+    // from the attempts given (the same pattern as "hands apart and rests")
+    const graded = (measure, attempts, hand="both") => {
+      let id = itemId({pieceId: "p", hand, startMeasure: measure, endMeasure: measure})
+      let item = replay(attempts.map(([time, grade]) => ({
+        itemId: id, at: time, pieceId: "p", kind: "attempt", grade, columns: 4, clean: grade > AGAIN ? 4 : 1,
+      })))
+      return {...item, attempts: attempts.length, lastPracticed: attempts[attempts.length - 1][0]}
+    }
+
+    // bar 3 is the only measure not already settled (in review, far off),
+    // so it is the only candidate the queue has to offer
+    const planned = (items, extra) => planNext({
+      pieceId: "p", items: [...settled([3]), ...items], measures: MEASURES, now: NOW,
+      handMeasures: APART, ...extra,
+    })
+    const entryIn = (items, extra) => {
+      let {entry} = planned(items, extra)
+      return [entry.reason, entry.measure, entry.hand]
+    }
+    const stateOf = (items, extra) => planState({
+      pieceId: "p", items: [...settled([3]), ...items], measures: MEASURES, now: NOW,
+      handMeasures: APART, ...extra,
+    })
+
+    it("introduces a bar hands apart when a flag names one hand, until it holds", function() {
+      let startApart = new Map([[3, ["lower"]]])
+
+      let {entry, state} = planned([], {startApart})
+      expect([entry.reason, entry.measure, entry.hand]).toEqual([NEW, 3, "lower"])
+      expect(entry.item).toBe(null)
+      expect(entryStatus(entry, {now: NOW})).toEqual("New · bar 3 · left hand")
+      expect(cardCaption(entry, null, state)).toEqual("Left hand alone, then together")
+
+      // its own item, once on the ladder, is a ladder slot of its own,
+      // counted toward LADDER_CAP like any rung - not yet held
+      let once = graded(3, [[ago(0.5), GOOD]], "lower")
+      let onceState = stateOf([once], {startApart})
+      expect(onceState.ladder.some(slot => slot.measure == 3 && slot.hand == "lower")).toBe(true)
+      expect(onceState.unseen).toEqual([])
+      expect(onceState.laddered).toBeGreaterThan(0)
+
+      // two goods running: the hand holds, and the bar is unseen hands
+      // together again, a normal NEW entry
+      let held = graded(3, [[ago(0.8), GOOD], [ago(0.5), GOOD]], "lower")
+      let heldState = stateOf([held], {startApart})
+      expect(heldState.startApartIntros.has(3)).toBe(false)
+      expect(heldState.unseen).toEqual([3])
+      expect(entryIn([held], {startApart})).toEqual([NEW, 3, "both"])
+    })
+
+    it("offers a both-hands flag the right hand first, then the left, then together", function() {
+      let startApart = new Map([[3, ["upper", "lower"]]])
+
+      let {entry, state} = planned([], {startApart})
+      expect([entry.reason, entry.measure, entry.hand]).toEqual([NEW, 3, "upper"])
+      expect(cardCaption(entry, null, state)).toEqual("Right hand alone, then the left")
+
+      let rightHeld = graded(3, [[ago(0.8), GOOD], [ago(0.5), GOOD]], "upper")
+      let phase2 = stateOf([rightHeld], {startApart})
+      expect(phase2.startApartIntros.get(3).hand).toEqual("lower")
+      expect(phase2.startApartCaptions.get(3)).toEqual("Left hand alone, then together")
+
+      let bothHeld = [
+        graded(3, [[ago(1.6), GOOD], [ago(1.3), GOOD]], "upper"),
+        graded(3, [[ago(0.8), GOOD], [ago(0.5), GOOD]], "lower"),
+      ]
+      let phase3 = stateOf(bothHeld, {startApart})
+      expect(phase3.startApartIntros.has(3)).toBe(false)
+      expect(phase3.unseen).toEqual([3])
+    })
+
+    it("changes nothing without startApart, with an empty one, or where split is false", function() {
+      let rows = [
+        {}, {startApart: null}, {startApart: new Map()},
+        {startApart: new Map([[3, ["lower"]]]), split: false},
+      ]
+      for (let extra of rows) {
+        expect(entryIn([], extra)).toEqual([NEW, 3, "both"])
+      }
+    })
+
+    it("ignores the tick for a bar only one hand has notes in, or one already live hands together", function() {
+      let startApart = new Map([[3, ["lower"]]])
+
+      // bar 3 isn't in `apart`: the right hand alone has no notes there
+      let oneHand = planned([], {
+        startApart, handMeasures: {upper: MEASURES, lower: MEASURES.filter(m => m != 3)},
+      })
+      expect(oneHand.entry.hand).toEqual("both")
+
+      // bar 3 already has a hands-together item: it isn't unseen any more
+      let together = graded(3, [[ago(1), AGAIN]])
+      expect(entryIn([together], {startApart}).slice(1)).toEqual([3, "both"])
+    })
+
+    it("counts a start-apart hand item toward LADDER_CAP and mostOverduePiece's due count", function() {
+      let startApart = new Map([[3, ["lower"]]])
+
+      expect(stateOf([], {startApart}).laddered).toEqual(0)
+
+      let onLadderItem = graded(3, [[ago(0.5), GOOD]], "lower")
+      expect(stateOf([onLadderItem], {startApart}).laddered).toEqual(1)
+
+      // it counts as due while bar 3 has no hands-together item of its own
+      let overdue = mostOverduePiece({
+        studies: [{pieceId: "p", status: "learning", startedAt: 0}],
+        items: [...settled([3]), onLadderItem],
+        now: NOW,
+      })
+      expect(overdue).toEqual("p")
+    })
+  })
+
   describe("pieces in study", function() {
     it("suggests the piece with the most measures due", function() {
       let due = (pieceId, measure, dueAt) => ({...inReview(measure, {due: dueAt}), pieceId,
@@ -1517,6 +1635,31 @@ describe("today's programme on the staff", function() {
       expect(deck.entry).toEqual(jasmine.objectContaining({measure: 1, hand: "lower"}))
       expect(built).toEqual(["lower:1"])
     })
+  })
+
+  it("introduces a flagged passage hands apart when it names a hand, through the real deck", async function() {
+    let {handMeasures, handCard} = handPools()
+    let startApart = new Map([[1, ["lower"]]])
+
+    let {deck, generator, notes} = await generatorFor(1, {
+      handMeasures, handCard, startApart: () => startApart,
+    })
+    let stats = new NoteStats()
+
+    // bar 0 first, hands together: it has no lower-hand notes to split
+    expect(deck.entry.measure).toEqual(0)
+    expect(deck.entry.hand).toEqual("both")
+    notes = await playCard({generator, notes}, stats)
+
+    // bar 1 is offered hands apart from the start: its left hand alone
+    expect(deck.entry.measure).toEqual(1)
+    expect(deck.entry.hand).toEqual("lower")
+    expect(generator.currentCard().hand).toEqual("lower")
+
+    await playCard({generator, notes}, stats)
+    let handItem = store.item(`${piece.id}:lower:1-1`)
+    expect(handItem).toBeTruthy()
+    expect(handItem.deliberate).toBeUndefined()
   })
 
   it("keeps the plan it made when a review is beyond the planner", async function() {

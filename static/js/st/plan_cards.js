@@ -11,7 +11,10 @@
 // hand (SightReadingPage#engineCard), not the section. The scaffold's own
 // passes never mark their items deliberate (PlanDeck#scaffold,
 // ItemRecord#deliberate): only a session played with that hand as its own
-// does.
+// does. A bar a flag ticks "start this passage hands separately" (decision
+// 6, PlanDeck's startApart option) is the same kind of card, from the same
+// hand items, before the bar is ever learned together; see the planner
+// header's start-apart paragraph for the rule itself.
 
 import {getAppStore} from "st/storage"
 import {MeasureCardGenerator, sectionCard} from "st/measure_cards"
@@ -50,14 +53,18 @@ export class PlanDeck {
    * @param {number} [opts.cardMeasures] measures per card
    * @param {function(): number} [opts.now]
    * @param {LocalStore} [opts.store] the app's store by default
+   * @param {function(): Map<number, string[]>|null} [opts.startApart] decision
+   * 6's input (st/difficulty/decisions.startApartBars), read fresh at every
+   * plan so a decision saved at rest takes effect at the next card
    */
   constructor(measures, {pieceId, hand="both", handMeasures=null, handCard=null,
-      cardMeasures=1, now=Date.now, store}) {
+      cardMeasures=1, now=Date.now, store, startApart=() => null}) {
     this.pieceId = pieceId
     this.sessionHand = hand
     this.cardMeasures = cardMeasures
     this.now = now
     this.store = store
+    this.startApart = startApart
 
     let numbers = measures.map(measure => measure.number)
     let byNumber = new Map(measures.map(measure => [measure.number, measure]))
@@ -202,6 +209,7 @@ export class PlanDeck {
       handMeasures: this.handMeasures,
       split: this.split(),
       lastReviews: this.reviews,
+      startApart: this.startApart(),
       now: this.now(),
       settings: store.schedulerSettings(),
       practice: store.practiceSettings(),

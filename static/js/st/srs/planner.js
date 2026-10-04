@@ -57,6 +57,28 @@
 // counts there, so only the scaffold's own hand items follow the retirement
 // rule above.
 //
+// Hands apart from the start, where a flag asks for it (decision 6,
+// startApart): a bar a flag ticks "start this passage hands separately"
+// is introduced hands apart rather than together, at introduction only - a
+// bar already learned hands together keeps the hand scaffold above, not
+// this. Applies only where the bar could split anyway (apart, both hands
+// have notes) and only while split holds, same as the scaffold. The bar's
+// first listed hand that hasn't held stands in for it: with no item of its
+// own yet, it is the new entry under rule 3, in the bar's place among the
+// unseen measures, as a new slot of that hand; once it has an item on the
+// ladder, it is a ladder slot on its own schedule, counted toward
+// LADDER_CAP like any rung (startApartIntroductions). A both-hands flag
+// offers the right hand first, then the left, same as a both-hands
+// "practise hands separately" pill elsewhere. Held here means: graded good
+// or better twice running, or graduated to review (startApartHeld); items
+// alone, no review needed, since the graduation case only wants the state
+// a bar's own last review already carries. Once every listed hand holds,
+// the bar is unseen hands together and comes as a normal NEW entry. These
+// hand items are scaffold items too (PlanDeck#scaffold is entry.hand !=
+// sessionHand), so they are never marked deliberate, and mostOverduePiece
+// already counts one while its bar has no hands-together item and stops
+// once it does, without reading flags.
+//
 // Rest it until the next sitting: a bar failing a third time in a sitting,
 // whichever hand it was played with, is not offered again in the sitting. Its
 // due date is left as it is, so it opens the next sitting. With every bar left
@@ -187,6 +209,10 @@ export function onScheduleMeasures(card, itemOf, now) {
  * @property {Map<string, ReviewRecord>} [lastReviews] the last graded review
  * known of an item, by item id, whose staffMisses say which hand a failure's
  * misses fell on
+ * @property {Map<number, string[]>} [startApart] bars a flag ticked "start
+ * this passage hands separately" asks to introduce hands apart (decision 6,
+ * st/difficulty/decisions.startApartBars), each with the hand(s) it names,
+ * both hands listed right first; see the header's start-apart paragraph
  */
 
 /**
@@ -322,6 +348,68 @@ function handsByMeasure(items) {
   return byMeasure
 }
 
+// whether a start-apart hand holds, for introduction purposes alone (the
+// header's start-apart paragraph): two goods running, or graduated to
+// review. Items alone; no review read, since the graduation case only
+// wants the state the item's own last review already carries
+function startApartHeld(item) {
+  if (!item) { return false }
+
+  let grades = item.recent.map(gradeOf)
+  let n = grades.length
+  if (n >= 2 && grades[n - 1] >= GOOD && grades[n - 2] >= GOOD) { return true }
+
+  return item.state == "review"
+}
+
+/**
+ * Decision 6's input, resolved against this plan: the unseen bars a flag
+ * asks to start hands apart, each with the hand that currently stands in
+ * for it, kept in its own helper so it composes with however `unseen` and
+ * `candidates` are built elsewhere (see the header's start-apart paragraph).
+ * @param {Object} opts
+ * @param {Map<number, string[]>|null} opts.startApart PlanInput's
+ * @param {Set<number>} opts.apart bars both hands have notes in
+ * @param {boolean} opts.split
+ * @param {Map<number, Object>} opts.handItems a bar's items by hand (handsByMeasure)
+ * @param {number[]} opts.unseen measures with no live hands-together item
+ * @returns {Map<number, {measure: number, hand: string, heldIndex: number,
+ * hands: string[], item: ItemRecord|null}>}
+ */
+function startApartIntroductions({startApart, apart, split, handItems, unseen}) {
+  let intros = new Map()
+  if (!split || !startApart || !startApart.size) { return intros }
+
+  for (let measure of unseen) {
+    if (!apart.has(measure)) { continue }
+
+    let hands = startApart.get(measure)
+    if (!hands || !hands.length) { continue }
+
+    let byHand = handItems.get(measure) || {}
+    let heldIndex = 0
+    while (heldIndex < hands.length && startApartHeld(byHand[hands[heldIndex]])) { heldIndex++ }
+    if (heldIndex >= hands.length) { continue } // every listed hand holds: a normal NEW entry
+
+    intros.set(measure, {
+      measure, hand: hands[heldIndex], heldIndex, hands, item: byHand[hands[heldIndex]] || null,
+    })
+  }
+
+  return intros
+}
+
+// "Left hand alone, then together", or for a both-hands flag's first phase
+// "Right hand alone, then the left" (right comes first, see startApartBars)
+function startApartCaptionFor({hands, heldIndex}) {
+  let current = HAND_WORDS[hands[heldIndex]]
+  let currentCap = `${current[0].toUpperCase()}${current.slice(1)}`
+  let remaining = hands.slice(heldIndex + 1)
+  if (!remaining.length) { return `${currentCap} alone, then together` }
+
+  return `${currentCap} alone, then ${remaining[0] == "lower" ? "the left" : "the right"}`
+}
+
 /**
  * Everything the queue is picked from: the piece's single measure items of
  * the hand in the measures given, grouped by what the scheduler has them
@@ -334,7 +422,7 @@ function handsByMeasure(items) {
 export function planState({
   pieceId, items, measures, hand="both", now, settings=DEFAULT_SCHEDULER_SETTINGS,
   practice=DEFAULT_PRACTICE_SETTINGS, cardMeasures=1, previous=null, handMeasures=null,
-  split=true, lastReviews=new Map(),
+  split=true, lastReviews=new Map(), startApart=null,
 }) {
   let order = new Map(measures.map((measure, idx) => [measure, idx]))
   let single = item => item.pieceId == pieceId && item.startMeasure == item.endMeasure &&
@@ -415,6 +503,25 @@ export function planState({
   let review = awake.filter(item => item.state == "review").map(slotOf)
   let dueReviews = review.filter(slot => slot.item.due < endOfToday)
   let unseen = measures.filter(measure => !liveMeasures.has(measure) && !setAside.has(measure))
+
+  // decision 6: a flag's startApart bar, still unseen hands together, is
+  // introduced hands apart instead - a ladder slot of its own if its hand
+  // already has an item on schedule, else as the NEW entry newSlot gives it
+  // (see the header's start-apart paragraph)
+  let startApartIntros = startApartIntroductions({startApart, apart, split, handItems, unseen})
+  let startApartLadderSlots = [...startApartIntros.values()]
+    .filter(intro => intro.item && scheduled(intro.item) && ON_LADDER.includes(intro.item.state))
+    .map(intro => ({
+      id: intro.item.id, measure: intro.measure, hand: intro.hand, item: intro.item,
+      due: intro.item.due, retry: isRetry(intro.item),
+    }))
+  let startApartLadderMeasures = new Set(startApartLadderSlots.map(slot => slot.measure))
+  unseen = unseen.filter(measure => !startApartLadderMeasures.has(measure))
+  ladder = [...ladder, ...startApartLadderSlots]
+  laddered = laddered + startApartLadderSlots.length
+  let startApartCaptions = new Map(
+    [...startApartIntros].map(([measure, intro]) => [measure, startApartCaptionFor(intro)]))
+
   let scaffolds = new Map(ladder.filter(slot => slot.hand != hand).map(slot => [slot.measure, slot.hand]))
 
   let timed = live.filter(item => item.attempts > 0 && item.elapsedMs > 0)
@@ -429,6 +536,7 @@ export function planState({
   return {
     pieceId, hand, now, settings, order, byMeasure, recent, today, endOfToday,
     live, awake, failing, ladder, laddered, review, dueReviews, unseen, resting, scaffolds, sitting,
+    startApartIntros, startApartCaptions,
     cardMs, targetMs, elapsedMs,
     complete: elapsedMs >= targetMs || (!ladder.length && !dueReviews.length && !unseen.length),
   }
@@ -486,11 +594,16 @@ function candidates(state, {avoid}) {
   ]
 }
 
-// the queue slot of a measure never scheduled
-const newSlot = ({pieceId, hand}, measure) => ({
-  id: itemId({pieceId, hand, startMeasure: measure, endMeasure: measure}),
-  measure, hand, item: null, retry: false,
-})
+// the queue slot of a measure never scheduled, as the hand a start-apart
+// introduction asks for when one applies, else the session's
+const newSlot = (state, measure) => {
+  let intro = state.startApartIntros && state.startApartIntros.get(measure)
+  let hand = intro ? intro.hand : state.hand
+  return {
+    id: itemId({pieceId: state.pieceId, hand, startMeasure: measure, endMeasure: measure}),
+    measure, hand, item: null, retry: false,
+  }
+}
 
 /**
  * The next entry of the queue.
@@ -695,6 +808,9 @@ export function entryCaption(item, now) {
 export function cardCaption(entry, item, state) {
   let {measure} = entry
   if (state.resting.has(measure)) { return `Bar ${measure} rests until your next sitting` }
+
+  let startApart = state.startApartCaptions && state.startApartCaptions.get(measure)
+  if (startApart) { return startApart }
 
   let scaffold = state.scaffolds.get(measure)
   if (scaffold && scaffold != entry.hand) {

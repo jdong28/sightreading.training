@@ -29,6 +29,7 @@ import {getAppStore} from "st/storage"
 import {PlanDeck, PlanGenerator} from "st/plan_cards"
 import {inStudy} from "st/srs/planner"
 import {flagsInForce} from "st/difficulty/records"
+import {startApartBars} from "st/difficulty/decisions"
 
 import {ChordGenerator, MultiKeyChordGenerator} from "st/chord_generators"
 import {GStaff, FStaff, GrandStaff, ChordStaff} from "st/components/staves"
@@ -214,7 +215,7 @@ function handMeasuresOf(measures) {
 // staff. Played hands together on a piece with a staff per hand, the deck can
 // ask for one bar of one hand's notes alone for the hand scaffold (see
 // st/srs/planner), which is drawn from the score only when a bar is offered
-export function planGenerator(staff, settings) {
+export function planGenerator(staff, settings, store=getAppStore()) {
   let piece = sheetMusicPiece(settings)
   let song = piece && pieceSong(piece)
   if (!song) { return null }
@@ -236,6 +237,8 @@ export function planGenerator(staff, settings) {
     handMeasures: apart ? handMeasuresOf(measures) : null,
     handCard: apart ? handCard : null,
     cardMeasures: planCardMeasures(settings),
+    store,
+    startApart: () => startApartBars(flagsInForce(store.annotation(piece.id))),
   })
 
   return deck.playable ? new PlanGenerator(deck) : null
