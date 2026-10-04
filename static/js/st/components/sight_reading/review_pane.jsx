@@ -16,7 +16,9 @@ import {SidePane} from "st/components/sight_reading/settings_panel"
 import {barsLabel, barsHeading} from "st/music"
 import {measureNumberList, measureNumberRange, measureIndexRange, staffTracks} from "st/song_sections"
 import {sheetMusicPiece} from "st/data"
-import {pieceSong, decideFlags, exportFlagsFile, importFlagsFile} from "st/sheet_music_deck"
+import {
+  pieceSong, ensureAnnotation, decideFlags, exportFlagsFile, importFlagsFile,
+} from "st/sheet_music_deck"
 import {getAppStore} from "st/storage"
 import {heat as heatLevel} from "st/difficulty/sections"
 import {LEVEL_WORDS, FLAG_KINDS, KIND_WORDS} from "st/difficulty/index"
@@ -250,10 +252,24 @@ export class ReviewPane extends React.Component {
     return flag ? this.draftFor(flag) : null
   }
 
+  // Every bar range a draft holds, from wherever it came: clamped to the
+  // piece and with the indices that range really has. The editor's pickers
+  // clamp for display only, and a flag's own range can be the exporting
+  // copy's (an unplaced one), so Save writes exactly what the editor shows.
+  draftRange(start, end) {
+    let song = this.song()
+    let [minBar, maxBar] = measureNumberRange(song)
+    let from = Math.max(minBar, Math.min(maxBar, start))
+    let to = Math.max(from, Math.min(maxBar, end))
+    let [startIndex, endIndex] = measureIndexRange(song, from, to)
+    return {start: from, end: to, startIndex, endIndex}
+  }
+
   draftFor(flag) {
     let teacherLine = flag.lines.find(line => line.source == "teacher")
+
     return {
-      start: flag.start, end: flag.end, startIndex: flag.startIndex, endIndex: flag.endIndex,
+      ...this.draftRange(flag.start, flag.end),
       hand: flag.hand, level: flag.level, kinds: flag.kinds,
       title: flag.givenTitle !== undefined ? flag.title : "",
       reason: teacherLine ? teacherLine.text : "",
@@ -264,16 +280,30 @@ export class ReviewPane extends React.Component {
 
   // ---- writing decisions ----
 
-  save(decision) {
+  // every write goes through here, so the piece's annotation is ensured once
+  // for all of them: the plate keeps the review open for a trouble-spot
+  // suggestion alone, with no record needed, and a decision built against
+  // none is rejected by the store
+  save(build) {
     let piece = this.piece()
     if (!piece) { return Promise.resolve() }
 
-    return decideFlags(piece.id, [decision], this.getStore()).then(result => {
-      if (result.error) {
-        this.setState({message: {error: true, text: result.error}})
+    let store = this.getStore()
+    return ensureAnnotation(piece.id, store).then(record => {
+      if (!record) {
+        this.setState({message: {
+          error: true, text: "Couldn't save your decision: this piece's score hasn't been analysed.",
+        }})
         return
       }
-      this.props.setSettings({...this.props.settings})
+
+      return decideFlags(piece.id, [build(record)], store).then(result => {
+        if (result.error) {
+          this.setState({message: {error: true, text: result.error}})
+          return
+        }
+        this.props.setSettings({...this.props.settings})
+      })
     })
   }
 
@@ -282,27 +312,25 @@ export class ReviewPane extends React.Component {
   }
 
   accept(flag) {
-    this.save(acceptDecision({record: this.record(), flag, ...this.decisionOpts()}))
+    this.save(record => acceptDecision({record, flag, ...this.decisionOpts()}))
   }
 
   dismiss(flag) {
-    this.save(dismissDecision({record: this.record(), flag, ...this.decisionOpts()}))
+    this.save(record => dismissDecision({record, flag, ...this.decisionOpts()}))
     if (flag.id == this.state.selectedId) { this.cancelEdit() }
   }
 
   restore(flag) {
-    this.save(restoreDecision({record: this.record(), flag, ...this.decisionOpts()}))
+    this.save(record => restoreDecision({record, flag, ...this.decisionOpts()}))
   }
 
   flagTheseBars(spot) {
-    this.save(promoteTroubleSpot({record: this.record(), spot, song: this.song(), by: "", at: Date.now()}))
+    this.save(record => promoteTroubleSpot({record, spot, song: this.song(), by: "", at: Date.now()}))
   }
 
   saveDraft() {
     let draft = this.state.draft
     if (!draft) { return }
-
-    let record = this.record()
 
     if (draft.adding) {
       let flag = {
@@ -310,7 +338,7 @@ export class ReviewPane extends React.Component {
         hand: draft.hand, level: draft.level, kinds: draft.kinds,
         title: draft.title || "Marked passage", reason: draft.reason, tip: draft.tip, apart: draft.apart,
       }
-      this.save(addDecision({record, flag, ...this.decisionOpts(), source: "teacher"})).then(() => {
+      this.save(record => addDecision({record, flag, ...this.decisionOpts(), source: "teacher"})).then(() => {
         this.cancelEdit()
       })
       return
@@ -324,7 +352,7 @@ export class ReviewPane extends React.Component {
       hand: draft.hand, level: draft.level, kinds: draft.kinds,
       title: draft.title, reason: draft.reason, tip: draft.tip, apart: draft.apart,
     }
-    this.save(editDecision({record, flag, overrides, ...this.decisionOpts()}))
+    this.save(record => editDecision({record, flag, overrides, ...this.decisionOpts()}))
   }
 
   useAnalysisName() {
@@ -344,31 +372,27 @@ export class ReviewPane extends React.Component {
   // never needs the strip; it also enables the strip's pick mode, so a
   // drag across it refines the range the same editor shows
   startPick() {
-    let song = this.song()
     let selected = this.flags().find(flag => flag.id == this.state.selectedId)
-    let [minBar] = measureNumberRange(song)
-    let start = selected ? selected.start : minBar
-    let end = selected ? selected.end : minBar
-    let [startIndex, endIndex] = measureIndexRange(song, start, end)
+    let [minBar] = measureNumberRange(this.song())
 
     this.setState({
       picking: true,
       selectedId: null,
       draft: {
-        adding: true, start, end, startIndex, endIndex,
+        adding: true,
+        ...this.draftRange(selected ? selected.start : minBar, selected ? selected.end : minBar),
         hand: "both", level: 1, kinds: [], title: "", reason: "", tip: "", apart: false,
       },
     })
   }
 
   onPick(start, end) {
-    let song = this.song()
-    let [startIndex, endIndex] = measureIndexRange(song, start, end)
     this.setState({
       picking: false,
       selectedId: null,
       draft: {
-        adding: true, start, end, startIndex, endIndex,
+        adding: true,
+        ...this.draftRange(start, end),
         hand: "both", level: 1, kinds: [], title: "", reason: "", tip: "", apart: false,
       },
     })
@@ -384,17 +408,12 @@ export class ReviewPane extends React.Component {
   }
 
   updateDraftRange(which, value) {
-    let song = this.song()
-    let [minBar, maxBar] = measureNumberRange(song)
-    value = Math.max(minBar, Math.min(maxBar, Math.round(value)))
-
     let draft = this.state.draft
-    let start = which == "start" ? value : draft.start
-    let end = which == "end" ? value : draft.end
+    let start = which == "start" ? Math.round(value) : draft.start
+    let end = which == "end" ? Math.round(value) : draft.end
     if (which == "start") { end = Math.max(start, end) } else { start = Math.min(start, end) }
 
-    let [startIndex, endIndex] = measureIndexRange(song, start, end)
-    this.updateDraft({start, end, startIndex, endIndex})
+    this.updateDraft(this.draftRange(start, end))
   }
 
   cancelEdit() {
