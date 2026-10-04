@@ -1087,7 +1087,7 @@ describe("sight reading page", function() {
     expect(buttonNamed(drawer, "Remove")).toBeDefined()
     expect(buttonNamed(drawer, "Export library")).toBeDefined()
     expect(buttonNamed(drawer, "Take your seat")).toBeDefined()
-    expect(drawer.querySelectorAll("input[type=file]").length).toEqual(2)
+    expect(drawer.querySelectorAll("input[type=file]").length).toEqual(3)
     expect(["start measure", "end measure"].map(label => picker(drawer, label).value)).toEqual(["1", "2"])
 
     // the score supplies the staves, clefs and key, so the drawer has none of
