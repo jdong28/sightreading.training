@@ -160,7 +160,13 @@ drawn only while it is open. The pane is its own scroller and the score is the t
 the passage's detail — with the "tap a shaded passage" legend as its last line — stays out of that
 scroll: it sticks below the pane's header beside the score, and stacks above it in a pane too narrow
 for two columns. Both side panes pin their header, so the title and the close button stay on screen
-however far the pane has scrolled.
+however far the pane has scrolled. A third right pane, "Review the passages," holds the instructor's
+review (accept, edit, dismiss, restore, mark a passage, the hands-separately tick, trouble spots,
+and the flags file); only one right pane is ever open at a time, so opening it closes the shaded
+score pane and the other way round. The rail's plate itself now stays up — a compact glance, the
+engraving otherwise untouched — whenever the review still holds something even with no flag in
+force: a dismissal, a flag the fingerprint can't place without checking, or a trouble-spot
+suggestion, not only when the analysis flagged something.
 
 ### 4. Session summary — `screens/salon-summary/SalonSummary.dc.html`
 
