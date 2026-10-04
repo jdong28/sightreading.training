@@ -221,11 +221,11 @@ export class ReviewPane extends React.Component {
     return reviewFlags(this.record())
   }
 
-  inForceFlags() {
-    return this.flags().filter(flag => flag.status != "dismissed" && flag.place != "unplaced")
-  }
-
-  troubleList() {
+  // the player's trouble spots, leaving out the bars of the flags given: the
+  // suggestion plate leaves out what is already flagged, the queue card's
+  // evidence line leaves out nothing, since the bar it wants evidence for is
+  // flagged by definition
+  troubleList(flags) {
     let piece = this.piece()
     let song = this.song()
     if (!piece || !song) { return [] }
@@ -234,14 +234,14 @@ export class ReviewPane extends React.Component {
       pieceId: piece.id,
       items: this.getStore().items(piece.id),
       measures: measureNumberList(song),
-      flags: this.inForceFlags(),
+      flags,
     })
   }
 
-  // trouble is the list render worked out once: it reads every item of the
-  // piece and folds the whole decision log, so no queue card computes its own
-  evidenceFor(flag, trouble) {
-    let overlap = trouble.find(spot => spot.start <= flag.end && spot.end >= flag.start)
+  // evidence is the unfiltered list render worked out once: it reads every
+  // item of the piece, so no queue card computes its own
+  evidenceFor(flag, evidence) {
+    let overlap = evidence.find(spot => spot.start <= flag.end && spot.end >= flag.start)
     return overlap ? overlap.text : null
   }
 
@@ -295,7 +295,7 @@ export class ReviewPane extends React.Component {
   }
 
   flagTheseBars(spot) {
-    this.save(promoteTroubleSpot({record: this.record(), spot, by: "", at: Date.now()}))
+    this.save(promoteTroubleSpot({record: this.record(), spot, song: this.song(), by: "", at: Date.now()}))
   }
 
   saveDraft() {
@@ -517,9 +517,9 @@ export class ReviewPane extends React.Component {
     </>
   }
 
-  renderQueueCard(flag, trouble) {
+  renderQueueCard(flag, spots) {
     let selected = flag.id == this.state.selectedId
-    let evidence = this.evidenceFor(flag, trouble)
+    let evidence = this.evidenceFor(flag, spots)
     let place = placeLine(flag)
 
     return <li key={flag.id} className={classNames(styles.queue_card, {[styles.on]: selected})}>
@@ -715,7 +715,9 @@ export class ReviewPane extends React.Component {
     let record = this.record()
     let heatPct = (record && record.runs && record.runs.score && record.runs.score.heat) || []
     let heat = numbers.map((_, idx) => heatLevel(heatPct[idx] || 0))
-    let trouble = this.troubleList()
+    let inForce = flags.filter(flag => flag.status != "dismissed" && flag.place != "unplaced")
+    let trouble = this.troubleList(inForce)
+    let evidence = this.troubleList([])
     let queue = [...flags].sort(queueOrder)
     let draft = this.state.draft
 
@@ -756,7 +758,7 @@ export class ReviewPane extends React.Component {
         <div className={classNames(styles.columns, {[styles.side_by_side]: this.state.paneWidth >= SIDE_BY_SIDE_WIDTH})}>
           <Plate header="Queue" className={styles.queue_plate}>
             {queue.length ?
-              <ul className={styles.queue}>{queue.map(flag => this.renderQueueCard(flag, trouble))}</ul> :
+              <ul className={styles.queue}>{queue.map(flag => this.renderQueueCard(flag, evidence))}</ul> :
               <p className={styles.hint}>Nothing flagged yet.</p>}
           </Plate>
 

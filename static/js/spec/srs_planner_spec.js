@@ -1,8 +1,8 @@
 import MersenneTwister from "mersennetwister"
 
 import {
-  planNext, planState, planSummary, anchoredCard, onScheduleMeasures, mostOverduePiece, inStudy,
-  entryStatus, entryCaption, cardCaption, blamedStaves, introduction, passagesForHand,
+  planNext, planState, planSummary, studyStatus, anchoredCard, onScheduleMeasures, mostOverduePiece,
+  inStudy, entryStatus, entryCaption, cardCaption, blamedStaves, introduction, passagesForHand,
   pulledPassage, PASSAGE_LEVEL,
   RETRY, LADDER, REVIEW, NEW, EARLY, RUN_THROUGH, WAIT, READ_THROUGH, LADDER_CAP, IDLE_LADDER_CAP,
   SITTING_GAP_MS, READ_FIRST, HARDEST_FIRST, SCORE_ORDER,
@@ -1096,6 +1096,32 @@ describe("today's programme planner", function() {
       // the next sitting opens on it again, still on its hand alone
       expect(entryIn([failing], {startApart, now: NOW + 2 * 3600 * 1000}))
         .toEqual([LADDER, 3, "lower"])
+    })
+
+    it("resting keeps a start-apart bar out of the sitting's queue alone, not out of what is left to learn", function() {
+      let startApart = new Map([[3, ["upper", "lower"]]])
+      // the right hand failed three times in this sitting and then held, so
+      // the bar rests while the hand standing in for it has no item yet
+      let upper = graded(3, [
+        [ago(12), AGAIN], [ago(10), AGAIN], [ago(8), AGAIN], [ago(6), GOOD], [ago(4), GOOD],
+      ], "upper")
+      let input = {
+        pieceId: "p", items: [...settled([3]), upper], measures: MEASURES, now: NOW,
+        handMeasures: APART, startApart,
+      }
+
+      let state = planState(input)
+      expect(state.resting.has(3)).toBe(true)
+      expect(state.startApartIntros.get(3).hand).toEqual("lower")
+
+      // bar 3 has never been scheduled hands together: it is still a measure
+      // the piece has to learn, whatever the sitting makes of it
+      expect(state.unseen).toEqual([3])
+      expect(studyStatus(input)).toEqual("learning")
+      expect(planSummary(input).newMeasures).toEqual(1)
+
+      // the queue still doesn't offer it again this sitting
+      expect(planNext(input).entry.measure).not.toEqual(3)
     })
 
     it("counts a start-apart hand item toward LADDER_CAP and mostOverduePiece's due count", function() {

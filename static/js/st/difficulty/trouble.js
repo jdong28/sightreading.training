@@ -89,10 +89,13 @@ function sentenceFor(signals) {
  * hand; others are ignored
  * @param {number[]} opts.measures the piece's printed bar numbers, in
  * score order (st/song_sections.measureNumberList)
- * @param {Object[]} [opts.flags] flags in force (st/difficulty/records.flagsInForce)
- * @returns {Object[]} {start, end, startIndex, endIndex, hand, signals, text},
- * in score order. startIndex/endIndex are positions in `measures`: exact for
- * a piece with no bar split in two by a repeat, the nearest bar otherwise
+ * @param {Object[]} [opts.flags] the bars to leave out, as flags: the
+ * suggestion list passes the flags in force
+ * (st/difficulty/records.flagsInForce), the review's evidence line none
+ * @returns {Object[]} {start, end, hand, signals, text}, in score order.
+ * start/end are printed bar numbers; the measure indices a flag needs come
+ * from the song (st/difficulty/decisions.promoteTroubleSpot), never from a
+ * position in `measures`
  */
 export function troubleSpots({pieceId, items = [], measures = [], flags = []}) {
   let order = new Map(measures.map((measure, idx) => [measure, idx]))
@@ -151,8 +154,6 @@ export function troubleSpots({pieceId, items = [], measures = [], flags = []}) {
   return suggestions.map(s => ({
     start: s.start,
     end: s.end,
-    startIndex: order.get(s.start),
-    endIndex: order.get(s.end),
     hand: s.hand,
     signals: s.signals,
     text: sentenceFor(s.signals),

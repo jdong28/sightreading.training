@@ -11,6 +11,8 @@
 // proposal's id, but never bring back a dismissed flag or duplicate an
 // accepted one.
 
+import {measureIndexRange} from "st/song_sections"
+
 export const DECISION_ACTIONS = ["accept", "edit", "dismiss", "add", "restore"]
 
 // the words an instructor's "what makes it hard" pills offer, the same
@@ -252,14 +254,18 @@ export function addDecision({record, flag, by = "", at, source = "teacher"}) {
 
 /**
  * Promotes a player's own trouble spot (st/difficulty/trouble) to a flag in
- * force, waiting for the teacher (decision 8).
- * @param {Object} opts {record, spot, by, at}
+ * force, waiting for the teacher (decision 8). A spot names printed bars, so
+ * the song turns them into the measure indices every other producer of a
+ * flag's range means (measureIndexRange, never a position in the printed
+ * numbers: a bar split around a repeat has one number over two indices).
+ * @param {Object} opts {record, spot, song, by, at}
  */
-export function promoteTroubleSpot({record, spot, by = "", at}) {
+export function promoteTroubleSpot({record, spot, song, by = "", at}) {
+  let [startIndex, endIndex] = measureIndexRange(song, spot.start, spot.end)
   return addDecision({
     record,
     flag: {
-      start: spot.start, end: spot.end, startIndex: spot.startIndex, endIndex: spot.endIndex,
+      start: spot.start, end: spot.end, startIndex, endIndex,
       hand: spot.hand || "both", level: 1, kinds: [],
       title: "Your trouble spot",
       reason: spot.text || "",
@@ -271,7 +277,7 @@ export function promoteTroubleSpot({record, spot, by = "", at}) {
 }
 
 // decisions sorted by at, stable (ties keep their log order)
-function byAt(decisions) {
+export function byAt(decisions) {
   return decisions
     .map((d, index) => ({d, index}))
     .sort((a, b) => a.d.at - b.d.at || a.index - b.index)
