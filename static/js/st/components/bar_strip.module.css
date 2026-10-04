@@ -20,6 +20,16 @@
     min-width: 1px;
 }
 
+.cells.picking .cell {
+    cursor: crosshair;
+    touch-action: none;
+}
+
+.cell.pick_anchor {
+    outline: 2px solid var(--salon-ink);
+    outline-offset: -1px;
+}
+
 .heat_0 { background: var(--salon-heat-0); }
 .heat_1 { background: var(--salon-heat-1); }
 .heat_2 { background: var(--salon-heat-2); }
@@ -83,6 +93,11 @@
             font-weight: 600;
             text-decoration: underline;
         }
+    }
+
+    /* a waiting proposal, over any level's own style */
+    &.waiting {
+        border-top-style: dotted;
     }
 }
 

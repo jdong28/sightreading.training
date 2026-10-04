@@ -24,9 +24,18 @@ function indexOfNumber(numbers, number) {
 // about how many axis numbers to show, evenly spaced
 const AXIS_MARKS = 5
 
-export function BarStrip({numbers, heat, flags, selectedId, onSelect}) {
+export function BarStrip({numbers, heat, flags, selectedId, onSelect, picking=false, onPick}) {
   let count = numbers.length
   if (!count) { return null }
+
+  let [pickAnchor, setPickAnchor] = React.useState(null)
+  let dragMoved = React.useRef(false)
+
+  // picking is a prop that can go false mid-pick (the review pane closing,
+  // or Cancel), so a stale anchor never lingers into the next time it opens
+  React.useEffect(() => {
+    if (!picking) { setPickAnchor(null) }
+  }, [picking])
 
   let axisIndices = new Set([0, count - 1])
   for (let i = 1; i < AXIS_MARKS - 1; i++) {
@@ -35,6 +44,34 @@ export function BarStrip({numbers, heat, flags, selectedId, onSelect}) {
 
   let pct = idx => `${idx / count * 100}%`
   let widthPct = (from, to) => `${(to - from + 1) / count * 100}%`
+
+  let commitPick = (a, b) => {
+    let from = Math.min(a, b)
+    let to = Math.max(a, b)
+    setPickAnchor(null)
+    onPick && onPick(numbers[from], numbers[to])
+  }
+
+  let cellDown = (e, idx) => {
+    if (!picking) { return }
+    e.currentTarget.setPointerCapture && e.currentTarget.setPointerCapture(e.pointerId)
+    dragMoved.current = false
+    if (pickAnchor == null) {
+      setPickAnchor(idx)
+    } else {
+      commitPick(pickAnchor, idx)
+    }
+  }
+
+  let cellMove = (e, idx) => {
+    if (!picking || pickAnchor == null) { return }
+    if (idx != pickAnchor) { dragMoved.current = true }
+  }
+
+  let cellUp = (e, idx) => {
+    if (!picking || pickAnchor == null) { return }
+    if (dragMoved.current) { commitPick(pickAnchor, idx) }
+  }
 
   return <div className={styles.strip}>
     <div className={styles.brackets}>
@@ -52,6 +89,7 @@ export function BarStrip({numbers, heat, flags, selectedId, onSelect}) {
           className={classNames(styles.bracket, LEVEL_CLASS[flag.level], {
             [styles.on]: on,
             [styles.stagger]: flagIdx % 2 == 1,
+            [styles.waiting]: flag.status == "waiting",
           })}
           style={{left: pct(from), width: widthPct(from, to)}}
           aria-label={`Passage ${romanNumeral(flag.num)}, ${bars}, ${LEVEL_WORDS[flag.level]}: ${flag.title}`}
@@ -61,9 +99,16 @@ export function BarStrip({numbers, heat, flags, selectedId, onSelect}) {
       })}
     </div>
 
-    <div className={styles.cells} role="presentation">
+    <div className={classNames(styles.cells, {[styles.picking]: picking})} role="presentation">
       {numbers.map((number, idx) =>
-        <span key={idx} className={classNames(styles.cell, styles[`heat_${heat[idx] || 0}`])} />
+        <span
+          key={idx}
+          className={classNames(styles.cell, styles[`heat_${heat[idx] || 0}`], {
+            [styles.pick_anchor]: picking && idx == pickAnchor,
+          })}
+          onPointerDown={e => cellDown(e, idx)}
+          onPointerMove={e => cellMove(e, idx)}
+          onPointerUp={e => cellUp(e, idx)} />
       )}
     </div>
 
@@ -79,10 +124,15 @@ BarStrip.propTypes = {
   numbers: types.array.isRequired,
   // one 0-4 heat level per entry of numbers (st/difficulty/sections.heat)
   heat: types.array.isRequired,
-  // the flags in force (st/difficulty/records.flagsInForce)
+  // the flags shown (st/difficulty/records.flagsInForce, or, in the review
+  // pane, reviewFlags): a waiting one's bracket is dotted
   flags: types.array.isRequired,
   selectedId: types.string,
   onSelect: types.func,
+  // pick mode (the review pane's "Mark a passage"): drag across cells, or
+  // tap the first then the last, to call onPick(fromNumber, toNumber)
+  picking: types.bool,
+  onPick: types.func,
 }
 
 export default BarStrip
