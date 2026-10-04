@@ -157,8 +157,9 @@ free practice), which the stylesheet decides from the empty slot. The score page
 is wider than the default (`max-width: 1240px`) and its rail is `clamp(260px, 26vw, 340px)` rather
 than the fixed 260px. The flagged passages' shaded score opens on demand in a right-hand pane,
 drawn only while it is open. The pane is its own scroller and the score is the tall thing in it, so
-the passage's detail and the "tap a shaded passage" legend stay above it: the detail sticks to the
-top of the pane beside the score, and stacks above it in a pane too narrow for two columns.
+the passage's detail — with the "tap a shaded passage" legend as its last line — stays out of that
+scroll: it sticks to the top of the pane beside the score, and stacks above it in a pane too narrow
+for two columns.
 
 ### 4. Session summary — `screens/salon-summary/SalonSummary.dc.html`
 

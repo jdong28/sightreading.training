@@ -245,8 +245,9 @@
    right-anchored): the whole piece shaded, beside the selected passage's
    detail at about 900px of pane width, else the detail stacked above it.
    The pane itself is the only scroller (the aside of programme_drawer.module
-   .css), and the score is the tall thing in it, so the detail sticks to the
-   top of the pane while it scrolls rather than leaving with it */
+   .css), and the score is the tall thing in it, so the detail, which carries
+   the pane's legend as its last line, sticks to the top of the pane while the
+   score scrolls rather than leaving with it */
 .pane_body {
     display: flex;
     flex-direction: column;
@@ -261,11 +262,6 @@
 .pane_score {
     min-width: 0;
     flex: 1;
-}
-
-.pane_score .legend {
-    margin-top: 0;
-    margin-bottom: 12px;
 }
 
 .pane_detail {

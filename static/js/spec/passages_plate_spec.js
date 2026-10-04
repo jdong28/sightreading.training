@@ -229,10 +229,10 @@ describe("the passages view (st/difficulty)", function() {
   })
 
   // the pane's own layout: the score is the tall thing in the pane's single
-  // scroller, so the passage detail and the tap legend stay above it rather
-  // than scrolling away with it (see .pane_detail, which also sticks to the
-  // top of the pane once there is room for the two columns)
-  it("keeps the passage detail and the legend above the pane's score", async function() {
+  // scroller, so the passage detail — which carries the tap legend as its
+  // last line — stays with the reader rather than scrolling away with the
+  // score (see .pane_detail, sticky once there is room for the two columns)
+  it("keeps the passage detail and its legend out of the pane's scrolling score", async function() {
     await drillPiece(workhorseScore({barCount: 48, denseAt: [5, 6, 7], alsoDenseAt: [40, 41, 42]}))
     renderScorePage()
     await waitFor(() => plate(), {message: "the passages plate"})
@@ -244,26 +244,32 @@ describe("the passages view (st/difficulty)", function() {
     await waitFor(() => overview.getAttribute("aria-busy") == "false", {message: "the overview to settle"})
 
     let top = el => el.getBoundingClientRect().top
+    let bottom = el => el.getBoundingClientRect().bottom
     let detail = pane.querySelector(`.${passagesStyles.pane_detail}`)
     let score = pane.querySelector(`.${passagesStyles.pane_score}`)
     let legend = pane.querySelector(`.${passagesStyles.legend}`)
     expect(detail).toBeTruthy()
     expect(legend.textContent).toContain("Tap a shaded passage")
 
-    // neither is below the score, stacked or side by side
-    expect(top(detail)).not.toBeGreaterThan(top(score))
-    expect(top(legend)).toBeLessThan(top(overview))
+    // the legend reads under the detail, in the detail's column, so the score
+    // is the only thing the pane scrolls
+    expect(detail.contains(legend)).toBe(true)
+    expect(score.contains(legend)).toBe(false)
+    expect(top(legend)).not.toBeLessThan(top(detail))
 
-    // and with room for the two columns the detail is sticky, so scrolling
-    // the score down to a late passage leaves it on screen. The spec window
-    // may be narrower than that layout's 900px, where the detail is simply
-    // first and scrolls with the rest
+    // and the detail is never below the score, stacked or side by side
+    expect(top(detail)).not.toBeGreaterThan(top(score))
+
+    // with room for the two columns the detail is sticky, so scrolling the
+    // score down to a late passage leaves it and its legend on screen. The
+    // spec window may be narrower than that layout's 900px, where the detail
+    // is simply first and scrolls with the rest
     if (window.matchMedia("(min-width: 900px)").matches) {
       expect(getComputedStyle(detail).position).toEqual("sticky")
       pane.scrollTop = pane.scrollHeight
       await waitFor(() => pane.scrollTop > 0, {message: "the pane to scroll"})
       expect(top(detail)).not.toBeLessThan(top(pane))
-      expect(top(detail)).toBeLessThan(pane.getBoundingClientRect().bottom)
+      expect(bottom(legend)).not.toBeGreaterThan(bottom(pane))
     }
   })
 
