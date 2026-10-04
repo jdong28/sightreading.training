@@ -375,6 +375,66 @@ describe("local store", function() {
           expect(store.annotation("a")).toBe(null)
           expect(store.annotations()).toEqual([])
         })
+
+        it("updateAnnotation serialises with another write, so a decision isn't lost to a concurrent analysis write", async function() {
+          let store = await open({persist})
+          await store.putPiece(pieceData("a", "First", 1000))
+          await store.putAnnotation(annotationFor("a"))
+
+          let analysisWrite = store.updateAnnotation("a", current =>
+            ({...current, runs: {...current.runs, score: {...current.runs.score, at: 2}}}))
+          let decisionWrite = store.updateAnnotation("a", current => ({
+            ...current,
+            decisions: [...current.decisions, {flagId: "x", action: "accept", at: 1, by: "", anchor: {bars: []}}],
+          }))
+
+          await Promise.all([analysisWrite, decisionWrite])
+
+          let stored = store.annotation("a")
+          expect(stored.runs.score.at).toEqual(2)
+          expect(stored.decisions.length).toEqual(1)
+        })
+
+        it("importLibrary unions a library's annotation decisions into an existing same-song record", async function() {
+          let store = await open({persist})
+          await store.putPiece(pieceData("a", "First", 1000))
+          let decision = {flagId: "x", action: "accept", at: 1, by: "", anchor: {bars: []}}
+          await store.putAnnotation(annotationFor("a", {decisions: [decision]}))
+
+          let data = {
+            format: LIBRARY_FORMAT, version: LIBRARY_VERSION,
+            pieces: [pieceData("a", "First", 1000)],
+            annotations: [annotationFor("a", {
+              decisions: [decision, {flagId: "y", action: "dismiss", at: 2, by: "", anchor: {bars: []}}],
+            })],
+          }
+
+          let report = await store.importLibrary(data)
+          expect(report.addedDecisions).toEqual(1)
+          expect(report.addedAnnotations).toEqual(0)
+          expect(store.annotation("a").decisions.length).toEqual(2)
+
+          // importing the very same library again adds nothing more
+          let again = await store.importLibrary(data)
+          expect(again.addedDecisions).toEqual(0)
+          expect(store.annotation("a").decisions.length).toEqual(2)
+        })
+
+        it("importLibrary adds a library's annotation whole for a piece with no record yet", async function() {
+          let store = await open({persist})
+          await store.putPiece(pieceData("a", "First", 1000))
+
+          let data = {
+            format: LIBRARY_FORMAT, version: LIBRARY_VERSION,
+            pieces: [pieceData("a", "First", 1000)],
+            annotations: [annotationFor("a")],
+          }
+
+          let report = await store.importLibrary(data)
+          expect(report.addedAnnotations).toEqual(1)
+          expect(report.addedDecisions).toEqual(0)
+          expect(store.annotation("a")).toEqual(annotationFor("a"))
+        })
       })
     }
   })
@@ -852,7 +912,7 @@ describe("local store", function() {
 
       let exported = await store.exportLibrary()
       expect(exported.version).toEqual(LIBRARY_VERSION)
-      expect(LIBRARY_VERSION).toEqual(9)
+      expect(LIBRARY_VERSION).toEqual(10)
       expect(exported.reviews).toEqual([jasmine.objectContaining({mode: "self", grade: GOOD})])
 
       let other = await open()

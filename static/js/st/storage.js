@@ -37,6 +37,7 @@ import {
   bytesToBase64, base64ToBytes
 } from "st/score_source"
 import {validAnnotation} from "st/difficulty/records"
+import {withDecisions} from "st/difficulty/decisions"
 
 export const DB_NAME = "sightreading"
 
@@ -78,7 +79,9 @@ export const LIBRARY_FORMAT = "sightreading-library"
 // 9: pieces carry song format 4 (a trill line trills every note it runs over,
 // see st/sheet_music_deck); older pieces are read as they are, with a trill
 // line trilling only its marked note until their score is imported again
-export const LIBRARY_VERSION = 9
+// 10: annotations may carry the instructor's decisions (st/difficulty/decisions);
+// version 9 libraries carry none and import as they are
+export const LIBRARY_VERSION = 10
 
 // sessions started within this many days are loaded into the cache
 export const RECENT_SESSION_DAYS = 30
@@ -204,6 +207,8 @@ const STORES = {
  * @property {number} addedReviews
  * @property {number} addedStudies studies of pieces that had none
  * @property {number} addedAnnotations annotations added to a piece without one
+ * @property {number} addedDecisions instructor decisions unioned into a piece's
+ * existing annotation
  * @property {number} importedSettings settings records, which replace this library's
  * @property {number} addedSessions
  * @property {number} existingSessions
@@ -864,6 +869,36 @@ export class LocalStore {
   }
 
   /**
+   * Adds or replaces a piece's flagged passages, built from the record as
+   * currently stored, inside the same write: build runs only once the
+   * writes queued before it are done, so reading this.annotation(pieceId)
+   * inside it never misses a write that landed in between, the way building
+   * from a record read beforehand could (see recordAttempt's builder for the
+   * same pattern). st/difficulty's own functions build the record itself;
+   * this only stores what they return.
+   * @param {string} pieceId
+   * @param {function(AnnotationRecord|null): AnnotationRecord} build
+   * @returns {Promise<AnnotationRecord>}
+   */
+  updateAnnotation(pieceId, build) {
+    return this.mutate(async () => {
+      let record = build(this.annotation(pieceId))
+      if (!validAnnotation(record) || !this.piece(pieceId)) {
+        throw new Error("Not a valid annotation")
+      }
+
+      await this.backend.write([{store: "annotations", put: record}])
+
+      this.cache = {
+        ...this.cache,
+        annotations: [...this.cache.annotations.filter(a => a.pieceId != pieceId), record],
+      }
+
+      return record
+    })
+  }
+
+  /**
    * The reviews of a piece or of a session, read from the database (they are
    * never cached), oldest first.
    * @param {{pieceId: string}|{sessionId: string}} query
@@ -1273,7 +1308,7 @@ export class LocalStore {
       let report = {
         addedPieces: 0, existingPieces: 0, invalidPieces: 0, fullPieces: 0, addedSources: 0,
         addedSections: 0, updatedSections: 0, addedReviews: 0, addedStudies: 0, addedAnnotations: 0,
-        importedSettings: 0, addedSessions: 0, existingSessions: 0,
+        addedDecisions: 0, importedSettings: 0, addedSessions: 0, existingSessions: 0,
       }
 
       let importedPieces = data.version < 2 ?
@@ -1432,14 +1467,31 @@ export class LocalStore {
         }
       }
 
+      // a library's annotation for a piece without one yet is added as a new
+      // record; for a piece that already has one its decisions are unioned
+      // into the local record (a teacher's work is never skipped because
+      // the device already analysed the piece itself)
       let annotations = [...this.cache.annotations]
       for (let record of Array.isArray(data.annotations) ? data.annotations : []) {
         let pieceId = validAnnotation(record) && sameSongIds.has(record.pieceId) && pieceIds.get(record.pieceId)
-        if (pieceId && !annotations.some(a => a.pieceId == pieceId)) {
+        if (!pieceId) { continue }
+
+        let idx = annotations.findIndex(a => a.pieceId == pieceId)
+        if (idx < 0) {
           let copy = {...record, pieceId}
           annotations.push(copy)
           ops.push({store: "annotations", put: copy})
           report.addedAnnotations += 1
+          continue
+        }
+
+        let before = annotations[idx]
+        let merged = withDecisions(before, record.decisions || [])
+        let added = merged.decisions.length - before.decisions.length
+        if (added > 0) {
+          annotations[idx] = merged
+          ops.push({store: "annotations", put: merged})
+          report.addedDecisions += added
         }
       }
 
