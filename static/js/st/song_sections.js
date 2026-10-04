@@ -27,7 +27,7 @@ function beatsPerMeasure(song) {
 
 // the score's bar number for each entry of metadata.measureStarts (imported
 // MusicXML sets both, see parseMusicXML), or null to number measures from 1
-function measureNumbers(song) {
+export function measureNumbers(song) {
   let starts = song.metadata && song.metadata.measureStarts
   let numbers = song.metadata && song.metadata.measureNumbers
 
@@ -59,6 +59,23 @@ export function measureNumberRange(song) {
   }
 
   return [1, countMeasures(song)]
+}
+
+// [startIndex, endIndex] of a [start, end] printed-number range, the inverse
+// measureNumberRange/measureNumberList need for a picker's numbers: a bar
+// split in two measure indices by a repeat has one printed number but spans
+// two indices, so start takes the first index of its number and end the
+// last of its, never numbers.indexOf alone (AGENTS.md: go through this
+// helper rather than indexing measureStarts by hand)
+export function measureIndexRange(song, start, end) {
+  let numbers = measureNumbers(song)
+  if (!numbers) {
+    return [start - 1, end - 1]
+  }
+
+  let startIndex = numbers.indexOf(start)
+  let endIndex = numbers.lastIndexOf(end)
+  return [startIndex, endIndex]
 }
 
 // the score's key signature in fifths at the given measure number, from

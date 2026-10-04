@@ -5,7 +5,7 @@ import {
 import {MultiTrackSong, SongNote} from "st/song_note_list"
 
 import {
-  extractSectionColumns, measureBeatRange, measureNumberRange, staffTracks
+  extractSectionColumns, measureBeatRange, measureNumberRange, measureIndexRange, staffTracks
 } from "st/song_sections"
 
 import {
@@ -256,6 +256,19 @@ describe("sheet music deck", function() {
 
       // a start before the first measure starts at the first measure
       expect(extractSectionColumns(song, {startMeasure: 0, endMeasure: 1})).toEqual([["C5"]])
+
+      // measure 2 is split across indices 1 and 2: the range's start takes
+      // the first of its number, its end the last
+      expect(measureIndexRange(song, 1, 1)).toEqual([0, 0])
+      expect(measureIndexRange(song, 2, 2)).toEqual([1, 2])
+      expect(measureIndexRange(song, 2, 3)).toEqual([1, 3])
+      expect(measureIndexRange(song, 1, 4)).toEqual([0, 4])
+    })
+
+    it("measureIndexRange falls back to number minus one without explicit numbering", function() {
+      let song = parseMusicXML(pianoScore({bars: [{upper: [{name: "C4"}]}, {upper: [{name: "D4"}]}]}))
+      delete song.metadata.measureNumbers
+      expect(measureIndexRange(song, 1, 2)).toEqual([0, 1])
     })
   })
 
