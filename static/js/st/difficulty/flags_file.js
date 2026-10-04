@@ -6,7 +6,7 @@
 // repeated, or a few corrected notes.
 
 import {measureNumbers} from "st/song_sections"
-import {validDecision} from "st/difficulty/decisions"
+import {validDecision, byAt} from "st/difficulty/decisions"
 import {alignBars, mapRange, GOOD_SIMILARITY} from "st/difficulty/align"
 
 export const FLAGS_FORMAT = "sightreading-flags"
@@ -157,70 +157,87 @@ function unstamped(decision) {
 }
 
 /**
- * Re-anchors a flags file's decisions onto a local piece: aligns the file's
- * fingerprint to the local record's (st/difficulty/align) and rewrites every
- * decision's ranges and anchor to the local copy's bars. A decision whose
- * range isn't well placed keeps the file's own ranges and is stamped
- * `unplaced`, to wait in the review rather than apply somewhere wrong.
+ * Re-anchors a flags file's decisions onto a local piece and merges them into
+ * its decision log: aligns the file's fingerprint to the local record's
+ * (st/difficulty/align) and rewrites every decision's ranges and anchor to the
+ * local copy's bars. A decision whose range isn't well placed keeps the file's
+ * own ranges and is stamped `unplaced`, to wait in the review rather than
+ * apply somewhere wrong.
+ *
+ * The log is a union keyed [flagId, at] (st/difficulty/decisions), so opening
+ * the same file twice writes each decision once. The one exception is a
+ * decision the log holds `unplaced` that this alignment places: its placement
+ * is replaced, so opening the file again once the matching edition is imported
+ * puts the flag in force rather than leaving it waiting beside a second copy
+ * of itself. The report counts what the merge actually changed, `already`
+ * being the decisions the log held as they are.
  * @param {Object} file a parsed flags file
  * @param {Object} record the local AnnotationRecord
  * @param {Object} song the local song model, for printed numbers
- * @returns {{decisions: Object[], report: {moved: number, unplaced: number, total: number}}}
+ * @returns {{decisions: Object[], report: {placed: number, moved: number,
+ * unplaced: number, already: number, total: number}}} decisions is the
+ * piece's whole log, the file's merged in, in `at` order
  */
 export function reanchorDecisions(file, record, song) {
   let alignment = alignBars(file.piece.fingerprint, record.fingerprint)
   let fileNumbers = file.piece.fingerprint.numbers
+  let stored = record.decisions || []
 
-  let decisions = []
-  let moved = 0
-  let unplaced = 0
+  let kept = new Set(stored)
+  let added = []
+  let report = {placed: 0, moved: 0, unplaced: 0, already: 0, total: file.decisions.length}
 
   for (let decision of file.decisions) {
     let range = decisionRange(decision)
-    if (!range) {
-      decisions.push(unstamped(decision))
-      continue
-    }
-
-    let mapped = mapRange(alignment, range.startIndex, range.endIndex)
-
-    if (mapped.place == "unplaced") {
-      unplaced++
-      decisions.push({
-        ...unstamped(decision),
-        unplaced: {
-          start: numberAt(fileNumbers, range.startIndex),
-          end: numberAt(fileNumbers, range.endIndex),
-        },
-      })
-      continue
-    }
-
+    let mapped = range ? mapRange(alignment, range.startIndex, range.endIndex) : null
+    let place = mapped ? mapped.place : "placed"
     let next = unstamped(decision)
-    if (next.of) { next.of = {...next.of, startIndex: mapped.startIndex, endIndex: mapped.endIndex} }
-    if (next.given) { next.given = withLocalRange(next.given, mapped.startIndex, mapped.endIndex, song) }
-    if (next.flag && Number.isInteger(next.flag.startIndex)) {
-      next.flag = withLocalRange(next.flag, mapped.startIndex, mapped.endIndex, song)
-    }
-    next.anchor = anchorFromFingerprint(record.fingerprint, mapped.startIndex, mapped.endIndex)
 
-    if (mapped.place == "moved") {
-      next.moved = {
+    if (place == "unplaced") {
+      next.unplaced = {
         start: numberAt(fileNumbers, range.startIndex),
         end: numberAt(fileNumbers, range.endIndex),
-        by: file.by || "",
       }
-      moved++
+    } else if (mapped) {
+      if (next.of) { next.of = {...next.of, startIndex: mapped.startIndex, endIndex: mapped.endIndex} }
+      if (next.given) { next.given = withLocalRange(next.given, mapped.startIndex, mapped.endIndex, song) }
+      if (next.flag && Number.isInteger(next.flag.startIndex)) {
+        next.flag = withLocalRange(next.flag, mapped.startIndex, mapped.endIndex, song)
+      }
+      next.anchor = anchorFromFingerprint(record.fingerprint, mapped.startIndex, mapped.endIndex)
+
+      if (place == "moved") {
+        next.moved = {
+          start: numberAt(fileNumbers, range.startIndex),
+          end: numberAt(fileNumbers, range.endIndex),
+          by: file.by || "",
+        }
+      }
+
+      if (next.of) {
+        let local = record.proposals.find(p => p.source == next.of.source &&
+          p.startIndex == next.of.startIndex && p.endIndex == next.of.endIndex)
+        if (local) { next.flagId = local.id }
+      }
     }
 
-    if (next.of) {
-      let local = record.proposals.find(p => p.source == next.of.source &&
-        p.startIndex == next.of.startIndex && p.endIndex == next.of.endIndex)
-      if (local) { next.flagId = local.id }
+    // the same decision this log already holds: under the file's own flagId
+    // while an earlier import left it unplaced, under the local proposal's
+    // once an import placed it
+    let twin = stored.find(d => d.at == decision.at &&
+      (d.flagId == decision.flagId || d.flagId == next.flagId))
+
+    if (twin) {
+      if (!twin.unplaced || place == "unplaced") {
+        report.already++
+        continue
+      }
+      kept.delete(twin)
     }
 
-    decisions.push(next)
+    report[place]++
+    added.push(next)
   }
 
-  return {decisions, report: {moved, unplaced, total: file.decisions.length}}
+  return {decisions: byAt([...kept, ...added]), report}
 }

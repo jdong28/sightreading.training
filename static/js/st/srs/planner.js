@@ -521,9 +521,7 @@ export function planState({
   let startApartOnLadder = [...startApartIntros.values()]
     .filter(intro => intro.item && scheduled(intro.item) && ON_LADDER.includes(intro.item.state))
   let startApartLadderMeasures = new Set(startApartOnLadder.map(intro => intro.measure))
-  // a bar resting is offered no more in the sitting, hands apart or together
-  unseen = unseen.filter(measure =>
-    !startApartLadderMeasures.has(measure) && !resting.has(measure))
+  unseen = unseen.filter(measure => !startApartLadderMeasures.has(measure))
   ladder = [...ladder, ...startApartOnLadder
     .filter(intro => !resting.has(intro.measure))
     .map(intro => ({
@@ -560,7 +558,7 @@ const isRetry = item => ON_LADDER.includes(item.state) && item.lastGrade == AGAI
 // the queue in order, as lists of candidates: never empty while the piece
 // has a bar awake or a measure to learn
 function candidates(state, {avoid}) {
-  let {now, settings, order, recent, ladder, review, dueReviews, unseen, sitting} = state
+  let {now, settings, order, recent, ladder, review, dueReviews, unseen, resting, sitting} = state
   let recall = slot => predictedRecall(slot.item, now, settings)
   let measureOrder = (a, b) => order.get(a.measure) - order.get(b.measure)
   let other = slot => !avoid || !recent.has(slot.id) || slot.retry
@@ -581,7 +579,10 @@ function candidates(state, {avoid}) {
 
   let waiting = ladder.filter(other).sort((a, b) => a.due - b.due || measureOrder(a, b))
 
-  let newMeasures = unseen.map(measure => newSlot(state, measure)).filter(other)
+  // a bar resting is offered no more in the sitting, hands apart or together,
+  // though it is still a measure the piece has left to learn (unseen)
+  let newMeasures = unseen.filter(measure => !resting.has(measure))
+    .map(measure => newSlot(state, measure)).filter(other)
 
   let idle = !rungs.length && !due.length && !early.length && !runThrough.length
   let cap = idle ? IDLE_LADDER_CAP : LADDER_CAP
@@ -633,11 +634,13 @@ export function planNext(input) {
     [next] = candidates(state, {avoid: false})
   }
 
-  // a piece whose every measure waits past the target: its first new one,
-  // unless every bar it has in progress rests until the next sitting
+  // a piece whose every measure waits past the target: its first new one
+  // still offered this sitting, unless every bar it has in progress rests
+  // until the next sitting
   let allResting = state.resting.size > 0 && !state.awake.length
-  if (!next && state.unseen.length && !allResting) {
-    next = {reason: NEW, slot: newSlot(state, state.unseen[0])}
+  let offerable = state.unseen.filter(measure => !state.resting.has(measure))
+  if (!next && offerable.length && !allResting) {
+    next = {reason: NEW, slot: newSlot(state, offerable[0])}
   }
 
   if (!next) {

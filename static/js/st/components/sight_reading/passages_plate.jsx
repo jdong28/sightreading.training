@@ -242,7 +242,8 @@ export class PassagesPlate extends React.Component {
   // review pane's own Flag these bars does
   flagTroubleSpot(spot) {
     let piece = sheetMusicPiece(this.props.settings)
-    if (!piece) { return }
+    let song = piece && pieceSong(piece)
+    if (!piece || !song) { return }
 
     let store = this.getStore()
     let fail = text => { if (!this.unmounted) { this.setState({troubleError: text}) } }
@@ -253,7 +254,7 @@ export class PassagesPlate extends React.Component {
         return
       }
 
-      let decision = promoteTroubleSpot({record, spot, by: "", at: Date.now()})
+      let decision = promoteTroubleSpot({record, spot, song, by: "", at: Date.now()})
       return decideFlags(piece.id, [decision], store).then(result => {
         if (result.error) {
           fail(result.error)

@@ -920,13 +920,14 @@ describe("the passages view (st/difficulty)", function() {
       expect(data.decisions.length).toBeGreaterThan(0)
     })
 
-    // bar 1 practised badly enough for st/difficulty/trouble to suggest it
-    let recordTroubleBar = async piece => {
+    // a bar practised badly enough for st/difficulty/trouble to read it as
+    // trouble: three agains and two lapses
+    let recordTroubleBar = async (piece, measure = 1) => {
       let now = Date.now()
-      let barId = `${piece.id}:both:1-1`
+      let barId = `${piece.id}:both:${measure}-${measure}`
       await store.recordAttempt({
         item: {
-          id: barId, pieceId: piece.id, hand: "both", startMeasure: 1, endMeasure: 1,
+          id: barId, pieceId: piece.id, hand: "both", startMeasure: measure, endMeasure: measure,
           level: "bar", state: "learning", step: 0, due: now, last: now, s: 1, d: 5,
           reps: 3, lapses: 2, streak: 0, lastGrade: 1, hits: 1, misses: 3, attempts: 3,
           lastPracticed: now, elapsedMs: 3000, algo: 1, createdAt: now - 1000,
@@ -954,6 +955,25 @@ describe("the passages view (st/difficulty)", function() {
       openReview()
       await waitFor(() => reviewPane(), {message: "the review pane"})
       expect(reviewPane().textContent).toContain("Waiting for you")
+    })
+
+    it("a queue card shows the player's own evidence for a bar the teacher has already flagged", async function() {
+      let piece = await drillPiece(workhorseScore())
+      let flag = flagsInForce(store.annotation(piece.id))[0]
+      await recordTroubleBar(piece, flag.start)
+
+      mountPlate(piece)
+      await waitFor(() => plate(), {message: "the plate"})
+
+      // the suggestions leave the bar out, since it is flagged already
+      expect(plate().textContent).not.toContain("Your trouble spots")
+
+      openReview()
+      let pane = await waitFor(() => reviewPane(), {message: "the review pane"})
+      let line = await waitFor(() => pane.querySelector(`.${reviewStyles.trouble_line}`),
+        {message: "the evidence line"})
+      expect(line.textContent).toContain("From your playing:")
+      expect(line.textContent).toContain("slipped back 2 times")
     })
 
     it("says so on the rail when a trouble spot can't be flagged", async function() {

@@ -1,4 +1,5 @@
 import {parseMusicXML} from "st/musicxml"
+import {measureNumberList} from "st/song_sections"
 import {pianoScore} from "spec/helpers"
 
 import {hash8, fingerprint, exactRepeats, FINGERPRINT_ALGO} from "st/difficulty/fingerprints"
@@ -836,9 +837,10 @@ describe("st/difficulty", () => {
       expect(added.sources).toEqual(["teacher"])
 
       let promote = promoteTroubleSpot({
-        record, by: "", at: 20,
-        spot: {start: 3, end: 3, startIndex: 2, endIndex: 2, hand: "lower", text: "Slow and uneven"},
+        record, song: workhorseSong(), by: "", at: 20,
+        spot: {start: 3, end: 3, hand: "lower", text: "Slow and uneven"},
       })
+      expect([promote.flag.startIndex, promote.flag.endIndex]).toEqual([2, 2])
       record = withDecisions(record, [promote])
       let promoted = flagsInForce(record).find(f => f.id == promote.flagId)
       expect(promoted.status).toEqual("waiting")
@@ -1188,6 +1190,69 @@ describe("st/difficulty", () => {
       let {decisions: unplacedDecisions, report: unplacedReport} = reanchorDecisions(file, unrelatedRecord, restSong(20))
       expect(unplacedReport.unplaced).toEqual(1)
       expect(unplacedDecisions[0].unplaced.start).toEqual(hardest.start)
+    })
+
+    it("reanchorDecisions places a decision the log holds unplaced, and reports a second open already there", () => {
+      let song = parseMusicXML(pianoScore({bars: barsWithDense([9, 10, 11])}))
+      let record = annotationWith(null, "p1", analyzePiece({song, source: null, at: 1}))
+      let hardest = flagsInForce(record).find(f => f.start <= 9 && f.end >= 11)
+      let accepted = withDecisions(record, [acceptDecision({record, flag: hardest, by: "Ms Laurent", at: 10})])
+      let file = flagsFileFor(accepted, {title: "t"}, song, {by: "Ms Laurent", at: 100})
+
+      // the student's edition doesn't match: the decision waits for a place
+      let otherSong = restSong(20)
+      let other = annotationWith(null, "p2", analyzePiece({song: otherSong, source: null, at: 2}))
+      let first = reanchorDecisions(file, other, otherSong)
+      expect(first.report).toEqual({placed: 0, moved: 0, unplaced: 1, already: 0, total: 1})
+
+      let waiting = {...other, decisions: first.decisions}
+      expect(flagsInForce(waiting).some(f => f.id == hardest.id)).toBe(false)
+
+      // opening the same file again writes nothing and says so
+      let again = reanchorDecisions(file, waiting, otherSong)
+      expect(again.report).toEqual({placed: 0, moved: 0, unplaced: 0, already: 1, total: 1})
+      expect(again.decisions).toEqual(first.decisions)
+
+      // the matching edition arrives and the file now places the decision:
+      // the waiting one is replaced, not left beside a second copy of itself
+      let matched = reanchorDecisions(file, {...record, decisions: first.decisions}, song)
+      expect(matched.report).toEqual({placed: 1, moved: 0, unplaced: 0, already: 0, total: 1})
+      expect(matched.decisions.length).toEqual(1)
+
+      let inForce = flagsInForce({...record, decisions: matched.decisions})
+      expect(inForce.filter(f => f.id == hardest.id).length).toEqual(1)
+      expect(inForce.find(f => f.id == hardest.id).status).toEqual("accepted")
+
+      // and a third open has nothing left to place
+      let third = reanchorDecisions(file, {...record, decisions: matched.decisions}, song)
+      expect(third.report).toEqual({placed: 0, moved: 0, unplaced: 0, already: 1, total: 1})
+      expect(third.decisions).toEqual(matched.decisions)
+    })
+
+    it("a promoted trouble spot keeps its bars through a round trip on a score with a bar split around a repeat", () => {
+      // the second half of bar 5 is its own measure index under the same
+      // printed number, so every number after it is one index further on
+      let song = parseMusicXML(pianoScore({bars: barsWithDense([9, 10, 11])}).replace(
+        '<measure number="6">', '<measure number="5" implicit="yes">'))
+      let record = annotationWith(null, "p1", analyzePiece({song, source: null, at: 1}))
+
+      let lapsed = {
+        pieceId: "p1", hand: "both", startMeasure: 7, endMeasure: 7,
+        reps: 3, lapses: 2, d: 0, recent: [],
+      }
+      let [spot] = troubleSpots({pieceId: "p1", items: [lapsed], measures: measureNumberList(song)})
+      expect([spot.start, spot.end]).toEqual([7, 7])
+
+      record = withDecisions(record, [promoteTroubleSpot({record, spot, song, by: "", at: 10})])
+      let promoted = flagsInForce(record).find(f => f.title == "Your trouble spot")
+      expect([promoted.start, promoted.end]).toEqual([7, 7])
+
+      // the same copy opens the flags file it exported: the flag stays put
+      let file = flagsFileFor(record, {title: "t"}, song, {by: "", at: 20})
+      let {data} = readFlagsFile(JSON.stringify(file))
+      let {decisions} = reanchorDecisions(data, {...record, decisions: []}, song)
+      let reopened = flagsInForce({...record, decisions}).find(f => f.title == "Your trouble spot")
+      expect([reopened.start, reopened.end]).toEqual([7, 7])
     })
 
     it("reanchorDecisions drops the stamps of the import before it, so a round-tripped flag places cleanly", () => {
