@@ -35,6 +35,13 @@
     flex-direction: column;
     overflow: auto;
     overscroll-behavior: contain;
+    /* the scrollbar's space is reserved whether or not the content overflows,
+       so a column measured before the drawer has anything tall in it (the
+       score pane's overview, see observePaneWidth) is measured at its final
+       width; scroll-padding keeps the browser's own scroll-into-view, on
+       focus or otherwise, clear of the pinned header */
+    scrollbar-gutter: stable;
+    scroll-padding-top: var(--drawer-header-height);
     background: var(--salon-paper);
     border-right: 1px solid var(--salon-rule-strong);
     box-shadow: 26px 0 54px -30px rgba(36,31,24,.45);
