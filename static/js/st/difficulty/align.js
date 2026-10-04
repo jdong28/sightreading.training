@@ -150,7 +150,7 @@ function nearestMapped(alignment, from, limit, dir) {
 // a range is well matched when enough of its bars aligned with good
 // similarity: report §3.3's "mostly the same material", not every bar exact
 const PLACED_COVERAGE = 0.7
-const GOOD_SIMILARITY = 0.6
+export const GOOD_SIMILARITY = 0.6
 
 /**
  * Where a decided range of fromFp's bars lands in toFp's.
