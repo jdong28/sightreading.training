@@ -12,6 +12,7 @@ import {
   validDecision, reviewFlags, withDecisions, startApartBars,
   acceptDecision, editDecision, dismissDecision, restoreDecision, addDecision, promoteTroubleSpot,
 } from "st/difficulty/decisions"
+import {barSimilarity, alignBars, mapRange} from "st/difficulty/align"
 
 // a quiet 16-bar piece (quarter notes, both hands, all in C major) with a
 // dense run of sixteenths in both hands at bars 9-11, the workhorse for the
@@ -983,6 +984,120 @@ describe("st/difficulty", () => {
       let afterDismiss = startApartBars(flagsInForce(record))
       expect(afterDismiss.has(5)).toBeFalsy()
       expect(afterDismiss.get(20)).toEqual(["upper", "lower"])
+    })
+  })
+
+  describe("align", () => {
+    // a bar with its own tiny universe of pitch-class-shaped tokens (not
+    // real pitch classes, just distinct values), so two different bars
+    // never collide by accident the way small mod-12 numbers would
+    function uniqueBar(id, size = 5) {
+      let base = id * 100
+      let pcs = Array.from({length: size}, (_, i) => base + i)
+      return {hash: `h${id}`, sketch: {upper: `0:${pcs.join(",")}`, lower: ""}}
+    }
+
+    function fp(bars, opts = {}) {
+      return {
+        algo: opts.algo ?? 1,
+        numbersHash: opts.numbersHash ?? "n",
+        bars: bars.map(b => b.hash),
+        sketches: bars.map(b => b.sketch),
+      }
+    }
+
+    it("aligns identical fingerprints as the identity; every range placed and not moved", () => {
+      let bars = [1, 2, 3, 4, 5, 6, 7, 8].map(id => uniqueBar(id))
+      let alignment = alignBars(fp(bars), fp(bars))
+      expect(alignment).toEqual(bars.map((_, i) => ({to: i, sim: 1})))
+
+      expect(mapRange(alignment, 2, 5)).toEqual({place: "placed", startIndex: 2, endIndex: 5})
+    })
+
+    it("a bar inserted at the start shifts every later range by one index, moved from the old range", () => {
+      let base = [1, 2, 3, 4, 5, 6, 7, 8].map(id => uniqueBar(id))
+      let fromFp = fp(base)
+      let toFp = fp([uniqueBar(99), ...base])
+
+      let alignment = alignBars(fromFp, toFp)
+      expect(alignment).toEqual(base.map((_, i) => ({to: i + 1, sim: 1})))
+
+      expect(mapRange(alignment, 2, 5)).toEqual({place: "moved", startIndex: 3, endIndex: 6})
+    })
+
+    it("an 8-bar repeat written out in the middle leaves ranges before it alone and shifts ranges after it by 8", () => {
+      let before = [1, 2, 3, 4].map(id => uniqueBar(id))
+      let repeat = [5, 6, 7, 8, 9, 10, 11, 12].map(id => uniqueBar(id))
+      let after = [13, 14].map(id => uniqueBar(id))
+
+      // fromFp: the repeat played once (eg. a da capo); toFp: written out
+      // twice in full, an 8-bar insertion
+      let fromFp = fp([...before, ...repeat, ...after])
+      let toFp = fp([...before, ...repeat, ...repeat, ...after])
+
+      let alignment = alignBars(fromFp, toFp)
+
+      for (let i = 0; i < before.length; i++) {
+        expect(alignment[i]).toEqual({to: i, sim: 1})
+      }
+
+      let afterStart = before.length + repeat.length
+      for (let i = 0; i < after.length; i++) {
+        expect(alignment[afterStart + i]).toEqual({to: before.length + 2 * repeat.length + i, sim: 1})
+      }
+
+      let range = mapRange(alignment, afterStart, afterStart + after.length - 1)
+      expect(range.place).toEqual("moved")
+      expect(range.startIndex).toEqual(before.length + 2 * repeat.length)
+    })
+
+    it("a corrected note still aligns by sketch similarity, below 1 but high enough to place", () => {
+      let base = [1, 2, 3, 4].map(id => uniqueBar(id))
+      let fromFp = fp(base)
+
+      let original = uniqueBar(3)
+      let changedPcs = original.sketch.upper.split(":")[1].split(",").map(Number)
+      changedPcs[changedPcs.length - 1] = 999999 // one note corrected
+      let changed = {hash: "h3-corrected", sketch: {upper: `0:${changedPcs.join(",")}`, lower: ""}}
+
+      let toBars = [...base]
+      toBars[2] = changed
+      let toFp = fp(toBars)
+
+      let alignment = alignBars(fromFp, toFp)
+      expect(alignment[2].to).toEqual(2)
+      expect(alignment[2].sim).toBeGreaterThanOrEqual(0.6)
+      expect(alignment[2].sim).toBeLessThan(1)
+
+      expect(mapRange(alignment, 1, 3)).toEqual({place: "placed", startIndex: 1, endIndex: 3})
+    })
+
+    it("an unrelated piece aligns with nothing; every range is unplaced", () => {
+      let fromFp = fp([1, 2, 3, 4, 5, 6, 7, 8].map(id => uniqueBar(id)))
+      let toFp = fp([101, 102, 103, 104, 105, 106, 107, 108].map(id => uniqueBar(id)))
+
+      // a forced pairing (however bad) can still score better than two
+      // independent gaps, so this doesn't come back all null; what matters
+      // is that nothing clears the similarity a placed range needs
+      let alignment = alignBars(fromFp, toFp)
+      expect(alignment.every(e => e == null || e.sim < 0.6)).toBeTruthy()
+      expect(mapRange(alignment, 0, 7)).toEqual({place: "unplaced"})
+
+      // the fraction a flags-file importer would read as fileMatch, well
+      // under the 50% threshold it refuses below (st/difficulty/flags_file)
+      let mappedFraction = alignment.filter(e => e && e.sim >= 0.6).length / alignment.length
+      expect(mappedFraction).toBeLessThan(0.5)
+    })
+
+    it("barSimilarity is 1 for an exact hash match or two empty bars, and the Jaccard index of sketch tokens otherwise", () => {
+      let a = uniqueBar(1)
+      expect(barSimilarity(a, a)).toEqual(1)
+      expect(barSimilarity({hash: "e1", sketch: {}}, {hash: "e2", sketch: {}})).toEqual(1)
+      expect(barSimilarity({hash: "e1", sketch: {}}, uniqueBar(1))).toEqual(0)
+
+      let x = {hash: "x", sketch: {upper: "0:1,2,3,4", lower: ""}}
+      let y = {hash: "y", sketch: {upper: "0:1,2,3,5", lower: ""}}
+      expect(barSimilarity(x, y)).toBeCloseTo(3 / 5, 5)
     })
   })
 })
