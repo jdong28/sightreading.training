@@ -15,7 +15,7 @@ import {
 } from "st/sheet_music_deck"
 
 import {flagsInForce} from "st/difficulty/records"
-import {acceptDecision, reviewFlags} from "st/difficulty/decisions"
+import {acceptDecision, dismissDecision, reviewFlags} from "st/difficulty/decisions"
 
 import {
   pieceSection, pieceSectionMeasures, sheetMusicSection, sheetMusicPieceSettings, sheetMusicStaffFor,
@@ -945,6 +945,32 @@ describe("sheet music deck", function() {
       expect(third.message).toContain("0 placed")
       expect(third.message).toContain("1 already in your copy")
       expect(reviewFlags(other.annotation(theirs.id)).filter(f => f.id == flag.id).length).toEqual(1)
+
+      await other.close()
+    })
+
+    it("keeps a decision written while the file was opening", async function() {
+      let {piece} = await importMusicXMLPiece("workhorse.musicxml", workhorseScore(), store)
+      let flag = flagsInForce(store.annotation(piece.id))[0]
+      await decideFlags(piece.id,
+        [acceptDecision({record: store.annotation(piece.id), flag, by: "Ms Laurent", at: 1})], store)
+      let exported = (await exportFlagsFile(piece.id, {by: "Ms Laurent"}, store)).text
+
+      let other = await openTestStore()
+      let {piece: theirs} = await importMusicXMLPiece("workhorse.musicxml", workhorseScore(), other)
+      let theirFlag = flagsInForce(other.annotation(theirs.id))[0]
+
+      // the open reads the record and writes it back as two steps on the
+      // store's write queue, so a decision made in between must survive it
+      let importing = importFlagsFile(exported, other, {pieceId: theirs.id})
+      let deciding = decideFlags(theirs.id,
+        [dismissDecision({record: other.annotation(theirs.id), flag: theirFlag, by: "", at: 2})], other)
+
+      let [imported] = await Promise.all([importing, deciding])
+      expect(imported.error).toBeUndefined()
+
+      let actions = other.annotation(theirs.id).decisions.map(d => d.action).sort()
+      expect(actions).toEqual(["accept", "dismiss"])
 
       await other.close()
     })

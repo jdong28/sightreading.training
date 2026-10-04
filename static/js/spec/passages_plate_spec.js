@@ -20,6 +20,7 @@ import reviewStyles from "st/components/sight_reading/review_pane.module.css"
 import barStripStyles from "st/components/bar_strip.module.css"
 
 import {flagsInForce} from "st/difficulty/records"
+import {reviewFlags, withDecisions} from "st/difficulty/decisions"
 
 import {openTestStore, pianoScore} from "spec/helpers"
 
@@ -1048,6 +1049,74 @@ describe("the passages view (st/difficulty)", function() {
         {message: "the evidence line"})
       expect(line.textContent).toContain("From your playing:")
       expect(line.textContent).toContain("slipped back 2 times")
+    })
+
+    it("the editor places an unplaced flag at the bars it shows, not the exporting copy's", async function() {
+      let piece = await drillPiece(workhorseScore())
+
+      // a teacher's flag the import couldn't place: its bars are their copy's,
+      // well past this 16-bar one
+      let far = {
+        flagId: "teacher:far", action: "add", at: 1, by: "Ms Laurent", source: "teacher",
+        anchor: {bars: []},
+        flag: {
+          start: 40, end: 42, startIndex: 39, endIndex: 41, hand: "both", level: 2, kinds: [],
+          title: "Far passage", reason: "", tip: "", apart: false,
+        },
+        unplaced: {start: 40, end: 42},
+      }
+      await store.updateAnnotation(piece.id, current => withDecisions(current, [far]))
+
+      mountPlate(piece)
+      await waitFor(() => plate(), {message: "the plate"})
+
+      openReview()
+      let pane = await waitFor(() => reviewPane(), {message: "the review pane"})
+      expect(pane.textContent).toContain("Couldn't find these bars in your copy")
+
+      clickButton(pane, "Place it")
+      let startBar = await waitFor(() => reviewPane().querySelector('input[aria-label="start bar"]'),
+        {message: "the editor"})
+      let endBar = reviewPane().querySelector('input[aria-label="end bar"]')
+
+      // the editor shows bars this copy has...
+      expect([startBar.value, endBar.value]).toEqual(["16", "16"])
+
+      clickButton(reviewPane(), "Save")
+
+      // ...and Save writes exactly those
+      let placed = await waitFor(() =>
+        flagsInForce(store.annotation(piece.id)).find(f => f.id == "teacher:far"),
+        {message: "the placed flag"})
+      expect([placed.start, placed.end]).toEqual([16, 16])
+    })
+
+    it("the review's own writes analyse the piece first, so a decision isn't lost", async function() {
+      // a piece in the deck whose analysis hasn't landed: the plate stays up
+      // for the player's trouble spot alone
+      let xml = workhorseScore()
+      let piece = await store.putPiece({
+        id: "unanalysed", title: "Workhorse", song: songToJSON(parseMusicXML(xml)), importedAt: Date.now(),
+      }, {source: xml})
+      window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+        piece: piece.id, hand: "both hands", measuresPerCard: "all", practice: "free practice",
+      }))
+      await recordTroubleBar(piece)
+      expect(store.annotation(piece.id)).toBe(null)
+
+      // the plate's own analysis is still in flight through the store's write
+      // queue, so the review's write is the one that has to ensure it
+      mountPlate(piece)
+      expect(plate()).toBeTruthy()
+      openReview()
+      clickButton(reviewPane(), "Flag these bars")
+      expect(store.annotation(piece.id)).toBe(null)
+
+      let promoted = await waitFor(() =>
+        flagsInForce(store.annotation(piece.id)).find(f => f.sources.includes("player")),
+        {message: "the promoted trouble spot"})
+      expect(promoted.status).toEqual("waiting")
+      expect(reviewPane().querySelector(`.${reviewStyles.message}`)).toBe(null)
     })
 
     it("says so on the rail when a trouble spot can't be flagged", async function() {

@@ -958,6 +958,18 @@ describe("st/difficulty", () => {
       })).toBeTruthy()
 
       expect(validAnnotation({...record, decisions: [{...base, action: "bogus"}]})).toBeFalsy()
+
+      // an edit's override may leave a range out, but never leave half of it
+      // or fill it with anything but two ordered integers: startApartBars
+      // walks the printed one and anchorFor slices the indices
+      let edit = {...base, action: "edit"}
+      expect(validDecision({...edit, flag: {title: "Renamed"}})).toBeTruthy()
+      expect(validDecision({...edit, flag: {start: 1, end: 3}})).toBeTruthy()
+      expect(validDecision({...edit, flag: {start: 1}})).toBeFalsy()
+      expect(validDecision({...edit, flag: {start: 3, end: 1}})).toBeFalsy()
+      expect(validDecision({...edit, flag: {start: 1, end: 1.5}})).toBeFalsy()
+      expect(validDecision({...edit, flag: {startIndex: 0}})).toBeFalsy()
+      expect(validAnnotation({...record, decisions: [{...edit, flag: {start: 1}}]})).toBeFalsy()
     })
 
     it("startApartBars gives the hand(s) of every flag in force ticked apart; dismissed gives nothing", () => {
@@ -1164,6 +1176,58 @@ describe("st/difficulty", () => {
       let withBad = {...valid, decisions: [{bogus: true}, ...valid.decisions]}
       let {data} = readFlagsFile(JSON.stringify(withBad))
       expect(data.decisions).toEqual(valid.decisions)
+    })
+
+    it("readFlagsFile drops a decision whose range falls outside the file's own fingerprint", () => {
+      let song = workhorseSong()
+      let record = annotationWith(null, "p1", analyzePiece({song, source: null, at: 1}))
+      let flag = flagsInForce(record)[0]
+      let kept = acceptDecision({record, flag, by: "Ms Laurent", at: 10})
+      let file = flagsFileFor(withDecisions(record, [kept]), {title: "t"}, song, {by: "", at: 1})
+      let fp = file.piece.fingerprint
+      let lastNumber = fp.numbers[fp.bars.length - 1]
+
+      // mapRange walks the index range and startApartBars the printed one, so
+      // a range past the file's own bars would run to its end
+      let decisions = [
+        kept,
+        {...kept, flagId: "past-the-end", at: 11,
+          of: {source: "score", startIndex: 0, endIndex: fp.bars.length}},
+        {...kept, flagId: "negative", at: 12,
+          of: {source: "score", startIndex: -1, endIndex: 2}},
+        {...kept, flagId: "printed-past-the-end", at: 13, action: "edit",
+          flag: {start: 1, end: lastNumber + 1}},
+      ]
+
+      let {data} = readFlagsFile(JSON.stringify({...file, decisions}))
+      expect(data.decisions.map(d => d.flagId)).toEqual([kept.flagId])
+
+      // so the alignment is never handed one
+      expect(reanchorDecisions(data, record, song).report.total).toEqual(1)
+    })
+
+    it("re-anchors a decision's printed bars too, not only the range it mapped from", () => {
+      let song = parseMusicXML(pianoScore({bars: barsWithDense([9, 10, 11])}))
+      let record = annotationWith(null, "p1", analyzePiece({song, source: null, at: 1}))
+      let hardest = flagsInForce(record).find(f => f.start <= 9 && f.end >= 11)
+
+      // an edit whose own override names its bars in print alone, so the
+      // range it is mapped from is the proposal reference's
+      let edited = editDecision({record, flag: hardest, overrides: {level: 3}, by: "", at: 10})
+      edited.flag = {start: hardest.start, end: hardest.end, level: 3}
+      let file = flagsFileFor(withDecisions(record, [edited]), {title: "t"}, song, {by: "", at: 100})
+
+      // the local copy gained a bar at the start: every later bar shifts by 1
+      let withPickupSong = parseMusicXML(pianoScore({bars: [quietBar(), ...barsWithDense([9, 10, 11])]}))
+      let local = annotationWith(null, "p2", analyzePiece({song: withPickupSong, source: null, at: 2}))
+
+      let {data} = readFlagsFile(JSON.stringify(file))
+      let {decisions} = reanchorDecisions(data, local, withPickupSong)
+
+      expect(decisions[0].flag.start).toEqual(hardest.start + 1)
+      expect(decisions[0].flag.end).toEqual(hardest.end + 1)
+      expect(decisions[0].flag.startIndex).toEqual(hardest.startIndex + 1)
+      expect(decisions[0].flag.level).toEqual(3)
     })
 
     it("reanchorDecisions maps a decision's ranges onto the local copy, stamping moved or unplaced", () => {

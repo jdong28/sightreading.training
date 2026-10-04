@@ -623,9 +623,12 @@ export async function importFlagsFile(text, store=getAppStore(), {pieceId}={}) {
     }
 
     let song = pieceSong(piece)
-    let record = store.annotation(piece.id)
-    let {decisions, report} = reanchorDecisions(file, record, song)
-    await store.updateAnnotation(piece.id, current => ({...current, decisions}))
+    let report = null
+    await store.updateAnnotation(piece.id, current => {
+      let merged = reanchorDecisions(file, current, song)
+      report = merged.report
+      return {...current, decisions: merged.decisions}
+    })
 
     let who = file.by ? `${file.by}’s` : "the"
     let message = `Opened ${who} flags for “${piece.title}”: ` +

@@ -75,6 +75,14 @@ function validGiven(given) {
     validRange(given.start, given.end) && validRange(given.startIndex, given.endIndex)
 }
 
+// a range an override may leave out, but never leave half of or fill with
+// anything but two ordered integers: every consumer walks or slices it
+// (startApartBars, anchorFor, the flags file's mapRange)
+function validOptionalRange(start, end) {
+  if (start === undefined && end === undefined) { return true }
+  return validRange(start, end)
+}
+
 // an "edit" decision's flag is a partial override: only the editable keys,
 // none of them required. An "add" decision's is the whole flag.
 function validFlagObject(flag, {whole}) {
@@ -83,7 +91,10 @@ function validFlagObject(flag, {whole}) {
   for (let key of Object.keys(flag)) {
     if (!FLAG_FIELD_KEYS.includes(key)) { return false }
   }
-  if (!whole) { return true }
+  if (!whole) {
+    return validOptionalRange(flag.start, flag.end) &&
+      validOptionalRange(flag.startIndex, flag.endIndex)
+  }
 
   return validRange(flag.start, flag.end) && validRange(flag.startIndex, flag.endIndex) &&
     validHand(flag.hand) && validLevel(flag.level) && Array.isArray(flag.kinds) &&

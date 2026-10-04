@@ -66,6 +66,27 @@ function validFileFingerprint(fp) {
     (fp.numbers == null || (Array.isArray(fp.numbers) && fp.numbers.length == fp.bars.length))
 }
 
+// Whether every range a decision carries names bars the file's own
+// fingerprint has. validDecision already has them as two ordered integers;
+// this is the bound only the file knows, and it belongs here because every
+// consumer walks or slices those ranges afterwards (mapRange over the
+// alignment, startApartBars over the printed numbers, anchorFor over the
+// bars), so one range from a truncated or hand-edited file would otherwise
+// run to its end rather than be clamped at each loop in turn.
+function withinFingerprint(decision, fp) {
+  let lastIndex = fp.bars.length - 1
+  let firstNumber = fp.numbers ? fp.numbers[0] : 1
+  let lastNumber = fp.numbers ? fp.numbers[lastIndex] : fp.bars.length
+
+  let indexes = ({startIndex, endIndex}) =>
+    startIndex === undefined || (startIndex >= 0 && endIndex <= lastIndex)
+  let printed = ({start, end}) =>
+    start === undefined || (start >= firstNumber && end <= lastNumber)
+
+  return [decision.of, decision.given, decision.flag]
+    .every(obj => !obj || (indexes(obj) && printed(obj)))
+}
+
 /**
  * Parses and validates a flags file's text. Never throws.
  * @param {string} text
@@ -99,7 +120,14 @@ export function readFlagsFile(text) {
     return {error: "This flags file is too large to open."}
   }
 
-  return {data: {...data, by: typeof data.by == "string" ? data.by : "", decisions: data.decisions.filter(validDecision)}}
+  let fp = data.piece.fingerprint
+  return {
+    data: {
+      ...data,
+      by: typeof data.by == "string" ? data.by : "",
+      decisions: data.decisions.filter(d => validDecision(d) && withinFingerprint(d, fp)),
+    },
+  }
 }
 
 /**
@@ -129,6 +157,14 @@ function decisionRange(decision) {
   if (decision.of) { return {startIndex: decision.of.startIndex, endIndex: decision.of.endIndex} }
   if (decision.given) { return {startIndex: decision.given.startIndex, endIndex: decision.given.endIndex} }
   return null
+}
+
+// whether an override carries a range at all, in either representation: a
+// placed decision's every range is rewritten to the local copy's bars, so
+// one naming printed bars alone is no exception, while a title-only edit
+// gains no range it never had
+function hasRange(obj) {
+  return Number.isInteger(obj.startIndex) || Number.isInteger(obj.start)
 }
 
 function withLocalRange(obj, startIndex, endIndex, song) {
@@ -201,7 +237,7 @@ export function reanchorDecisions(file, record, song) {
     } else if (mapped) {
       if (next.of) { next.of = {...next.of, startIndex: mapped.startIndex, endIndex: mapped.endIndex} }
       if (next.given) { next.given = withLocalRange(next.given, mapped.startIndex, mapped.endIndex, song) }
-      if (next.flag && Number.isInteger(next.flag.startIndex)) {
+      if (next.flag && hasRange(next.flag)) {
         next.flag = withLocalRange(next.flag, mapped.startIndex, mapped.endIndex, song)
       }
       next.anchor = anchorFromFingerprint(record.fingerprint, mapped.startIndex, mapped.endIndex)
