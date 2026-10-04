@@ -149,6 +149,19 @@ Main: `max-width: 1060px`, `grid-template-columns: minmax(0,1fr) 260px`, `gap: 2
 Session is **endless** — it runs until the user presses Rest; there is no note or time target.
 `accuracy = readCount / (readCount + misses)`.
 
+**Implementation note (sheet music page):** on `/sheet-music`, the rail at rest carries the
+programme's own plates ("Tonight's programme" and the piece's flagged passages) in place of the
+engraving, so the card being practised stays on screen without scrolling; the engraving stays
+whenever those plates have nothing to show (no piece picked, pasted notation, an unflagged piece in
+free practice), which the stylesheet decides from the empty slot. The score page's trainer
+is wider than the default (`max-width: 1240px`) and its rail is `clamp(260px, 26vw, 340px)` rather
+than the fixed 260px. The flagged passages' shaded score opens on demand in a right-hand pane,
+drawn only while it is open. The pane is its own scroller and the score is the tall thing in it, so
+the passage's detail — with the "tap a shaded passage" legend as its last line — stays out of that
+scroll: it sticks below the pane's header beside the score, and stacks above it in a pane too narrow
+for two columns. Both side panes pin their header, so the title and the close button stay on screen
+however far the pane has scrolled.
+
 ### 4. Session summary — `screens/salon-summary/SalonSummary.dc.html`
 
 **Purpose:** shown when the user ends an endless session.

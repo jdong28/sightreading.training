@@ -1,5 +1,7 @@
-/* The programme drawer of the sight reading trainer, see the trainer screen
-   in docs/design/salon-de-chopin.md */
+/* The shell of a trainer page's side panes (SidePane in settings_panel.jsx):
+   the programme drawer it is named for and, mirrored by &.right, the score
+   page's "The score" pane. See the trainer screen in
+   docs/design/salon-de-chopin.md */
 
 .scrim {
     position: fixed;
@@ -17,6 +19,12 @@
 }
 
 .drawer {
+    /* the sticky header's exact height: its padding plus the close button,
+       which the title's pinned line box never exceeds. Anything inside the
+       drawer that has to clear the header reads this (.pane_detail in
+       passages_plate.module.css, scrollToSelected in passages_plate.jsx) */
+    --drawer-header-height: 64px;
+
     position: fixed;
     top: 0;
     bottom: 0;
@@ -29,6 +37,13 @@
     flex-direction: column;
     overflow: auto;
     overscroll-behavior: contain;
+    /* the scrollbar's space is reserved whether or not the content overflows,
+       so a column measured before the drawer has anything tall in it (the
+       score pane's overview, see observePaneWidth) is measured at its final
+       width; scroll-padding keeps the browser's own scroll-into-view, on
+       focus or otherwise, clear of the pinned header */
+    scrollbar-gutter: stable;
+    scroll-padding-top: var(--drawer-header-height);
     background: var(--salon-paper);
     border-right: 1px solid var(--salon-rule-strong);
     box-shadow: 26px 0 54px -30px rgba(36,31,24,.45);
@@ -50,18 +65,48 @@
         width: 100%;
         border-right: 0;
     }
+
+    /* "The score" pane (passages_plate.jsx), right-anchored: the same shell,
+       mirrored, and wide enough for the score beside its passage's detail */
+    &.right {
+        left: auto;
+        right: 0;
+        width: min(1040px, 100%);
+        border-right: 0;
+        border-left: 1px solid var(--salon-rule-strong);
+        box-shadow: -26px 0 54px -30px rgba(36,31,24,.45);
+        transform: translateX(100%);
+
+        &.open {
+            transform: translateX(0);
+        }
+
+        @media (max-width: 480px) {
+            border-left: 0;
+        }
+    }
 }
 
+/* pinned to the top of the drawer, which is the scroller: the close button
+   stays reachable however far the drawer's content has scrolled (a whole
+   engraved piece, in the score pane) */
 .drawer_header {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    box-sizing: border-box;
+    min-height: var(--drawer-header-height);
     display: flex;
     align-items: center;
     justify-content: space-between;
     padding: 22px 24px 14px;
+    background: var(--salon-paper);
 }
 
 .drawer_title {
     font-family: var(--font-display);
     font-size: 22px;
+    line-height: 1;
     letter-spacing: -.01em;
 }
 

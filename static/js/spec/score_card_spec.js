@@ -765,7 +765,7 @@ describe("score page engine card", function() {
   // the programme drawer, opened
   let openDrawer = el => {
     flushSync(() => el.querySelector("button[aria-label=\"Programme\"]").click())
-    return el.querySelector(`.${drawerStyles.drawer}`)
+    return el.querySelector(`.${drawerStyles.drawer}[aria-label="Programme"]`)
   }
 
   let perCardPicker = drawer => drawer.querySelector("[role=\"spinbutton\"][aria-label=\"measures per card\"]")

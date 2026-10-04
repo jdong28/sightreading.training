@@ -10,6 +10,7 @@ import {romanNumeral} from "st/music"
 import ScorePage, {SCORE_PROGRAMME} from "st/components/pages/score_page"
 import NoteList from "st/note_list"
 import staffStyles from "st/components/staff.module.css"
+import pageStyles from "st/components/pages/sight_reading_page.module.css"
 import drawerStyles from "st/components/sight_reading/programme_drawer.module.css"
 import summaryStyles from "st/components/sight_reading/session_summary.module.css"
 import {setAppStore} from "st/storage"
@@ -381,6 +382,13 @@ describe("sight reading page", function() {
   // the engine card has its own specs (see score_card_spec)
   let renderScorePage = () => renderPage(ScorePage, {programme: {...SCORE_PROGRAMME, engine: null}})
 
+  // whether the rail's engraving is on show: the programme's plates stand in
+  // for it while they draw something, so it is in the tree either way
+  let engravingShown = rail => {
+    let img = rail.querySelector(`.${pageStyles.engraving} img`)
+    return !!img && img.getClientRects().length > 0
+  }
+
   let click = button => flushSync(() => button.click())
 
   // the number picker (st/components/number_picker) of the label in el
@@ -546,7 +554,7 @@ describe("sight reading page", function() {
     let el = renderScorePage()
     click(buttonLabelled(el, "Programme"))
 
-    let drawer = el.querySelector(`.${drawerStyles.drawer}`)
+    let drawer = el.querySelector(`.${drawerStyles.drawer}[aria-label="Programme"]`)
     let pills = label => drawer.querySelector(`[role="group"][aria-label="${label}"]`)
 
     // the whole section is always walked in order, so no order to pick
@@ -569,7 +577,7 @@ describe("sight reading page", function() {
 
     let el = renderScorePage()
     click(buttonLabelled(el, "Programme"))
-    let drawer = el.querySelector(`.${drawerStyles.drawer}`)
+    let drawer = el.querySelector(`.${drawerStyles.drawer}[aria-label="Programme"]`)
     let values = () => ["start measure", "end measure"].map(label => picker(drawer, label).value)
     let section = () => {
       let {startMeasure, endMeasure} = page.state.currentGeneratorSettings
@@ -630,14 +638,14 @@ describe("sight reading page", function() {
     expect(page.currentCard().card.measures).toEqual([8])
 
     click(buttonLabelled(el, "Programme"))
-    let drawer = el.querySelector(`.${drawerStyles.drawer}`)
+    let drawer = el.querySelector(`.${drawerStyles.drawer}[aria-label="Programme"]`)
     expect(["start measure", "end measure", "measures per card"].map(label => picker(drawer, label).value))
       .toEqual(["8", "8", "1"])
   })
 
   it("opens, closes and applies the programme drawer", function() {
     let el = renderPage()
-    let drawer = el.querySelector(`.${drawerStyles.drawer}`)
+    let drawer = el.querySelector(`.${drawerStyles.drawer}[aria-label="Programme"]`)
     let scrim = el.querySelector(`.${drawerStyles.scrim}`)
     let isOpen = () => drawer.classList.contains(drawerStyles.open)
 
@@ -688,7 +696,7 @@ describe("sight reading page", function() {
   it("keeps tempo as a scroll-mode setting, disabled in wait mode and stored like mode and speed", function() {
     let el = renderPage()
     click(buttonLabelled(el, "Programme"))
-    let drawer = el.querySelector(`.${drawerStyles.drawer}`)
+    let drawer = el.querySelector(`.${drawerStyles.drawer}[aria-label="Programme"]`)
 
     expect(buttonNamed(drawer, "Keep tempo").disabled).toBe(true)
 
@@ -821,7 +829,7 @@ describe("sight reading page", function() {
     tick(90000)
 
     click(buttonLabelled(el, "Programme"))
-    let drawer = el.querySelector(`.${drawerStyles.drawer}`)
+    let drawer = el.querySelector(`.${drawerStyles.drawer}[aria-label="Programme"]`)
     click(buttonNamed(drawer, "Bass"))
     expect(page.state.currentStaff.name).toEqual("bass")
 
@@ -892,8 +900,8 @@ describe("sight reading page", function() {
 
   it("keeps a rested session's own label and figures through a later staff change, on Begin and on unmount", async function() {
     let el = renderPage()
-    let drawer = el.querySelector(`.${drawerStyles.drawer}`)
-    let openDrawer = () => { click(buttonLabelled(el, "Programme")); drawer = el.querySelector(`.${drawerStyles.drawer}`) }
+    let drawer = el.querySelector(`.${drawerStyles.drawer}[aria-label="Programme"]`)
+    let openDrawer = () => { click(buttonLabelled(el, "Programme")); drawer = el.querySelector(`.${drawerStyles.drawer}[aria-label="Programme"]`) }
 
     click(buttonNamed(el, "Begin"))
     play(page.state.notes.currentColumn())
@@ -963,6 +971,21 @@ describe("sight reading page", function() {
     expect(el.textContent).toContain("Nothing played yet")
   })
 
+  // the score page's wider trainer and rail (EXERCISES_PROGRAMME has no
+  // Rail or wideRail), both at rest and in session
+  it("keeps its own rail, unlike the score page's wider one", function() {
+    let el = renderPage()
+    let root = () => el.querySelector(`.${pageStyles.sight_reading_page}`)
+    let rail = () => el.querySelector(`.${pageStyles.rail}`)
+
+    expect(root().classList.contains(pageStyles.wide_rail)).toBe(false)
+    expect(rail().querySelector("img")).toBeTruthy()
+    expect(rail().textContent).toContain("This evening")
+
+    click(buttonNamed(el, "Begin"))
+    expect(rail().querySelector("img")).toBeTruthy()
+  })
+
   it("draws a stored piece in the score's key signature, not the exercises' key", async function() {
     let {piece} = await importMusicXMLPiece("reverie.musicxml", reverieOpening(), store)
 
@@ -997,7 +1020,7 @@ describe("sight reading page", function() {
     let el = renderScorePage()
     click(buttonLabelled(el, "Programme"))
 
-    let drawer = el.querySelector(`.${drawerStyles.drawer}`)
+    let drawer = el.querySelector(`.${drawerStyles.drawer}[aria-label="Programme"]`)
     expect(page.state.keySignature.name()).toEqual("C")
     expect(drawer.textContent).toContain("Re-import to follow the score key")
   })
@@ -1008,7 +1031,7 @@ describe("sight reading page", function() {
     let el = renderScorePage()
     click(buttonLabelled(el, "Programme"))
 
-    let drawer = el.querySelector(`.${drawerStyles.drawer}`)
+    let drawer = el.querySelector(`.${drawerStyles.drawer}[aria-label="Programme"]`)
     let pickPiece = id => {
       let select = drawer.querySelector("select")
       Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(select, id)
@@ -1054,7 +1077,7 @@ describe("sight reading page", function() {
     let el = renderScorePage()
     click(buttonLabelled(el, "Programme"))
 
-    let drawer = el.querySelector(`.${drawerStyles.drawer}`)
+    let drawer = el.querySelector(`.${drawerStyles.drawer}[aria-label="Programme"]`)
     let text = drawer.textContent
     for (let label of ["piece", "start measure", "end measure", "hand", "Tempo", "Wait", "Scroll"]) {
       expect(text).toContain(label)
@@ -1088,7 +1111,7 @@ describe("sight reading page", function() {
     let el = renderPage()
     click(buttonLabelled(el, "Programme"))
 
-    let drawer = el.querySelector(`.${drawerStyles.drawer}`)
+    let drawer = el.querySelector(`.${drawerStyles.drawer}[aria-label="Programme"]`)
     let text = drawer.textContent
     for (let label of ["Clef", "Exercise", "Tempo", "Key"]) {
       expect(text).toContain(label)
@@ -1138,7 +1161,7 @@ describe("sight reading page", function() {
     let el = renderScorePage()
     click(buttonLabelled(el, "Programme"))
 
-    let drawer = el.querySelector(`.${drawerStyles.drawer}`)
+    let drawer = el.querySelector(`.${drawerStyles.drawer}[aria-label="Programme"]`)
     let select = drawer.querySelector("select")
     Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(select, piece.id)
     flushSync(() => select.dispatchEvent(new Event("change", {bubbles: true})))
@@ -2442,6 +2465,26 @@ describe("sight reading page", function() {
       expect(plate(el)).toBeUndefined()
       expect(plateStatus(el)).toEqual("New · bar 1")
       expect(el.textContent).toContain("measures 1–2")
+    })
+
+    // the sheet-music UI polish: the rail, not the main column, carries the
+    // programme's plates at rest, and the wider score page trainer
+    it("carries the programme's plates in the rail, not the main column, at rest", async function() {
+      let el = await renderProgramme()
+
+      let root = el.querySelector(`.${pageStyles.sight_reading_page}`)
+      let rail = el.querySelector(`.${pageStyles.rail}`)
+      let main = el.querySelector(`.${pageStyles.trainer_main}`)
+
+      expect(root.classList.contains(pageStyles.wide_rail)).toBe(true)
+      expect(rail.contains(plate(el))).toBe(true)
+      expect(main.contains(plate(el))).toBe(false)
+      expect(main.firstElementChild.classList.contains(pageStyles.staff_plate)).toBe(true)
+      expect(engravingShown(rail)).toBe(false)
+
+      click(buttonNamed(el, "Begin"))
+      expect(plate(el)).toBeUndefined()
+      expect(engravingShown(el.querySelector(`.${pageStyles.rail}`))).toBe(true)
     })
 
     it("names each card and says when its measure comes back", async function() {

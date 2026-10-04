@@ -115,7 +115,7 @@ describe("app routing", function() {
       return svg ? [...svg.querySelectorAll(".staffLine")] : []
     }
 
-    let drawerText = el => el.querySelector(`.${drawerStyles.drawer}`).textContent
+    let drawerText = el => el.querySelector(`.${drawerStyles.drawer}[aria-label="Programme"]`).textContent
     let activeNav = el => [...el.querySelectorAll("nav a.active")].map(a => a.textContent)
 
     it("renders the score page at /sheet-music", function() {
@@ -146,7 +146,7 @@ describe("app routing", function() {
 
     it("imports a compressed .mxl file picked in the score page's deck, and picks it", async function() {
       let el = renderApp("/sheet-music")
-      let drawer = el.querySelector(`.${drawerStyles.drawer}`)
+      let drawer = el.querySelector(`.${drawerStyles.drawer}[aria-label="Programme"]`)
 
       let fileInput = drawer.querySelector(`.${drawerStyles.file_input} > input[type=file]`)
       expect(fileInput.accept.split(",")).toContain(".mxl")
@@ -170,7 +170,7 @@ describe("app routing", function() {
 
     it("answers a PDF picked in the score page's deck with the conversion steps and adds no piece", async function() {
       let el = renderApp("/sheet-music")
-      let drawer = el.querySelector(`.${drawerStyles.drawer}`)
+      let drawer = el.querySelector(`.${drawerStyles.drawer}[aria-label="Programme"]`)
       let fileInput = drawer.querySelector(`.${drawerStyles.file_input} > input[type=file]`)
       expect(fileInput.accept.split(",")).toContain(".pdf")
 
@@ -210,7 +210,7 @@ describe("app routing", function() {
 
     it("answers a PDF with no file name with the conversion steps too", function() {
       let el = renderApp("/sheet-music")
-      let drawer = el.querySelector(`.${drawerStyles.drawer}`)
+      let drawer = el.querySelector(`.${drawerStyles.drawer}[aria-label="Programme"]`)
       let fileInput = drawer.querySelector(`.${drawerStyles.file_input} > input[type=file]`)
 
       Object.defineProperty(fileInput, "files", {

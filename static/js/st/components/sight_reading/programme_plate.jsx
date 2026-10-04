@@ -1,6 +1,7 @@
-// "Tonight's programme": the score page's preface to a planned session
-// (st/srs/planner), shown at rest above the staff while the programme is
-// played. It says what the programme holds for the piece (the reviews due
+// "Tonight's programme": the score page's rail plate before a planned
+// session (st/srs/planner), shown at rest at the head of the trainer's
+// right rail while the programme is played. It says what the programme
+// holds for the piece (the reviews due
 // and about how long they take, the new measures on offer, the target
 // length, the measures learned), lets the target be changed, and suggests
 // the piece in study most overdue when it is another one: one piece a session
