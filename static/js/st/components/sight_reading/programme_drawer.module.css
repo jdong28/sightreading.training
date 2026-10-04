@@ -1,5 +1,7 @@
-/* The programme drawer of the sight reading trainer, see the trainer screen
-   in docs/design/salon-de-chopin.md */
+/* The shell of a trainer page's side panes (SidePane in settings_panel.jsx):
+   the programme drawer it is named for and, mirrored by &.right, the score
+   page's "The score" pane. See the trainer screen in
+   docs/design/salon-de-chopin.md */
 
 .scrim {
     position: fixed;
