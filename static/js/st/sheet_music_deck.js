@@ -13,6 +13,8 @@ import {MultiTrackSong, SongNote} from "st/song_note_list"
 import {parseMusicXML, readMusicXMLFile, MusicXMLError} from "st/musicxml"
 import {getAppStore, LEGACY_DECK_KEY, LibraryFormatError} from "st/storage"
 import {analyzePiece, annotationWith, annotationStale} from "st/difficulty/index"
+import {withDecisions} from "st/difficulty/decisions"
+import {flagsFileFor, readFlagsFile, reanchorDecisions, fileMatch} from "st/difficulty/flags_file"
 
 // where the deck was kept before the local store, see migrateLegacyDeck in
 // st/storage
@@ -279,8 +281,7 @@ async function annotatePiece(piece, {source}, store) {
     if (!song) { return null }
 
     let analysis = analyzePiece({song, source: source || null, at: Date.now()})
-    let record = annotationWith(store.annotation(piece.id), piece.id, analysis)
-    return await store.putAnnotation(record)
+    return await store.updateAnnotation(piece.id, current => annotationWith(current, piece.id, analysis))
   } catch (e) {
     console.warn(`Couldn't analyse the score of piece ${piece.id}:`, e)
     return null
@@ -506,9 +507,130 @@ export async function importLibraryFile(text, store=getAppStore()) {
     parts.push(`${plural(report.invalidPieces, "unreadable piece")} skipped`)
   }
 
+  if (report.addedDecisions) {
+    parts.push(`${plural(report.addedDecisions, "instructor decision")} added to pieces already in the library`)
+  }
+
   let result = {message: parts.join("; "), report}
   if (!store.persistent) {
     result.warning = NOT_PERSISTENT_WARNING
   }
   return result
+}
+
+/**
+ * Applies a batch of decisions (st/difficulty/decisions) to a piece's flags,
+ * through LocalStore#updateAnnotation so a decision is never lost to a
+ * concurrent analysis write. Never throws.
+ * @param {string} pieceId
+ * @param {Object[]} decisions FlagDecisions
+ * @param {LocalStore} [store]
+ * @returns {Promise<{record: Object}|{error: string}>}
+ */
+export async function decideFlags(pieceId, decisions, store=getAppStore()) {
+  try {
+    let record = await store.updateAnnotation(pieceId, current => withDecisions(current, decisions))
+    return {record}
+  } catch (e) {
+    return {error: `Couldn't save your decision. ${storageErrorMessage(e)}`}
+  }
+}
+
+// a filename-safe slug of a piece's title, for the flags file's download name
+function flagsFileSlug(title) {
+  return (title || "piece").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "piece"
+}
+
+/**
+ * The flags file for a piece's decisions (report §4.3). Resolves to
+ * {fileName, text} or {error}.
+ * @param {string} pieceId
+ * @param {Object} [opts] {by}
+ * @param {LocalStore} [store]
+ */
+export async function exportFlagsFile(pieceId, {by=""}={}, store=getAppStore()) {
+  try {
+    let piece = store.piece(pieceId)
+    let song = piece && pieceSong(piece)
+    let record = store.annotation(pieceId)
+    if (!piece || !song || !record) {
+      return {error: "This piece has no flagged passages to export yet."}
+    }
+
+    let file = flagsFileFor(record, piece, song, {by, at: Date.now()})
+    return {fileName: `${flagsFileSlug(piece.title)}.flags.json`, text: JSON.stringify(file)}
+  } catch (e) {
+    return {error: `Couldn't export the flags file: ${(e && e.message) || e}`}
+  }
+}
+
+// a flags file must align at least this well to apply to a piece, report
+// §3.3's threshold for "the same score" across editions
+const MIN_FLAGS_FILE_MATCH = 0.5
+
+/**
+ * Opens a flags file (see exportFlagsFile) onto a piece: the one named, or,
+ * without one, the best match in the deck. Re-anchors every decision by
+ * fingerprint (st/difficulty/align) rather than assuming the same measure
+ * numbers. Resolves to {piece, message} or {error}.
+ * @param {string} text
+ * @param {LocalStore} [store]
+ * @param {Object} [opts]
+ * @param {string} [opts.pieceId] applies to this piece only, refusing one
+ * whose score doesn't match well enough; without it, the deck is searched
+ * @returns {Promise<{piece: Object, message: string}|{error: string}>}
+ */
+export async function importFlagsFile(text, store=getAppStore(), {pieceId}={}) {
+  let {data: file, error} = readFlagsFile(text)
+  if (error) { return {error} }
+
+  try {
+    let piece = null
+
+    if (pieceId) {
+      piece = store.piece(pieceId)
+      if (!piece) { return {error: "No such piece."} }
+      let record = await ensureAnnotation(pieceId, store)
+      if (fileMatch(file, record) < MIN_FLAGS_FILE_MATCH) {
+        return {error: "This flags file is for a different score."}
+      }
+    } else {
+      let titleMatch = store.pieces().find(p => p.title == file.piece.title)
+      if (titleMatch) {
+        let record = await ensureAnnotation(titleMatch.id, store)
+        if (fileMatch(file, record) >= MIN_FLAGS_FILE_MATCH) { piece = titleMatch }
+      }
+
+      if (!piece) {
+        let bestPiece = null
+        let bestMatch = 0
+        for (let candidate of store.pieces()) {
+          let match = fileMatch(file, store.annotation(candidate.id))
+          if (match > bestMatch) { bestMatch = match; bestPiece = candidate }
+        }
+        if (bestPiece && bestMatch >= MIN_FLAGS_FILE_MATCH) {
+          piece = bestPiece
+          await ensureAnnotation(piece.id, store)
+        }
+      }
+
+      if (!piece) {
+        return {error: "No piece in the deck matches this flags file's score. Import the score first."}
+      }
+    }
+
+    let song = pieceSong(piece)
+    let record = store.annotation(piece.id)
+    let {decisions, report} = reanchorDecisions(file, record, song)
+    await store.updateAnnotation(piece.id, current => withDecisions(current, decisions))
+
+    let placed = report.total - report.moved - report.unplaced
+    let who = file.by ? `${file.by}’s` : "the"
+    let message = `Opened ${who} flags for “${piece.title}”: ` +
+      `${placed} placed, ${report.moved} moved, ${report.unplaced} waiting for a place`
+
+    return {piece, message}
+  } catch (e) {
+    return {error: `Couldn't open the flags file. ${storageErrorMessage(e)}`}
+  }
 }
