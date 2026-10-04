@@ -17,6 +17,7 @@ import {
   FLAGS_FORMAT, FLAGS_VERSION, MAX_FLAGS_FILE_BYTES, MAX_FLAGS_FILE_DECISIONS,
   flagsFileFor, readFlagsFile, fileMatch, reanchorDecisions,
 } from "st/difficulty/flags_file"
+import {troubleSpots} from "st/difficulty/trouble"
 
 // a quiet 16-bar piece (quarter notes, both hands, all in C major) with a
 // dense run of sixteenths in both hands at bars 9-11, the workhorse for the
@@ -1198,6 +1199,78 @@ describe("st/difficulty", () => {
 
       let unrelatedRecord = annotationWith(null, "p2", analyzePiece({song: restSong(20), source: null, at: 2}))
       expect(fileMatch(file, unrelatedRecord)).toBeLessThan(0.5)
+    })
+  })
+
+  describe("trouble spots", () => {
+    function item({measure, hand = "both", reps = 0, lapses = 0, d = 0, paceMs, recentGrades = [], deliberate} = {}) {
+      return {
+        pieceId: "p1", hand, startMeasure: measure, endMeasure: measure,
+        reps, lapses, d, paceMs,
+        recent: recentGrades.map((grade, idx) => [idx, null, null, grade]),
+        ...(deliberate !== undefined ? {deliberate} : {}),
+      }
+    }
+
+    it("fewer than 3 graded attempts gives nothing; lapses >= 2 with reps >= 3 gives a suggestion", () => {
+      let tooFew = item({measure: 3, reps: 2, lapses: 2})
+      expect(troubleSpots({pieceId: "p1", items: [tooFew], measures: [1, 2, 3, 4, 5]})).toEqual([])
+
+      let lapsed = item({measure: 3, reps: 3, lapses: 2})
+      let spots = troubleSpots({pieceId: "p1", items: [lapsed], measures: [1, 2, 3, 4, 5]})
+      expect(spots.length).toEqual(1)
+      expect(spots[0].start).toEqual(3)
+      expect(spots[0].end).toEqual(3)
+      expect(spots[0].hand).toEqual("both")
+      expect(spots[0].signals.map(s => s.kind)).toEqual(["lapses"])
+    })
+
+    it("two agains in recent, a difficulty of 7, or a pace above 1.5x the median each give a suggestion", () => {
+      let again = item({measure: 1, reps: 3, recentGrades: [1, 1, 3]})
+      let hard = item({measure: 3, reps: 3, d: 7})
+      let slow = item({measure: 5, reps: 3, paceMs: 1800})
+      let base = item({measure: 7, reps: 3, paceMs: 1000})
+      let other = item({measure: 9, reps: 3, paceMs: 1000})
+
+      let measures = Array.from({length: 10}, (_, i) => i + 1)
+      let spots = troubleSpots({pieceId: "p1", items: [again, hard, slow, base, other], measures})
+
+      expect(spots.find(s => s.start == 1).signals.map(s => s.kind)).toContain("again")
+      expect(spots.find(s => s.start == 3).signals.map(s => s.kind)).toContain("difficulty")
+
+      let slowSpot = spots.find(s => s.start == 5)
+      expect(slowSpot.signals.map(s => s.kind)).toContain("pace")
+      expect(slowSpot.text).toContain("1.8")
+
+      expect(spots.find(s => s.start == 7)).toBeUndefined()
+      expect(spots.find(s => s.start == 9)).toBeUndefined()
+    })
+
+    it("merges adjacent troubled bars, excludes bars already flagged, and takes the hand from a non-deliberate hand-alone item", () => {
+      let a = item({measure: 4, reps: 3, lapses: 2})
+      let b = item({measure: 5, reps: 3, lapses: 2})
+      let flaggedBar = item({measure: 8, reps: 3, lapses: 2})
+      let scaffoldHand = item({measure: 10, hand: "lower", reps: 1, deliberate: false})
+      let scaffoldBoth = item({measure: 10, hand: "both", reps: 3})
+      let deliberateHand = item({measure: 12, hand: "upper", reps: 5, deliberate: true})
+      let togetherForDeliberate = item({measure: 12, hand: "both", reps: 3})
+
+      let flags = [{start: 8, end: 8, hand: "both"}]
+      let items = [a, b, flaggedBar, scaffoldHand, scaffoldBoth, deliberateHand, togetherForDeliberate]
+      let measures = Array.from({length: 12}, (_, i) => i + 1)
+
+      let spots = troubleSpots({pieceId: "p1", items, measures, flags})
+
+      let merged = spots.find(s => s.start == 4)
+      expect(merged.end).toEqual(5)
+
+      expect(spots.some(s => s.start <= 8 && s.end >= 8)).toBeFalsy()
+
+      let scaffolded = spots.find(s => s.start == 10)
+      expect(scaffolded.hand).toEqual("lower")
+      expect(scaffolded.signals.map(s => s.kind)).toContain("scaffold")
+
+      expect(spots.find(s => s.start == 12)).toBeUndefined()
     })
   })
 })
