@@ -1,8 +1,10 @@
 // The stored shapes of a piece's flagged passages: one AnnotationRecord per
 // piece, holding every source's FlagProposals (stage 1 only ever writes the
-// "score" source) and the instructor's decisions (always [] until stage 3).
+// "score" source) and the instructor's decisions (st/difficulty/decisions),
+// live since stage 3: an append-only log a new analysis never overwrites.
 
 import {hash8} from "st/difficulty/fingerprints"
+import {validDecision, reviewFlags} from "st/difficulty/decisions"
 
 // a [start, end] of printed bar numbers: whole numbers, in order, so every
 // consumer that walks a range walks a bounded one
@@ -32,7 +34,7 @@ export function validAnnotation(record) {
   if (!record.fingerprint || typeof record.fingerprint != "object") { return false }
   if (!Array.isArray(record.fingerprint.bars)) { return false }
   if (!Array.isArray(record.proposals) || !record.proposals.every(validProposal)) { return false }
-  if (!Array.isArray(record.decisions)) { return false }
+  if (!Array.isArray(record.decisions) || !record.decisions.every(validDecision)) { return false }
   if (!record.runs || typeof record.runs != "object") { return false }
   return true
 }
@@ -43,16 +45,12 @@ export function flagProposalId(start, end, kinds) {
   return `score:${start}-${end}:${hash8([...kinds].sort().join("+"))}`
 }
 
-// the proposals in force, sorted level descending then by strength,
-// numbered from 1. Stage 1 never applies decisions; stage 3 reconciles them
-// here. Nothing is stored: callers derive this on every read.
+// the flags in force: reviewFlags (st/difficulty/decisions) minus dismissed
+// and unplaced, sorted level descending then by strength, numbered from 1.
+// Nothing is stored: callers (stage 2's introduce, the drawer's quick picks,
+// BarStrip) derive this on every read, as they always have.
 export function flagsInForce(record) {
-  if (!record) { return [] }
-
-  return [...record.proposals]
-    .sort((a, b) => {
-      if (b.level != a.level) { return b.level - a.level }
-      return (b.strength || 0) - (a.strength || 0)
-    })
-    .map((proposal, idx) => ({...proposal, num: idx + 1}))
+  return reviewFlags(record)
+    .filter(flag => flag.status != "dismissed" && flag.place != "unplaced")
+    .map((flag, idx) => ({...flag, num: idx + 1}))
 }

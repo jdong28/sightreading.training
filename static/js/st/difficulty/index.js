@@ -9,8 +9,9 @@ import {barFeatures} from "st/difficulty/features"
 import {scoreBars, findPassages, percentileRank, ANALYZER_ALGO} from "st/difficulty/sections"
 import {passageReasons, rankedSignals} from "st/difficulty/reasons"
 import {flagProposalId} from "st/difficulty/records"
+import {FLAG_KINDS, KIND_WORDS} from "st/difficulty/decisions"
 
-export {ANALYZER_ALGO}
+export {ANALYZER_ALGO, FLAG_KINDS, KIND_WORDS}
 
 export const LEVEL_WORDS = {1: "Worth a look", 2: "Hard", 3: "Hardest"}
 

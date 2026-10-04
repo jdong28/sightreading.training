@@ -61,6 +61,8 @@ function handPillHand(flag) {
   return flag.hand == "both" ? "upper" : flag.hand
 }
 
+const SOURCE_CHIP = {score: "Score", teacher: "Teacher", player: "You"}
+
 export class PassagesPlate extends React.Component {
   static propTypes = {
     generator: types.object,
@@ -315,10 +317,10 @@ export class PassagesPlate extends React.Component {
       <div className={styles.flag_sub}>{flag.title}</div>
 
       <ul className={styles.reasons}>
-        {flag.reasons.map((reason, idx) =>
+        {flag.lines.map((line, idx) =>
           <li key={idx}>
-            <span className={styles.source_chip}>Score</span>
-            {reason}
+            <span className={styles.source_chip}>{SOURCE_CHIP[line.source] || "Score"}</span>
+            {line.text}
           </li>)}
       </ul>
 

@@ -8,6 +8,10 @@ import {scoreBars, findPassages, heat, ANALYZER_ALGO} from "st/difficulty/sectio
 import {intervalWords, passageReasons} from "st/difficulty/reasons"
 import {validAnnotation, flagsInForce} from "st/difficulty/records"
 import {analyzePiece, annotationWith, annotationStale} from "st/difficulty/index"
+import {
+  validDecision, reviewFlags, withDecisions, startApartBars,
+  acceptDecision, editDecision, dismissDecision, restoreDecision, addDecision, promoteTroubleSpot,
+} from "st/difficulty/decisions"
 
 // a quiet 16-bar piece (quarter notes, both hands, all in C major) with a
 // dense run of sixteenths in both hands at bars 9-11, the workhorse for the
@@ -673,6 +677,312 @@ describe("st/difficulty", () => {
 
     it("flagsInForce is empty for no record", () => {
       expect(flagsInForce(null)).toEqual([])
+    })
+  })
+
+  describe("decisions", () => {
+    function barsWithDense(denseAt, barCount = 16) {
+      let bars = []
+      for (let i = 1; i <= barCount; i++) { bars.push(denseAt.includes(i) ? denseBar() : quietBar()) }
+      return bars
+    }
+
+    it("with no decisions, flagsInForce returns exactly stage 1's flags, order and numbers", () => {
+      let song = workhorseSong()
+      let analysis = analyzePiece({song, source: null, at: 1})
+      let record = annotationWith(null, "p1", analysis)
+      let flags = flagsInForce(record)
+
+      let expectedOrder = [...analysis.proposals]
+        .sort((a, b) => b.level - a.level || (b.strength || 0) - (a.strength || 0) || a.start - b.start)
+        .map(p => p.id)
+      expect(flags.map(f => f.id)).toEqual(expectedOrder)
+      expect(flags.map(f => f.num)).toEqual(flags.map((_, i) => i + 1))
+      expect(flags.every(f => f.status == "waiting")).toBeTruthy()
+    })
+
+    it("accept marks a flag accepted; a re-analysis with a changed reason keeps it accepted and shows the new reason", () => {
+      let song = workhorseSong()
+      let analysis = analyzePiece({song, source: null, at: 1})
+      let record = annotationWith(null, "p1", analysis)
+      let flag = flagsInForce(record)[0]
+
+      record = withDecisions(record, [acceptDecision({record, flag, by: "Ms Laurent", at: 10})])
+      expect(reviewFlags(record).find(f => f.id == flag.id).status).toEqual("accepted")
+
+      let changedProposals = record.proposals.map(p =>
+        p.id == flag.id ? {...p, reason: "changed", reasons: ["changed"]} : p)
+      let reanalysed = {...record, proposals: changedProposals}
+
+      let after = reviewFlags(reanalysed).find(f => f.id == flag.id)
+      expect(after.status).toEqual("accepted")
+      expect(after.lines.map(l => l.text)).toContain("changed")
+    })
+
+    it("editing the title keeps the analysis's name as givenTitle; clearing it restores the analysis's name", () => {
+      let song = workhorseSong()
+      let analysis = analyzePiece({song, source: null, at: 1})
+      let record = annotationWith(null, "p1", analysis)
+      let flag = flagsInForce(record)[0]
+      let originalTitle = flag.title
+
+      record = withDecisions(record,
+        [editDecision({record, flag, overrides: {title: "My name for it"}, by: "Ms Laurent", at: 10})])
+      let renamed = reviewFlags(record).find(f => f.id == flag.id)
+      expect(renamed.title).toEqual("My name for it")
+      expect(renamed.givenTitle).toEqual(originalTitle)
+
+      // a re-analysis doesn't clobber either name
+      let reanalysed = annotationWith(record, "p1", analysis)
+      let afterReanalysis = reviewFlags(reanalysed).find(f => f.id == flag.id)
+      expect(afterReanalysis.title).toEqual("My name for it")
+      expect(afterReanalysis.givenTitle).toEqual(originalTitle)
+
+      // "Use that name" is the next edit, with no title of its own
+      let cleared = withDecisions(reanalysed,
+        [editDecision({record: reanalysed, flag: afterReanalysis, overrides: {}, by: "Ms Laurent", at: 20})])
+      let final = reviewFlags(cleared).find(f => f.id == flag.id)
+      expect(final.title).toEqual(originalTitle)
+      expect(final.givenTitle).toBeUndefined()
+    })
+
+    it("editing the reason puts the teacher's sentence first, then the score's reasons; a blank reason keeps only the score's", () => {
+      let song = workhorseSong()
+      let analysis = analyzePiece({song, source: null, at: 1})
+      let record = annotationWith(null, "p1", analysis)
+      let flag = flagsInForce(record)[0]
+
+      record = withDecisions(record, [editDecision({
+        record, flag, overrides: {reason: "Watch the left hand's leap", tip: "Hands separately first"},
+        by: "Ms Laurent", at: 10,
+      })])
+      let result = reviewFlags(record).find(f => f.id == flag.id)
+      expect(result.lines[0]).toEqual({source: "teacher", text: "Watch the left hand's leap"})
+      expect(result.lines.slice(1).every(l => l.source == "score")).toBeTruthy()
+      expect(result.lines.length).toEqual(flag.lines.length + 1)
+      expect(result.tip).toEqual("Hands separately first")
+
+      let after = reviewFlags(withDecisions(record, [editDecision({
+        record, flag: result, overrides: {reason: "", tip: "Hands separately first"}, by: "Ms Laurent", at: 20,
+      })])).find(f => f.id == flag.id)
+      expect(after.lines.every(l => l.source == "score")).toBeTruthy()
+      expect(after.lines.length).toEqual(flag.lines.length)
+    })
+
+    it("dismiss takes a flag out of force; it stays dismissed across a re-analysis, even one that changes the proposal's kinds", () => {
+      let song = workhorseSong()
+      let analysis = analyzePiece({song, source: null, at: 1})
+      let record = annotationWith(null, "p1", analysis)
+      let flag = flagsInForce(record)[0]
+
+      record = withDecisions(record, [dismissDecision({record, flag, by: "Ms Laurent", at: 10})])
+      expect(flagsInForce(record).some(f => f.id == flag.id)).toBeFalsy()
+      expect(reviewFlags(record).find(f => f.id == flag.id).status).toEqual("dismissed")
+
+      let reanalysed = annotationWith(record, "p1", analysis)
+      expect(flagsInForce(reanalysed).some(f => f.id == flag.id)).toBeFalsy()
+
+      let driftedProposals = reanalysed.proposals.map(p =>
+        p.id == flag.id ? {...p, id: "score:drifted", kinds: ["leap"]} : p)
+      let drifted = {...reanalysed, proposals: driftedProposals}
+      expect(flagsInForce(drifted).some(f => f.id == "score:drifted")).toBeFalsy()
+      let driftedFlag = reviewFlags(drifted)
+        .find(f => f.startIndex == flag.startIndex && f.endIndex == flag.endIndex)
+      expect(driftedFlag.status).toEqual("dismissed")
+    })
+
+    it("restore returns a flag to the state it held before the dismissal", () => {
+      let song = workhorseSong()
+      let analysis = analyzePiece({song, source: null, at: 1})
+      let record = annotationWith(null, "p1", analysis)
+      let flag = flagsInForce(record)[0]
+
+      record = withDecisions(record, [dismissDecision({record, flag, by: "", at: 10})])
+      record = withDecisions(record,
+        [restoreDecision({record, flag: reviewFlags(record).find(f => f.id == flag.id), by: "", at: 20})])
+      expect(reviewFlags(record).find(f => f.id == flag.id).status).toEqual("waiting")
+
+      record = withDecisions(record,
+        [acceptDecision({record, flag: reviewFlags(record).find(f => f.id == flag.id), by: "", at: 30})])
+      record = withDecisions(record,
+        [dismissDecision({record, flag: reviewFlags(record).find(f => f.id == flag.id), by: "", at: 40})])
+      expect(reviewFlags(record).find(f => f.id == flag.id).status).toEqual("dismissed")
+      record = withDecisions(record,
+        [restoreDecision({record, flag: reviewFlags(record).find(f => f.id == flag.id), by: "", at: 50})])
+      expect(reviewFlags(record).find(f => f.id == flag.id).status).toEqual("accepted")
+    })
+
+    it("add puts a teacher's own flag in force; promoteTroubleSpot puts a player's flag in force waiting, until the teacher decides", () => {
+      let song = workhorseSong()
+      let analysis = analyzePiece({song, source: null, at: 1})
+      let record = annotationWith(null, "p1", analysis)
+
+      let add = addDecision({
+        record, by: "Ms Laurent", at: 10,
+        flag: {
+          start: 1, end: 1, startIndex: 0, endIndex: 0, hand: "both", level: 1, kinds: [],
+          title: "Mind the pedal", reason: "", tip: "", apart: false,
+        },
+      })
+      record = withDecisions(record, [add])
+      let added = flagsInForce(record).find(f => f.id == add.flagId)
+      expect(added.status).toEqual("added")
+      expect(added.sources).toEqual(["teacher"])
+
+      let promote = promoteTroubleSpot({
+        record, by: "", at: 20,
+        spot: {start: 3, end: 3, startIndex: 2, endIndex: 2, hand: "lower", text: "Slow and uneven"},
+      })
+      record = withDecisions(record, [promote])
+      let promoted = flagsInForce(record).find(f => f.id == promote.flagId)
+      expect(promoted.status).toEqual("waiting")
+      expect(promoted.sources).toEqual(["player"])
+
+      record = withDecisions(record, [acceptDecision({record, flag: promoted, by: "Ms Laurent", at: 30})])
+      expect(flagsInForce(record).find(f => f.id == promote.flagId).status).toEqual("accepted")
+    })
+
+    it("folds by at, not array order; withDecisions is idempotent; an older at never overrides a newer one", () => {
+      let song = workhorseSong()
+      let analysis = analyzePiece({song, source: null, at: 1})
+      let record = annotationWith(null, "p1", analysis)
+      let flag = flagsInForce(record)[0]
+
+      let accept = acceptDecision({record, flag, by: "", at: 100})
+      let dismiss = dismissDecision({record, flag, by: "", at: 50})
+
+      let withBoth = withDecisions(record, [accept, dismiss])
+      expect(reviewFlags(withBoth).find(f => f.id == flag.id).status).toEqual("accepted")
+
+      let again = withDecisions(withBoth, [accept, dismiss])
+      expect(again.decisions.length).toEqual(withBoth.decisions.length)
+      expect(again).toEqual(withBoth)
+    })
+
+    it("an accepted or edited flag whose proposal a later analysis drops still stands, from `given`", () => {
+      let song = workhorseSong()
+      let analysis = analyzePiece({song, source: null, at: 1})
+      let record = annotationWith(null, "p1", analysis)
+      let flag = flagsInForce(record)[0]
+
+      record = withDecisions(record,
+        [editDecision({record, flag, overrides: {tip: "Hands separately"}, by: "Ms Laurent", at: 10})])
+
+      let droppedProposals = record.proposals.filter(p => p.id != flag.id)
+      let reanalysed = {...record, proposals: droppedProposals}
+
+      let stillThere = flagsInForce(reanalysed).find(f => f.id == flag.id)
+      expect(stillThere).toBeTruthy()
+      expect(stillThere.title).toEqual(flag.title)
+      expect(stillThere.tip).toEqual("Hands separately")
+    })
+
+    it("changing a note in a decided bar marks it check, still in force; a new accept anchors afresh and clears it", () => {
+      let song = parseMusicXML(pianoScore({bars: barsWithDense([9, 10, 11])}))
+      let analysis = analyzePiece({song, source: null, at: 1})
+      let record = annotationWith(null, "p1", analysis)
+      let hardest = flagsInForce(record).find(f => f.start <= 9 && f.end >= 11)
+      expect(hardest).toBeTruthy()
+
+      record = withDecisions(record, [acceptDecision({record, flag: hardest, by: "", at: 10})])
+
+      let changedBars = barsWithDense([9, 10, 11])
+      changedBars[8] = {
+        ...changedBars[8],
+        upper: [{name: "G4", duration: 0.25, type: "16th"}, ...changedBars[8].upper.slice(1)],
+      }
+      let changedSong = parseMusicXML(pianoScore({bars: changedBars}))
+      let changedAnalysis = analyzePiece({song: changedSong, source: null, at: 2})
+      let reanalysed = annotationWith(record, "p1", changedAnalysis)
+
+      let checked = flagsInForce(reanalysed)
+        .find(f => f.startIndex == hardest.startIndex && f.endIndex == hardest.endIndex)
+      expect(checked).toBeTruthy()
+      expect(checked.place).toEqual("check")
+
+      let cleared = withDecisions(reanalysed, [acceptDecision({record: reanalysed, flag: checked, by: "", at: 20})])
+      let final = flagsInForce(cleared)
+        .find(f => f.startIndex == hardest.startIndex && f.endIndex == hardest.endIndex)
+      expect(final.place).toEqual("placed")
+    })
+
+    it("an unplaced decision is never in force, but appears in reviewFlags", () => {
+      let song = workhorseSong()
+      let analysis = analyzePiece({song, source: null, at: 1})
+      let record = annotationWith(null, "p1", analysis)
+
+      let decision = {
+        flagId: "added:unplaced1", action: "add", at: 10, by: "Ms Laurent", source: "teacher",
+        flag: {
+          start: 19, end: 21, startIndex: 18, endIndex: 20, hand: "both", level: 1, kinds: [],
+          title: "From Ms Laurent's copy", reason: "", tip: "", apart: false,
+        },
+        anchor: {bars: ["x", "y", "z"]},
+        unplaced: {start: 19, end: 21},
+      }
+      record = withDecisions(record, [decision])
+
+      expect(flagsInForce(record).some(f => f.id == "added:unplaced1")).toBeFalsy()
+      let flag = reviewFlags(record).find(f => f.id == "added:unplaced1")
+      expect(flag).toBeTruthy()
+      expect(flag.place).toEqual("unplaced")
+    })
+
+    it("validAnnotation accepts an empty decisions array and rejects malformed decisions", () => {
+      let song = workhorseSong()
+      let analysis = analyzePiece({song, source: null, at: 1})
+      let record = annotationWith(null, "p1", analysis)
+      expect(validAnnotation(record)).toBeTruthy()
+
+      let base = {flagId: "x", action: "accept", at: 1, by: "", anchor: {bars: []}}
+      expect(validDecision(base)).toBeTruthy()
+      expect(validDecision({...base, action: "bogus"})).toBeFalsy()
+      expect(validDecision({...base, at: "1"})).toBeFalsy()
+      expect(validDecision({...base, of: {source: "score", startIndex: 5, endIndex: 2}})).toBeFalsy()
+      expect(validDecision({...base, anchor: {}})).toBeFalsy()
+      expect(validDecision({...base, action: "add", source: "teacher"})).toBeFalsy()
+      expect(validDecision({
+        ...base, action: "add", source: "teacher",
+        flag: {
+          start: 1, end: 1, startIndex: 0, endIndex: 0, hand: "both", level: 1, kinds: [],
+          title: "t", reason: "", tip: "",
+        },
+      })).toBeTruthy()
+
+      expect(validAnnotation({...record, decisions: [{...base, action: "bogus"}]})).toBeFalsy()
+    })
+
+    it("startApartBars gives the hand(s) of every flag in force ticked apart; dismissed gives nothing", () => {
+      let song = workhorseSong()
+      let analysis = analyzePiece({song, source: null, at: 1})
+      let record = annotationWith(null, "p1", analysis)
+
+      let add = addDecision({
+        record, by: "Ms Laurent", at: 10,
+        flag: {
+          start: 5, end: 5, startIndex: 4, endIndex: 4, hand: "lower", level: 1, kinds: [],
+          title: "t", reason: "", tip: "", apart: true,
+        },
+      })
+      let bothAdd = addDecision({
+        record, by: "Ms Laurent", at: 11,
+        flag: {
+          start: 20, end: 20, startIndex: 19, endIndex: 19, hand: "both", level: 1, kinds: [],
+          title: "t2", reason: "", tip: "", apart: true,
+        },
+      })
+      record = withDecisions(record, [add, bothAdd])
+
+      let flags = flagsInForce(record)
+      let map = startApartBars(flags)
+      expect(map.get(5)).toEqual(["lower"])
+      expect(map.get(20)).toEqual(["upper", "lower"])
+
+      let addedFlag = flags.find(f => f.id == add.flagId)
+      record = withDecisions(record, [dismissDecision({record, flag: addedFlag, by: "", at: 20})])
+      let afterDismiss = startApartBars(flagsInForce(record))
+      expect(afterDismiss.has(5)).toBeFalsy()
+      expect(afterDismiss.get(20)).toEqual(["upper", "lower"])
     })
   })
 })
