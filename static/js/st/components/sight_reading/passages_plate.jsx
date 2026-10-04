@@ -391,7 +391,7 @@ export class PassagesPlate extends React.Component {
         <div className={styles.given_title}>The analysis called it “{flag.givenTitle}”</div>}
       {mark && <div className={styles.status_mark}>{mark}</div>}
       {moved && <div className={styles.moved_note}>
-        Moved from bars {barsLabel(flag.movedFrom.start, flag.movedFrom.end)}
+        Moved from {barsLabel(flag.movedFrom.start, flag.movedFrom.end)}
         {flag.movedFrom.by ? ` in ${flag.movedFrom.by}’s copy` : ""}
       </div>}
 

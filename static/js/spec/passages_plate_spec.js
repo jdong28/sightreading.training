@@ -1017,6 +1017,38 @@ describe("the passages view (st/difficulty)", function() {
       expect([placed.start, placed.end]).toEqual([16, 16])
     })
 
+    it("names the bars a re-anchored flag moved from once, in the review and on the rail", async function() {
+      let piece = await drillPiece(workhorseScore())
+
+      // a teacher's flag the import re-anchored: bars 3–5 of their copy are
+      // bars 2–4 of this one
+      let moved = {
+        flagId: "teacher:moved", action: "add", at: 1, by: "Mme Dupont", source: "teacher",
+        anchor: {bars: []},
+        flag: {
+          start: 2, end: 4, startIndex: 1, endIndex: 3, hand: "both", level: 2, kinds: [],
+          title: "Moved passage", reason: "", tip: "", apart: false,
+        },
+        moved: {start: 3, end: 5, by: "Mme Dupont"},
+      }
+      await store.updateAnnotation(piece.id, current => withDecisions(current, [moved]))
+
+      mountPlate(piece)
+      await waitFor(() => plate(), {message: "the plate"})
+
+      openReview()
+      let pane = await waitFor(() => reviewPane(), {message: "the review pane"})
+      expect(pane.textContent).toContain("Moved from bars 3–5 in Mme Dupont’s copy")
+
+      // the rail's detail plate, once the moved passage is the one selected
+      let row = [...plate().querySelectorAll("li button")].find(b => b.textContent.includes("Bars 2–4"))
+      expect(row).toBeTruthy()
+      flushSync(() => row.dispatchEvent(new MouseEvent("click", {bubbles: true})))
+      let note = await waitFor(() => plate().querySelector(`.${passagesStyles.moved_note}`),
+        {message: "the rail's moved note"})
+      expect(note.textContent).toEqual("Moved from bars 3–5 in Mme Dupont’s copy")
+    })
+
     it("the review's own writes analyse the piece first, so a decision isn't lost", async function() {
       // a piece in the deck whose analysis hasn't landed: the plate stays up
       // for the player's trouble spot alone

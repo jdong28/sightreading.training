@@ -82,7 +82,7 @@ function queueOrder(a, b) {
 function placeLine(flag) {
   if (flag.place == "moved" && flag.movedFrom) {
     let who = flag.movedFrom.by ? `${flag.movedFrom.by}’s` : "the other"
-    return `Moved from bars ${barsLabel(flag.movedFrom.start, flag.movedFrom.end)} in ${who} copy`
+    return `Moved from ${barsLabel(flag.movedFrom.start, flag.movedFrom.end)} in ${who} copy`
   }
   if (flag.place == "check") { return "These bars' notes changed since this was decided: check it" }
   if (flag.place == "unplaced") { return "Couldn't find these bars in your copy" }
