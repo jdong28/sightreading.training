@@ -15,6 +15,7 @@ import {loadScoreEngines} from "st/score_render/load"
 import scoreCardStyles from "st/components/score_card.module.css"
 import pageStyles from "st/components/pages/sight_reading_page.module.css"
 import passagesStyles from "st/components/sight_reading/passages_plate.module.css"
+import drawerStyles from "st/components/sight_reading/programme_drawer.module.css"
 
 import {openTestStore, pianoScore} from "spec/helpers"
 
@@ -261,16 +262,49 @@ describe("the passages view (st/difficulty)", function() {
     expect(top(detail)).not.toBeGreaterThan(top(score))
 
     // with room for the two columns the detail is sticky, so scrolling the
-    // score down to a late passage leaves it and its legend on screen. The
-    // spec window may be narrower than that layout's 900px, where the detail
-    // is simply first and scrolls with the rest
+    // score down to a late passage leaves it and its legend on screen, clear
+    // of the pane's own pinned header. The spec window may be narrower than
+    // that layout's 900px, where the detail is simply first and scrolls with
+    // the rest
     if (window.matchMedia("(min-width: 900px)").matches) {
       expect(getComputedStyle(detail).position).toEqual("sticky")
       pane.scrollTop = pane.scrollHeight
       await waitFor(() => pane.scrollTop > 0, {message: "the pane to scroll"})
-      expect(top(detail)).not.toBeLessThan(top(pane))
+      expect(top(detail)).not.toBeLessThan(bottom(pane.querySelector(`.${drawerStyles.drawer_header}`)))
       expect(bottom(legend)).not.toBeGreaterThan(bottom(pane))
     }
+  })
+
+  // the pane is the scroller and the piece it holds is long, so its header —
+  // the only way out of it, with no scrim to click on a window no wider than
+  // the pane — stays pinned at the top however far the score has scrolled
+  it("keeps the score pane's close button on screen as the score scrolls", async function() {
+    await drillPiece(workhorseScore({barCount: 48, denseAt: [5, 6, 7], alsoDenseAt: [40, 41, 42]}))
+    renderScorePage()
+    await waitFor(() => plate(), {message: "the passages plate"})
+    await waitFor(() => page.state.engineSource?.status == "ready", {message: "the engine source"})
+
+    openScorePane()
+    let pane = await waitFor(() => scorePane(), {message: "the score pane"})
+    let overview = await waitFor(() => pane.querySelector("[data-score-overview]"), {message: "the drawn overview"})
+    await waitFor(() => overview.getAttribute("aria-busy") == "false", {message: "the overview to settle"})
+
+    let close = pane.querySelector('[aria-label="Close the score"]')
+    expect(close).toBeTruthy()
+
+    // the score is taller than the pane, so there is somewhere to scroll to
+    expect(pane.scrollHeight).toBeGreaterThan(pane.clientHeight + 200)
+    pane.scrollTop = pane.scrollHeight
+    await waitFor(() => pane.scrollTop > 200, {message: "the pane to scroll down"})
+
+    let paneBox = pane.getBoundingClientRect()
+    let closeBox = close.getBoundingClientRect()
+    expect(closeBox.top).not.toBeLessThan(paneBox.top)
+    expect(closeBox.bottom).not.toBeGreaterThan(paneBox.bottom)
+
+    // and it still closes the pane from there
+    flushSync(() => close.dispatchEvent(new MouseEvent("click", {bubbles: true})))
+    expect(pane.getAttribute("aria-hidden")).toEqual("true")
   })
 
   it("selects a passage from a bracket or a list row", async function() {

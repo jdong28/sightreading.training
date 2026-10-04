@@ -246,8 +246,8 @@
    detail at about 900px of pane width, else the detail stacked above it.
    The pane itself is the only scroller (the aside of programme_drawer.module
    .css), and the score is the tall thing in it, so the detail, which carries
-   the pane's legend as its last line, sticks to the top of the pane while the
-   score scrolls rather than leaving with it */
+   the pane's legend as its last line, sticks below the pane's own sticky
+   header while the score scrolls rather than leaving with it */
 .pane_body {
     display: flex;
     flex-direction: column;
@@ -273,7 +273,7 @@
         order: 0;
         width: 320px;
         position: sticky;
-        top: 0;
+        top: var(--drawer-header-height);
     }
 }
 

@@ -17,6 +17,11 @@
 }
 
 .drawer {
+    /* the sticky header's own height: its padding plus the close button,
+       which anything else sticking inside the drawer clears (see .pane_detail
+       in passages_plate.module.css) */
+    --drawer-header-height: 64px;
+
     position: fixed;
     top: 0;
     bottom: 0;
@@ -72,11 +77,20 @@
     }
 }
 
+/* pinned to the top of the drawer, which is the scroller: the close button
+   stays reachable however far the drawer's content has scrolled (a whole
+   engraved piece, in the score pane) */
 .drawer_header {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    box-sizing: border-box;
+    min-height: var(--drawer-header-height);
     display: flex;
     align-items: center;
     justify-content: space-between;
     padding: 22px 24px 14px;
+    background: var(--salon-paper);
 }
 
 .drawer_title {
