@@ -2,21 +2,52 @@
 // session (st/srs/planner), shown at rest at the head of the trainer's
 // right rail while the programme is played. It says what the programme
 // holds for the piece (the reviews due
-// and about how long they take, the new measures on offer, the target
-// length, the measures learned), lets the target be changed, and suggests
-// the piece in study most overdue when it is another one: one piece a session
+// and about how long they take, the new measures on offer, or, for a piece
+// read through, how many bars are left to read; the target length, the
+// measures learned), lets the target and, for a piece with flagged passages
+// in force, the introduction order be changed, and suggests the piece in
+// study most overdue when it is another one: one piece a session
 
 import * as React from "react"
 import * as types from "prop-types"
 
 import {Plate, Pill} from "st/components/salon"
 import {getAppStore} from "st/storage"
-import {mostOverduePiece} from "st/srs/planner"
+import {mostOverduePiece, READ_FIRST, HARDEST_FIRST, SCORE_ORDER} from "st/srs/planner"
+import {introductionOrder, orderOffered, programmePassages} from "st/data"
 
 import styles from "./programme_plate.module.css"
 
 // the session lengths offered, in minutes
 export const TARGET_MINUTES = [10, 20, 30]
+
+// the order row's pills, in the order they are offered
+const ORDER_PILLS = [
+  {value: READ_FIRST, label: "Read through"},
+  {value: HARDEST_FIRST, label: "Hardest first"},
+  {value: SCORE_ORDER, label: "In score order"},
+]
+
+// the words a passage's level adds to the order row's description, mirroring
+// LEVEL_WORDS in st/difficulty/index (lowercase, "passage" for levels 2 and
+// 3), inlined so the plate imports nothing from st/difficulty
+const PASSAGE_LEVEL_WORDS = {1: "worth-a-look", 2: "hard", 3: "hardest"}
+
+// one short line naming what the order does with the piece's flagged
+// passages, from the hardest one (the first a non-score order pulls)
+function orderDescription(order, passages) {
+  if (order == SCORE_ORDER) {
+    return "New bars arrive in score order, flagged passages included."
+  }
+
+  let flag = passages.find(flag => flag.level >= 2) || passages[0]
+  let level = PASSAGE_LEVEL_WORDS[flag.level] || "flagged"
+  let bars = flag.start == flag.end ? `bar ${flag.start}` : `bars ${flag.start}–${flag.end}`
+
+  return order == READ_FIRST ?
+    `Read the piece through once, then ${bars}, the ${level} passage; the rest in score order.` :
+    `Starts on ${bars}, the ${level} passage; the rest in score order.`
+}
 
 const plural = (count, word) => `${count} ${word}${count == 1 ? "" : "s"}`
 
@@ -47,11 +78,43 @@ export class ProgrammePlate extends React.Component {
       .catch(err => console.warn("Couldn't save the session length", err))
   }
 
+  setOrder(order) {
+    this.props.setSettings({...this.props.settings, introduce: order})
+  }
+
   // the piece in study most overdue, when it isn't the one played
   suggestion() {
     let store = this.getStore()
     let id = mostOverduePiece({studies: store.studies(), items: store.items(), now: this.props.now()})
     return id && id != this.props.settings.piece ? store.piece(id) : null
+  }
+
+  // the order row: three pills (ORDER_PILLS) and one line naming what the
+  // current one does with the piece's flagged passages, shown only while
+  // the piece has flags in force for the drawer's hand (orderOffered)
+  renderOrder() {
+    let {settings} = this.props
+    let order = introductionOrder(settings)
+    let passages = programmePassages(settings)
+
+    return <React.Fragment>
+      <div className={styles.row}>
+        <span>Order</span>
+        <div className={styles.pills} role="group" aria-label="Order">
+          {ORDER_PILLS.map(({value, label}) =>
+            <Pill
+              key={value}
+              variant="choice"
+              className={styles.small_pill}
+              selected={value == order}
+              onClick={() => {
+                if (value != order) { this.setOrder(value) }
+              }}>{label}</Pill>
+          )}
+        </div>
+      </div>
+      <p className={styles.order_description}>{orderDescription(order, passages)}</p>
+    </React.Fragment>
   }
 
   render() {
@@ -72,8 +135,8 @@ export class ProgrammePlate extends React.Component {
           </dd>
         </div>
         <div className={styles.figure}>
-          <dt>New bars on offer</dt>
-          <dd>{summary.newMeasures}</dd>
+          <dt>{summary.toRead > 0 ? "To read through" : "New bars on offer"}</dt>
+          <dd>{summary.toRead > 0 ? summary.toRead : summary.newMeasures}</dd>
         </div>
         <div className={styles.figure}>
           <dt>Target</dt>
@@ -89,6 +152,8 @@ export class ProgrammePlate extends React.Component {
           {summary.learned} of {plural(summary.measures, "bar")} learned
         </div>
       </div>
+
+      {orderOffered(this.props.settings) ? this.renderOrder() : null}
 
       <div className={styles.row}>
         <span>Session length</span>

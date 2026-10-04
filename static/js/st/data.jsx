@@ -22,12 +22,12 @@ import {
 
 import {
   loadDeck, findPiece, pieceSong, removePiece, importMusicXMLPiece,
-  exportLibraryFile, importLibraryFile
+  exportLibraryFile, importLibraryFile, ensureAnnotation
 } from "st/sheet_music_deck"
 
 import {getAppStore} from "st/storage"
 import {PlanDeck, PlanGenerator} from "st/plan_cards"
-import {inStudy} from "st/srs/planner"
+import {inStudy, passagesForHand, READ_FIRST, INTRODUCTION_ORDERS} from "st/srs/planner"
 import {flagsInForce} from "st/difficulty/records"
 
 import {ChordGenerator, MultiKeyChordGenerator} from "st/chord_generators"
@@ -157,6 +157,24 @@ export function sheetMusicPassages(settings, store=getAppStore()) {
   return piece ? flagsInForce(store.annotation(piece.id)) : []
 }
 
+// The settings' piece's flagged passages that count for the drawer's hand
+// setting (st/srs/planner introduction()), for the programme's order row
+export function programmePassages(settings, store=getAppStore()) {
+  return passagesForHand(sheetMusicPassages(settings, store), itemHand(settings.hand))
+}
+
+// The stored introduction order (st/srs/planner INTRODUCTION_ORDERS), or the
+// default (READ_FIRST, "read through") for an unset or unrecognised one
+export function introductionOrder(settings) {
+  return INTRODUCTION_ORDERS.includes(settings.introduce) ? settings.introduce : READ_FIRST
+}
+
+// Whether the programme's order (drawer input or plate row) is offered: the
+// piece plays today's programme and has flagged passages in force for the hand
+export function orderOffered(settings, store=getAppStore()) {
+  return plannedPractice(settings, store) && programmePassages(settings, store).length > 0
+}
+
 // The settings for practising a flagged passage in free practice, as one
 // card, under the given hand (handSetting): "Practise" keeps the drawer's
 // own hand, a hand pill passes "upper"/"lower"
@@ -219,6 +237,7 @@ export function planGenerator(staff, settings) {
   let song = piece && pieceSong(piece)
   if (!song) { return null }
 
+  let store = getAppStore()
   let [startMeasure, endMeasure] = measureNumberRange(song)
   let whole = {...settings, startMeasure, endMeasure}
   let measures = pieceSectionMeasures(staff, whole, song)
@@ -236,6 +255,12 @@ export function planGenerator(staff, settings) {
     handMeasures: apart ? handMeasuresOf(measures) : null,
     handCard: apart ? handCard : null,
     cardMeasures: planCardMeasures(settings),
+    order: introductionOrder(settings),
+    passages: () => programmePassages(settings, store),
+    // a piece without an annotation record yet is analysed lazily
+    // (PassagesPlate#ensure); without passagesReady the deck would plan its
+    // first card in score order and play it before the flags land
+    passagesReady: store.annotation(piece.id) ? null : ensureAnnotation(piece.id, store),
   })
 
   return deck.playable ? new PlanGenerator(deck) : null
@@ -886,10 +911,24 @@ const ALL_GENERATORS = [
         ],
         value: settings => plannedPractice(settings) ? PROGRAMME_PRACTICE : FREE_PRACTICE,
         hint: settings => plannedPractice(settings) ?
-          "Today's programme picks each measure: the ones due for review, new ones in score " +
-          "order, and those you missed again in a moment." :
+          "Today's programme picks each measure: the ones due for review, new ones " +
+          (orderOffered(settings) ? "in the order below" : "in score order") +
+          ", and those you missed again in a moment." :
           "Free practice plays the measures you pick.",
         visible: settings => programmeOffered(settings),
+      },
+      {
+        name: "introduce",
+        label: "order",
+        type: "select",
+        default: READ_FIRST,
+        values: INTRODUCTION_ORDERS.map(name => ({name})),
+        value: settings => introductionOrder(settings),
+        hint: "Read through plays the piece once as practice, then brings in its hardest " +
+          "passage from the bar before it, then the rest in score order. Hardest first starts " +
+          "on the hard passages. In score order starts at the beginning. Read through and " +
+          "Hardest first bring in a repeat of a flagged passage right after it.",
+        visible: settings => orderOffered(settings),
       },
       {
         name: "passage",

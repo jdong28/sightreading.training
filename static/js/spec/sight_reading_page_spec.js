@@ -21,7 +21,7 @@ import {
 } from "st/data"
 import {SCROLL_WAIT} from "st/score_render/card_scroll"
 import {PlanGenerator} from "st/plan_cards"
-import {SITTING_GAP_MS, entryCaption} from "st/srs/planner"
+import {SITTING_GAP_MS, entryCaption, SCORE_ORDER, READ_FIRST} from "st/srs/planner"
 import {AGAIN, HARD, GOOD, EASY} from "st/srs/grade"
 import {IN_ORDER, RANDOM_ORDER, MeasureCardGenerator} from "st/measure_cards"
 import {DRILL_STORAGE_KEY, SCORE_DRILL_STORAGE_KEY} from "st/generators"
@@ -2391,8 +2391,11 @@ describe("sight reading page", function() {
         await store.putStudy({pieceId: piece.id, status: "learning", startedAt: Date.now()})
       }
       if (seed) { await seed() }
+      // today's programme's own subject isn't the introduction order: score
+      // order keeps every other test here unaffected by a piece's flags
       window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
-        piece: piece.id, startMeasure: 3, endMeasure: 4, hand: BOTH_HANDS, measuresPerCard: "2", ...settings,
+        piece: piece.id, startMeasure: 3, endMeasure: 4, hand: BOTH_HANDS, measuresPerCard: "2",
+        introduce: SCORE_ORDER, ...settings,
       }))
       let el = renderScorePage()
       // today's programme reads the log when a bar that can split is failing
@@ -2465,6 +2468,52 @@ describe("sight reading page", function() {
       expect(plate(el)).toBeUndefined()
       expect(plateStatus(el)).toEqual("New · bar 1")
       expect(el.textContent).toContain("measures 1–2")
+    })
+
+    // a hand-made flag, valid enough for store.putAnnotation (st/difficulty
+    // records), so the order row and the read-through start without a real
+    // score analysis
+    let flagRecordFor = piece => ({
+      pieceId: piece.id, fingerprint: {bars: []}, decisions: [], runs: {},
+      proposals: [{
+        id: "score:1-1:order-test", source: "score", start: 1, end: 1, startIndex: 1, endIndex: 1,
+        hand: "both", level: 3, kinds: ["density"], title: "Test passage",
+        reason: "test", reasons: ["test"], tip: "test",
+      }],
+    })
+
+    it("offers today's programme order on the plate and in the drawer for a flagged piece", async function() {
+      let el = await renderProgramme({
+        settings: {introduce: READ_FIRST}, seed: () => store.putAnnotation(flagRecordFor(piece)),
+      })
+
+      expect(buttonNamed(el, "Read through").getAttribute("aria-pressed")).toEqual("true")
+      expect(el.textContent).toContain("To read through")
+
+      click(buttonNamed(el, "Begin"))
+      expect(plateStatus(el)).toEqual("Read-through · bar 1")
+
+      click(buttonNamed(el, "Rest"))
+      click(buttonNamed(el, "In score order"))
+      expect(JSON.parse(window.localStorage.getItem(SHEET_MUSIC_STORAGE_KEY)).introduce)
+        .toEqual("in score order")
+
+      click(buttonNamed(el, "Begin"))
+      // bar 1 is the flagged bar itself here, so even in score order its
+      // status still names the passage (introduction() marks it in every
+      // order, see st/srs/planner)
+      expect(plateStatus(el)).toEqual("New · bar 1 · hardest passage")
+      click(buttonNamed(el, "Rest"))
+
+      click(buttonLabelled(el, "Programme"))
+      let drawer = el.querySelector(`.${drawerStyles.drawer}[aria-label="Programme"]`)
+      // the drawer's generic select pills show the raw stored value
+      // ("read through"), not the plate's own capitalized label
+      expect(buttonNamed(drawer, "read through")).toBeTruthy()
+
+      click(buttonNamed(drawer, "free practice"))
+      drawer = el.querySelector(`.${drawerStyles.drawer}[aria-label="Programme"]`)
+      expect(buttonNamed(drawer, "read through")).toBeFalsy()
     })
 
     // the sheet-music UI polish: the rail, not the main column, carries the

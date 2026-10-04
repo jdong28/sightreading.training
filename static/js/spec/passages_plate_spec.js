@@ -691,25 +691,46 @@ describe("the passages view (st/difficulty)", function() {
     }
   })
 
-  it("fits a narrow rail column without horizontal overflow (the programme plate)", function() {
+  it("fits a narrow rail column without horizontal overflow (the programme plate)", async function() {
+    // a piece in the programme with a flag in force, so the Order row and
+    // its description line show too
+    let piece = await drillPiece(workhorseScore(), {practice: "programme"})
+    await store.putAnnotation({
+      pieceId: piece.id, fingerprint: {bars: []}, decisions: [], runs: {},
+      proposals: [{
+        id: "score:9-11:order-test", source: "score", start: 9, end: 11, startIndex: 9, endIndex: 11,
+        hand: "both", level: 3, kinds: ["density"], title: "Test passage",
+        reason: "test", reasons: ["test"], tip: "test",
+      }],
+    })
+
     let generator = {
-      summary: () => ({due: 2, dueMinutes: 4, newMeasures: 3, targetMinutes: 20, learned: 4, measures: 8}),
+      summary: () => ({due: 2, dueMinutes: 4, newMeasures: 3, toRead: 5, targetMinutes: 20, learned: 4, measures: 16}),
     }
 
     let overflowing = el => [...el.querySelectorAll('[class*="plate"]')]
       .filter(plateEl => plateEl.scrollWidth > plateEl.clientWidth + 1)
 
-    let div = document.createElement("div")
-    div.style.width = "260px"
-    document.body.appendChild(div)
-    let r = createRoot(div)
-    flushSync(() => r.render(React.createElement(ProgrammePlate, {
-      generator, settings: {piece: "x"}, setSettings: () => {}, store,
-    })))
+    for (let width of [260, 340]) {
+      let div = document.createElement("div")
+      div.style.width = `${width}px`
+      document.body.appendChild(div)
+      let r = createRoot(div)
+      flushSync(() => r.render(React.createElement(ProgrammePlate, {
+        generator, settings: {piece: piece.id, hand: "both hands", practice: "programme"},
+        setSettings: () => {}, store,
+      })))
 
-    expect(overflowing(div)).toEqual([])
+      let labels = [...div.querySelectorAll("button")].map(b => b.textContent.trim())
+      expect(labels).toContain("Read through")
+      expect(labels).toContain("Hardest first")
+      expect(labels).toContain("In score order")
+      expect(div.textContent).toContain("To read through")
 
-    flushSync(() => r.unmount())
-    div.remove()
+      expect(overflowing(div)).toEqual([])
+
+      flushSync(() => r.unmount())
+      div.remove()
+    }
   })
 })

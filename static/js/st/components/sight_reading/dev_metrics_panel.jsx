@@ -320,7 +320,7 @@ export default class DevMetricsPanel extends React.Component {
                 <td>{range.counts.misses}</td>
                 <td>{range.counts.hesitations}</td>
                 <td>{range.firstSight ? "first sight" : formatMs(range.usualPace)}</td>
-                <td>{range.practiceOnly ? "practice only (off schedule)" : "review"}</td>
+                <td>{range.practiceOnly ? `practice only (${range.practiceOnly})` : "review"}</td>
               </tr>
               <tr className={styles.reason}>
                 <td colSpan={8}>{range.reason}</td>

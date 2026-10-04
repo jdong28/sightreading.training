@@ -11,9 +11,12 @@
 // The queue, first match wins:
 // 1. a ladder rung come due, earliest first, the immediate retry after an
 //    again included;
-// 2. a review due today, lowest predicted recall first, after a warm-up of
+// 2. while the piece is read through (see below), the next bar not yet
+//    played, in score order;
+// 3. a review due today, lowest predicted recall first, after a warm-up of
 //    the two likeliest recalled;
-// 3. a new measure, the next in score order not yet seen, while fewer than
+// 4. a new measure, the next not yet seen in the piece's introduction order
+//    (PlanInput#introduce, score order without one), while fewer than
 //    LADDER_CAP items are on the ladder, the ones resting counted, new cards
 //    are at most half the cards played and the due reviews fit in
 //    REVIEW_SHARE of the time left to the target (with nothing else to do,
@@ -22,13 +25,37 @@
 //    Once the first fifth of the target has passed, a new measure these
 //    limits allow goes ahead of the due reviews, so new material is
 //    interleaved with them rather than left until they are all done;
-// 4. an early review: an item in review not played today, lowest predicted
+// 5. an early review: an item in review not played today, lowest predicted
 //    recall first;
-// 5. a run-through: an item in review, least recently played first, which
+// 6. a run-through: an item in review, least recently played first, which
 //    the scheduler's same-day rule leaves unscheduled;
-// 6. the next ladder rung, played before it comes due.
+// 7. the next ladder rung, played before it comes due.
 // Never the measure just played, save the retry, its hand alone the hand
 // scaffold sends next and a piece of one measure.
+//
+// Read through first: a piece new to the programme (none of its single
+// measures of the session's hand ever scheduled) is read through once before
+// any of it is learned, one bar at a time in score order, each played as
+// practice alone (PlanInput#readThrough, state.toRead, the READ_THROUGH
+// reason): no review is written, so a bar's first graded review comes at its
+// second reading, when it is introduced. A read-through left part way
+// resumes at the first bar not yet played, from the items' attempts alone,
+// and a piece with a bar already scheduled never reads through at all.
+//
+// The introduction order: once a piece is read through, or for one that
+// skips the read-through (order SCORE_ORDER, or a piece without flagged
+// passages in force for the session's hand), its new bars still arrive in
+// an order (PlanInput#introduce, built by introduction()): READ_FIRST (the
+// default) pulls the piece's hardest flagged passage, from the bar before it
+// (its lead-in), early, with its repeats (a flag's alsoAt ranges) right
+// after it, then the rest in score order with every other flag's repeats
+// likewise pulled forward; HARDEST_FIRST pulls every Hard and Hardest
+// passage that way; SCORE_ORDER pulls nothing, today's order exactly. A
+// repeat keeps its own item and schedule: only the order it first arrives in
+// changes. The order never reads the log and changes only which bar is
+// first graded, never how a graded bar is scheduled, so the schedule stays
+// what replay(reviews) rebuilds and SCHEDULER_ALGO is untouched by any of
+// this.
 //
 // Hands apart, only where a bar needs it (the hand scaffold): a bar
 // played hands together that fails (graded again) at first sight, or twice
@@ -117,6 +144,17 @@ export const NEW = "new"
 export const EARLY = "early"
 export const RUN_THROUGH = "run-through"
 export const WAIT = "wait"
+export const READ_THROUGH = "read-through"
+
+// the introduction order a piece's new bars arrive in, see introduction()
+export const READ_FIRST = "read through"
+export const HARDEST_FIRST = "hardest first"
+export const SCORE_ORDER = "in score order"
+export const INTRODUCTION_ORDERS = [READ_FIRST, HARDEST_FIRST, SCORE_ORDER]
+
+// a passage counts for a session level enough to be pulled forward, see
+// introduction()
+const PASSAGE_LEVEL = 2
 
 // a failure sends a bar's hand alone when that hand's staff took at least
 // this share of its staff blames, and at least SCAFFOLD_MISSES of them
@@ -187,18 +225,137 @@ export function onScheduleMeasures(card, itemOf, now) {
  * @property {Map<string, ReviewRecord>} [lastReviews] the last graded review
  * known of an item, by item id, whose staffMisses say which hand a failure's
  * misses fell on
+ * @property {number[]|null} [introduce] the piece's bar numbers in the order
+ * new bars should arrive (see introduction()), score order when left out
+ * @property {boolean} [readThrough] whether the piece is read through once
+ * before any of its bars not yet scheduled are learned
  */
 
 /**
  * The next measure to practise and the state of the programme.
  * @typedef {Object} PlanEntry
- * @property {string} reason one of RETRY, LADDER, REVIEW, NEW, EARLY, RUN_THROUGH, WAIT
+ * @property {string} reason one of RETRY, LADDER, REVIEW, NEW, EARLY,
+ * RUN_THROUGH, WAIT, READ_THROUGH
  * @property {number} measure
  * @property {string} itemId
  * @property {ItemRecord|null} item null for a measure never scheduled
  * @property {string} hand the session's hand, or the hand alone of a bar
  * the hand scaffold offers
  */
+
+/**
+ * A counting flag's bar, for the status line words (see entryStatus).
+ * @typedef {Object} PassageRole
+ * @property {string} role "passage", "lead-in" or "repeat"
+ * @property {number} start the flag's own start
+ * @property {number} end the flag's own end
+ * @property {number} level the flag's level, 1-3
+ */
+
+/**
+ * The counting flags of a session: those that apply to hand, see
+ * introduction().
+ * @param {Object[]} passages flags in force (st/difficulty flagsInForce),
+ * hardest first
+ * @param {string} [hand]
+ * @returns {Object[]}
+ */
+export function passagesForHand(passages, hand="both") {
+  return passages.filter(flag => hand == "both" || flag.hand == "both" || flag.hand == hand)
+}
+
+/**
+ * The order a piece's new bars should arrive in (decisions 1 and 7 of the
+ * hard-sections design): which bar introduction() pulls forward, from which
+ * lead-in, and the role of every bar a counting flag touches, for the status
+ * line words (entryStatus).
+ * @param {Object} opts
+ * @param {number[]} opts.measures the playable bar numbers, in score order
+ * @param {Object[]} [opts.passages] flags in force (st/difficulty
+ * flagsInForce), hardest first: {start, end, level, hand, alsoAt?}
+ * @param {string} [opts.order] one of INTRODUCTION_ORDERS
+ * @param {string} [opts.hand] the session's hand
+ * @returns {{introduce: number[]|null, readThrough: boolean, roles: Map<number, PassageRole>}}
+ */
+export function introduction({measures, passages=[], order=READ_FIRST, hand="both"}) {
+  let counting = passagesForHand(passages, hand)
+  let barsOf = flag => measures.filter(measure => measure >= flag.start && measure <= flag.end)
+
+  // every bar of a counting flag gets the passage role, in force order
+  // (hardest first), an earlier flag's role never overwritten; marked in
+  // every order, including SCORE_ORDER, so a flagged bar is named as it comes
+  let roles = new Map()
+  for (let flag of counting) {
+    for (let measure of barsOf(flag)) {
+      if (!roles.has(measure)) {
+        roles.set(measure, {role: "passage", start: flag.start, end: flag.end, level: flag.level})
+      }
+    }
+  }
+
+  if (!counting.length || order == SCORE_ORDER) {
+    return {introduce: null, readThrough: false, roles}
+  }
+
+  // the playable bar just before a flag's first playable bar, by index;
+  // none for a flag opening the piece
+  let leadIn = flag => {
+    let flagBars = barsOf(flag)
+    if (!flagBars.length) { return null }
+    let idx = measures.indexOf(flagBars[0])
+    return idx > 0 ? measures[idx - 1] : null
+  }
+  let repeatsOf = flag => (flag.alsoAt || []).flatMap(([from, to]) =>
+    measures.filter(measure => measure >= from && measure <= to))
+
+  // READ_FIRST pulls the first counting flag hard enough, HARDEST_FIRST
+  // every one
+  let pulled = order == HARDEST_FIRST ? counting.filter(flag => flag.level >= PASSAGE_LEVEL) :
+    [counting.find(flag => flag.level >= PASSAGE_LEVEL)].filter(Boolean)
+
+  let seen = new Set()
+  let introduce = []
+  let add = measure => {
+    if (seen.has(measure)) { return }
+    seen.add(measure)
+    introduce.push(measure)
+  }
+  let markRole = (measure, kind, flag) => {
+    if (!roles.has(measure)) { roles.set(measure, {role: kind, start: flag.start, end: flag.end, level: flag.level}) }
+  }
+
+  // each pulled passage, early, from its lead-in, with its repeats right
+  // after it
+  for (let flag of pulled) {
+    let lead = leadIn(flag)
+    if (lead != null) {
+      add(lead)
+      markRole(lead, "lead-in", flag)
+    }
+    for (let measure of barsOf(flag)) { add(measure) }
+    for (let measure of repeatsOf(flag)) {
+      add(measure)
+      markRole(measure, "repeat", flag)
+    }
+  }
+
+  // the rest, in score order; right after a flag's last playable bar, at any
+  // level, its repeats (decision 7)
+  for (let measure of measures) {
+    add(measure)
+    for (let flag of counting) {
+      let flagBars = barsOf(flag)
+      if (flagBars.length && flagBars[flagBars.length - 1] == measure) {
+        for (let repeat of repeatsOf(flag)) {
+          add(repeat)
+          markRole(repeat, "repeat", flag)
+        }
+      }
+    }
+  }
+
+  return {introduce, readThrough: order == READ_FIRST, roles}
+}
 
 // when an item was played: its graded attempts, and its last practice
 const playedAt = item => [...item.recent.map(([at]) => at), item.lastPracticed]
@@ -334,7 +491,7 @@ function handsByMeasure(items) {
 export function planState({
   pieceId, items, measures, hand="both", now, settings=DEFAULT_SCHEDULER_SETTINGS,
   practice=DEFAULT_PRACTICE_SETTINGS, cardMeasures=1, previous=null, handMeasures=null,
-  split=true, lastReviews=new Map(),
+  split=true, lastReviews=new Map(), introduce=null, readThrough=false,
 }) {
   let order = new Map(measures.map((measure, idx) => [measure, idx]))
   let single = item => item.pieceId == pieceId && item.startMeasure == item.endMeasure &&
@@ -414,7 +571,27 @@ export function planState({
   let ladder = awake.filter(item => ON_LADDER.includes(item.state)).map(slotOf)
   let review = awake.filter(item => item.state == "review").map(slotOf)
   let dueReviews = review.filter(slot => slot.item.due < endOfToday)
-  let unseen = measures.filter(measure => !liveMeasures.has(measure) && !setAside.has(measure))
+
+  // never scheduled, nor set aside: the measures still to learn, in the
+  // piece's introduction order when given (its bars first, any it leaves out
+  // following in score order), else exactly score order
+  let notLive = measure => !liveMeasures.has(measure) && !setAside.has(measure)
+  let unseen
+  if (introduce) {
+    let ordered = introduce.filter(measure => order.has(measure) && notLive(measure))
+    let already = new Set(ordered)
+    unseen = [...ordered, ...measures.filter(measure => notLive(measure) && !already.has(measure))]
+  } else {
+    unseen = measures.filter(notLive)
+  }
+
+  // the piece is read through while none of its bars is scheduled yet: every
+  // playable bar not yet played (its single measure item of the session's
+  // hand with no attempts), in score order
+  let readingThrough = readThrough && !live.length
+  let toRead = readingThrough ?
+    measures.filter(measure => !setAside.has(measure) && !((byMeasure.get(measure) || {}).attempts > 0)) : []
+
   let scaffolds = new Map(ladder.filter(slot => slot.hand != hand).map(slot => [slot.measure, slot.hand]))
 
   let timed = live.filter(item => item.attempts > 0 && item.elapsedMs > 0)
@@ -428,7 +605,7 @@ export function planState({
 
   return {
     pieceId, hand, now, settings, order, byMeasure, recent, today, endOfToday,
-    live, awake, failing, ladder, laddered, review, dueReviews, unseen, resting, scaffolds, sitting,
+    live, awake, failing, ladder, laddered, review, dueReviews, unseen, toRead, resting, scaffolds, sitting,
     cardMs, targetMs, elapsedMs,
     complete: elapsedMs >= targetMs || (!ladder.length && !dueReviews.length && !unseen.length),
   }
@@ -440,7 +617,7 @@ const isRetry = item => ON_LADDER.includes(item.state) && item.lastGrade == AGAI
 // the queue in order, as lists of candidates: never empty while the piece
 // has a bar awake or a measure to learn
 function candidates(state, {avoid}) {
-  let {now, settings, order, recent, ladder, review, dueReviews, unseen, sitting} = state
+  let {now, settings, order, recent, ladder, review, dueReviews, unseen, toRead, sitting} = state
   let recall = slot => predictedRecall(slot.item, now, settings)
   let measureOrder = (a, b) => order.get(a.measure) - order.get(b.measure)
   let other = slot => !avoid || !recent.has(slot.id) || slot.retry
@@ -461,7 +638,11 @@ function candidates(state, {avoid}) {
 
   let waiting = ladder.filter(other).sort((a, b) => a.due - b.due || measureOrder(a, b))
 
-  let newMeasures = unseen.map(measure => newSlot(state, measure)).filter(other)
+  // never filtered by other: unlike a ladder rung or review, a new measure
+  // has nothing graded on it yet, so a bar merely touched as a practice-only
+  // neighbour (a read-through's lead-in, see introduction()) is still its
+  // own to introduce right after, not a repeat of what was just played
+  let newMeasures = unseen.map(measure => newSlot(state, measure))
 
   let idle = !rungs.length && !due.length && !early.length && !runThrough.length
   let cap = idle ? IDLE_LADDER_CAP : LADDER_CAP
@@ -469,13 +650,20 @@ function candidates(state, {avoid}) {
   let fits = dueReviews.length * state.cardMs <= REVIEW_SHARE * remainingMs
   let share = sitting.newCards <= NEW_SHARE * sitting.cards
   let offerNew = state.laddered < cap && fits && (share || idle)
-  let newEntry = offerNew ? newMeasures.slice(0, 1).map(slot => ({reason: NEW, slot})) : []
+
+  // reading through (toRead non-empty, which only holds while nothing of the
+  // piece is scheduled, so every other list above is empty too) takes the
+  // place of a new measure, in score order, until every bar has been played
+  let reading = toRead.length > 0
+  let readEntry = reading ? [{reason: READ_THROUGH, slot: newSlot(state, toRead[0])}] : []
+  let newEntry = !reading && offerNew ? newMeasures.slice(0, 1).map(slot => ({reason: NEW, slot})) : []
 
   // past the warm-up fifth of the session, new material the limits allow is
   // interleaved with the due reviews rather than waiting for them all
   let interleave = !warmUp && state.elapsedMs >= state.targetMs / 5
 
   return [
+    ...readEntry,
     ...rungs.map(slot => ({reason: slot.retry ? RETRY : LADDER, slot})),
     ...(interleave ? newEntry : []),
     ...due.map(slot => ({reason: REVIEW, slot})),
@@ -533,10 +721,11 @@ export function planNext(input) {
 
 /**
  * What the programme holds for the piece before a session: the reviews due
- * and about how long they take, the new measures on offer, the target, and
- * the measures learned (in review) out of all, a bar resting among them.
+ * and about how long they take, the new measures on offer, the bars still to
+ * read through (0 outside a read-through), the target, and the measures
+ * learned (in review) out of all, a bar resting among them.
  * @param {PlanInput} input
- * @returns {{due: number, dueMinutes: number, newMeasures: number, targetMinutes: number, learned: number, measures: number}}
+ * @returns {{due: number, dueMinutes: number, newMeasures: number, toRead: number, targetMinutes: number, learned: number, measures: number}}
  */
 export function planSummary(input) {
   let state = planState(input)
@@ -545,6 +734,7 @@ export function planSummary(input) {
     due,
     dueMinutes: due ? Math.max(1, Math.round(due * state.cardMs / MINUTE)) : 0,
     newMeasures: state.unseen.length,
+    toRead: state.toRead.length,
     targetMinutes: (input.practice || DEFAULT_PRACTICE_SETTINGS).sessionMinutes,
     learned: state.live.filter(item => item.state == "review").length,
     measures: input.measures.length,
@@ -625,23 +815,56 @@ function daysAgo(then, now) {
   return days <= 0 ? "today" : days == 1 ? "yesterday" : `${days} days ago`
 }
 
+// "bar 68" or "bars 68–73", inlined rather than importing barsLabel from
+// st/music
+const barsWords = (start, end) => start == end ? `bar ${start}` : `bars ${start}–${end}`
+
+// the level words of a counting flag's own passage bar, inlined (mirroring
+// LEVEL_WORDS in st/difficulty/index, lowercase and "passage" for levels 2
+// and 3) rather than importing st/difficulty
+const PASSAGE_LEVEL_WORDS = {1: "worth a look", 2: "hard passage", 3: "hardest passage"}
+
+// the words a bar's passage role (see introduction()) adds to its status
+// line, null without one
+function passageWords(passage) {
+  if (!passage) { return null }
+
+  switch (passage.role) {
+    case "lead-in":
+      return `lead-in to ${barsWords(passage.start, passage.end)}`
+    case "repeat":
+      return `repeats ${barsWords(passage.start, passage.end)}`
+    default:
+      return PASSAGE_LEVEL_WORDS[passage.level] || null
+  }
+}
+
 /**
  * The status line of an entry, eg. "Review · bar 11 · hands together · last
- * played 4 days ago", "New · bar 17", "Once more · bar 11".
+ * played 4 days ago", "New · bar 17", "New · bar 69 · hardest passage",
+ * "Read-through · bar 3", "Once more · bar 11".
  * @param {PlanEntry} entry
  * @param {Object} opts
  * @param {number} opts.now
  * @param {boolean} [opts.complete] prefixes "Programme complete"
+ * @param {PassageRole} [opts.passage] the entry's bar's role (see
+ * PlanDeck#passageOf), named only for a NEW entry
  * @returns {string}
  */
-export function entryStatus(entry, {now, complete=false}) {
+export function entryStatus(entry, {now, complete=false, passage=null}={}) {
   let bar = `bar ${entry.measure}`
   let hand = HAND_WORDS[entry.hand] || entry.hand
   let parts
 
   switch (entry.reason) {
-    case NEW:
+    case NEW: {
       parts = ["New", bar]
+      let words = passageWords(passage)
+      if (words) { parts.push(words) }
+      break
+    }
+    case READ_THROUGH:
+      parts = ["Read-through", bar]
       break
     case REVIEW:
     case EARLY: {
@@ -681,18 +904,28 @@ export function entryCaption(item, now) {
   return days <= 0 ? "returns later today" : days == 1 ? "returns tomorrow" : `returns in ${days} days`
 }
 
+// "87 bars left to read through", "1 bar left to read through", or
+// "read-through done · new bars next" once every bar has been played
+function readThroughCaption(toRead) {
+  if (!toRead) { return "read-through done · new bars next" }
+  return `${toRead} ${toRead == 1 ? "bar" : "bars"} left to read through`
+}
+
 /**
  * The caption after a card of the programme, from the state the attempt
- * leaves: its bar resting until the next sitting, eg. "Bar 19 rests until
- * your next sitting"; the hand scaffold offering it a hand alone next, eg. "Left hand
- * alone, then together"; the scaffold done with it, "hands together next";
- * else when it comes back (entryCaption).
+ * leaves: how many bars are left to read through, while the piece still is
+ * (readThroughCaption); its bar resting until the next sitting, eg. "Bar 19
+ * rests until your next sitting"; the hand scaffold offering it a hand alone
+ * next, eg. "Left hand alone, then together"; the scaffold done with it,
+ * "hands together next"; else when it comes back (entryCaption).
  * @param {PlanEntry} entry the card's
  * @param {ItemRecord|null} item the entry's item as the attempt left it
  * @param {Object} state planState after the attempt
  * @returns {string|null}
  */
 export function cardCaption(entry, item, state) {
+  if (entry.reason == READ_THROUGH) { return readThroughCaption(state.toRead.length) }
+
   let {measure} = entry
   if (state.resting.has(measure)) { return `Bar ${measure} rests until your next sitting` }
 

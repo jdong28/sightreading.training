@@ -74,6 +74,8 @@ Before you press **Begin**, beside the card, the page shows what it found under 
 
 **Practise bars 5–7** sets the drill to that passage, as one card, in free practice; the pill beside it does the same for one hand alone (a passage that is hard in both hands starts with the right). The passages are also quick picks under **difficult passages** in the **Programme** drawer, hardest first, while you are in free practice: picking one sets the section to it.
 
+In today's programme, a piece with flagged passages is read through once first, then its hardest passage, from the bar before it, then the rest in score order; a repeat of a flagged passage follows it. **Order** on the **Tonight's programme** plate, or in the **Programme** drawer, switches to **Hardest first** (every hard passage early, skipping the read-through) or **In score order** (today's order, start to finish).
+
 ### Practising on an acoustic piano
 
 If you play an acoustic piano, there is nothing for the app to listen to. Open the device setup from the instrument button in the header and pick **Acoustic piano** under **Instrument**. The sheet music page then stops detecting notes, while the Staff exercises keep listening as before: play the card on the screen, then grade the pass yourself with the row under the staff, by tapping it or with keys **1**–**4**:
