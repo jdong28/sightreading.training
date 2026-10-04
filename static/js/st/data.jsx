@@ -27,7 +27,7 @@ import {
 
 import {getAppStore} from "st/storage"
 import {PlanDeck, PlanGenerator} from "st/plan_cards"
-import {inStudy, passagesForHand, READ_FIRST, INTRODUCTION_ORDERS} from "st/srs/planner"
+import {inStudy, passagesForHand, pulledPassage, READ_FIRST, INTRODUCTION_ORDERS} from "st/srs/planner"
 import {flagsInForce} from "st/difficulty/records"
 
 import {ChordGenerator, MultiKeyChordGenerator} from "st/chord_generators"
@@ -924,10 +924,17 @@ const ALL_GENERATORS = [
         default: READ_FIRST,
         values: INTRODUCTION_ORDERS.map(name => ({name})),
         value: settings => introductionOrder(settings),
-        hint: "Read through plays the piece once as practice, then brings in its hardest " +
+        // only a passage flagged hard is pulled forward (pulledPassage), so
+        // with none the orders differ by the read-through alone
+        hint: settings => pulledPassage(programmePassages(settings)) ?
+          "Read through plays the piece once as practice, then brings in its hardest " +
           "passage from the bar before it, then the rest in score order. Hardest first starts " +
           "on the hard passages. In score order starts at the beginning. Read through and " +
-          "Hardest first bring in a repeat of a flagged passage right after it.",
+          "Hardest first bring in a repeat of a flagged passage right after it." :
+          "None of this piece's passages is flagged hard, so none is brought forward. Read " +
+          "through plays the piece once as practice, then its bars in score order. Hardest " +
+          "first and In score order start at the beginning. Read through and Hardest first " +
+          "bring in a repeat of a flagged passage right after it.",
         visible: settings => orderOffered(settings),
       },
       {

@@ -74,7 +74,7 @@ Before you press **Begin**, beside the card, the page shows what it found under 
 
 **Practise bars 5–7** sets the drill to that passage, as one card, in free practice; the pill beside it does the same for one hand alone (a passage that is hard in both hands starts with the right). The passages are also quick picks under **difficult passages** in the **Programme** drawer, hardest first, while you are in free practice: picking one sets the section to it.
 
-In today's programme, a piece with flagged passages is read through once first, then its hardest passage, from the bar before it, then the rest in score order; a repeat of a flagged passage follows it. **Order** on the **Tonight's programme** plate, or in the **Programme** drawer, switches to **Hardest first** (every hard passage early, skipping the read-through) or **In score order** (today's order, start to finish).
+In today's programme, a piece with flagged passages is read through once first, then its hardest passage, from the bar before it, then the rest in score order; a repeat of a flagged passage follows it. Only a passage marked **Hard** or **Hardest** is brought forward, so a piece whose passages are all **Worth a look** is read through once and then played in score order. **Order** on the **Tonight's programme** plate, or in the **Programme** drawer, switches to **Hardest first** (every hard passage early, skipping the read-through; the beginning, when none is marked Hard or Hardest) or **In score order** (today's order, start to finish).
 
 ### Practising on an acoustic piano
 

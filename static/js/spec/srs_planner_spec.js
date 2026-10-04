@@ -3,6 +3,7 @@ import MersenneTwister from "mersennetwister"
 import {
   planNext, planState, planSummary, anchoredCard, onScheduleMeasures, mostOverduePiece, inStudy,
   entryStatus, entryCaption, cardCaption, blamedStaves, introduction, passagesForHand,
+  pulledPassage, PASSAGE_LEVEL,
   RETRY, LADDER, REVIEW, NEW, EARLY, RUN_THROUGH, WAIT, READ_THROUGH, LADDER_CAP, IDLE_LADDER_CAP,
   SITTING_GAP_MS, READ_FIRST, HARDEST_FIRST, SCORE_ORDER,
 } from "st/srs/planner"
@@ -859,6 +860,37 @@ describe("today's programme planner", function() {
         expect(built.introduce).toEqual([1, 2, 3, 7, 8, 4, 5, 6, 9, 10])
       })
 
+      it("pulls no passage forward when none reaches PASSAGE_LEVEL", function() {
+        let passages = [flag(5, 6, 1), flag(2, 3, 1)]
+        expect(pulledPassage(passages)).toBe(null)
+        expect(introduction({measures: TEN, passages, order: HARDEST_FIRST}).introduce)
+          .toEqual(TEN)
+        expect(introduction({measures: TEN, passages, order: READ_FIRST}).introduce)
+          .toEqual(TEN)
+
+        // one flagged that hard is pulled, hardest first, for either order
+        let harder = [...passages, flag(8, 9, PASSAGE_LEVEL)]
+        expect(pulledPassage(harder)).toEqual(jasmine.objectContaining({start: 8, end: 9}))
+        expect(introduction({measures: TEN, passages: harder, order: READ_FIRST}).introduce)
+          .toEqual([7, 8, 9, 1, 2, 3, 4, 5, 6, 10])
+      })
+
+      it("counts a flag for pulling only in a session of its hand", function() {
+        let passages = [flag(5, 6, 3, {hand: "lower"})]
+        expect(pulledPassage(passages, "upper")).toBe(null)
+        expect(pulledPassage(passages, "lower")).toEqual(jasmine.objectContaining({start: 5}))
+        expect(pulledPassage(passages)).toEqual(jasmine.objectContaining({start: 5}))
+      })
+
+      it("never reads through a piece of a single playable bar", function() {
+        let passages = [flag(1, 1, 3)]
+        let one = introduction({measures: [1], passages, order: READ_FIRST})
+        expect(one.readThrough).toBe(false)
+        expect(one.introduce).toEqual([1])
+
+        expect(introduction({measures: [1, 2], passages, order: READ_FIRST}).readThrough).toBe(true)
+      })
+
       it("counts a flag only for a session of its hand, or both", function() {
         let passages = [flag(2, 3, 3, {hand: "lower"})]
         expect(introduction({measures: TEN, passages, order: READ_FIRST, hand: "upper"}))
@@ -1669,6 +1701,34 @@ describe("today's programme on the staff", function() {
         pieceId: piece.id, cardMeasures: 2, store, now: () => time, passages: flagAt2, order: READ_FIRST,
       })
       expect(deck2.entry).toEqual(jasmine.objectContaining({reason: READ_THROUGH, measure: 2}))
+    })
+
+    it("keeps a read-through card practice alone through a rest part way into it", async function() {
+      let {deck, generator, notes} = await generatorFor(2, {passages: flagAt2, order: READ_FIRST})
+      let stats = new NoteStats()
+      let columns = generator.currentCard().columns.length
+
+      time += 1000
+      notes = hit(notes, stats)
+
+      // a Rest part way through the card abandons the pass, its practice
+      // written as the page writes it (recordSectionPractice); the player
+      // plays the rest of the same card as a continued one
+      let abandoned = generator.takePractice()
+      expect(abandoned.length).toBeGreaterThan(0)
+      for (let practice of abandoned) { await store.recordSectionPractice(practice) }
+
+      for (let i = 1; i < columns; i++) {
+        time += 1000
+        notes = hit(notes, stats)
+      }
+      await generator.finishing
+      await generator.studying
+
+      expect(await store.reviews({pieceId: piece.id})).toEqual([])
+      expect(scheduled(store.item(`${piece.id}:both:0-0`))).toBe(false)
+      expect(scheduled(store.item(`${piece.id}:both:1-1`))).toBe(false)
+      expect(deck.entry).toEqual(jasmine.objectContaining({reason: READ_THROUGH, measure: 2}))
     })
 
     it("writes a self-graded read-through pass as practice alone", async function() {

@@ -20,7 +20,9 @@
 // analysis, replans once passagesReady settles. A card of a READ_THROUGH
 // entry is practice alone, whatever its hand or drill mode: the pass is
 // marked at the card it is dealt (PlanGenerator#startCard), and every one of
-// its attempts, the multi-bar card's range included, is practiceOnly.
+// its attempts, the multi-bar card's range included, is practiceOnly; the
+// pass continuing an abandoned one is never graded at all
+// (AttemptPass#graded).
 
 import {getAppStore} from "st/storage"
 import {MeasureCardGenerator, sectionCard} from "st/measure_cards"

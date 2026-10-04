@@ -13,7 +13,9 @@ import * as types from "prop-types"
 
 import {Plate, Pill} from "st/components/salon"
 import {getAppStore} from "st/storage"
-import {mostOverduePiece, READ_FIRST, HARDEST_FIRST, SCORE_ORDER} from "st/srs/planner"
+import {barsLabel} from "st/music"
+import {LEVEL_WORDS} from "st/difficulty/index"
+import {mostOverduePiece, pulledPassage, READ_FIRST, HARDEST_FIRST, SCORE_ORDER} from "st/srs/planner"
 import {introductionOrder, orderOffered, programmePassages} from "st/data"
 
 import styles from "./programme_plate.module.css"
@@ -28,21 +30,24 @@ const ORDER_PILLS = [
   {value: SCORE_ORDER, label: "In score order"},
 ]
 
-// the words a passage's level adds to the order row's description, mirroring
-// LEVEL_WORDS in st/difficulty/index (lowercase, "passage" for levels 2 and
-// 3), inlined so the plate imports nothing from st/difficulty
-const PASSAGE_LEVEL_WORDS = {1: "worth-a-look", 2: "hard", 3: "hardest"}
-
 // one short line naming what the order does with the piece's flagged
-// passages, from the hardest one (the first a non-score order pulls)
-function orderDescription(order, passages) {
+// passages: the hardest one it pulls forward (pulledPassage, null when none
+// of them is flagged hard enough to pull, where the orders differ by the
+// read-through alone)
+function orderDescription(order, flag) {
   if (order == SCORE_ORDER) {
     return "New bars arrive in score order, flagged passages included."
   }
 
-  let flag = passages.find(flag => flag.level >= 2) || passages[0]
-  let level = PASSAGE_LEVEL_WORDS[flag.level] || "flagged"
-  let bars = flag.start == flag.end ? `bar ${flag.start}` : `bars ${flag.start}–${flag.end}`
+  if (!flag) {
+    return order == READ_FIRST ?
+      "None of this piece's passages is flagged hard, so none is brought forward: it is read " +
+        "through once, then its bars arrive in score order." :
+      "None of this piece's passages is flagged hard, so this starts at the beginning, in score order."
+  }
+
+  let level = LEVEL_WORDS[flag.level].toLowerCase()
+  let bars = barsLabel(flag.start, flag.end)
 
   return order == READ_FIRST ?
     `Read the piece through once, then ${bars}, the ${level} passage; the rest in score order.` :
@@ -95,7 +100,7 @@ export class ProgrammePlate extends React.Component {
   renderOrder() {
     let {settings} = this.props
     let order = introductionOrder(settings)
-    let passages = programmePassages(settings)
+    let flag = pulledPassage(programmePassages(settings, this.getStore()))
 
     return <React.Fragment>
       <div className={styles.row}>
@@ -113,7 +118,7 @@ export class ProgrammePlate extends React.Component {
           )}
         </div>
       </div>
-      <p className={styles.order_description}>{orderDescription(order, passages)}</p>
+      <p className={styles.order_description}>{orderDescription(order, flag)}</p>
     </React.Fragment>
   }
 
@@ -153,7 +158,7 @@ export class ProgrammePlate extends React.Component {
         </div>
       </div>
 
-      {orderOffered(this.props.settings) ? this.renderOrder() : null}
+      {orderOffered(this.props.settings, this.getStore()) ? this.renderOrder() : null}
 
       <div className={styles.row}>
         <span>Session length</span>

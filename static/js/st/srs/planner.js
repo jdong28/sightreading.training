@@ -31,7 +31,9 @@
 //    the scheduler's same-day rule leaves unscheduled;
 // 7. the next ladder rung, played before it comes due.
 // Never the measure just played, save the retry, its hand alone the hand
-// scaffold sends next and a piece of one measure.
+// scaffold sends next, a piece of one measure, and a new measure: nothing is
+// graded on one yet, so a bar merely touched as a practice-only neighbour (a
+// read-through's lead-in) or read through is still its own to introduce next.
 //
 // Read through first: a piece new to the programme (none of its single
 // measures of the session's hand ever scheduled) is read through once before
@@ -40,7 +42,9 @@
 // reason): no review is written, so a bar's first graded review comes at its
 // second reading, when it is introduced. A read-through left part way
 // resumes at the first bar not yet played, from the items' attempts alone,
-// and a piece with a bar already scheduled never reads through at all.
+// and a piece with a bar already scheduled, or one of a single playable bar
+// (whose card loops, so nothing of it would ever be graded), never reads
+// through at all.
 //
 // The introduction order: once a piece is read through, or for one that
 // skips the read-through (order SCORE_ORDER, or a piece without flagged
@@ -50,8 +54,11 @@
 // (its lead-in), early, with its repeats (a flag's alsoAt ranges) right
 // after it, then the rest in score order with every other flag's repeats
 // likewise pulled forward; HARDEST_FIRST pulls every Hard and Hardest
-// passage that way; SCORE_ORDER pulls nothing, today's order exactly. A
-// repeat keeps its own item and schedule: only the order it first arrives in
+// passage that way; SCORE_ORDER pulls nothing, today's order exactly. Only a
+// passage at PASSAGE_LEVEL or above is ever pulled (pulledPassage), so for a
+// piece whose flags are all worth a look the two pulling orders bring
+// nothing forward and differ by the read-through alone. A repeat keeps its
+// own item and schedule: only the order it first arrives in
 // changes. The order never reads the log and changes only which bar is
 // first graded, never how a graded bar is scheduled, so the schedule stays
 // what replay(reviews) rebuilds and SCHEDULER_ALGO is untouched by any of
@@ -152,9 +159,9 @@ export const HARDEST_FIRST = "hardest first"
 export const SCORE_ORDER = "in score order"
 export const INTRODUCTION_ORDERS = [READ_FIRST, HARDEST_FIRST, SCORE_ORDER]
 
-// a passage counts for a session level enough to be pulled forward, see
-// introduction()
-const PASSAGE_LEVEL = 2
+// the level (st/difficulty) a flagged passage reaches to be pulled forward,
+// see introduction() and pulledPassage()
+export const PASSAGE_LEVEL = 2
 
 // a failure sends a bar's hand alone when that hand's staff took at least
 // this share of its staff blames, and at least SCAFFOLD_MISSES of them
@@ -265,6 +272,20 @@ export function passagesForHand(passages, hand="both") {
 }
 
 /**
+ * The hardest counting passage an order pulls forward: the first flag at
+ * PASSAGE_LEVEL or above, see introduction(). Null when none of the piece's
+ * passages is flagged that hard, where READ_FIRST and HARDEST_FIRST bring
+ * nothing forward and what the orders say of them must say so too (the
+ * programme plate's order row, the drawer's hint).
+ * @param {Object[]} passages flags in force, hardest first
+ * @param {string} [hand]
+ * @returns {Object|null}
+ */
+export function pulledPassage(passages, hand="both") {
+  return passagesForHand(passages, hand).find(flag => flag.level >= PASSAGE_LEVEL) || null
+}
+
+/**
  * The order a piece's new bars should arrive in (decisions 1 and 7 of the
  * hard-sections design): which bar introduction() pulls forward, from which
  * lead-in, and the role of every bar a counting flag touches, for the status
@@ -279,7 +300,13 @@ export function passagesForHand(passages, hand="both") {
  */
 export function introduction({measures, passages=[], order=READ_FIRST, hand="both"}) {
   let counting = passagesForHand(passages, hand)
-  let barsOf = flag => measures.filter(measure => measure >= flag.start && measure <= flag.end)
+
+  // every counting flag's playable bars, worked out once per flag: the deck
+  // builds the introduction afresh on every plan, which the trainer's status
+  // line reaches on every render, so nothing here is worked out per bar
+  let flagBars = new Map(counting.map(flag =>
+    [flag, measures.filter(measure => measure >= flag.start && measure <= flag.end)]))
+  let barsOf = flag => flagBars.get(flag) || []
 
   // every bar of a counting flag gets the passage role, in force order
   // (hardest first), an earlier flag's role never overwritten; marked in
@@ -300,18 +327,29 @@ export function introduction({measures, passages=[], order=READ_FIRST, hand="bot
   // the playable bar just before a flag's first playable bar, by index;
   // none for a flag opening the piece
   let leadIn = flag => {
-    let flagBars = barsOf(flag)
-    if (!flagBars.length) { return null }
-    let idx = measures.indexOf(flagBars[0])
+    let bars = barsOf(flag)
+    if (!bars.length) { return null }
+    let idx = measures.indexOf(bars[0])
     return idx > 0 ? measures[idx - 1] : null
   }
-  let repeatsOf = flag => (flag.alsoAt || []).flatMap(([from, to]) =>
-    measures.filter(measure => measure >= from && measure <= to))
+  // likewise once per flag: the bars of its repeats, and which flags' repeats
+  // follow a bar in score order, by that flag's last playable bar (decision 7)
+  let flagRepeats = new Map(counting.map(flag => [flag, (flag.alsoAt || []).flatMap(([from, to]) =>
+    measures.filter(measure => measure >= from && measure <= to))]))
+  let repeatsOf = flag => flagRepeats.get(flag) || []
+  let repeatsAfter = new Map()
+  for (let flag of counting) {
+    let bars = barsOf(flag)
+    if (!bars.length) { continue }
+    let last = bars[bars.length - 1]
+    if (!repeatsAfter.has(last)) { repeatsAfter.set(last, []) }
+    repeatsAfter.get(last).push(flag)
+  }
 
   // READ_FIRST pulls the first counting flag hard enough, HARDEST_FIRST
   // every one
   let pulled = order == HARDEST_FIRST ? counting.filter(flag => flag.level >= PASSAGE_LEVEL) :
-    [counting.find(flag => flag.level >= PASSAGE_LEVEL)].filter(Boolean)
+    [pulledPassage(counting)].filter(Boolean)
 
   let seen = new Set()
   let introduce = []
@@ -343,18 +381,17 @@ export function introduction({measures, passages=[], order=READ_FIRST, hand="bot
   // level, its repeats (decision 7)
   for (let measure of measures) {
     add(measure)
-    for (let flag of counting) {
-      let flagBars = barsOf(flag)
-      if (flagBars.length && flagBars[flagBars.length - 1] == measure) {
-        for (let repeat of repeatsOf(flag)) {
-          add(repeat)
-          markRole(repeat, "repeat", flag)
-        }
+    for (let flag of repeatsAfter.get(measure) || []) {
+      for (let repeat of repeatsOf(flag)) {
+        add(repeat)
+        markRole(repeat, "repeat", flag)
       }
     }
   }
 
-  return {introduce, readThrough: order == READ_FIRST, roles}
+  // a piece of a single playable bar is never read through: its one card
+  // loops, so the read-through would never end and nothing of it be graded
+  return {introduce, readThrough: order == READ_FIRST && measures.length > 1, roles}
 }
 
 // when an item was played: its graded attempts, and its last practice
