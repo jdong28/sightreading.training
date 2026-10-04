@@ -13,6 +13,10 @@ import {
   acceptDecision, editDecision, dismissDecision, restoreDecision, addDecision, promoteTroubleSpot,
 } from "st/difficulty/decisions"
 import {barSimilarity, alignBars, mapRange} from "st/difficulty/align"
+import {
+  FLAGS_FORMAT, FLAGS_VERSION, MAX_FLAGS_FILE_BYTES, MAX_FLAGS_FILE_DECISIONS,
+  flagsFileFor, readFlagsFile, fileMatch, reanchorDecisions,
+} from "st/difficulty/flags_file"
 
 // a quiet 16-bar piece (quarter notes, both hands, all in C major) with a
 // dense run of sixteenths in both hands at bars 9-11, the workhorse for the
@@ -1098,6 +1102,102 @@ describe("st/difficulty", () => {
       let x = {hash: "x", sketch: {upper: "0:1,2,3,4", lower: ""}}
       let y = {hash: "y", sketch: {upper: "0:1,2,3,5", lower: ""}}
       expect(barSimilarity(x, y)).toBeCloseTo(3 / 5, 5)
+    })
+  })
+
+  describe("flags file", () => {
+    function restSong(barCount) {
+      return parseMusicXML(pianoScore({bars: Array.from({length: barCount}, () => uniformBlank())}))
+    }
+
+    function barsWithDense(denseAt, barCount = 16) {
+      let bars = []
+      for (let i = 1; i <= barCount; i++) { bars.push(denseAt.includes(i) ? denseBar() : quietBar()) }
+      return bars
+    }
+
+    it("flagsFileFor carries format, version, by, exportedAt, the fingerprint and every decision; readFlagsFile round-trips it", () => {
+      let song = workhorseSong()
+      let analysis = analyzePiece({song, source: null, at: 1})
+      let record = annotationWith(null, "p1", analysis)
+      let flag = flagsInForce(record)[0]
+      record = withDecisions(record, [acceptDecision({record, flag, by: "Ms Laurent", at: 10})])
+
+      let file = flagsFileFor(record, {title: "Rêverie"}, song, {by: "Ms Laurent", at: 100})
+      expect(file.format).toEqual(FLAGS_FORMAT)
+      expect(file.version).toEqual(FLAGS_VERSION)
+      expect(file.by).toEqual("Ms Laurent")
+      expect(file.exportedAt).toEqual(100)
+      expect(file.piece.title).toEqual("Rêverie")
+      expect(file.piece.fingerprint.bars).toEqual(record.fingerprint.bars)
+      expect(file.piece.fingerprint.sketches).toEqual(record.fingerprint.sketches)
+      expect(file.piece.fingerprint.numbers.length).toEqual(record.fingerprint.bars.length)
+      expect(file.decisions).toEqual(record.decisions)
+
+      let {data, error} = readFlagsFile(JSON.stringify(file))
+      expect(error).toBeUndefined()
+      expect(data).toEqual(file)
+    })
+
+    it("readFlagsFile refuses non-JSON, another format, a newer version, an oversized file and too many decisions", () => {
+      let valid = flagsFileFor(
+        annotationWith(null, "p1", analyzePiece({song: workhorseSong(), source: null, at: 1})),
+        {title: "t"}, workhorseSong(), {by: "", at: 1})
+
+      expect(readFlagsFile("not json at all").error).toBeTruthy()
+      expect(readFlagsFile(JSON.stringify({format: "something-else", version: 1})).error).toBeTruthy()
+      expect(readFlagsFile(JSON.stringify({...valid, version: FLAGS_VERSION + 1})).error)
+        .toContain("newer version")
+      expect(readFlagsFile("x".repeat(MAX_FLAGS_FILE_BYTES + 1)).error).toBeTruthy()
+
+      let tooMany = {...valid, decisions: Array.from({length: MAX_FLAGS_FILE_DECISIONS + 1}, () => ({}))}
+      expect(readFlagsFile(JSON.stringify(tooMany)).error).toBeTruthy()
+    })
+
+    it("readFlagsFile drops invalid decisions, keeping the valid ones", () => {
+      let valid = flagsFileFor(
+        annotationWith(null, "p1", analyzePiece({song: workhorseSong(), source: null, at: 1})),
+        {title: "t"}, workhorseSong(), {by: "", at: 1})
+      let withBad = {...valid, decisions: [{bogus: true}, ...valid.decisions]}
+      let {data} = readFlagsFile(JSON.stringify(withBad))
+      expect(data.decisions).toEqual(valid.decisions)
+    })
+
+    it("reanchorDecisions maps a decision's ranges onto the local copy, stamping moved or unplaced", () => {
+      let song = parseMusicXML(pianoScore({bars: barsWithDense([9, 10, 11])}))
+      let analysis = analyzePiece({song, source: null, at: 1})
+      let record = annotationWith(null, "p1", analysis)
+      let hardest = flagsInForce(record).find(f => f.start <= 9 && f.end >= 11)
+      let accepted = withDecisions(record, [acceptDecision({record, flag: hardest, by: "Ms Laurent", at: 10})])
+      let file = flagsFileFor(accepted, {title: "t"}, song, {by: "Ms Laurent", at: 100})
+
+      // the local copy gained a bar at the start: every later index shifts by 1
+      let withPickupSong = parseMusicXML(pianoScore({bars: [quietBar(), ...barsWithDense([9, 10, 11])]}))
+      let localRecord = annotationWith(null, "p2", analyzePiece({song: withPickupSong, source: null, at: 2}))
+
+      let {decisions, report} = reanchorDecisions(file, localRecord, withPickupSong)
+      expect(report.unplaced).toEqual(0)
+      expect(report.moved).toEqual(1)
+      expect(decisions[0].of.startIndex).toEqual(hardest.startIndex + 1)
+      expect(decisions[0].moved.by).toEqual("Ms Laurent")
+
+      // an unrelated piece: the decision comes back unplaced, keeping the
+      // file's own bar numbers to show where it was
+      let unrelatedRecord = annotationWith(null, "p3", analyzePiece({song: restSong(20), source: null, at: 3}))
+      let {decisions: unplacedDecisions, report: unplacedReport} = reanchorDecisions(file, unrelatedRecord, restSong(20))
+      expect(unplacedReport.unplaced).toEqual(1)
+      expect(unplacedDecisions[0].unplaced.start).toEqual(hardest.start)
+    })
+
+    it("fileMatch is the fraction of the file's bars that align well; low for an unrelated piece", () => {
+      let song = workhorseSong()
+      let record = annotationWith(null, "p1", analyzePiece({song, source: null, at: 1}))
+      let file = flagsFileFor(record, {title: "t"}, song, {by: "", at: 1})
+
+      expect(fileMatch(file, record)).toBeCloseTo(1, 5)
+
+      let unrelatedRecord = annotationWith(null, "p2", analyzePiece({song: restSong(20), source: null, at: 2}))
+      expect(fileMatch(file, unrelatedRecord)).toBeLessThan(0.5)
     })
   })
 })
