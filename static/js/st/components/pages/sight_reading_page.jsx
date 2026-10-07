@@ -169,7 +169,8 @@ export const EXERCISES_PROGRAMME = {
   // rail, in place of the rail's engraving, handed the generator, its
   // settings (defaults filled in) and a setter of them, the engine source
   // and loadEngines, eg. the score page's "Tonight's programme" and "The
-  // piece at a glance" plates.
+  // piece at a glance" plates, plus bar (the selected bar's measure, or
+  // null) and closeBar, for a clicked bar's own stats plate.
   // wideRail, true for a wider trainer and rail (see the score page), which
   // sets .wide_rail on the page root.
   //
@@ -248,6 +249,17 @@ export default class SightReadingPage extends React.Component {
       } else {
         this.beginSession()
       }
+    }
+
+    // a bar of the engine card clicked at rest (see engineCard's onBar):
+    // selects it for the programme's Rail, see selectedBarMeasure()
+    this.selectBar = measure => {
+      if (this.state.session) { return }
+      let section = this.currentPieceSection()
+      if (!section) { return }
+      let piece = sheetMusicPiece(this.currentSettings())
+      if (!piece) { return }
+      this.setState({selectedBar: {pieceId: piece.id, measure}})
     }
 
     // the grade row of acoustic mode, which the grade hotkeys go through
@@ -358,6 +370,10 @@ export default class SightReadingPage extends React.Component {
       // bumped once per judgement (a wrong key or chord) to re-light the
       // plate's ink smudge (see PlateFeedback and countMiss)
       smudges: 0,
+
+      // the bar whose stats the programme's Rail shows at rest, {pieceId,
+      // measure}, or null; dropped whenever the drilled piece changes
+      selectedBar: null,
     }
   }
 
@@ -409,6 +425,12 @@ export default class SightReadingPage extends React.Component {
     }
 
     this.updateEngineCard(prevState)
+
+    // a selection outliving the piece it was made on (the drilled piece
+    // changed, or there's none drilled any more) is dropped
+    if (this.state.selectedBar && this.selectedBarMeasure() == null) {
+      this.setState({selectedBar: null})
+    }
   }
 
   // Keeps the engine card's inputs in step with the drill: the source of the
@@ -717,6 +739,7 @@ export default class SightReadingPage extends React.Component {
       head,
       missed: self ? [] : this.state.engineMissed,
       badges: self ? this.selfGradeBadges(card) : null,
+      onBar: this.state.session ? null : this.selectBar,
     }
   }
 
@@ -1628,6 +1651,15 @@ export default class SightReadingPage extends React.Component {
     }
   }
 
+  // the selected bar's measure while it belongs to the drilled piece, else
+  // null (a switch of piece drops the selection, see componentDidUpdate)
+  selectedBarMeasure() {
+    let {selectedBar} = this.state
+    if (!selectedBar) { return null }
+    let section = this.currentPieceSection()
+    return section && section.pieceId == selectedBar.pieceId ? selectedBar.measure : null
+  }
+
   // Adds the practice on the pass the generator abandons (see
   // MeasureCardGenerator#takePractice) to the local store
   flushPractice(generator) {
@@ -2327,7 +2359,9 @@ export default class SightReadingPage extends React.Component {
           }}
           source={this.state.engineSource}
           engine={this.programme.engine}
-          loadEngines={this.props.loadEngines} /> : null}
+          loadEngines={this.props.loadEngines}
+          bar={this.selectedBarMeasure()}
+          closeBar={this._closeBar ||= () => this.setState({selectedBar: null})} /> : null}
       </div>
 
       <figure className={styles.engraving}>

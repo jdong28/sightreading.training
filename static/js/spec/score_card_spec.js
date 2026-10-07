@@ -714,6 +714,179 @@ describe("score page engine card", function() {
     return [...card.querySelectorAll(`.${MARK_CLASSES.current}`)]
   }
 
+  // bar-click helpers, shared by the "bar stats" cases below
+  let clickBar = number => {
+    let staffCard = page.staff
+    let measure = staffCard.result.measures.find(m => m.number == number)
+    if (!measure) { throw new Error(`no drawn measure numbered ${number}`) }
+    let svg = staffCard.result.svg
+    let rect = svg.getBoundingClientRect()
+    let width = svg.width.baseVal.value
+    let height = svg.height.baseVal.value
+    let clientX = rect.left + (measure.box.x + measure.box.width / 2) / width * rect.width
+    let clientY = rect.top + (measure.box.y + measure.box.height / 2) / height * rect.height
+    flushSync(() => svg.dispatchEvent(new MouseEvent("click", {bubbles: true, clientX, clientY})))
+  }
+
+  let barPlate = () => container.querySelector("[data-bar-stats]")
+
+  let recordBar = async (piece, measure, {item, review}) => {
+    let barId = `${piece.id}:${item.hand || "both"}:${measure}-${measure}`
+    await store.recordAttempt({
+      item: {
+        id: barId, pieceId: piece.id, hand: "both", startMeasure: measure, endMeasure: measure,
+        level: "bar", state: "learning", step: 0, reps: 0, lapses: 0, streak: 0,
+        hits: 0, misses: 0, attempts: 0, lastPracticed: 0, algo: 1, createdAt: Date.now() - 1000,
+        recent: [], ...item,
+      },
+      review: {
+        itemId: barId, pieceId: piece.id, at: Date.now(), kind: "attempt", was: "learning",
+        ...review,
+      },
+    })
+  }
+
+  describe("bar stats", function() {
+    it("shows a bar never played at the head of the rail", async function() {
+      await drillPiece(reverieOpening(), {startMeasure: 2, endMeasure: 4})
+      renderScorePage()
+      await cardDrawn()
+
+      clickBar(3)
+      await waitFor(() => barPlate(), {message: "the bar plate"})
+      expect(barPlate().textContent).toContain("Bar 3")
+      expect(barPlate().textContent).toContain("No practice recorded for bar 3 yet.")
+    })
+
+    it("shows a bar's keyboard and acoustic records, one row per hand", async function() {
+      let piece = await drillPiece(reverieOpening(), {startMeasure: 2, endMeasure: 4})
+      let now = Date.now()
+      await recordBar(piece, 3, {
+        item: {
+          hand: "both", attempts: 3, hits: 6, misses: 2, lastPracticed: now,
+          recent: [[now - 2, 4, 2, 2], [now - 1, 4, 4, 3], [now, null, null, 4]],
+        },
+        review: {
+          grade: 4, mode: "wait", columns: 4, clean: 4, misses: 0, stuck: 0, skipped: 0,
+          hesitations: 0, algo: 1,
+        },
+      })
+      await recordBar(piece, 3, {
+        item: {
+          hand: "upper", attempts: 1, hits: 0, misses: 0, lastPracticed: now,
+          recent: [[now, null, null, 1]],
+        },
+        review: {grade: 1, mode: "self"},
+      })
+
+      renderScorePage()
+      await cardDrawn()
+      clickBar(3)
+      await waitFor(() => barPlate(), {message: "the bar plate"})
+
+      let text = barPlate().textContent
+      let order = [
+        "Hands together", "Played 3 times · last played today", "Recent: Stumbled → Clean → Easy",
+        "Accuracy 75%", "Right hand", "Played 1 time · last played today", "Recent: Fell apart",
+      ]
+      let lastIndex = -1
+      for (let phrase of order) {
+        let idx = text.indexOf(phrase)
+        expect(idx).toBeGreaterThan(-1)
+        expect(idx).toBeGreaterThan(lastIndex)
+        lastIndex = idx
+      }
+      expect(text.match(/Accuracy/g).length).toEqual(1)
+    })
+
+    it("changes bar on another click, and closes with ×", async function() {
+      await drillPiece(reverieOpening(), {startMeasure: 2, endMeasure: 4})
+      renderScorePage()
+      await cardDrawn()
+
+      clickBar(2)
+      await waitFor(() => barPlate(), {message: "bar 2's plate"})
+      clickBar(4)
+      await waitFor(() => barPlate().textContent.includes("Bar 4"), {message: "bar 4's plate"})
+
+      let closeButton = barPlate().querySelector("button[aria-label=\"Close the bar's stats\"]")
+      flushSync(() => closeButton.click())
+      expect(barPlate()).toBe(null)
+    })
+
+    it("does nothing for a click outside every bar", async function() {
+      await drillPiece(reverieOpening(), {startMeasure: 2, endMeasure: 4})
+      renderScorePage()
+      await cardDrawn()
+
+      let staffCard = page.staff
+      let lowest = staffCard.result.measures.reduce((max, m) => Math.max(max, m.box.y + m.box.height), 0)
+      let svg = staffCard.result.svg
+      let rect = svg.getBoundingClientRect()
+      let height = svg.height.baseVal.value
+      flushSync(() => svg.dispatchEvent(new MouseEvent("click", {
+        bubbles: true, clientX: rect.left, clientY: rect.top + (lowest + 300) / height * rect.height,
+      })))
+      expect(barPlate()).toBe(null)
+    })
+
+    it("is at rest only: hidden in session, a click in session does nothing, and Rest brings it back", async function() {
+      await drillPiece(reverieOpening(), {startMeasure: 2, endMeasure: 4})
+      renderScorePage()
+      await cardDrawn()
+
+      clickBar(3)
+      await waitFor(() => barPlate(), {message: "bar 3's plate"})
+
+      flushSync(() => page.beginSession())
+      expect(barPlate()).toBe(null)
+
+      clickBar(2)
+      expect(barPlate()).toBe(null)
+
+      flushSync(() => page.restSession())
+      await waitFor(() => barPlate(), {message: "the plate back after Rest"})
+      expect(barPlate().textContent).toContain("Bar 3")
+    })
+
+    it("works on the scroll-mode system", async function() {
+      await scrollPiece(reverieOpening(), {startMeasure: 2, endMeasure: 4})
+      renderScorePage()
+      await systemDrawn()
+
+      clickBar(3)
+      await waitFor(() => barPlate(), {message: "bar 3's plate in scroll mode"})
+      expect(barPlate().textContent).toContain("Bar 3")
+    })
+
+    it("works in acoustic mode at rest", async function() {
+      await drillPiece(reverieOpening(), {startMeasure: 2, endMeasure: 4})
+      renderScorePage({acoustic: true})
+      // acoustic mode awaits no key, so no column is ever marked current
+      // (cardDrawn's own condition): wait for the card's svg instead
+      await waitFor(() => container.querySelector("[data-score-card] svg"), {message: "the engine card"})
+
+      clickBar(3)
+      await waitFor(() => barPlate(), {message: "bar 3's plate in acoustic mode"})
+      expect(barPlate().textContent).toContain("Bar 3")
+    })
+
+    it("drops the bar when the piece changes", async function() {
+      await drillPiece(reverieOpening(), {startMeasure: 2, endMeasure: 4})
+      let {piece: other} = await importMusicXMLPiece("other.musicxml", pickupScore(), store)
+      renderScorePage()
+      await cardDrawn()
+
+      clickBar(3)
+      await waitFor(() => barPlate(), {message: "bar 3's plate"})
+
+      flushSync(() => page.setGenerator(page.state.currentGenerator, {
+        ...page.currentSettings(), piece: other.id,
+      }))
+      expect(barPlate()).toBe(null)
+    })
+  })
+
   it("draws the card from the piece's score and moves the marks as it is played", async function() {
     await drillPiece(reverieOpening(), {startMeasure: 2, endMeasure: 4})
     let el = renderScorePage()
