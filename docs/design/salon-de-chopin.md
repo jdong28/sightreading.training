@@ -1,6 +1,7 @@
 # Handoff: Sight Reading Trainer — "Salon de Chopin" UX facelift
 
-(Verbatim copy of the design handoff README from the Claude Design project, 2026-09-14.)
+(Verbatim copy of the design handoff README from the Claude Design project, 2026-09-14,
+except for the **Implementation** notes added under a screen as it lands.)
 
 ## Overview
 
@@ -148,6 +149,19 @@ Main: `max-width: 1060px`, `grid-template-columns: minmax(0,1fr) 260px`, `gap: 2
 Session is **endless** — it runs until the user presses Rest; there is no note or time target.
 `accuracy = readCount / (readCount + misses)`.
 
+**Implementation note (sheet music page):** on `/sheet-music`, the rail at rest carries the
+programme's own plates ("Tonight's programme" and the piece's flagged passages) in place of the
+engraving, so the card being practised stays on screen without scrolling; the engraving stays
+whenever those plates have nothing to show (no piece picked, pasted notation, an unflagged piece in
+free practice), which the stylesheet decides from the empty slot. The score page's trainer
+is wider than the default (`max-width: 1240px`) and its rail is `clamp(260px, 26vw, 340px)` rather
+than the fixed 260px. The flagged passages' shaded score opens on demand in a right-hand pane,
+drawn only while it is open. The pane is its own scroller and the score is the tall thing in it, so
+the passage's detail — with the "tap a shaded passage" legend as its last line — stays out of that
+scroll: it sticks below the pane's header beside the score, and stacks above it in a pane too narrow
+for two columns. Both side panes pin their header, so the title and the close button stay on screen
+however far the pane has scrolled.
+
 ### 4. Session summary — `screens/salon-summary/SalonSummary.dc.html`
 
 **Purpose:** shown when the user ends an endless session.
@@ -162,6 +176,21 @@ and the percentage right-aligned → one italic insight sentence → actions: "P
 (primary, seeds the trainer with the weak notes), "New programme" (ghost), "See all progress →".
 
 **State:** `showTrouble: boolean`, `tone: 'encouraging' | 'plain'` (suppresses the insight line).
+
+**Implementation:** the card is `SessionSummary`
+(`static/js/st/components/sight_reading/session_summary.jsx`), a native `<dialog>` the trainer
+opens at Rest from the `SessionRecord` it just wrote (`NoteStats#sessionRecord`), through the pure
+derivations of `static/js/st/session_summary.js` (which the four stat cards, the trouble rows, the
+weak-below-75% rule and the insight sentence all come from). The four stat cards are the live
+Elapsed/Accuracy/Notes read/Best streak, or, for a sitting with nothing detected (acoustic
+self-graded practice), the three live acoustic cards Elapsed/Passes/Clean. The context label next
+to each trouble row is its miss count. "Practise these notes" switches the trainer to Random
+notes focused on the weak rows alone, the ones drawn in oxblood
+(`SightReadingPage#practiseNotes`), and is hidden when nothing shown is weak or on a page whose
+generator can't take a seed (the sheet music generator, so the score page never shows it). "New
+programme" is a link to `/setup` on the exercises page, and on the score page closes the card and
+opens its own drawer instead. "See all progress →" links to `/stats` until the progress screen
+(a later step) replaces it.
 
 ### 5. Progress — `screens/salon-progress/SalonProgress.dc.html`
 
@@ -184,6 +213,21 @@ and the percentage right-aligned → one italic insight sentence → actions: "P
 - Primary pill "Tonight's programme" → setup.
 
 **State:** `range` (14 days shown), `showNoteGrid: boolean`.
+
+**Implementation:** `ProgressPage` (`static/js/st/components/pages/progress_page.jsx`) renders what
+it's handed by the pure module `st/progress.js`, which folds the session records the trainer
+already writes at Rest (`SessionRecord`, see `NoteStats#sessionRecord`); nothing here re-measures
+anything. A practice day is the scheduler's local day (`localDay`, 4 am rollover), not midnight, so
+a late evening is never split across two bars. A session's minutes are its `elapsedSeconds` (the
+Begin-to-Rest clock PR 53 added), falling back to the older `activeSeconds` for a record written
+before it. The goal line reads `practiceSettings().dailyGoalMinutes` (default 10), read-only here;
+the plot's scale keeps the goal line at or under 60% of the 150px plot, shrinking to fit a longer
+day's bar. By clef sums each session's own `clefs` counts, falling back to a clefless session's
+`treble`/`bass` staff for the ones that can be split after the fact (`grand` and `chord` can't). By
+note merges every spelling of a pitch class (`parseNoteOffset`) before taking a percentage, since a
+hit and a miss of the same note can arrive under different spellings. A backend account
+(`currentUser`) still sees the existing "Daily stats" page, unchanged; the route choice is
+`statsPageFor` in `st/components/pages/stats.jsx`.
 
 ## Interactions & behaviour
 

@@ -1,7 +1,7 @@
 import NoteList from "st/note_list"
 import NoteMatcher from "st/note_matcher"
 import ChordList from "st/chord_list"
-import NoteStats from "st/note_stats"
+import NoteStats, {staffClefs} from "st/note_stats"
 import SlideToZero from "st/slide_to_zero"
 import Keyboard, {KeyboardInput} from "st/components/keyboard"
 import StatsLightbox from "st/components/sight_reading/stats_lightbox"
@@ -9,6 +9,7 @@ import DevMetricsPanel from "st/components/sight_reading/dev_metrics_panel"
 import SelfGradeRow from "st/components/sight_reading/self_grade_row"
 import SelfGradeReceipt from "st/components/sight_reading/self_grade_receipt"
 import PlateFeedback from "st/components/sight_reading/plate_feedback"
+import {SessionSummary} from "st/components/sight_reading/session_summary"
 import Hotkeys from "st/components/hotkeys"
 
 import styles from "./sight_reading_page.module.css"
@@ -41,6 +42,7 @@ import {
 import {SELF_GRADES, SELF_GRADE_FLASH_MS} from "st/srs/self_grade"
 import {SELF_ASPECTS} from "st/srs/records"
 import {AGAIN} from "st/srs/grade"
+import {troubleNotes, focusFromRows} from "st/session_summary"
 
 import * as React from "react"
 import {createPortal} from "react-dom"
@@ -143,6 +145,15 @@ export const EXERCISES_PROGRAMME = {
   // than the legacy renderer; the score page leaves this unset, so its
   // engine cards and app-staff fallback are unaffected
   staffTwo: true,
+  // the session summary card's (st/components/sight_reading/session_summary)
+  // "Practise these notes" switches to this generator, focused on the rows
+  // shown (see practiseNotes); unset, as the score page leaves it, hides
+  // that pill, since the sheet music generator can't take a seed
+  focusGenerator: GENERATORS.find(generator => generator.name == "random"),
+  // the session summary's "New programme" destination, a path rendered as
+  // a link; unset, as the score page leaves it, closes the card and opens
+  // the programme drawer instead (see newProgramme)
+  newProgramme: "/setup",
 
   // Optional:
   // idleTitle, the page title's {title, italic} while no piece is drilled, in
@@ -154,9 +165,13 @@ export const EXERCISES_PROGRAMME = {
   // own staff (see engineCard): in wait mode card by card, in scroll mode the
   // whole section on one line, save a bar today's programme offers as one
   // hand alone, drawn as its own one-bar system
-  // Preface, a component shown above the staff at rest, handed the
-  // generator, its settings (defaults filled in) and a setter of them, eg.
-  // the score page's "Tonight's programme" plate.
+  // Rail, a component shown at rest at the head of the trainer's right
+  // rail, in place of the rail's engraving, handed the generator, its
+  // settings (defaults filled in) and a setter of them, the engine source
+  // and loadEngines, eg. the score page's "Tonight's programme" and "The
+  // piece at a glance" plates.
+  // wideRail, true for a wider trainer and rail (see the score page), which
+  // sets .wide_rail on the page root.
   //
   // A generator may also name what it plays (all optional): sectionLabel(),
   // the title's words for its measures; cardLabel(), the plate's for its
@@ -250,12 +265,16 @@ export default class SightReadingPage extends React.Component {
     // followHead)
     this.playedThisSegment = false
 
+    // the session summary card is a native <dialog>, but its own controls
+    // (eg. the "See all progress" link) aren't input/button/textarea, so
+    // Hotkeys would otherwise still send space/1-4 through to the drill
+    // underneath while it's open
     this.keyMap = {
-      " ": e => this.skipCurrentNote(),
-      "1": e => this.selfGradeHotkey(1),
-      "2": e => this.selfGradeHotkey(2),
-      "3": e => this.selfGradeHotkey(3),
-      "4": e => this.selfGradeHotkey(4),
+      " ": e => { if (!this.state.summary) { this.skipCurrentNote() } },
+      "1": e => { if (!this.state.summary) { this.selfGradeHotkey(1) } },
+      "2": e => { if (!this.state.summary) { this.selfGradeHotkey(2) } },
+      "3": e => { if (!this.state.summary) { this.selfGradeHotkey(3) } },
+      "4": e => { if (!this.state.summary) { this.selfGradeHotkey(4) } },
     }
 
     // the key the user picked, drawn unless the generator sets its own
@@ -307,6 +326,10 @@ export default class SightReadingPage extends React.Component {
       session: false,
       sessionStartedAt: null,
       clockNow: null,
+
+      // the session summary card (st/components/sight_reading/session_summary),
+      // opened by Rest alone: null, or {record, eyebrow} (see openSummary)
+      summary: null,
 
       // the source MusicXML of the drilled piece, for the programme's
       // engine: {piece, status: "loading" | "ready" | "missing" | "failed",
@@ -1008,6 +1031,8 @@ export default class SightReadingPage extends React.Component {
       session: true,
       heldNotes: {},
       touchedNotes: {},
+      // defensive only: the modal normally hides Begin
+      summary: null,
     })
     this.followHead()
   }
@@ -1049,13 +1074,63 @@ export default class SightReadingPage extends React.Component {
       touchedNotes: {},
     }, () => this.followHead())
 
-    let saving = this.recordSession()
-    if (saving) {
+    let recorded = this.recordSession()
+    if (recorded) {
       // shows the session in the evening's list once it is stored
-      saving.then(() => {
+      recorded.saving.then(() => {
         if (!this.unmounted) { this.forceUpdate() }
       })
+      // built from exactly what was written, never read back: a second
+      // record could miss a flashing self grade recordSession already
+      // flushed into this one (sibling PR #54)
+      this.openSummary(recorded.session)
     }
+  }
+
+  // Opens the session summary card from the record just written. The
+  // eyebrow is the trainer's own title at the moment of Rest, since the
+  // record keeps no key signature to rebuild it from
+  openSummary(session) {
+    let {title, italic} = this.titleParts()
+    let eyebrow = [title, italic].filter(Boolean).join(" · ")
+    this.setState({summary: {record: session, eyebrow}})
+  }
+
+  closeSummary() {
+    this.setState({summary: null})
+  }
+
+  // "Practise these notes": closes the card and switches to the programme's
+  // focusGenerator (eg. Random notes), focused on the card's weak rows
+  // (focusFromRows), same staff and key, staying at rest. Unreachable
+  // without a focusGenerator (the pill is hidden, see renderSummary) or
+  // without a weak row (chord sessions have none)
+  practiseNotes() {
+    let summary = this.state.summary
+    if (!summary) { return }
+
+    let focus = focusFromRows(troubleNotes(summary.record))
+
+    this.closeSummary()
+
+    // only notes mode has anything to seed (chord sessions have no rows,
+    // so this is unreachable, but the generator switch below assumes it)
+    if (!this.state.currentGenerator || this.state.currentGenerator.mode != "notes") { return }
+
+    let generator = this.programme.focusGenerator
+    if (!generator) { return }
+
+    let settings = this.state.currentGenerator == generator ? this.state.currentGeneratorSettings : {}
+    this.setGenerator(generator, {...settings, focus})
+  }
+
+  // "New programme" where the programme has no destination of its own (see
+  // EXERCISES_PROGRAMME.newProgramme): closes the card and opens the
+  // programme drawer, eg. the score page, which can't pick a piece from
+  // /setup
+  newProgramme() {
+    this.closeSummary()
+    this.openSettings()
   }
 
   startClock() {
@@ -1134,6 +1209,13 @@ export default class SightReadingPage extends React.Component {
         // the column's measurements reached the measure cards' attempt with
         // the column as the matcher removed it (see NoteList#shift)
         this.state.stats.hitNotes(event.hitNotes)
+        // a measure card's column is already counted by clef there
+        // (columnClefs, keyed on cardIndex, cardColumn in st/measure_cards);
+        // this covers every other column, which carries none (see
+        // staffClefs)
+        if (event.from[0].cardIndex == null) {
+          this.state.stats.countClefs(staffClefs(this.state.currentStaff?.name, event.hitNotes), "hit")
+        }
         update.notes = this.matcher.notes
         // the keys it credited, for the developer metrics panel
         if (this.devMetrics) { this.lastHit = event }
@@ -1190,6 +1272,9 @@ export default class SightReadingPage extends React.Component {
     if (event.counted == "miss") {
       gaEvent("sight_reading", "note", "miss");
       this.state.stats.missNotes(event.missed, event.blamed);
+      if (event.missed.cardIndex == null) {
+        this.state.stats.countClefs(staffClefs(this.state.currentStaff?.name, event.blamed || event.missed), "miss")
+      }
     } else if (event.counted == "slip") {
       this.state.stats.slipNotes(event.missed, event.blamed)
     }
@@ -1573,8 +1658,8 @@ export default class SightReadingPage extends React.Component {
   // Writes the current session to the local store, replacing what an earlier
   // call wrote for it, together with the section practice in one write that
   // starts right away, as the page may be going away. Nothing is written
-  // before a note is played. Returns a promise settling once written, or
-  // nothing when there was nothing to write
+  // before a note is played. Returns {session, saving}, saving a promise
+  // settling once written, or null when there was nothing to write
   recordSession() {
     // a grade still flashing has to land before takePractice abandons the
     // pass it belongs to, and before stats.sessionRecord counts the passes
@@ -1593,7 +1678,7 @@ export default class SightReadingPage extends React.Component {
     // would relabel it with whatever staff or generator is current now
     if (!this.state.session) {
       this.savePractice(sectionPractice)
-      return
+      return null
     }
 
     let settings = this.currentSettings()
@@ -1615,11 +1700,13 @@ export default class SightReadingPage extends React.Component {
 
     if (!session) {
       this.savePractice(sectionPractice)
-      return
+      return null
     }
 
-    return getAppStore().putSession(session, {sectionPractice})
+    let saving = getAppStore().putSession(session, {sectionPractice})
       .catch(err => console.warn("Couldn't save the practice session", err))
+
+    return {session, saving}
   }
 
   newStats() {
@@ -1650,6 +1737,7 @@ export default class SightReadingPage extends React.Component {
         [styles.fullscreen]: this.state.fullscreen,
         [styles.scroll_mode]: this.state.mode == "scroll",
         [styles.wait_mode]: this.state.mode == "wait",
+        [styles.wide_rail]: this.programme.wideRail,
     })}>
       <div className={styles.trainer_scroller}>
         <main className={styles.trainer}>
@@ -1658,7 +1746,6 @@ export default class SightReadingPage extends React.Component {
 
           <div className={styles.trainer_grid}>
             <div className={styles.trainer_main}>
-              {this.renderPreface()}
               {this.renderStaffPlate()}
               {this.renderSelfGrade()}
               {this.renderTransport()}
@@ -1704,7 +1791,29 @@ export default class SightReadingPage extends React.Component {
       {this.renderDevMetrics()}
 
       <Hotkeys keyMap={this.keyMap} />
+      {this.renderSummary()}
     </div>;
+  }
+
+  // The session summary card (st/components/sight_reading/session_summary),
+  // opened by Rest alone (see openSummary). Rendered last, after the stat
+  // cards, so existing specs that find the Accuracy card with
+  // el.querySelector("[role=button]") keep finding it
+  renderSummary() {
+    if (!this.state.summary) { return null }
+
+    let {record, eyebrow} = this.state.summary
+
+    return <SessionSummary
+      record={record}
+      eyebrow={eyebrow}
+      onPractise={this.programme.focusGenerator ?
+        (this._practiseNotes ||= () => this.practiseNotes()) : null}
+      onNewProgramme={this.programme.newProgramme ?
+        null : (this._newProgramme ||= () => this.newProgramme())}
+      newProgrammeTo={this.programme.newProgramme}
+      onClose={this._closeSummary ||= () => this.closeSummary()}
+    />
   }
 
   // the developer metrics panel and its pill in the header, only when
@@ -2001,27 +2110,6 @@ export default class SightReadingPage extends React.Component {
     return caption ? <p className={styles.plate_note} data-caption>{caption}</p> : null
   }
 
-  // the programme's preface to a session, shown at rest
-  renderPreface() {
-    let Preface = this.programme.Preface
-    let generator = this.currentNotesGenerator()
-    if (!Preface || this.state.session || !generator) { return null }
-
-    return <Preface
-      generator={generator}
-      settings={this.currentSettings()}
-      setSettings={this._setSettings ||= settings => {
-        let generator = this.state.currentGenerator
-        if (generator.storageKey) {
-          storeGeneratorSettings(generator.storageKey, settings)
-        }
-        this.setGenerator(generator, settings)
-      }}
-      source={this.state.engineSource}
-      engine={this.programme.engine}
-      loadEngines={this.props.loadEngines} />
-  }
-
   // the plate's gentle feedback state (see PlateFeedback): an ink smudge at
   // the head column on every wrong key. Hidden in acoustic mode, where
   // nothing is detected to react to
@@ -2217,7 +2305,31 @@ export default class SightReadingPage extends React.Component {
       evening = <p className={styles.evening_empty}>Nothing played yet</p>
     }
 
+    // the programme's own plates at the head of the rail, while a generator
+    // is up at rest; in session the rail is always the default one below.
+    // They stand in for the engraving only while they render something: the
+    // slot is left empty otherwise, and the engraving below it shows as ever
+    // (see .rail_top in the stylesheet)
+    let Rail = this.programme.Rail
+    let generator = this.currentNotesGenerator()
+
     return <aside className={styles.rail}>
+      <div className={styles.rail_top}>
+        {Rail && !this.state.session && generator ? <Rail
+          generator={generator}
+          settings={this.currentSettings()}
+          setSettings={this._setSettings ||= settings => {
+            let generator = this.state.currentGenerator
+            if (generator.storageKey) {
+              storeGeneratorSettings(generator.storageKey, settings)
+            }
+            this.setGenerator(generator, settings)
+          }}
+          source={this.state.engineSource}
+          engine={this.programme.engine}
+          loadEngines={this.props.loadEngines} /> : null}
+      </div>
+
       <figure className={styles.engraving}>
         <div className={styles.engraving_slot}>
           <img

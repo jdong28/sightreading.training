@@ -50,10 +50,10 @@ function programmeOf(settings, id) {
   return {...input.pick(settings, id).settings, practice: PROGRAMME_PRACTICE}
 }
 
-// the plate before a planned session, see st/components/sight_reading/programme_plate,
-// and the piece's flagged passages at rest (st/difficulty), see
-// st/components/sight_reading/passages_plate
-function ScorePreface(props) {
+// the score page's rail at rest: the plate before a planned session, see
+// st/components/sight_reading/programme_plate, and the piece's flagged
+// passages (st/difficulty), see st/components/sight_reading/passages_plate
+function ScoreRail(props) {
   return <>
     <ProgrammePlate pickPiece={programmeOf} {...props} />
     <PassagesPlate {...props} />
@@ -72,10 +72,15 @@ export const SCORE_PROGRAMME = {
   staffFor: settings => scoreStaff(settings),
   // a piece with its source stored is drawn from its score
   engine: "osmd",
-  Preface: ScorePreface,
+  Rail: ScoreRail,
+  wideRail: true,
   // opts into acoustic mode (st/srs/self_grade): a self-graded pass in place
   // of detection, while the instrument setting is acoustic
   selfGrading: true,
+  // no focusGenerator (the sheet music generator can't take a weak-note
+  // seed, see SightReadingPage#practiseNotes) and no newProgramme: the
+  // session summary's "New programme" closes the card and opens this
+  // page's own drawer instead
 }
 
 // the midi input's messages reach the trainer through the forwarded ref; a

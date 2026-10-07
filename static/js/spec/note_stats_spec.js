@@ -1,4 +1,4 @@
-import NoteStats from "st/note_stats"
+import NoteStats, {staffClefs} from "st/note_stats"
 import {GOOD, HARD} from "st/srs/grade"
 
 describe("note stats", function() {
@@ -66,6 +66,21 @@ describe("note stats", function() {
       expect(stats.cleanPasses).toEqual(1)
       expect(stats.sessionRecord().selfGraded).toEqual({passes: 2, clean: 1})
       expect(stats.sessionRecord().endedAt).toEqual(2000)
+    })
+  })
+
+  // the clefs a clefless column (the exercises page, see
+  // SightReadingPage#applyEvent) is counted under, by the staff it was read
+  // on; complementary to a score column's own clefs (columnClefs)
+  describe("staffClefs", function() {
+    it("reads a single-hand staff straight, and splits the grand staff at middle C", function() {
+      expect(staffClefs("treble", ["G4"])).toEqual(["g"])
+      expect(staffClefs("bass", ["F3"])).toEqual(["f"])
+      expect(staffClefs("grand", ["C4"])).toEqual(["g"])
+      expect(staffClefs("grand", ["B3"])).toEqual(["f"])
+      expect(staffClefs("grand", ["C3", "E5"])).toEqual(["f", "g"])
+      expect(staffClefs("chord", ["C4"])).toEqual([])
+      expect(staffClefs(undefined, ["C4"])).toEqual([])
     })
   })
 })

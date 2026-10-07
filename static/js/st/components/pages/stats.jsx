@@ -23,6 +23,16 @@ import {
 ChartJS.register(LinearScale, CategoryScale, PointElement, LineElement, Tooltip, Legend)
 
 import {getSession} from "st/app"
+import ProgressPage from "st/components/pages/progress_page"
+
+// the page /stats renders: the backend "Daily stats" page for an account
+// (currentUser), the local Progress screen otherwise. session is whatever
+// getSession() returns (null before init in specs)
+export function statsPageFor(session, pageProps) {
+  return session && session.currentUser ?
+    <StatsPage {...pageProps} /> :
+    <ProgressPage />
+}
 
 export default class StatsPage extends React.Component {
   constructor(props) {
@@ -148,9 +158,7 @@ export default class StatsPage extends React.Component {
   render() {
     let inside
 
-    if (!getSession().currentUser) {
-      inside = <p>Practice history will appear here once the progress screen lands.</p>
-    } else if (this.state.stats) {
+    if (this.state.stats) {
       inside = this.renderStats()
     } else if (this.state.error_message) {
       inside = this.state.error_message

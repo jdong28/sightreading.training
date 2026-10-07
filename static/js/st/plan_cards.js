@@ -12,14 +12,26 @@
 // passes never mark their items deliberate (PlanDeck#scaffold,
 // ItemRecord#deliberate): only a session played with that hand as its own
 // does.
+//
+// The deck reads the piece's flagged passages (st/difficulty) afresh every
+// time it plans (PlanDeck#passages), so a piece analysed after the deck was
+// built still gets its introduction order (st/srs/planner introduction()); a
+// piece imported before the annotations store, or still waiting on its lazy
+// analysis, replans once passagesReady settles. A card of a READ_THROUGH
+// entry is practice alone, whatever its hand or drill mode: the pass is
+// marked at the card it is dealt (PlanGenerator#startCard), and every one of
+// its attempts, the multi-bar card's range included, is practiceOnly; the
+// pass continuing an abandoned one is never graded at all
+// (AttemptPass#graded).
 
 import {getAppStore} from "st/storage"
 import {MeasureCardGenerator, sectionCard} from "st/measure_cards"
 import {itemId, newItem, itemWithPractice} from "st/srs/records"
 import {scheduledAttempt} from "st/srs/schedule"
+import {passAttempts, selfAttempts} from "st/srs/attempt"
 import {
-  planNext, planState, planSummary, studyStatus, anchoredCard,
-  entryStatus, cardCaption, entryCaption, WAIT,
+  planNext, planState, planSummary, studyStatus, anchoredCard, introduction,
+  entryStatus, cardCaption, entryCaption, WAIT, READ_THROUGH, SCORE_ORDER,
 } from "st/srs/planner"
 
 // keeps the later of each item's graded reviews
@@ -50,14 +62,25 @@ export class PlanDeck {
    * @param {number} [opts.cardMeasures] measures per card
    * @param {function(): number} [opts.now]
    * @param {LocalStore} [opts.store] the app's store by default
+   * @param {function(): Object[]} [opts.passages] the piece's flagged
+   * passages in force (st/difficulty flagsInForce), read afresh every plan
+   * @param {string} [opts.order] one of INTRODUCTION_ORDERS, SCORE_ORDER
+   * (today's order) by default
+   * @param {Promise} [opts.passagesReady] settles once a piece's lazy
+   * analysis lands; the deck plans again then, unless a pass is in progress
    */
   constructor(measures, {pieceId, hand="both", handMeasures=null, handCard=null,
-      cardMeasures=1, now=Date.now, store}) {
+      cardMeasures=1, now=Date.now, store, passages=() => [], order=SCORE_ORDER, passagesReady=null}) {
     this.pieceId = pieceId
     this.sessionHand = hand
     this.cardMeasures = cardMeasures
     this.now = now
     this.store = store
+    this.passages = passages
+    this.order = order
+    // the roles (st/srs/planner introduction()) the last plan found, for
+    // passageOf
+    this.lastRoles = new Map()
 
     let numbers = measures.map(measure => measure.number)
     let byNumber = new Map(measures.map(measure => [measure.number, measure]))
@@ -99,8 +122,16 @@ export class PlanDeck {
     this.splittable = () => true
     this.selfGraded = () => false
 
-    if (this.advance().failing.size) {
-      this.ready = this.loadReviews()
+    let state = this.advance()
+    let waits = []
+    if (state.failing.size) { waits.push(this.loadReviews()) }
+    if (passagesReady) {
+      waits.push(Promise.resolve(passagesReady)
+        .catch(err => console.warn("Couldn't read the piece's passages", err)))
+    }
+
+    if (waits.length) {
+      this.ready = Promise.all(waits)
         .then(() => { if (!this.playing()) { this.advance(false) } })
     }
   }
@@ -194,6 +225,11 @@ export class PlanDeck {
   /** @returns {PlanInput} what the planner plans from now */
   planInput() {
     let store = this.getStore()
+    let built = introduction({
+      measures: this.measures, passages: this.passages(), order: this.order, hand: this.sessionHand,
+    })
+    this.lastRoles = built.roles
+
     return {
       pieceId: this.pieceId,
       items: this.items(),
@@ -206,7 +242,18 @@ export class PlanDeck {
       settings: store.schedulerSettings(),
       practice: store.practiceSettings(),
       cardMeasures: this.cardMeasures,
+      introduce: built.introduce,
+      readThrough: built.readThrough,
     }
+  }
+
+  /**
+   * @param {number} measure
+   * @returns {Object|null} the bar's role in the piece's introduction order
+   * (see introduction() in st/srs/planner), for the status line words
+   */
+  passageOf(measure) {
+    return this.lastRoles.get(measure) || null
   }
 
   /**
@@ -290,6 +337,20 @@ export class PlanGenerator extends MeasureCardGenerator {
   }
 
   /**
+   * As MeasureCardGenerator#startCard, marking the pass dealt a READ_THROUGH
+   * entry (see practiceOnly) from the deck's entry as it stands now, not read
+   * again once the pass is finished and the deck has moved on
+   * @param {number} [time]
+   */
+  startCard(time=null) {
+    super.startCard(time)
+    if (this.pass) {
+      let entry = this.deck.entry
+      this.pass.readThrough = !!(entry && entry.reason == READ_THROUGH)
+    }
+  }
+
+  /**
    * @param {function(): {mode: string, speed?: number}} drill see
    * MeasureCardGenerator#setDrill. Acoustic mode turns the scaffold off
    * outright, so the card showing is planned again once the drill is known
@@ -356,7 +417,11 @@ export class PlanGenerator extends MeasureCardGenerator {
   /** @returns {string} the status line of the card being played */
   statusLine() {
     let entry = this.deck.entry
-    if (entry) { return entryStatus(entry, {now: this.now(), complete: this.deck.complete}) }
+    if (entry) {
+      return entryStatus(entry, {
+        now: this.now(), complete: this.deck.complete, passage: this.deck.passageOf(entry.measure),
+      })
+    }
 
     // the deck has no card: the bars in trouble rest until the next sitting,
     // and the programme is complete only when nothing else is left either
@@ -448,19 +513,29 @@ export class PlanGenerator extends MeasureCardGenerator {
   }
 
   /**
-   * As MeasureCardGenerator#practiceOnly, save that a hand alone the scaffold
-   * offers climbs its own ladder from the bar's failure, so it is on schedule
-   * unless the queue offered its rung before it came due (the WAIT reason of
-   * st/srs/planner, whatever drill mode it is played in), where the rule for
-   * any other card applies, and that a bar resting until the next sitting is
-   * left as it is wherever it is played, so a card anchored on a neighbour
-   * writes it as practice alone however the pass went
+   * As MeasureCardGenerator#practiceOnly, save that a READ_THROUGH card
+   * (AttemptPass#readThrough, set at startCard from the deck's entry) is
+   * practice alone outright, every one of its attempts; that a hand alone
+   * the scaffold offers climbs its own ladder from the bar's failure, so it
+   * is on schedule unless the queue offered its rung before it came due (the
+   * WAIT reason of st/srs/planner, whatever drill mode it is played in),
+   * where the rule for any other card applies; and that a bar resting until
+   * the next sitting is left as it is wherever it is played, so a card
+   * anchored on a neighbour writes it as practice alone however the pass went
    * @param {AttemptPass} pass complete
    * @param {Object} opts as for passAttempts
    * @returns {string[]}
    */
   practiceOnly(pass, opts) {
     if (pass.practiceOnly) { return pass.practiceOnly }
+
+    // a read-through card is practice alone, every one of its attempts (the
+    // multi-bar card's own range included), whatever its hand or drill mode
+    if (pass.readThrough) {
+      let attemptsOf = pass.selfGrade ? selfAttempts : passAttempts
+      pass.practiceOnly = attemptsOf(pass, opts).map(({id}) => id)
+      return pass.practiceOnly
+    }
 
     let {pieceId, hand} = opts
     let barId = measure => itemId({pieceId, hand, startMeasure: measure, endMeasure: measure})

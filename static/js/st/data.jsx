@@ -7,7 +7,7 @@ import {shiftNotationOctaves} from "st/song_parser"
 import {
   RandomNotes, SweepRangeNotes, MiniSteps, TriadNotes, SevenOpenNotes,
   ProgressionGenerator, PositionGenerator, IntervalGenerator, SheetMusicGenerator,
-  allKeySignatures
+  allKeySignatures, focusPool
 } from "st/generators"
 
 import {
@@ -22,12 +22,12 @@ import {
 
 import {
   loadDeck, findPiece, pieceSong, removePiece, importMusicXMLPiece,
-  exportLibraryFile, importLibraryFile
+  exportLibraryFile, importLibraryFile, ensureAnnotation
 } from "st/sheet_music_deck"
 
 import {getAppStore} from "st/storage"
 import {PlanDeck, PlanGenerator} from "st/plan_cards"
-import {inStudy} from "st/srs/planner"
+import {inStudy, passagesForHand, pulledPassage, READ_FIRST, INTRODUCTION_ORDERS} from "st/srs/planner"
 import {flagsInForce} from "st/difficulty/records"
 
 import {ChordGenerator, MultiKeyChordGenerator} from "st/chord_generators"
@@ -157,6 +157,24 @@ export function sheetMusicPassages(settings, store=getAppStore()) {
   return piece ? flagsInForce(store.annotation(piece.id)) : []
 }
 
+// The settings' piece's flagged passages that count for the drawer's hand
+// setting (st/srs/planner introduction()), for the programme's order row
+export function programmePassages(settings, store=getAppStore()) {
+  return passagesForHand(sheetMusicPassages(settings, store), itemHand(settings.hand))
+}
+
+// The stored introduction order (st/srs/planner INTRODUCTION_ORDERS), or the
+// default (READ_FIRST, "read through") for an unset or unrecognised one
+export function introductionOrder(settings) {
+  return INTRODUCTION_ORDERS.includes(settings.introduce) ? settings.introduce : READ_FIRST
+}
+
+// Whether the programme's order (drawer input or plate row) is offered: the
+// piece plays today's programme and has flagged passages in force for the hand
+export function orderOffered(settings, store=getAppStore()) {
+  return plannedPractice(settings, store) && programmePassages(settings, store).length > 0
+}
+
 // The settings for practising a flagged passage in free practice, as one
 // card, under the given hand (handSetting): "Practise" keeps the drawer's
 // own hand, a hand pill passes "upper"/"lower"
@@ -219,6 +237,7 @@ export function planGenerator(staff, settings) {
   let song = piece && pieceSong(piece)
   if (!song) { return null }
 
+  let store = getAppStore()
   let [startMeasure, endMeasure] = measureNumberRange(song)
   let whole = {...settings, startMeasure, endMeasure}
   let measures = pieceSectionMeasures(staff, whole, song)
@@ -236,6 +255,12 @@ export function planGenerator(staff, settings) {
     handMeasures: apart ? handMeasuresOf(measures) : null,
     handCard: apart ? handCard : null,
     cardMeasures: planCardMeasures(settings),
+    order: introductionOrder(settings),
+    passages: () => programmePassages(settings, store),
+    // a piece without an annotation record yet is analysed lazily
+    // (PassagesPlate#ensure); without passagesReady the deck would plan its
+    // first card in score order and play it before the flags land
+    passagesReady: store.annotation(piece.id) ? null : ensureAnnotation(piece.id, store),
   })
 
   return deck.playable ? new PlanGenerator(deck) : null
@@ -637,11 +662,35 @@ const ALL_GENERATORS = [
         name: "musical",
         type: "bool",
         hint: "Column fits random chord",
-      }
+      },
+      // the session summary card's "Practise these notes" seeds this: every
+      // seeded name stays an option while the row shows, and the row hides
+      // itself again once the player has switched them all off
+      {
+        name: "focus",
+        label: "focus notes",
+        type: "toggles",
+        options: settings => Object.keys(settings.focus || {}),
+        visible: settings => Object.values(settings.focus || {}).some(Boolean),
+      },
     ],
     create: function(staff, keySignature, options) {
       let scale = keySignature.defaultScale()
-      let notes = scale.getLooseRange(...staffRange(staff, options.noteRange))
+      let range = staffRange(staff, options.noteRange)
+
+      let on = options.focus && Object.keys(options.focus).filter(name => options.focus[name])
+      let notes = on && on.length ? focusPool(range, on) : null
+
+      // a focus narrowed by the note range can come back empty; fall back
+      // to the unfocused pool rather than drill nothing
+      if (notes && notes.length) {
+        // returning here skips the musical block below, which is the only
+        // thing that attaches the scale: a chord filter on top of an
+        // already-narrow focus pool could empty it
+        return new RandomNotes(notes, options)
+      }
+
+      notes = scale.getLooseRange(...range)
 
       // send the scale
       if (options.musical) {
@@ -862,10 +911,31 @@ const ALL_GENERATORS = [
         ],
         value: settings => plannedPractice(settings) ? PROGRAMME_PRACTICE : FREE_PRACTICE,
         hint: settings => plannedPractice(settings) ?
-          "Today's programme picks each measure: the ones due for review, new ones in score " +
-          "order, and those you missed again in a moment." :
+          "Today's programme picks each measure: the ones due for review, new ones " +
+          (orderOffered(settings) ? "in the order below" : "in score order") +
+          ", and those you missed again in a moment." :
           "Free practice plays the measures you pick.",
         visible: settings => programmeOffered(settings),
+      },
+      {
+        name: "introduce",
+        label: "order",
+        type: "select",
+        default: READ_FIRST,
+        values: INTRODUCTION_ORDERS.map(name => ({name})),
+        value: settings => introductionOrder(settings),
+        // only a passage flagged hard is pulled forward (pulledPassage), so
+        // with none the orders differ by the read-through alone
+        hint: settings => pulledPassage(programmePassages(settings)) ?
+          "Read through plays the piece once as practice, then brings in its hardest " +
+          "passage from the bar before it, then the rest in score order. Hardest first starts " +
+          "on the hard passages. In score order starts at the beginning. Read through and " +
+          "Hardest first bring in a repeat of a flagged passage right after it." :
+          "None of this piece's passages is flagged hard, so none is brought forward. Read " +
+          "through plays the piece once as practice, then its bars in score order. Hardest " +
+          "first and In score order start at the beginning. Read through and Hardest first " +
+          "bring in a repeat of a flagged passage right after it.",
+        visible: settings => orderOffered(settings),
       },
       {
         name: "passage",

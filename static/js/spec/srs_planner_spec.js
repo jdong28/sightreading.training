@@ -2,11 +2,13 @@ import MersenneTwister from "mersennetwister"
 
 import {
   planNext, planState, planSummary, anchoredCard, onScheduleMeasures, mostOverduePiece, inStudy,
-  entryStatus, entryCaption, cardCaption, blamedStaves,
-  RETRY, LADDER, REVIEW, NEW, EARLY, RUN_THROUGH, WAIT, LADDER_CAP, IDLE_LADDER_CAP, SITTING_GAP_MS,
+  entryStatus, entryCaption, cardCaption, blamedStaves, introduction, passagesForHand,
+  pulledPassage, PASSAGE_LEVEL,
+  RETRY, LADDER, REVIEW, NEW, EARLY, RUN_THROUGH, WAIT, READ_THROUGH, LADDER_CAP, IDLE_LADDER_CAP,
+  SITTING_GAP_MS, READ_FIRST, HARDEST_FIRST, SCORE_ORDER,
 } from "st/srs/planner"
 import {
-  applyGrade, replay, DEFAULT_SCHEDULER_SETTINGS, DEFAULT_PRACTICE_SETTINGS,
+  applyGrade, replay, scheduled, DEFAULT_SCHEDULER_SETTINGS, DEFAULT_PRACTICE_SETTINGS,
   SCHEDULER_ALGO, DAY, MINUTE,
 } from "st/srs/schedule"
 import {newItem, itemId, RECENT_ATTEMPTS} from "st/srs/records"
@@ -14,7 +16,7 @@ import {PlanDeck, PlanGenerator} from "st/plan_cards"
 import {MeasureCardDeck, MeasureCardGenerator, measureCards, IN_ORDER, COLUMN_JOIN_KEYS} from "st/measure_cards"
 import {
   SHEET_MUSIC_GENERATOR, BOTH_HANDS, RIGHT_HAND, LEFT_HAND, PROGRAMME_PRACTICE, FREE_PRACTICE, WHOLE_SECTION,
-  plannedPractice, programmeOffered, drilledRange, PLAN_CARD_MEASURES,
+  plannedPractice, programmeOffered, drilledRange, PLAN_CARD_MEASURES, introductionOrder,
 } from "st/data"
 import {importMusicXMLPiece} from "st/sheet_music_deck"
 import {setAppStore} from "st/storage"
@@ -352,7 +354,7 @@ describe("today's programme planner", function() {
         onLadder(3, {due: NOW + 5 * MINUTE}),
       ]
       expect(planSummary({pieceId: "p", items, measures: MEASURES, now: NOW})).toEqual({
-        due: 2, dueMinutes: 1, newMeasures: 5, targetMinutes: 20, learned: 2, measures: 8,
+        due: 2, dueMinutes: 1, newMeasures: 5, toRead: 0, targetMinutes: 20, learned: 2, measures: 8,
       })
 
       // bar 1's left hand alone failed three times in the sitting, so the bar
@@ -393,6 +395,38 @@ describe("today's programme planner", function() {
       expect(entryCaption(inReview(1, {due: at(11, 4)}), NOW)).toEqual("returns tomorrow")
       expect(entryCaption(inReview(1, {due: at(13, 4)}), NOW)).toEqual("returns in 3 days")
       expect(entryCaption(bar(1), NOW)).toBe(null)
+    })
+
+    it("names a read-through entry, and a bar's passage role", function() {
+      expect(entryStatus({reason: READ_THROUGH, measure: 3, hand: "both"}, {now: NOW}))
+        .toEqual("Read-through · bar 3")
+      expect(entryStatus({reason: READ_THROUGH, measure: 3, hand: "upper"}, {now: NOW}))
+        .toEqual("Read-through · bar 3 · right hand")
+
+      let entry = measure => ({reason: NEW, measure, hand: "both"})
+      expect(entryStatus(entry(69), {now: NOW, passage: {role: "passage", start: 68, end: 73, level: 3}}))
+        .toEqual("New · bar 69 · hardest passage")
+      expect(entryStatus(entry(69), {now: NOW, passage: {role: "passage", start: 68, end: 73, level: 2}}))
+        .toEqual("New · bar 69 · hard passage")
+      expect(entryStatus(entry(69), {now: NOW, passage: {role: "passage", start: 68, end: 73, level: 1}}))
+        .toEqual("New · bar 69 · worth a look")
+      expect(entryStatus(entry(67), {now: NOW, passage: {role: "lead-in", start: 68, end: 73, level: 3}}))
+        .toEqual("New · bar 67 · lead-in to bars 68–73")
+      expect(entryStatus(entry(67), {now: NOW, passage: {role: "lead-in", start: 68, end: 68, level: 3}}))
+        .toEqual("New · bar 67 · lead-in to bar 68")
+      expect(entryStatus(entry(84), {now: NOW, passage: {role: "repeat", start: 11, end: 12, level: 2}}))
+        .toEqual("New · bar 84 · repeats bars 11–12")
+      expect(entryStatus(entry(17), {now: NOW})).toEqual("New · bar 17")
+    })
+
+    it("captions a read-through card by how many bars are left", function() {
+      let state = toRead => ({toRead: Array.from({length: toRead}, (_, idx) => idx + 1)})
+      expect(cardCaption({reason: READ_THROUGH, measure: 1}, null, state(87)))
+        .toEqual("87 bars left to read through")
+      expect(cardCaption({reason: READ_THROUGH, measure: 1}, null, state(1)))
+        .toEqual("1 bar left to read through")
+      expect(cardCaption({reason: READ_THROUGH, measure: 1}, null, state(0)))
+        .toEqual("read-through done · new bars next")
     })
   })
 
@@ -699,6 +733,240 @@ describe("today's programme planner", function() {
       // share of them a split needs
       expect(blamedStaves(review(3, 3, 3))).toEqual([])
       expect(blamedStaves({misses: 3})).toBe(null)
+    })
+  })
+
+  describe("introduction order", function() {
+    it("takes new measures in the order given, score order without one", function() {
+      expect(entryOf(settled([5, 6, 1]), {introduce: [5, 6, 1, 2, 3, 4, 7, 8]})).toEqual([NEW, 5])
+      expect(entryOf(settled([1]), {introduce: [5, 6, 1, 2, 3, 4, 7, 8]})).toEqual([NEW, 1])
+      expect(entryOf(settled([5, 6, 1]))).toEqual([NEW, 1])
+      expect(entryOf(settled([7, 1]), {introduce: [7, 99]})).toEqual([NEW, 7])
+      expect(entryOf(settled([1]), {introduce: [7, 99]})).toEqual([NEW, 1])
+    })
+
+    it("keeps every limit whatever the order", function() {
+      let rungs = count => [1, 2, 3, 4, 5, 6, 7, 8].slice(0, count)
+        .map(m => onLadder(m, {due: NOW + m * MINUTE, last: NOW - 2 * DAY}))
+      let early9 = inReview(9, {due: NOW + 5 * DAY, last: NOW - 3 * DAY})
+      let measures = [...MEASURES, 9, 10]
+      let introduce = [...measures].reverse()
+
+      expect(entryOf([...rungs(LADDER_CAP), early9], {measures, introduce})).toEqual([EARLY, 9])
+      expect(entryOf(rungs(IDLE_LADDER_CAP), {measures, introduce})).toEqual([WAIT, 1])
+
+      let fresh = [1, 2].map((m, idx) => onLadder(m, {due: NOW + 5 * MINUTE, last: NOW - (idx + 1) * MINUTE}))
+      let early8 = inReview(8, {due: NOW + 5 * DAY, last: NOW - 3 * DAY})
+      let reversed = [...MEASURES].reverse()
+      expect(entryOf([...fresh, early8], {introduce: reversed})).toEqual([EARLY, 8])
+      expect(entryOf(fresh, {introduce: reversed})).toEqual([NEW, 8])
+    })
+
+    it("the fallback first new measure follows the order", function() {
+      let items = [bar(1, {attempts: 1, lastPracticed: NOW - 6 * MINUTE})]
+      let practice = {...DEFAULT_PRACTICE_SETTINGS, sessionMinutes: 5}
+      expect(entryOf(items, {practice, introduce: [6, 1, 2, 3, 4, 5, 7, 8]})).toEqual([NEW, 6])
+      expect(entryOf(items, {practice})).toEqual([NEW, 1])
+    })
+
+    it("plays exactly as no order given, in score order explicitly, a random month of grades", function() {
+      let random = new MersenneTwister(7)
+      let settings = DEFAULT_SCHEDULER_SETTINGS
+      let without = new Map()
+      let withOrder = new Map()
+      let now = NOW
+
+      for (let day = 0; day < 12; day++) {
+        now = NOW + day * DAY
+        for (let card = 0; card < 40; card++) {
+          let a = planNext({pieceId: "p", items: [...without.values()], measures: MEASURES, now})
+          let b = planNext({
+            pieceId: "p", items: [...withOrder.values()], measures: MEASURES, now,
+            introduce: MEASURES, readThrough: false,
+          })
+
+          expect([b.entry.reason, b.entry.measure, b.entry.hand])
+            .toEqual([a.entry.reason, a.entry.measure, a.entry.hand])
+
+          let grade = random.random() < 0.15 ? AGAIN : random.random() < 0.3 ? HARD : GOOD
+
+          for (let [items, entry] of [[without, a.entry], [withOrder, b.entry]]) {
+            let stored = items.get(entry.itemId) || bar(entry.measure)
+            let early = !onScheduleMeasures([entry.measure], () => stored, now).length
+            let next = early && grade > AGAIN ? {...stored, lastPracticed: now, attempts: stored.attempts + 1} : {
+              ...applyGrade(stored, grade, now, settings), lastPracticed: now, attempts: stored.attempts + 1,
+              recent: [...stored.recent, [now, 4, grade >= 3 ? 4 : 2, grade]].slice(-RECENT_ATTEMPTS),
+            }
+            items.set(entry.itemId, next)
+          }
+
+          now += 20 * 1000
+        }
+      }
+    })
+
+    describe("introduction()", function() {
+      let flag = (start, end, level, extra={}) => ({start, end, level, hand: "both", ...extra})
+      const TEN = Array.from({length: 10}, (_, i) => i + 1)
+
+      it("has nothing to introduce without a counting flag, or in score order", function() {
+        expect(introduction({measures: TEN, passages: []}))
+          .toEqual(jasmine.objectContaining({introduce: null, readThrough: false}))
+        expect(introduction({measures: TEN, passages: [flag(2, 3, 3)], order: SCORE_ORDER}))
+          .toEqual(jasmine.objectContaining({introduce: null, readThrough: false}))
+      })
+
+      it("pulls the hardest passage early, from its lead-in, in READ_FIRST; every hard one in HARDEST_FIRST", function() {
+        let passages = [flag(2, 3, 3), flag(6, 7, 2)]
+        let readFirst = introduction({measures: TEN, passages, order: READ_FIRST})
+        expect(readFirst.introduce).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+        expect(readFirst.readThrough).toBe(true)
+
+        let hardestFirst = introduction({measures: TEN, passages, order: HARDEST_FIRST})
+        expect(hardestFirst.introduce).toEqual([1, 2, 3, 5, 6, 7, 4, 8, 9, 10])
+        expect(hardestFirst.readThrough).toBe(false)
+      })
+
+      it("brings the lead-in with the pulled passage, wherever it falls", function() {
+        let passages = [flag(5, 6, 3), flag(2, 3, 2)]
+        expect(introduction({measures: TEN, passages, order: READ_FIRST}).introduce)
+          .toEqual([4, 5, 6, 1, 2, 3, 7, 8, 9, 10])
+        expect(introduction({measures: TEN, passages, order: HARDEST_FIRST}).introduce)
+          .toEqual([4, 5, 6, 1, 2, 3, 7, 8, 9, 10])
+      })
+
+      it("skips unplayable bars for the lead-in, and never repeats it", function() {
+        let measures = [1, 2, 4, 5]
+        let passages = [flag(4, 5, 3)]
+        expect(introduction({measures, passages, order: HARDEST_FIRST}).introduce).toEqual([2, 4, 5, 1])
+      })
+
+      it("pulls a flag's repeats right after it, early ones with the flag, the rest's after its last bar", function() {
+        let withRepeat = [flag(2, 3, 3, {alsoAt: [[7, 8]]})]
+        expect(introduction({measures: TEN, passages: withRepeat, order: READ_FIRST}).introduce)
+          .toEqual([1, 2, 3, 7, 8, 4, 5, 6, 9, 10])
+
+        let worthALookRepeat = [flag(5, 6, 3), flag(2, 3, 1, {alsoAt: [[7, 8]]})]
+        expect(introduction({measures: TEN, passages: worthALookRepeat, order: READ_FIRST}).introduce)
+          .toEqual([4, 5, 6, 1, 2, 3, 7, 8, 9, 10])
+        expect(introduction({measures: TEN, passages: worthALookRepeat, order: SCORE_ORDER}).introduce)
+          .toBe(null)
+      })
+
+      it("still reads through and pulls repeats for worth-a-look flags alone", function() {
+        let passages = [flag(2, 3, 1, {alsoAt: [[7, 8]]})]
+        let built = introduction({measures: TEN, passages, order: READ_FIRST})
+        expect(built.readThrough).toBe(true)
+        expect(built.introduce).toEqual([1, 2, 3, 7, 8, 4, 5, 6, 9, 10])
+      })
+
+      it("pulls no passage forward when none reaches PASSAGE_LEVEL", function() {
+        let passages = [flag(5, 6, 1), flag(2, 3, 1)]
+        expect(pulledPassage(passages)).toBe(null)
+        expect(introduction({measures: TEN, passages, order: HARDEST_FIRST}).introduce)
+          .toEqual(TEN)
+        expect(introduction({measures: TEN, passages, order: READ_FIRST}).introduce)
+          .toEqual(TEN)
+
+        // one flagged that hard is pulled, hardest first, for either order
+        let harder = [...passages, flag(8, 9, PASSAGE_LEVEL)]
+        expect(pulledPassage(harder)).toEqual(jasmine.objectContaining({start: 8, end: 9}))
+        expect(introduction({measures: TEN, passages: harder, order: READ_FIRST}).introduce)
+          .toEqual([7, 8, 9, 1, 2, 3, 4, 5, 6, 10])
+      })
+
+      it("counts a flag for pulling only in a session of its hand", function() {
+        let passages = [flag(5, 6, 3, {hand: "lower"})]
+        expect(pulledPassage(passages, "upper")).toBe(null)
+        expect(pulledPassage(passages, "lower")).toEqual(jasmine.objectContaining({start: 5}))
+        expect(pulledPassage(passages)).toEqual(jasmine.objectContaining({start: 5}))
+      })
+
+      it("never reads through a piece of a single playable bar", function() {
+        let passages = [flag(1, 1, 3)]
+        let one = introduction({measures: [1], passages, order: READ_FIRST})
+        expect(one.readThrough).toBe(false)
+        expect(one.introduce).toEqual([1])
+
+        expect(introduction({measures: [1, 2], passages, order: READ_FIRST}).readThrough).toBe(true)
+      })
+
+      it("counts a flag only for a session of its hand, or both", function() {
+        let passages = [flag(2, 3, 3, {hand: "lower"})]
+        expect(introduction({measures: TEN, passages, order: READ_FIRST, hand: "upper"}))
+          .toEqual(jasmine.objectContaining({introduce: null, readThrough: false}))
+        expect(introduction({measures: TEN, passages, order: READ_FIRST, hand: "lower"}).readThrough).toBe(true)
+        expect(introduction({measures: TEN, passages, order: READ_FIRST, hand: "both"}).readThrough).toBe(true)
+        expect(passagesForHand(passages, "upper")).toEqual([])
+      })
+
+      it("clips a flag to the playable bars it covers", function() {
+        let measures = [1, 2, 3, 4, 5, 6]
+        let passages = [flag(5, 20, 3)]
+        expect(introduction({measures, passages, order: HARDEST_FIRST}).introduce).toEqual([4, 5, 6, 1, 2, 3])
+      })
+
+      it("marks every bar's role, earlier flags kept on an overlap", function() {
+        let passages = [flag(5, 6, 3, {alsoAt: [[9, 10]]})]
+        let readFirst = introduction({measures: TEN, passages, order: READ_FIRST})
+        expect(readFirst.roles.get(4)).toEqual(jasmine.objectContaining({role: "lead-in"}))
+        expect(readFirst.roles.get(5)).toEqual(jasmine.objectContaining({role: "passage", level: 3}))
+        expect(readFirst.roles.get(6)).toEqual(jasmine.objectContaining({role: "passage", level: 3}))
+        expect(readFirst.roles.get(9)).toEqual(jasmine.objectContaining({role: "repeat"}))
+        expect(readFirst.roles.get(10)).toEqual(jasmine.objectContaining({role: "repeat"}))
+
+        let scoreOrder = introduction({measures: TEN, passages, order: SCORE_ORDER})
+        expect(scoreOrder.roles.get(5)).toEqual(jasmine.objectContaining({role: "passage"}))
+        expect(scoreOrder.roles.has(4)).toBe(false)
+        expect(scoreOrder.roles.has(9)).toBe(false)
+
+        let overlapping = [flag(2, 4, 3), flag(3, 5, 1)]
+        let overlap = introduction({measures: TEN, passages: overlapping, order: SCORE_ORDER})
+        expect(overlap.roles.get(3)).toEqual(jasmine.objectContaining({level: 3}))
+      })
+    })
+  })
+
+  describe("read-through", function() {
+    it("reads a new piece through first, as practice", function() {
+      let fresh = plan([], {readThrough: true})
+      expect([fresh.entry.reason, fresh.entry.measure]).toEqual([READ_THROUGH, 1])
+      expect(fresh.state.toRead).toEqual(MEASURES)
+
+      let started = [1, 2].map(m => bar(m, {attempts: 1, lastPracticed: NOW - MINUTE}))
+      expect(entryOf(started, {readThrough: true})).toEqual([READ_THROUGH, 3])
+
+      let allPlayed = MEASURES.map(m => bar(m, {attempts: 1, lastPracticed: NOW - MINUTE}))
+      expect(entryOf(allPlayed, {readThrough: true, introduce: [6, 1, 2, 3, 4, 5, 7, 8]})).toEqual([NEW, 6])
+    })
+
+    it("resumes at the first bar not yet played", function() {
+      let played = [1, 2, 4].map(m => bar(m, {attempts: 1, lastPracticed: NOW - MINUTE}))
+      expect(entryOf(played, {readThrough: true})).toEqual([READ_THROUGH, 3])
+    })
+
+    it("never reads through a piece with a scheduled bar", function() {
+      let {entry, state} = plan([inReview(3, {due: NOW + 9 * DAY})], {readThrough: true})
+      expect(entry.reason).not.toEqual(READ_THROUGH)
+      expect(state.toRead).toEqual([])
+    })
+
+    it("counts only the session's hand, and never a bar set aside", function() {
+      let upperPlayed = {
+        ...bar(1, {attempts: 1, lastPracticed: NOW - MINUTE}), hand: "upper",
+        id: itemId({pieceId: "p", hand: "upper", startMeasure: 1, endMeasure: 1}),
+      }
+      expect(entryOf([upperPlayed], {readThrough: true})).toEqual([READ_THROUGH, 1])
+
+      let suspended = {...bar(1), state: "suspended"}
+      let {state} = plan([suspended], {readThrough: true})
+      expect(state.toRead).not.toContain(1)
+    })
+
+    it("sums up the read-through for the plate", function() {
+      expect(planSummary({pieceId: "p", items: [], measures: MEASURES, now: NOW, readThrough: true}))
+        .toEqual(jasmine.objectContaining({toRead: 8, newMeasures: 8}))
+      expect(planSummary({pieceId: "p", items: [], measures: MEASURES, now: NOW}).toRead).toEqual(0)
     })
   })
 
@@ -1380,6 +1648,147 @@ describe("today's programme on the staff", function() {
     expect(deck.entry && deck.entry.measure).not.toEqual(1)
   })
 
+  describe("introduction order and read-through", function() {
+    let flagAt2 = () => [{start: 2, end: 2, level: 3, hand: "both"}]
+
+    it("reads the piece through as practice, then brings in the hardest passage from its lead-in", async function() {
+      let {deck, generator, notes} = await generatorFor(2, {passages: flagAt2, order: READ_FIRST})
+      expect(deck.entry).toEqual(jasmine.objectContaining({reason: READ_THROUGH, measure: 0}))
+      expect(generator.currentCard().measures).toEqual([0, 1])
+      expect(generator.statusLine()).toEqual("Read-through · bar 0")
+
+      let stats = new NoteStats()
+      let itemOf = m => store.item(`${piece.id}:both:${m}-${m}`)
+
+      notes = await playCard({generator, notes}, stats)
+      expect(itemOf(0).attempts).toEqual(1)
+      expect(itemOf(1).attempts).toEqual(1)
+      expect(scheduled(itemOf(0))).toBe(false)
+      expect(await store.reviews({pieceId: piece.id})).toEqual([])
+      expect(store.study(piece.id)).toEqual(jasmine.objectContaining({status: "learning"}))
+      expect(generator.caption()).toMatch(/1 bar left to read through$/)
+      expect(deck.entry).toEqual(jasmine.objectContaining({reason: READ_THROUGH, measure: 2}))
+
+      notes = await playCard({generator, notes}, stats)
+      expect(deck.entry).toEqual(jasmine.objectContaining({reason: NEW, measure: 1}))
+      expect(generator.statusLine()).toEqual("New · bar 1 · lead-in to bar 2")
+
+      await playCard({generator, notes}, stats)
+      expect(scheduled(itemOf(1))).toBe(true)
+      expect(scheduled(itemOf(2))).toBe(true)
+      expect((await store.reviews({pieceId: piece.id})).length).toBeGreaterThan(0)
+    })
+
+    it("hardest first skips the read-through", async function() {
+      let {deck} = await generatorFor(2, {passages: flagAt2, order: HARDEST_FIRST})
+      expect(deck.entry).toEqual(jasmine.objectContaining({reason: NEW, measure: 1}))
+    })
+
+    it("plays today's queue without passages, or in score order", async function() {
+      let noPassages = await generatorFor(2, {passages: () => [], order: READ_FIRST})
+      expect(noPassages.deck.entry).toEqual(jasmine.objectContaining({reason: NEW, measure: 0}))
+
+      let scoreOrder = await generatorFor(2, {passages: flagAt2, order: SCORE_ORDER})
+      expect(scoreOrder.deck.entry).toEqual(jasmine.objectContaining({reason: NEW, measure: 0}))
+    })
+
+    it("resumes the read-through after a reload", async function() {
+      let {generator, notes} = await generatorFor(2, {passages: flagAt2, order: READ_FIRST})
+      let stats = new NoteStats()
+      await playCard({generator, notes}, stats)
+
+      let deck2 = new PlanDeck(pool(), {
+        pieceId: piece.id, cardMeasures: 2, store, now: () => time, passages: flagAt2, order: READ_FIRST,
+      })
+      expect(deck2.entry).toEqual(jasmine.objectContaining({reason: READ_THROUGH, measure: 2}))
+    })
+
+    it("keeps a read-through card practice alone through a rest part way into it", async function() {
+      let {deck, generator, notes} = await generatorFor(2, {passages: flagAt2, order: READ_FIRST})
+      let stats = new NoteStats()
+      let columns = generator.currentCard().columns.length
+
+      time += 1000
+      notes = hit(notes, stats)
+
+      // a Rest part way through the card abandons the pass, its practice
+      // written as the page writes it (recordSectionPractice); the player
+      // plays the rest of the same card as a continued one
+      let abandoned = generator.takePractice()
+      expect(abandoned.length).toBeGreaterThan(0)
+      for (let practice of abandoned) { await store.recordSectionPractice(practice) }
+
+      for (let i = 1; i < columns; i++) {
+        time += 1000
+        notes = hit(notes, stats)
+      }
+      await generator.finishing
+      await generator.studying
+
+      expect(await store.reviews({pieceId: piece.id})).toEqual([])
+      expect(scheduled(store.item(`${piece.id}:both:0-0`))).toBe(false)
+      expect(scheduled(store.item(`${piece.id}:both:1-1`))).toBe(false)
+      expect(deck.entry).toEqual(jasmine.objectContaining({reason: READ_THROUGH, measure: 2}))
+    })
+
+    it("writes a self-graded read-through pass as practice alone", async function() {
+      let {deck, generator} = await generatorFor(2, {passages: flagAt2, order: READ_FIRST})
+      expect(deck.entry).toEqual(jasmine.objectContaining({reason: READ_THROUGH, measure: 0}))
+
+      generator.setDrill(() => ({mode: "self"}))
+      time += 1000
+      generator.selfGrade(GOOD)
+      await generator.finishing
+      await generator.studying
+
+      expect(await store.reviews({pieceId: piece.id})).toEqual([])
+      expect(store.item(`${piece.id}:both:0-0`).attempts).toEqual(1)
+      expect(store.item(`${piece.id}:both:1-1`).attempts).toEqual(1)
+      expect(generator.selfReceipt().when).toBe(null)
+    })
+
+    it("keeps the schedule what replay rebuilds through a read-through and the new cards after it", async function() {
+      let {generator, notes} = await generatorFor(2, {passages: flagAt2, order: READ_FIRST})
+      let stats = new NoteStats()
+
+      for (let i = 0; i < 4; i++) {
+        notes = await playCard({generator, notes}, stats)
+      }
+
+      let reviews = await store.reviews({pieceId: piece.id})
+      for (let item of store.items(piece.id)) {
+        if (item.startMeasure != item.endMeasure) { continue }
+        let own = reviews.filter(review => review.itemId == item.id)
+        if (own.length) {
+          expect(replay(own, {item})).toEqual(item)
+        } else {
+          expect(item.state).toEqual("tracked")
+        }
+      }
+    })
+
+    it("plans again once a late analysis lands", async function() {
+      let landed
+      let ready = new Promise(resolve => { landed = resolve })
+      let flagged = false
+      let deck = new PlanDeck(pool(), {
+        pieceId: piece.id, cardMeasures: 2, store, now: () => time,
+        passages: () => flagged ? flagAt2() : [],
+        order: READ_FIRST,
+        passagesReady: ready,
+      })
+      let generator = new PlanGenerator(deck, {now: () => time})
+      generators.push(generator)
+
+      expect(deck.entry).toEqual(jasmine.objectContaining({reason: NEW, measure: 0}))
+
+      flagged = true
+      landed()
+      expect(await generator.ready).toBe(true)
+      expect(deck.entry).toEqual(jasmine.objectContaining({reason: READ_THROUGH, measure: 0}))
+    })
+  })
+
   // acoustic mode (st/srs/self_grade): the hand scaffold is turned off
   // outright while it is on (Q3), rather than left active like scroll mode
   describe("self-graded passes", function() {
@@ -1902,6 +2311,49 @@ describe("today's programme on the staff", function() {
       expect(free.currentCard().measures).toEqual([1])
       expect(drilledRange(settingsFor({practice: FREE_PRACTICE}))).toEqual({startMeasure: 1, endMeasure: 1})
       expect(input("startMeasure").visible(settingsFor({practice: FREE_PRACTICE}))).toBe(true)
+    })
+
+    // a hand-made flag, valid enough for store.putAnnotation (st/difficulty
+    // records), so the order input and the programme start read through
+    // without a real analysis
+    let flagRecord = (id, extra={}) => ({
+      pieceId: piece.id, fingerprint: {bars: []}, decisions: [], runs: {},
+      proposals: [{
+        id, source: "score", start: 1, end: 1, startIndex: 1, endIndex: 1,
+        hand: "lower", level: 3, kinds: ["density"], title: "Test passage",
+        reason: "test", reasons: ["test"], tip: "test", ...extra,
+      }],
+    })
+
+    it("offers the order input only for a piece in the programme with flags for the hand", async function() {
+      expect(input("introduce").visible(settingsFor({practice: PROGRAMME_PRACTICE}))).toBe(false)
+
+      await store.putAnnotation(flagRecord("score:1-1:a"))
+
+      expect(input("introduce").visible(settingsFor({practice: PROGRAMME_PRACTICE}))).toBe(true)
+      expect(input("introduce").visible(settingsFor({practice: FREE_PRACTICE}))).toBe(false)
+      expect(input("introduce").visible(settingsFor({practice: PROGRAMME_PRACTICE, hand: RIGHT_HAND}))).toBe(false)
+    })
+
+    it("reads the introduction order from settings, defaulting an unset or unknown value", function() {
+      expect(introductionOrder({})).toEqual(READ_FIRST)
+      expect(introductionOrder({introduce: "nonsense"})).toEqual(READ_FIRST)
+      expect(introductionOrder({introduce: HARDEST_FIRST})).toEqual(HARDEST_FIRST)
+    })
+
+    it("starts the programme read through by default, and in score order when set", async function() {
+      await store.putAnnotation(flagRecord("score:1-1:b"))
+
+      let readFirst = SHEET_MUSIC_GENERATOR.create(grand, null, settingsFor({practice: PROGRAMME_PRACTICE}))
+      generators.push(readFirst)
+      await readFirst.ready
+      expect(readFirst.statusLine()).toMatch(/^Read-through/)
+
+      let scoreOrder = SHEET_MUSIC_GENERATOR.create(
+        grand, null, settingsFor({practice: PROGRAMME_PRACTICE, introduce: "in score order"}))
+      generators.push(scoreOrder)
+      await scoreOrder.ready
+      expect(scoreOrder.statusLine()).toEqual("New · bar 0")
     })
   })
 })

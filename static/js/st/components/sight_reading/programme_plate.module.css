@@ -1,21 +1,15 @@
+/* at the head of the trainer's rail (docs/design/salon-de-chopin.md), a
+   260-340px column on a wide screen or the single-column trainer's own
+   width when stacked; the rail's gap spaces this plate from the next */
 .plate.plate {
-    margin-bottom: 18px;
-    padding: 20px 28px 18px;
-
-    @media (max-width: 600px) {
-        padding: 18px 16px 14px;
-    }
+    padding: 18px 20px 16px;
 }
 
 .figures {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 12px 20px;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
     margin: 0;
-
-    @media (max-width: 600px) {
-        grid-template-columns: minmax(0, 1fr);
-    }
 }
 
 .figure {
@@ -78,6 +72,12 @@
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
+}
+
+.order_description {
+    margin: 6px 0 0;
+    font-size: 12px;
+    color: var(--salon-ink-muted);
 }
 
 /* pill overrides double their class to win over the pill variants of

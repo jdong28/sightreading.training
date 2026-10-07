@@ -2,7 +2,7 @@ import * as React from "react"
 import {renderToStaticMarkup} from "react-dom/server"
 import {MemoryRouter} from "react-router-dom"
 
-import {Plate, StatCard, Pill, SectionLabel, TitleBlock, PullQuote, FleuronRule} from "st/components/salon"
+import {Plate, StatCard, Pill, SectionLabel, TitleBlock, PullQuote, FleuronRule, AccuracyRule} from "st/components/salon"
 import styles from "st/components/salon.module.css"
 
 let renderElement = (...elements) => {
@@ -64,5 +64,16 @@ describe("salon primitives", function() {
     expect(el.querySelector(`.${styles.title_italic}`).textContent).toEqual("evenings")
     expect(el.querySelector(`.${styles.fleuron_rule}`).textContent).toEqual("❖")
     expect(el.querySelector("blockquote").textContent).toEqual("❖Read ahead by one column.")
+  })
+
+  it("renders an accuracy rule's fill width and weak state", function() {
+    let el = renderElement(React.createElement(AccuracyRule, {percent: 83}))
+    let rule = el.querySelector(`.${styles.accuracy_rule}`)
+    expect(rule.hasAttribute("data-weak")).toBe(false)
+    expect(rule.querySelector(`.${styles.accuracy_fill}`).style.width).toEqual("83%")
+
+    let weak = renderElement(React.createElement(AccuracyRule, {percent: 57, weak: true}))
+      .querySelector(`.${styles.accuracy_rule}`)
+    expect(weak.getAttribute("data-weak")).toEqual("true")
   })
 })
