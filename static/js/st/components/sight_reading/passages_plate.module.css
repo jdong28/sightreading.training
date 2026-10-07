@@ -127,6 +127,59 @@
     margin-bottom: 14px;
 }
 
+.given_title, .moved_note {
+    font-size: 12px;
+    color: var(--salon-ink-muted);
+    margin: -10px 0 10px;
+}
+
+.status_mark {
+    font-family: var(--font-ui);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .04em;
+    color: var(--salon-gilt);
+    margin: -10px 0 10px;
+}
+
+.trouble_list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+
+    li {
+        border-bottom: var(--salon-hairline);
+        padding-bottom: 10px;
+    }
+
+    li:last-child {
+        border-bottom: none;
+        padding-bottom: 0;
+    }
+}
+
+.trouble_bars {
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 14px;
+    color: var(--salon-ink);
+}
+
+.trouble_text {
+    font-size: 13px;
+    color: var(--salon-ink-soft);
+    margin: 4px 0 8px;
+}
+
+.trouble_error {
+    font-size: 13px;
+    color: var(--salon-oxblood);
+    margin: 8px 0 0;
+}
+
 .reasons {
     list-style: none;
     margin: 0 0 14px;

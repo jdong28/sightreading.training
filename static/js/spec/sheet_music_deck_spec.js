@@ -5,13 +5,17 @@ import {
 import {MultiTrackSong, SongNote} from "st/song_note_list"
 
 import {
-  extractSectionColumns, measureBeatRange, measureNumberRange, staffTracks
+  extractSectionColumns, measureBeatRange, measureNumberRange, measureIndexRange, staffTracks
 } from "st/song_sections"
 
 import {
   songToJSON, songFromJSON, loadDeck, findPiece, pieceSong, pieceSource, addPiece,
-  removePiece, importMusicXMLPiece, ensureAnnotation, MAX_PIECES
+  removePiece, importMusicXMLPiece, ensureAnnotation, MAX_PIECES,
+  decideFlags, exportFlagsFile, importFlagsFile
 } from "st/sheet_music_deck"
+
+import {flagsInForce} from "st/difficulty/records"
+import {acceptDecision, dismissDecision, reviewFlags} from "st/difficulty/decisions"
 
 import {
   pieceSection, pieceSectionMeasures, sheetMusicSection, sheetMusicPieceSettings, sheetMusicStaffFor,
@@ -34,14 +38,14 @@ const treble = {name: "treble", range: ["A3", "C6"]}
 // a piece with a dense run of sixteenths at bars 9-11, long enough for
 // st/difficulty to flag passages. A different barCount makes a different
 // score (fewer/more measures) under the same (score-given) title.
-function workhorseScore({leadNote="C4", barCount=16, directions=null}={}) {
+function workhorseScore({leadNote="C4", barCount=16, directions=null, denseRun=true}={}) {
   let quiet = {upper: ["C4", "D4", "E4", "F4"], lower: ["C3", "D3", "E3", "F3"]}
   let dense = {
     upper: ["C4", "D4", "E4", "F4", "G4", "F4", "E4", "D4", "C4", "D4", "E4", "F4", "G4", "F4", "E4", "D4"],
     lower: ["C3", "D3", "E3", "F3", "G3", "F3", "E3", "D3", "C3", "D3", "E3", "F3", "G3", "F3", "E3", "D3"],
   }
 
-  let bars = Array.from({length: barCount}, (_, i) => i >= 8 && i <= 10 ?
+  let bars = Array.from({length: barCount}, (_, i) => denseRun && i >= 8 && i <= 10 ?
     {upper: dense.upper.map(name => ({name, duration: 0.25, type: "16th"})),
       lower: dense.lower.map(name => ({name, duration: 0.25, type: "16th"}))} :
     {upper: quiet.upper.map(name => ({name})), lower: quiet.lower.map(name => ({name}))})
@@ -256,6 +260,19 @@ describe("sheet music deck", function() {
 
       // a start before the first measure starts at the first measure
       expect(extractSectionColumns(song, {startMeasure: 0, endMeasure: 1})).toEqual([["C5"]])
+
+      // measure 2 is split across indices 1 and 2: the range's start takes
+      // the first of its number, its end the last
+      expect(measureIndexRange(song, 1, 1)).toEqual([0, 0])
+      expect(measureIndexRange(song, 2, 2)).toEqual([1, 2])
+      expect(measureIndexRange(song, 2, 3)).toEqual([1, 3])
+      expect(measureIndexRange(song, 1, 4)).toEqual([0, 4])
+    })
+
+    it("measureIndexRange falls back to number minus one without explicit numbering", function() {
+      let song = parseMusicXML(pianoScore({bars: [{upper: [{name: "C4"}]}, {upper: [{name: "D4"}]}]}))
+      delete song.metadata.measureNumbers
+      expect(measureIndexRange(song, 1, 2)).toEqual([0, 1])
     })
   })
 
@@ -794,7 +811,7 @@ describe("sheet music deck", function() {
     })
 
     it("never fails the import when the analysis or write fails", async function() {
-      spyOn(store, "putAnnotation").and.rejectWith(new Error("boom"))
+      spyOn(store, "updateAnnotation").and.rejectWith(new Error("boom"))
       spyOn(console, "warn")
 
       let {piece, error} = await importMusicXMLPiece("workhorse.musicxml", workhorseScore(), store)
@@ -815,10 +832,10 @@ describe("sheet music deck", function() {
       expect(record).toBeTruthy()
       expect(store.annotation(piece.id)).toEqual(record)
 
-      spyOn(store, "putAnnotation")
+      spyOn(store, "updateAnnotation")
       let again = await ensureAnnotation(piece.id, store)
       expect(again).toEqual(record)
-      expect(store.putAnnotation).not.toHaveBeenCalled()
+      expect(store.updateAnnotation).not.toHaveBeenCalled()
     })
 
     it("ensureAnnotation analyses the source text its caller already holds", async function() {
@@ -840,6 +857,157 @@ describe("sheet music deck", function() {
       let again = await ensureAnnotation(piece.id, store)
       expect(store.pieceSource).toHaveBeenCalled()
       expect(again).toEqual(record)
+    })
+  })
+
+  describe("the flags file (st/difficulty)", function() {
+    let store
+    beforeEach(async function() {
+      store = await openTestStore()
+    })
+
+    afterEach(async function() {
+      await store.close()
+    })
+
+    it("decideFlags applies a batch of decisions through updateAnnotation", async function() {
+      let {piece} = await importMusicXMLPiece("workhorse.musicxml", workhorseScore(), store)
+      let flag = flagsInForce(store.annotation(piece.id))[0]
+      let decision = acceptDecision({record: store.annotation(piece.id), flag, by: "Ms Laurent", at: Date.now()})
+
+      let {record, error} = await decideFlags(piece.id, [decision], store)
+      expect(error).toBeUndefined()
+      expect(record.decisions).toEqual([decision])
+      expect(flagsInForce(store.annotation(piece.id)).find(f => f.id == flag.id).status).toEqual("accepted")
+    })
+
+    it("exportFlagsFile and importFlagsFile round-trip a piece's decisions onto the same piece", async function() {
+      let {piece} = await importMusicXMLPiece("workhorse.musicxml", workhorseScore(), store)
+      let flag = flagsInForce(store.annotation(piece.id))[0]
+      await decideFlags(piece.id,
+        [acceptDecision({record: store.annotation(piece.id), flag, by: "Ms Laurent", at: Date.now()})], store)
+
+      let {fileName, error: exportError} = await exportFlagsFile(piece.id, {by: "Ms Laurent"}, store)
+      expect(exportError).toBeUndefined()
+      expect(fileName).toContain("workhorse")
+
+      let exported = (await exportFlagsFile(piece.id, {by: "Ms Laurent"}, store)).text
+
+      // a fresh device, with the same score imported, opens the file
+      let other = await openTestStore()
+      let {piece: otherPiece} = await importMusicXMLPiece("workhorse.musicxml", workhorseScore(), other)
+
+      let {piece: appliedTo, message, error} = await importFlagsFile(exported, other)
+      expect(error).toBeUndefined()
+      expect(appliedTo.id).toEqual(otherPiece.id)
+      expect(message).toContain("Ms Laurent")
+      expect(message).toContain("1 placed")
+
+      let applied = flagsInForce(other.annotation(otherPiece.id)).find(f => f.id == flag.id)
+      expect(applied.status).toEqual("accepted")
+      expect(applied.by).toEqual("Ms Laurent")
+
+      await other.close()
+    })
+
+    it("opens a file again to place what first waited, and reports what the copy already had", async function() {
+      let {piece} = await importMusicXMLPiece("workhorse.musicxml", workhorseScore(), store)
+      let flag = flagsInForce(store.annotation(piece.id))[0]
+      await decideFlags(piece.id,
+        [acceptDecision({record: store.annotation(piece.id), flag, by: "Ms Laurent", at: Date.now()})], store)
+      let exported = (await exportFlagsFile(piece.id, {by: "Ms Laurent"}, store)).text
+
+      // the student's edition has the flagged bars written out plainly: the
+      // piece is matched, but the passage can't be placed in it
+      let other = await openTestStore()
+      let {piece: theirs} =
+        await importMusicXMLPiece("workhorse.musicxml", workhorseScore({denseRun: false}), other)
+
+      let first = await importFlagsFile(exported, other)
+      expect(first.error).toBeUndefined()
+      expect(first.message).toContain("0 placed")
+      expect(first.message).toContain("1 waiting for a place")
+      expect(flagsInForce(other.annotation(theirs.id)).some(f => f.id == flag.id)).toBe(false)
+
+      // they import the matching edition, which replaces the piece in place,
+      // and open the same file again
+      let {piece: updated} = await importMusicXMLPiece("workhorse.musicxml", workhorseScore(), other)
+      expect(updated.id).toEqual(theirs.id)
+
+      let second = await importFlagsFile(exported, other)
+      expect(second.message).toContain("1 placed")
+      expect(second.message).toContain("0 waiting for a place")
+      expect(reviewFlags(other.annotation(theirs.id)).filter(f => f.id == flag.id).length).toEqual(1)
+      expect(flagsInForce(other.annotation(theirs.id)).find(f => f.id == flag.id).status).toEqual("accepted")
+
+      // a third open has nothing left to write, and says so
+      let third = await importFlagsFile(exported, other)
+      expect(third.message).toContain("0 placed")
+      expect(third.message).toContain("1 already in your copy")
+      expect(reviewFlags(other.annotation(theirs.id)).filter(f => f.id == flag.id).length).toEqual(1)
+
+      await other.close()
+    })
+
+    it("keeps a decision written while the file was opening", async function() {
+      let {piece} = await importMusicXMLPiece("workhorse.musicxml", workhorseScore(), store)
+      let flag = flagsInForce(store.annotation(piece.id))[0]
+      await decideFlags(piece.id,
+        [acceptDecision({record: store.annotation(piece.id), flag, by: "Ms Laurent", at: 1})], store)
+      let exported = (await exportFlagsFile(piece.id, {by: "Ms Laurent"}, store)).text
+
+      let other = await openTestStore()
+      let {piece: theirs} = await importMusicXMLPiece("workhorse.musicxml", workhorseScore(), other)
+      let theirFlag = flagsInForce(other.annotation(theirs.id))[0]
+
+      // the open reads the record and writes it back as two steps on the
+      // store's write queue, so a decision made in between must survive it
+      let importing = importFlagsFile(exported, other, {pieceId: theirs.id})
+      let deciding = decideFlags(theirs.id,
+        [dismissDecision({record: other.annotation(theirs.id), flag: theirFlag, by: "", at: 2})], other)
+
+      let [imported] = await Promise.all([importing, deciding])
+      expect(imported.error).toBeUndefined()
+
+      let actions = other.annotation(theirs.id).decisions.map(d => d.action).sort()
+      expect(actions).toEqual(["accept", "dismiss"])
+
+      await other.close()
+    })
+
+    it("importFlagsFile with a pieceId refuses a file for a different score", async function() {
+      let {piece} = await importMusicXMLPiece("workhorse.musicxml", workhorseScore(), store)
+      await decideFlags(piece.id,
+        [acceptDecision({
+          record: store.annotation(piece.id), flag: flagsInForce(store.annotation(piece.id))[0],
+          by: "", at: Date.now(),
+        })], store)
+      let exported = (await exportFlagsFile(piece.id, {by: ""}, store)).text
+
+      let {piece: otherPiece} = await importMusicXMLPiece("minuet.musicxml", pickupScore(), store)
+      let {error} = await importFlagsFile(exported, store, {pieceId: otherPiece.id})
+      expect(error).toContain("different score")
+    })
+
+    it("importFlagsFile without a pieceId picks the best match in the deck, and errors when nothing matches", async function() {
+      let {piece} = await importMusicXMLPiece("workhorse.musicxml", workhorseScore(), store)
+      await decideFlags(piece.id,
+        [acceptDecision({
+          record: store.annotation(piece.id), flag: flagsInForce(store.annotation(piece.id))[0],
+          by: "", at: Date.now(),
+        })], store)
+      let exported = (await exportFlagsFile(piece.id, {by: ""}, store)).text
+
+      let other = await openTestStore()
+      let {error: noMatch} = await importFlagsFile(exported, other)
+      expect(noMatch).toContain("No piece in the deck")
+
+      await importMusicXMLPiece("workhorse.musicxml", workhorseScore(), other)
+      let {piece: picked, error} = await importFlagsFile(exported, other)
+      expect(error).toBeUndefined()
+      expect(picked.title).toEqual("Workhorse")
+
+      await other.close()
     })
   })
 

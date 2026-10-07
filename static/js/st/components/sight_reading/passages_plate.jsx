@@ -21,11 +21,14 @@ import {SidePane} from "st/components/sight_reading/settings_panel"
 import {romanNumeral, barsLabel, barsHeading} from "st/music"
 import {measureNumberList, measureNumberRange} from "st/song_sections"
 import {sheetMusicPiece, passageSettings} from "st/data"
-import {pieceSong, ensureAnnotation} from "st/sheet_music_deck"
+import {pieceSong, ensureAnnotation, decideFlags} from "st/sheet_music_deck"
 import {getAppStore} from "st/storage"
 import {flagsInForce} from "st/difficulty/records"
+import {reviewFlags, promoteTroubleSpot} from "st/difficulty/decisions"
+import {troubleSpots} from "st/difficulty/trouble"
 import {heat as heatLevel} from "st/difficulty/sections"
 import {LEVEL_WORDS} from "st/difficulty/index"
+import {ReviewPane} from "st/components/sight_reading/review_pane"
 
 import styles from "./passages_plate.module.css"
 
@@ -61,6 +64,18 @@ function handPillHand(flag) {
   return flag.hand == "both" ? "upper" : flag.hand
 }
 
+const SOURCE_CHIP = {score: "Score", teacher: "Teacher", player: "You"}
+
+// the detail plate's small instructor mark, for a flag in force a decision
+// has touched (never shown for a waiting proposal)
+function detailStatusMark(flag) {
+  let by = flag.by ? ` by ${flag.by}` : ""
+  if (flag.status == "accepted") { return "❖ Accepted" }
+  if (flag.status == "edited") { return `❖ Edited${by}` }
+  if (flag.status == "added") { return `❖ Added${by}` }
+  return null
+}
+
 export class PassagesPlate extends React.Component {
   static propTypes = {
     generator: types.object,
@@ -78,7 +93,8 @@ export class PassagesPlate extends React.Component {
     super(props)
     this.state = {
       selectedId: null, folded: foldedState(), width: 0, scoreFailed: false,
-      scoreOpen: false, paneWidth: 0,
+      scoreOpen: false, paneWidth: 0, reviewOpen: false, reviewFlagId: null,
+      troubleError: null,
     }
     this.columnRef = React.createRef()
     this.paneRef = React.createRef()
@@ -97,7 +113,10 @@ export class PassagesPlate extends React.Component {
     let piece = sheetMusicPiece(this.props.settings)
     let prevPiece = sheetMusicPiece(prevProps.settings)
     if ((piece && piece.id) != (prevPiece && prevPiece.id)) {
-      this.setState({selectedId: null, scoreFailed: false, scoreOpen: false})
+      this.setState({
+        selectedId: null, scoreFailed: false, scoreOpen: false, reviewOpen: false, reviewFlagId: null,
+        troubleError: null,
+      })
       this.ensure()
     }
 
@@ -191,9 +210,12 @@ export class PassagesPlate extends React.Component {
   }
 
   // opens the score pane, selecting a passage (the one already shown by
-  // default) and scrolling to it once it is drawn
+  // default) and scrolling to it once it is drawn. Only one right pane is
+  // ever open at a time, so this closes the review
   openScore(id) {
-    this.setState({scoreOpen: true, selectedId: id ?? this.state.selectedId}, () => {
+    this.setState({
+      scoreOpen: true, reviewOpen: false, reviewFlagId: null, selectedId: id ?? this.state.selectedId,
+    }, () => {
       this.observePaneWidth()
       this.scrollToSelected(this.state.selectedId)
     })
@@ -201,6 +223,48 @@ export class PassagesPlate extends React.Component {
 
   closeScore() {
     this.setState({scoreOpen: false})
+  }
+
+  // opens the review pane, on a given flag's editor when one is named (eg.
+  // "Edit" on the detail plate); closes the score, the other right pane
+  openReview(id) {
+    this.setState({reviewOpen: true, scoreOpen: false, reviewFlagId: id || null})
+  }
+
+  closeReview() {
+    this.setState({reviewOpen: false, reviewFlagId: null})
+  }
+
+  // "Flag these bars" on a trouble-spot suggestion (decision 8): promotes
+  // it to a flag in force, waiting for the teacher in the review. The
+  // annotation is ensured first (the plate is up for a suggestion alone,
+  // which needs no record), and a write that still fails says so, as the
+  // review pane's own Flag these bars does
+  flagTroubleSpot(spot) {
+    let piece = sheetMusicPiece(this.props.settings)
+    let song = piece && pieceSong(piece)
+    if (!piece || !song) { return }
+
+    let store = this.getStore()
+    let fail = text => { if (!this.unmounted) { this.setState({troubleError: text}) } }
+
+    return ensureAnnotation(piece.id, store).then(record => {
+      if (!record) {
+        fail("Couldn't flag these bars: this piece's score hasn't been analysed.")
+        return
+      }
+
+      let decision = promoteTroubleSpot({record, spot, song, by: "", at: Date.now()})
+      return decideFlags(piece.id, [decision], store).then(result => {
+        if (result.error) {
+          fail(result.error)
+          return
+        }
+        if (this.unmounted) { return }
+        this.setState({troubleError: null})
+        this.props.setSettings({...this.props.settings})
+      })
+    })
   }
 
   // the shaded rect may not be drawn yet (a pane just opened measures its
@@ -256,8 +320,9 @@ export class PassagesPlate extends React.Component {
   }
 
   renderGlance(numbers, heat, flags, coveredCount, selected) {
-    let aside = `${flags.length} ${flags.length == 1 ? "passage" : "passages"} · ` +
-      `${coveredCount} of ${numbers.length} bars`
+    let aside = flags.length ?
+      `${flags.length} ${flags.length == 1 ? "passage" : "passages"} · ${coveredCount} of ${numbers.length} bars` :
+      "No passages flagged"
 
     return <Plate header="The piece at a glance">
       <BarStrip
@@ -270,7 +335,7 @@ export class PassagesPlate extends React.Component {
       <div className={styles.glance_row}>
         <span>{aside}</span>
         <div className={styles.glance_actions}>
-          {this.canShowScore() && <button
+          {flags.length > 0 && this.canShowScore() && <button
             type="button"
             className={styles.fold_toggle}
             onClick={() => this.openScore(selected.id)}>
@@ -279,13 +344,20 @@ export class PassagesPlate extends React.Component {
           <button
             type="button"
             className={styles.fold_toggle}
+            onClick={() => this.openReview()}>
+            Review
+          </button>
+          {flags.length > 0 && <button
+            type="button"
+            className={styles.fold_toggle}
             onClick={() => this.setFolded(!this.state.folded)}>
             {this.state.folded ? "Show the passages" : "Hide the passages"}
-          </button>
+          </button>}
         </div>
       </div>
 
-      {!this.state.folded && <div className={styles.legend}>
+      {!this.state.folded && flags.length > 0 && <div className={styles.legend}>
+
         <span>
           Each cell is a bar. Easier
           <span className={styles.ramp} aria-hidden="true">
@@ -304,6 +376,8 @@ export class PassagesPlate extends React.Component {
   renderDetail(flag, flags) {
     let num = romanNumeral(flag.num)
     let total = romanNumeral(flags.length)
+    let mark = detailStatusMark(flag)
+    let moved = flag.place == "moved" && flag.movedFrom
 
     return <Plate
       className={styles.compact_plate}
@@ -313,12 +387,19 @@ export class PassagesPlate extends React.Component {
       </span>}>
       <h3 className={styles.flag_title}>{barsHeading(flag.start, flag.end)}</h3>
       <div className={styles.flag_sub}>{flag.title}</div>
+      {flag.givenTitle !== undefined &&
+        <div className={styles.given_title}>The analysis called it “{flag.givenTitle}”</div>}
+      {mark && <div className={styles.status_mark}>{mark}</div>}
+      {moved && <div className={styles.moved_note}>
+        Moved from {barsLabel(flag.movedFrom.start, flag.movedFrom.end)}
+        {flag.movedFrom.by ? ` in ${flag.movedFrom.by}’s copy` : ""}
+      </div>}
 
       <ul className={styles.reasons}>
-        {flag.reasons.map((reason, idx) =>
+        {flag.lines.map((line, idx) =>
           <li key={idx}>
-            <span className={styles.source_chip}>Score</span>
-            {reason}
+            <span className={styles.source_chip}>{SOURCE_CHIP[line.source] || "Score"}</span>
+            {line.text}
           </li>)}
       </ul>
 
@@ -334,7 +415,34 @@ export class PassagesPlate extends React.Component {
         <Pill variant="ghost" className={styles.small_pill} onClick={() => this.practiseHand(flag)}>
           {HAND_LABEL[flag.hand]}
         </Pill>
+        <Pill variant="ghost" className={styles.small_pill} onClick={() => this.openReview(flag.id)}>
+          Edit
+        </Pill>
       </div>
+    </Plate>
+  }
+
+  renderTroubleSpots(trouble) {
+    if (!trouble.length) { return null }
+
+    return <Plate className={styles.compact_plate} header="Your trouble spots">
+      <ul className={styles.trouble_list}>
+        {trouble.map((spot, idx) =>
+          <li key={idx}>
+            <span className={styles.trouble_bars}>{barsHeading(spot.start, spot.end)}</span>
+            <p className={styles.trouble_text}>{spot.text}</p>
+            <div className={styles.actions}>
+              <Pill variant="ghost" className={styles.small_pill} onClick={() => this.flagTroubleSpot(spot)}>
+                Flag these bars
+              </Pill>
+              <Pill variant="ghost" className={styles.small_pill} onClick={() => this.openReview()}>
+                Review
+              </Pill>
+            </div>
+          </li>)}
+      </ul>
+      {this.state.troubleError &&
+        <p className={styles.trouble_error}>{this.state.troubleError}</p>}
     </Plate>
   }
 
@@ -423,10 +531,23 @@ export class PassagesPlate extends React.Component {
 
     let record = this.getStore().annotation(piece.id)
     let flags = flagsInForce(record)
-    if (!flags.length) { return null }
+    let allFlags = reviewFlags(record)
+    let waitsInReview = allFlags.some(flag =>
+      flag.status == "dismissed" || flag.place == "unplaced" || flag.place == "check")
+
+    let items = this.getStore().items(piece.id)
+    let trouble = troubleSpots({
+      pieceId: piece.id, items, measures: measureNumberList(song), flags,
+    })
+
+    // stage 1's rule: nothing to show means the rail's engraving shows
+    // instead. A teacher who has dismissed or added everything, or a
+    // player with a suggestion, still has a way back in, so the plate
+    // stays up for those too
+    if (!flags.length && !waitsInReview && !trouble.length) { return null }
 
     let numbers = measureNumberList(song)
-    let heatPct = (record.runs && record.runs.score && record.runs.score.heat) || []
+    let heatPct = (record && record.runs && record.runs.score && record.runs.score.heat) || []
     let heat = numbers.map((_, idx) => heatLevel(heatPct[idx] || 0))
 
     let inFlag = (flag, number) =>
@@ -434,19 +555,32 @@ export class PassagesPlate extends React.Component {
       (flag.alsoAt || []).some(([from, to]) => number >= from && number <= to)
     let coveredCount = numbers.filter(number => flags.some(flag => inFlag(flag, number))).length
 
-    let selected = this.selectedFlag(flags)
+    let selected = flags.length ? this.selectedFlag(flags) : null
 
     return <div className={styles.passages} ref={this.columnRef} data-passages-plate>
       {this.renderGlance(numbers, heat, flags, coveredCount, selected)}
 
-      {!this.state.folded && <div className={classNames(styles.detail_row, {
+      {!this.state.folded && flags.length > 0 && <div className={classNames(styles.detail_row, {
         [styles.side_by_side]: this.state.width >= SIDE_BY_SIDE_WIDTH,
       })}>
         {this.renderDetail(selected, flags)}
         {this.renderList(flags, selected)}
       </div>}
 
-      {this.renderScorePane(song, flags, selected)}
+      {this.renderTroubleSpots(trouble)}
+
+      {flags.length > 0 && this.renderScorePane(song, flags, selected)}
+
+      <ReviewPane
+        settings={this.props.settings}
+        setSettings={this.props.setSettings}
+        source={this.props.source}
+        engine={this.props.engine}
+        loadEngines={this.props.loadEngines}
+        store={this.getStore()}
+        open={this.state.reviewOpen}
+        close={() => this.closeReview()}
+        initialFlagId={this.state.reviewFlagId} />
     </div>
   }
 }

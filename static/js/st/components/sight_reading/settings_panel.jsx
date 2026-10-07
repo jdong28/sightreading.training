@@ -832,6 +832,14 @@ export class GeneratorSettings extends React.PureComponent {
               accept=".json,application/json"
               onChange={e => this.importLibrary(input, e)} />
           </label> : null}
+        {input.importFlags ?
+          <label className={this.styles.file_input}>
+            <span className={this.styles.file_pill}>Open flags file</span>
+            <input
+              type="file"
+              accept=".json,application/json"
+              onChange={e => this.importFlags(input, e)} />
+          </label> : null}
       </div>
       {message && message.text ?
         <div className={message.error ? this.styles.input_error : this.styles.input_notice}>{message.text}</div> : null}
@@ -915,6 +923,30 @@ export class GeneratorSettings extends React.PureComponent {
 
         let text = result.warning ? `${result.message}. ${result.warning}` : result.message
         this.setState({deckMessage: {text}})
+      })
+    }, err => {
+      this.setState({deckMessage: {error: true, text: `Couldn't read ${file.name}: ${err.message || err}`}})
+    })
+  }
+
+  // opens a flags file onto the piece it matches, or the deck's best match,
+  // see importFlagsFile in st/sheet_music_deck
+  importFlags(input, e) {
+    let file = e.target.files && e.target.files[0]
+    if (!file) { return }
+
+    e.target.value = ""
+    this.setState({deckMessage: {text: `Opening ${file.name}…`}})
+
+    return file.text().then(text => {
+      return input.importFlags(text).then(result => {
+        if (result.error) {
+          this.setState({deckMessage: {error: true, text: result.error}})
+          return
+        }
+
+        this.setState({deckMessage: {text: result.message}})
+        this.pickPiece(input, result.piece.id)
       })
     }, err => {
       this.setState({deckMessage: {error: true, text: `Couldn't read ${file.name}: ${err.message || err}`}})

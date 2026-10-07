@@ -16,6 +16,11 @@ import scoreCardStyles from "st/components/score_card.module.css"
 import pageStyles from "st/components/pages/sight_reading_page.module.css"
 import passagesStyles from "st/components/sight_reading/passages_plate.module.css"
 import drawerStyles from "st/components/sight_reading/programme_drawer.module.css"
+import reviewStyles from "st/components/sight_reading/review_pane.module.css"
+import barStripStyles from "st/components/bar_strip.module.css"
+
+import {flagsInForce} from "st/difficulty/records"
+import {reviewFlags, withDecisions, dismissDecision} from "st/difficulty/decisions"
 
 import {openTestStore, pianoScore} from "spec/helpers"
 
@@ -785,5 +790,431 @@ describe("the passages view (st/difficulty)", function() {
       flushSync(() => r.unmount())
       div.remove()
     }
+  })
+
+  describe("the review pane", function() {
+    // renders PassagesPlate directly (the narrow-rail test's pattern),
+    // with setSettings wired to re-render with the merged settings, the
+    // same way the real page's state update does
+    let mountPlate = (piece, extra={}) => {
+      container = document.createElement("div")
+      container.style.width = "1100px"
+      document.body.appendChild(container)
+      root = createRoot(container)
+
+      let renderWith = settings => flushSync(() => root.render(React.createElement(PassagesPlate, {
+        settings,
+        setSettings: next => renderWith({...settings, ...next}),
+        store,
+        ...extra,
+      })))
+      renderWith({piece: piece.id, hand: "both hands", measuresPerCard: "all", practice: "free practice"})
+      flushSync(() => {})
+      return container
+    }
+
+    let reviewPane = () => container.querySelector('aside[aria-label="Review the passages"]')
+
+    let openReview = () => {
+      let button = [...plate().querySelectorAll("button")].find(b => b.textContent.trim() == "Review")
+      flushSync(() => button.dispatchEvent(new MouseEvent("click", {bubbles: true})))
+    }
+
+    let clickButton = (root, label) => {
+      let button = [...root.querySelectorAll("button")].find(b => b.textContent.trim() == label)
+      flushSync(() => button.dispatchEvent(new MouseEvent("click", {bubbles: true})))
+    }
+
+    let changeValue = (input, value) => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(input, value)
+      flushSync(() => input.dispatchEvent(new Event("input", {bubbles: true})))
+    }
+
+    it("opens a right pane titled 'Review the passages'; the trainer's staff plate stays mounted; it closes the score pane and the other way round", async function() {
+      let xml = workhorseScore()
+      let piece = await drillPiece(xml)
+      mountPlate(piece, {source: {status: "ready", musicXML: xml}})
+      await waitFor(() => plate(), {message: "the plate"})
+
+      openReview()
+      let pane = await waitFor(() => reviewPane(), {message: "the review pane"})
+      expect(pane.getAttribute("aria-hidden")).not.toEqual("true")
+      expect(plate()).toBeTruthy()
+
+      openScorePane()
+      let score = await waitFor(() => scorePane(), {message: "the score pane"})
+      expect(score.getAttribute("aria-hidden")).not.toEqual("true")
+      expect(reviewPane().getAttribute("aria-hidden")).toEqual("true")
+
+      openReview()
+      await waitFor(() => reviewPane().getAttribute("aria-hidden") != "true", {message: "the review pane again"})
+      expect(scorePane().getAttribute("aria-hidden")).toEqual("true")
+    })
+
+    it("accept, dismiss and restore update the tally; the plate stays up with Review when every flag is dismissed", async function() {
+      let piece = await drillPiece(workhorseScore())
+      mountPlate(piece)
+      await waitFor(() => plate(), {message: "the plate"})
+
+      openReview()
+      let pane = await waitFor(() => reviewPane(), {message: "the review pane"})
+      expect(pane.textContent).toContain("Waiting for you")
+
+      clickButton(pane, "Accept")
+      await waitFor(() => reviewPane().textContent.includes("❖ Accepted"), {message: "accepted status"})
+      let tally = () => reviewPane().querySelector(`.${reviewStyles.tally}`).textContent
+      expect(tally()).toContain("Accepted")
+
+      clickButton(reviewPane(), "Dismiss")
+      await waitFor(() => reviewPane().textContent.includes("Restore"), {message: "dismissed"})
+
+      expect(plate()).toBeTruthy()
+      expect(plate().textContent).toContain("No passages flagged")
+      expect(plate().textContent).toContain("Review")
+
+      clickButton(reviewPane(), "Restore")
+      await waitFor(() => plate().textContent.match(/1 passage/), {message: "restored"})
+      expect(flagsInForce(store.annotation(piece.id)).length).toEqual(1)
+    })
+
+    it("renames a passage; the queue shows the analysis's name, and Use that name restores it", async function() {
+      let piece = await drillPiece(workhorseScore())
+      mountPlate(piece)
+      await waitFor(() => plate(), {message: "the plate"})
+
+      let originalTitle = plate().querySelector(`.${passagesStyles.flag_sub}`).textContent
+
+      openReview()
+      let pane = await waitFor(() => reviewPane(), {message: "the review pane"})
+      clickButton(pane, "Edit")
+
+      let nameInput = await waitFor(() => reviewPane().querySelector('input[type="text"]'), {message: "the name field"})
+      changeValue(nameInput, "My name for it")
+      clickButton(reviewPane(), "Save")
+
+      await waitFor(() =>
+        plate().querySelector(`.${passagesStyles.flag_sub}`).textContent == "My name for it",
+        {message: "renamed on the rail"})
+      expect(reviewPane().textContent).toContain("the analysis called it")
+
+      clickButton(reviewPane(), "Edit")
+      clickButton(reviewPane(), "Use that name")
+      clickButton(reviewPane(), "Save")
+
+      await waitFor(() =>
+        plate().querySelector(`.${passagesStyles.flag_sub}`).textContent == originalTitle,
+        {message: "reverted to the analysis's name"})
+    })
+
+    it("marks a passage from a strip drag, and Save adds a flag with a Teacher chip", async function() {
+      let piece = await drillPiece(workhorseScore())
+      mountPlate(piece)
+      await waitFor(() => plate(), {message: "the plate"})
+
+      openReview()
+      let pane = await waitFor(() => reviewPane(), {message: "the review pane"})
+      clickButton(pane, "Add a passage")
+
+      let cells = () => [...reviewPane().querySelectorAll(`.${barStripStyles.cell}`)]
+      let from = cells()[0]
+      let to = cells()[3]
+      let middle = cell => {
+        let rect = cell.getBoundingClientRect()
+        return rect.left + rect.width / 2
+      }
+
+      // a real drag captures the pointer on the cell it started in, so the
+      // browser retargets every move and up to that cell: the strip must read
+      // the cell under the pointer from the coordinates, not from the handler
+      let drag = (type, clientX) => flushSync(() => from.dispatchEvent(
+        new PointerEvent(type, {bubbles: true, pointerId: 1, clientX})))
+
+      drag("pointerdown", middle(from))
+      drag("pointermove", middle(to))
+      drag("pointerup", middle(to))
+
+      clickButton(reviewPane(), "Save")
+
+      let added = await waitFor(() =>
+        flagsInForce(store.annotation(piece.id)).find(flag => flag.sources.includes("teacher")),
+        {message: "the teacher's added flag"})
+      // the bars the drag drew, not the single bar the editor opened on
+      expect([added.start, added.end]).toEqual([1, 4])
+      expect(plate().textContent).toContain("Teacher")
+    })
+
+    it("ticking 'Start this passage hands separately' saves apart; the preview line shows", async function() {
+      let piece = await drillPiece(workhorseScore())
+      mountPlate(piece)
+      await waitFor(() => plate(), {message: "the plate"})
+
+      openReview()
+      let pane = await waitFor(() => reviewPane(), {message: "the review pane"})
+      clickButton(pane, "Edit")
+
+      let checkbox = await waitFor(() => reviewPane().querySelector('input[type="checkbox"]'),
+        {message: "the hands-separately checkbox"})
+      flushSync(() => checkbox.dispatchEvent(new MouseEvent("click", {bubbles: true})))
+
+      expect(reviewPane().textContent).toContain("Starts hands separately in today's programme")
+
+      clickButton(reviewPane(), "Save")
+      await waitFor(() => flagsInForce(store.annotation(piece.id)).some(flag => flag.apart),
+        {message: "the saved apart flag"})
+    })
+
+    it("exports a flags file as a download, carrying the decisions and the name typed in", async function() {
+      let piece = await drillPiece(workhorseScore())
+      mountPlate(piece)
+      await waitFor(() => plate(), {message: "the plate"})
+
+      openReview()
+      let pane = await waitFor(() => reviewPane(), {message: "the review pane"})
+      clickButton(pane, "Accept")
+      await waitFor(() => reviewPane().textContent.includes("❖ Accepted"), {message: "accepted"})
+
+      let nameInput = [...reviewPane().querySelectorAll('input[type="text"]')]
+        .find(input => input.closest(`.${reviewStyles.send_plate}`))
+      changeValue(nameInput, "Ms Laurent")
+
+      let created = []
+      let originalCreate = URL.createObjectURL
+      spyOn(URL, "createObjectURL").and.callFake(blob => { created.push(blob); return originalCreate(blob) })
+      spyOn(URL, "revokeObjectURL")
+      let clicked = null
+      spyOn(HTMLAnchorElement.prototype, "click").and.callFake(function() { clicked = this })
+
+      clickButton(reviewPane(), "Export flags file")
+      await waitFor(() => created.length > 0, {message: "the download"})
+
+      expect(clicked.download).toContain(".flags.json")
+      let text = await created[0].text()
+      let data = JSON.parse(text)
+      expect(data.format).toEqual("sightreading-flags")
+      expect(data.by).toEqual("Ms Laurent")
+      expect(data.decisions.length).toBeGreaterThan(0)
+    })
+
+    // a bar practised badly enough for st/difficulty/trouble to read it as
+    // trouble: three agains and two lapses
+    let recordTroubleBar = async (piece, measure = 1) => {
+      let now = Date.now()
+      let barId = `${piece.id}:both:${measure}-${measure}`
+      await store.recordAttempt({
+        item: {
+          id: barId, pieceId: piece.id, hand: "both", startMeasure: measure, endMeasure: measure,
+          level: "bar", state: "learning", step: 0, due: now, last: now, s: 1, d: 5,
+          reps: 3, lapses: 2, streak: 0, lastGrade: 1, hits: 1, misses: 3, attempts: 3,
+          lastPracticed: now, elapsedMs: 3000, algo: 1, createdAt: now - 1000,
+          recent: [0, 1, 2].map(n => [now - n * 1000, 3, 0, 1]),
+        },
+        review: {
+          itemId: barId, pieceId: piece.id, at: now, kind: "attempt", grade: 1, was: "learning",
+          columns: 3, clean: 0, misses: 3, stuck: 0, skipped: 0, hesitations: 0, mode: "wait", algo: 1,
+        },
+      })
+    }
+
+    it("shows trouble spots and flags them from the rail and the review", async function() {
+      let piece = await drillPiece(workhorseScore())
+      await recordTroubleBar(piece)
+
+      mountPlate(piece)
+      await waitFor(() => plate(), {message: "the plate"})
+      expect(plate().textContent).toContain("Your trouble spots")
+
+      clickButton(plate(), "Flag these bars")
+      await waitFor(() => flagsInForce(store.annotation(piece.id)).some(flag => flag.sources.includes("player")),
+        {message: "the promoted trouble spot"})
+
+      openReview()
+      await waitFor(() => reviewPane(), {message: "the review pane"})
+      expect(reviewPane().textContent).toContain("Waiting for you")
+    })
+
+    it("keeps the trouble spots out of the passages fold, so they stay reachable", async function() {
+      let piece = await drillPiece(workhorseScore())
+      await recordTroubleBar(piece)
+
+      // the player folded the passages on some other piece: the fold is
+      // remembered for every piece, not per piece
+      window.localStorage.setItem("st:passages_folded:v1", "1")
+
+      // and every flag of this one is dismissed, so there is no fold toggle
+      let record = store.annotation(piece.id)
+      await store.updateAnnotation(piece.id, current => withDecisions(current,
+        reviewFlags(record).map((flag, idx) =>
+          dismissDecision({record, flag, by: "", at: 100 + idx}))))
+      expect(flagsInForce(store.annotation(piece.id)).length).toEqual(0)
+
+      mountPlate(piece)
+      await waitFor(() => plate(), {message: "the plate"})
+
+      expect([...plate().querySelectorAll("button")].map(b => b.textContent.trim()))
+        .not.toContain("Show the passages")
+
+      // the rail's own list, not the review pane's (which the plate mounts
+      // inside itself, open or not)
+      let railList = plate().querySelector(`.${passagesStyles.trouble_list}`)
+      expect(railList).toBeTruthy()
+      expect([...railList.querySelectorAll("button")].map(b => b.textContent.trim()))
+        .toContain("Flag these bars")
+    })
+
+    it("a queue card shows the player's own evidence for a bar the teacher has already flagged", async function() {
+      let piece = await drillPiece(workhorseScore())
+      let flag = flagsInForce(store.annotation(piece.id))[0]
+      await recordTroubleBar(piece, flag.start)
+
+      mountPlate(piece)
+      await waitFor(() => plate(), {message: "the plate"})
+
+      // the suggestions leave the bar out, since it is flagged already
+      expect(plate().textContent).not.toContain("Your trouble spots")
+
+      openReview()
+      let pane = await waitFor(() => reviewPane(), {message: "the review pane"})
+      let line = await waitFor(() => pane.querySelector(`.${reviewStyles.trouble_line}`),
+        {message: "the evidence line"})
+      expect(line.textContent).toContain("From your playing:")
+      expect(line.textContent).toContain("slipped back 2 times")
+    })
+
+    it("the editor places an unplaced flag at the bars it shows, not the exporting copy's", async function() {
+      let piece = await drillPiece(workhorseScore())
+
+      // a teacher's flag the import couldn't place: its bars are their copy's,
+      // well past this 16-bar one
+      let far = {
+        flagId: "teacher:far", action: "add", at: 1, by: "Ms Laurent", source: "teacher",
+        anchor: {bars: []},
+        flag: {
+          start: 40, end: 42, startIndex: 39, endIndex: 41, hand: "both", level: 2, kinds: [],
+          title: "Far passage", reason: "", tip: "", apart: false,
+        },
+        unplaced: {start: 40, end: 42},
+      }
+      await store.updateAnnotation(piece.id, current => withDecisions(current, [far]))
+
+      mountPlate(piece)
+      await waitFor(() => plate(), {message: "the plate"})
+
+      openReview()
+      let pane = await waitFor(() => reviewPane(), {message: "the review pane"})
+      expect(pane.textContent).toContain("Couldn't find these bars in your copy")
+
+      clickButton(pane, "Place it")
+      let startBar = await waitFor(() => reviewPane().querySelector('input[aria-label="start bar"]'),
+        {message: "the editor"})
+      let endBar = reviewPane().querySelector('input[aria-label="end bar"]')
+
+      // the editor shows bars this copy has...
+      expect([startBar.value, endBar.value]).toEqual(["16", "16"])
+
+      clickButton(reviewPane(), "Save")
+
+      // ...and Save writes exactly those
+      let placed = await waitFor(() =>
+        flagsInForce(store.annotation(piece.id)).find(f => f.id == "teacher:far"),
+        {message: "the placed flag"})
+      expect([placed.start, placed.end]).toEqual([16, 16])
+    })
+
+    it("names the bars a re-anchored flag moved from once, in the review and on the rail", async function() {
+      let piece = await drillPiece(workhorseScore())
+
+      // a teacher's flag the import re-anchored: bars 3–5 of their copy are
+      // bars 2–4 of this one
+      let moved = {
+        flagId: "teacher:moved", action: "add", at: 1, by: "Mme Dupont", source: "teacher",
+        anchor: {bars: []},
+        flag: {
+          start: 2, end: 4, startIndex: 1, endIndex: 3, hand: "both", level: 2, kinds: [],
+          title: "Moved passage", reason: "", tip: "", apart: false,
+        },
+        moved: {start: 3, end: 5, by: "Mme Dupont"},
+      }
+      await store.updateAnnotation(piece.id, current => withDecisions(current, [moved]))
+
+      mountPlate(piece)
+      await waitFor(() => plate(), {message: "the plate"})
+
+      openReview()
+      let pane = await waitFor(() => reviewPane(), {message: "the review pane"})
+      expect(pane.textContent).toContain("Moved from bars 3–5 in Mme Dupont’s copy")
+
+      // the rail's detail plate, once the moved passage is the one selected
+      let row = [...plate().querySelectorAll("li button")].find(b => b.textContent.includes("Bars 2–4"))
+      expect(row).toBeTruthy()
+      flushSync(() => row.dispatchEvent(new MouseEvent("click", {bubbles: true})))
+      let note = await waitFor(() => plate().querySelector(`.${passagesStyles.moved_note}`),
+        {message: "the rail's moved note"})
+      expect(note.textContent).toEqual("Moved from bars 3–5 in Mme Dupont’s copy")
+    })
+
+    it("the review's own writes analyse the piece first, so a decision isn't lost", async function() {
+      // a piece in the deck whose analysis hasn't landed: the plate stays up
+      // for the player's trouble spot alone
+      let xml = workhorseScore()
+      let piece = await store.putPiece({
+        id: "unanalysed", title: "Workhorse", song: songToJSON(parseMusicXML(xml)), importedAt: Date.now(),
+      }, {source: xml})
+      window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+        piece: piece.id, hand: "both hands", measuresPerCard: "all", practice: "free practice",
+      }))
+      await recordTroubleBar(piece)
+      expect(store.annotation(piece.id)).toBe(null)
+
+      // the plate's own analysis is still in flight through the store's write
+      // queue, so the review's write is the one that has to ensure it
+      mountPlate(piece)
+      expect(plate()).toBeTruthy()
+      openReview()
+      clickButton(reviewPane(), "Flag these bars")
+      expect(store.annotation(piece.id)).toBe(null)
+
+      let promoted = await waitFor(() =>
+        flagsInForce(store.annotation(piece.id)).find(f => f.sources.includes("player")),
+        {message: "the promoted trouble spot"})
+      expect(promoted.status).toEqual("waiting")
+      expect(reviewPane().querySelector(`.${reviewStyles.message}`)).toBe(null)
+    })
+
+    it("says so on the rail when a trouble spot can't be flagged", async function() {
+      let piece = await drillPiece(workhorseScore())
+      await recordTroubleBar(piece)
+
+      mountPlate(piece)
+      await waitFor(() => plate(), {message: "the plate"})
+      expect(plate().textContent).toContain("Your trouble spots")
+
+      spyOn(store, "updateAnnotation").and.callFake(() => Promise.reject(new Error("the disk is full")))
+
+      clickButton(plate(), "Flag these bars")
+      await waitFor(() => plate().querySelector(`.${passagesStyles.trouble_error}`),
+        {message: "the error on the rail"})
+      expect(plate().querySelector(`.${passagesStyles.trouble_error}`).textContent)
+        .toContain("Couldn't save your decision")
+      expect(flagsInForce(store.annotation(piece.id)).some(flag => flag.sources.includes("player"))).toBe(false)
+    })
+
+    // at the test harness's default (narrower than 900px) viewport, the
+    // pane's own width stays under the side-by-side breakpoint, so this
+    // also exercises the stacked layout without overflowing it
+    it("has no horizontal overflow in the review pane, stacked below 900px of its own width", async function() {
+      let piece = await drillPiece(workhorseScore())
+      mountPlate(piece)
+      await waitFor(() => plate(), {message: "the plate"})
+
+      openReview()
+      let pane = await waitFor(() => reviewPane(), {message: "the review pane"})
+      await waitFor(() => pane.querySelector(`.${reviewStyles.columns}`), {message: "the columns"})
+
+      expect(pane.querySelector(`.${reviewStyles.columns}`).className).not.toContain(reviewStyles.side_by_side)
+
+      let overflowing = el => [...el.querySelectorAll('[class*="plate"]')]
+        .filter(plateEl => plateEl.scrollWidth > plateEl.clientWidth + 1)
+      expect(overflowing(pane)).toEqual([])
+    })
   })
 })

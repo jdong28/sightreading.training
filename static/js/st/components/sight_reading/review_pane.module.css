@@ -1,0 +1,345 @@
+/* The instructor's review of a piece's flagged passages (st/difficulty),
+   a right-hand SidePane. Primitives from st/components/salon; only this
+   file's own layout is custom. Watch every nested row for overflow at the
+   rail's narrow widths: minmax(0, 1fr) and min-width: 0 throughout */
+
+.pane {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    min-width: 0;
+}
+
+.lede {
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 15px;
+    color: var(--salon-ink-soft);
+    margin: 0;
+}
+
+.tally {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+
+    @media (min-width: 640px) {
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+    }
+}
+
+.hint {
+    font-family: var(--font-ui);
+    font-size: 12px;
+    color: var(--salon-ink-muted);
+    margin: 0 0 10px;
+}
+
+.mark_plate, .trouble_plate, .send_plate {
+    min-width: 0;
+}
+
+.trouble_list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.trouble_item {
+    border-bottom: var(--salon-hairline);
+    padding-bottom: 10px;
+
+    &:last-child { border-bottom: none; padding-bottom: 0; }
+}
+
+.trouble_bars {
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 14px;
+    color: var(--salon-ink);
+}
+
+.trouble_text {
+    font-size: 13px;
+    color: var(--salon-ink-soft);
+    margin: 4px 0 8px;
+}
+
+.columns {
+    display: grid;
+    gap: 18px;
+    grid-template-columns: minmax(0, 1fr);
+    min-width: 0;
+
+    &.side_by_side {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 360px);
+        align-items: start;
+    }
+}
+
+.queue_plate, .editor_plate {
+    min-width: 0;
+}
+
+.queue {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.queue_card {
+    border-bottom: var(--salon-hairline);
+    padding: 10px 0;
+    min-width: 0;
+
+    &:last-child { border-bottom: none; }
+
+    &.on {
+        background: var(--salon-paper-warm);
+    }
+}
+
+.queue_card_button {
+    display: block;
+    width: 100%;
+    background: none;
+    border: none;
+    padding: 0;
+    margin: 0;
+    text-align: left;
+    cursor: pointer;
+    color: inherit;
+    font: inherit;
+    min-width: 0;
+}
+
+.queue_card_head {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    font-family: var(--font-ui);
+    font-size: 11px;
+}
+
+.level_label {
+    &.level_1 { color: var(--salon-ink-muted); }
+    &.level_2 { color: var(--salon-gilt); }
+    &.level_3 { color: var(--salon-oxblood); }
+}
+
+.queue_card_bars {
+    color: var(--salon-ink-muted);
+}
+
+.queue_card_title {
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 16px;
+    color: var(--salon-ink);
+    margin-top: 2px;
+}
+
+.queue_card_given {
+    font-size: 12px;
+    color: var(--salon-ink-muted);
+    margin-top: 2px;
+}
+
+.queue_card_status {
+    font-family: var(--font-ui);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .04em;
+    color: var(--salon-gilt);
+    margin-top: 4px;
+}
+
+.queue_card_line {
+    font-size: 13px;
+    color: var(--salon-ink-soft);
+    margin: 6px 0 0;
+}
+
+.source_chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 6px;
+}
+
+.source_chip {
+    display: inline-block;
+    font-family: var(--font-ui);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--salon-ink-muted);
+    border: 1px solid var(--salon-rule);
+    border-radius: 2px;
+    padding: 1px 5px;
+}
+
+.place_line, .trouble_line {
+    font-size: 12px;
+    color: var(--salon-ink-muted);
+    margin: 6px 0 0;
+    font-style: italic;
+}
+
+.queue_actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.small_pill {
+    font-size: 12px;
+    padding: 7px 14px;
+}
+
+.field {
+    display: block;
+    margin-bottom: 14px;
+
+    input[type="text"], textarea {
+        display: block;
+        width: 100%;
+        box-sizing: border-box;
+        font: inherit;
+        font-family: var(--font-ui);
+        font-size: 13px;
+        color: var(--salon-ink);
+        background: var(--salon-paper);
+        border: var(--salon-hairline);
+        border-radius: 2px;
+        padding: 7px 9px;
+        margin-top: 4px;
+    }
+
+    textarea {
+        min-height: 54px;
+        resize: vertical;
+    }
+}
+
+.field_label {
+    font-family: var(--font-ui);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--salon-ink-muted);
+}
+
+.field_hint {
+    font-size: 11px;
+    color: var(--salon-ink-muted);
+    margin-top: 4px;
+}
+
+.field_row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 14px;
+}
+
+.link_button {
+    background: none;
+    border: none;
+    padding: 0;
+    font: inherit;
+    color: var(--salon-gilt);
+    cursor: pointer;
+    text-decoration: underline;
+
+    &:hover { color: var(--salon-oxblood); }
+}
+
+.pill_row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 4px;
+}
+
+.preview {
+    min-height: 1px;
+    margin-bottom: 14px;
+}
+
+.preview_line {
+    font-size: 12px;
+    font-style: italic;
+    color: var(--salon-ink-soft);
+    margin: -6px 0 14px;
+}
+
+.apart_field {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--salon-ink);
+
+    input[type="checkbox"] {
+        margin: 0;
+    }
+}
+
+.editor_actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 6px;
+}
+
+.send_actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin: 8px 0;
+}
+
+.file_input {
+    display: inline-flex;
+    position: relative;
+    overflow: hidden;
+
+    input[type="file"] {
+        position: absolute;
+        inset: 0;
+        opacity: 0;
+        cursor: pointer;
+    }
+}
+
+.file_pill {
+    display: inline-block;
+    font-family: var(--font-ui);
+    font-size: 12px;
+    padding: 7px 14px;
+    border: var(--salon-hairline);
+    border-radius: 999px;
+    color: var(--salon-ink-soft);
+    cursor: pointer;
+
+    &:hover { color: var(--salon-oxblood); }
+}
+
+.message {
+    font-size: 13px;
+    color: var(--salon-ink-soft);
+    margin: 4px 0;
+
+    &.error { color: var(--salon-oxblood); }
+}

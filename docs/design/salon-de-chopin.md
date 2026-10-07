@@ -152,15 +152,21 @@ Session is **endless** — it runs until the user presses Rest; there is no note
 **Implementation note (sheet music page):** on `/sheet-music`, the rail at rest carries the
 programme's own plates ("Tonight's programme" and the piece's flagged passages) in place of the
 engraving, so the card being practised stays on screen without scrolling; the engraving stays
-whenever those plates have nothing to show (no piece picked, pasted notation, an unflagged piece in
-free practice), which the stylesheet decides from the empty slot. The score page's trainer
-is wider than the default (`max-width: 1240px`) and its rail is `clamp(260px, 26vw, 340px)` rather
-than the fixed 260px. The flagged passages' shaded score opens on demand in a right-hand pane,
-drawn only while it is open. The pane is its own scroller and the score is the tall thing in it, so
-the passage's detail — with the "tap a shaded passage" legend as its last line — stays out of that
-scroll: it sticks below the pane's header beside the score, and stacks above it in a pane too narrow
-for two columns. Both side panes pin their header, so the title and the close button stay on screen
-however far the pane has scrolled.
+whenever those plates have nothing to show (no piece picked, pasted notation, a piece with nothing
+flagged and nothing left in the review), which the stylesheet decides from the empty slot. The score
+page's trainer is wider than the default (`max-width: 1240px`) and its rail is
+`clamp(260px, 26vw, 340px)` rather than the fixed 260px. The flagged passages' shaded score opens on
+demand in a right-hand pane, drawn only while it is open. The pane is its own scroller and the score
+is the tall thing in it, so the passage's detail — with the "tap a shaded passage" legend as its
+last line — stays out of that scroll: it sticks below the pane's header beside the score, and stacks
+above it in a pane too narrow for two columns. Every side pane pins its header, so the title and the
+close button stay on screen however far the pane has scrolled. A third right pane, "Review the
+passages," holds the instructor's review (accept, edit, dismiss, restore, mark a passage, the
+hands-separately tick, trouble spots, and the flags file); only one right pane is ever open at a
+time, so opening it closes the shaded score pane and the other way round. The rail's plate itself
+now stays up — a compact glance, the engraving otherwise untouched — whenever the review still holds
+something even with no flag in force: a dismissal, a flag the fingerprint can't place without
+checking, or a trouble-spot suggestion, not only when the analysis flagged something.
 
 ### 4. Session summary — `screens/salon-summary/SalonSummary.dc.html`
 

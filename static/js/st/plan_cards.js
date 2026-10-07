@@ -11,18 +11,21 @@
 // hand (SightReadingPage#engineCard), not the section. The scaffold's own
 // passes never mark their items deliberate (PlanDeck#scaffold,
 // ItemRecord#deliberate): only a session played with that hand as its own
-// does.
+// does. A bar a flag ticks "start this passage hands separately" (decision
+// 6, PlanDeck's startApart option) is the same kind of card, from the same
+// hand items, before the bar is ever learned together; see the planner
+// header's start-apart paragraph for the rule itself.
 //
 // The deck reads the piece's flagged passages (st/difficulty) afresh every
-// time it plans (PlanDeck#passages), so a piece analysed after the deck was
-// built still gets its introduction order (st/srs/planner introduction()); a
-// piece imported before the annotations store, or still waiting on its lazy
-// analysis, replans once passagesReady settles. A card of a READ_THROUGH
-// entry is practice alone, whatever its hand or drill mode: the pass is
-// marked at the card it is dealt (PlanGenerator#startCard), and every one of
-// its attempts, the multi-bar card's range included, is practiceOnly; the
-// pass continuing an abandoned one is never graded at all
-// (AttemptPass#graded).
+// time it plans (PlanDeck#passages and #startApart), so a piece analysed
+// after the deck was built still gets its introduction order (st/srs/planner
+// introduction()); a piece imported before the annotations store, or still
+// waiting on its lazy analysis, replans once passagesReady settles. A card
+// of a READ_THROUGH entry is practice alone, whatever its hand or drill
+// mode: the pass is marked at the card it is dealt
+// (PlanGenerator#startCard), and every one of its attempts, the multi-bar
+// card's range included, is practiceOnly; the pass continuing an abandoned
+// one is never graded at all (AttemptPass#graded).
 
 import {getAppStore} from "st/storage"
 import {MeasureCardGenerator, sectionCard} from "st/measure_cards"
@@ -68,9 +71,13 @@ export class PlanDeck {
    * (today's order) by default
    * @param {Promise} [opts.passagesReady] settles once a piece's lazy
    * analysis lands; the deck plans again then, unless a pass is in progress
+   * @param {function(): Map<number, string[]>|null} [opts.startApart] decision
+   * 6's input (st/difficulty/decisions.startApartBars), read fresh at every
+   * plan so a decision saved at rest takes effect at the next card
    */
   constructor(measures, {pieceId, hand="both", handMeasures=null, handCard=null,
-      cardMeasures=1, now=Date.now, store, passages=() => [], order=SCORE_ORDER, passagesReady=null}) {
+      cardMeasures=1, now=Date.now, store, passages=() => [], order=SCORE_ORDER,
+      passagesReady=null, startApart=() => null}) {
     this.pieceId = pieceId
     this.sessionHand = hand
     this.cardMeasures = cardMeasures
@@ -78,6 +85,7 @@ export class PlanDeck {
     this.store = store
     this.passages = passages
     this.order = order
+    this.startApart = startApart
     // the roles (st/srs/planner introduction()) the last plan found, for
     // passageOf
     this.lastRoles = new Map()
@@ -238,6 +246,7 @@ export class PlanDeck {
       handMeasures: this.handMeasures,
       split: this.split(),
       lastReviews: this.reviews,
+      startApart: this.startApart(),
       now: this.now(),
       settings: store.schedulerSettings(),
       practice: store.practiceSettings(),

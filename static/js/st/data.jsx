@@ -22,13 +22,14 @@ import {
 
 import {
   loadDeck, findPiece, pieceSong, removePiece, importMusicXMLPiece,
-  exportLibraryFile, importLibraryFile, ensureAnnotation
+  exportLibraryFile, importLibraryFile, importFlagsFile, ensureAnnotation
 } from "st/sheet_music_deck"
 
 import {getAppStore} from "st/storage"
 import {PlanDeck, PlanGenerator} from "st/plan_cards"
 import {inStudy, passagesForHand, pulledPassage, READ_FIRST, INTRODUCTION_ORDERS} from "st/srs/planner"
 import {flagsInForce} from "st/difficulty/records"
+import {startApartBars} from "st/difficulty/decisions"
 
 import {ChordGenerator, MultiKeyChordGenerator} from "st/chord_generators"
 import {GStaff, FStaff, GrandStaff, ChordStaff} from "st/components/staves"
@@ -255,8 +256,10 @@ export function planGenerator(staff, settings) {
     handMeasures: apart ? handMeasuresOf(measures) : null,
     handCard: apart ? handCard : null,
     cardMeasures: planCardMeasures(settings),
+    store,
     order: introductionOrder(settings),
     passages: () => programmePassages(settings, store),
+    startApart: () => startApartBars(sheetMusicPassages(settings, store)),
     // a piece without an annotation record yet is analysed lazily
     // (PassagesPlate#ensure); without passagesReady the deck would plan its
     // first card in score order and play it before the flags land
@@ -883,6 +886,7 @@ const ALL_GENERATORS = [
         removePiece: id => removePiece(id),
         exportLibrary: () => exportLibraryFile(),
         importLibrary: text => importLibraryFile(text),
+        importFlags: text => importFlagsFile(text),
         // settings and staff for drilling a piece that was just picked, in
         // the practice the piece opens in by default
         pick: (settings, id) => {
@@ -897,7 +901,7 @@ const ALL_GENERATORS = [
             staff: sheetMusicStaffFor(song),
           }
         },
-        hint: "Import a MusicXML file (.musicxml, .xml or compressed .mxl). For a PDF, convert it first (Audiveris, then fix it in MuseScore Studio) and import the .mxl; the steps show when you pick a PDF. Imported pieces stay in this browser's library; export it to keep a copy or move it to another browser.",
+        hint: "Import a MusicXML file (.musicxml, .xml or compressed .mxl). For a PDF, convert it first (Audiveris, then fix it in MuseScore Studio) and import the .mxl; the steps show when you pick a PDF. Imported pieces stay in this browser's library; export it to keep a copy or move it to another browser. A flags file from the review (Review the passages) opens onto the piece it matches, or picks the best match in the deck.",
       },
       {
         name: "practice",
