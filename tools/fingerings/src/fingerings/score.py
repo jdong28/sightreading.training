@@ -8,12 +8,22 @@ second half of a bar split around a repeat) doesn't advance the count, and
 a non-numeric `number` (Finale writes "X1") never reaches `int()`.
 `beat` is the onset in quarter notes from the start of the first measure
 element carrying that bar number, so the second half of a split bar
-continues the beat count instead of restarting at 0."""
+continues the beat count instead of restarting at 0.
+
+A score may hold several `<part>`s (voice plus piano, for example); staves
+are numbered globally in score order, part 1's staves first, and each row
+keeps its part id alongside that global `staff` index. At most 3 staves in
+all are supported; more is refused. A clef change or an octave-shift line
+applies by *time* (the chronological position its direction reaches in its
+own staff's voice), not by document order, so a second voice written after
+a `<backup>` isn't fooled by a change that comes later in the document but
+earlier in time."""
 from fractions import Fraction
 from lxml import etree
 
 STEPS = "CDEFGAB"
 SEMI = {"C": 0, "D": 2, "E": 4, "F": 5, "G": 7, "A": 9, "B": 11}
+OCTAVE_SHIFT_SIZE = {8: 1, 15: 2}
 
 
 def diatonic(step, octave):
@@ -56,11 +66,11 @@ def app_numbers(measure_els):
     return numbers
 
 
-def _single_part(root):
+def _parts(root):
     parts = root.findall("part")
-    if len(parts) != 1:
-        raise ValueError("one part with one or two staves expected")
-    return parts[0]
+    if not parts:
+        raise ValueError("no <part> found")
+    return parts
 
 
 def _staff_count(part):
@@ -75,41 +85,116 @@ def _staff_count(part):
     return max_staff
 
 
+def part_staff_counts(root):
+    """[(part id, staff count)], in document order."""
+    return [(p.get("id"), _staff_count(p)) for p in _parts(root)]
+
+
+def _validate_staff_total(parts):
+    counts = [_staff_count(p) for p in parts]
+    total = sum(counts)
+    if total > 3:
+        raise ValueError(f"at most 3 staves in all expected; found {total} across {len(parts)} part(s)")
+    return counts
+
+
 def measures(root):
-    """The single part's measure elements, in document order."""
-    part = _single_part(root)
-    if _staff_count(part) > 2:
-        raise ValueError("one part with one or two staves expected")
-    return part.findall("measure")
+    """The first part's measure elements, in document order (every part is
+    expected to share the same bar structure, so bar numbering is read from
+    the first one)."""
+    parts = _parts(root)
+    _validate_staff_total(parts)
+    return parts[0].findall("measure")
 
 
-def note_table(root):
-    """Rows: dict(el, measure, mindex, beat, staff, voice, onset, dur, step,
-    alter, octave, chord, grace, rest, clef) in document order; onset is a
-    Fraction of quarter beats from the start of the measure element, beat a
-    Fraction from the start of the measure element group sharing its app
-    bar number (see module docstring). `root` is a score's root element, as
-    `load`/`load_text` return."""
-    part = _single_part(root)
-    if _staff_count(part) > 2:
-        raise ValueError("one part with one or two staves expected")
-    measure_els = part.findall("measure")
-    numbers = app_numbers(measure_els)
+def multirest_spans(measure_els):
+    """{measure index: N} for each measure element that starts a printed
+    multi-bar rest of N measures (`<attributes><measure-style>
+    <multiple-rest>N</multiple-rest></measure-style></attributes>`,
+    N > 1)."""
+    spans = {}
+    for i, m in enumerate(measure_els):
+        for ms in m.findall("attributes/measure-style/multiple-rest"):
+            if ms.text is None:
+                continue
+            n = int(ms.text)
+            if n > 1:
+                spans[i] = n
+    return spans
+
+
+def _octave_shift_delta(size, typ):
+    octaves = OCTAVE_SHIFT_SIZE.get(size, size / 8.0)
+    return -octaves if typ == "down" else octaves
+
+
+def _octave_intervals(events):
+    """events: [(gonset, docidx, type, size, number)] for one staff, any
+    order. -> [(start, end_or_None, shift)]."""
+    open_by_number = {}
+    intervals = []
+    for onset, docidx, typ, size, number in sorted(events, key=lambda e: (e[0], e[1])):
+        if typ == "stop":
+            if number in open_by_number:
+                start_onset, shift = open_by_number.pop(number)
+                intervals.append((start_onset, onset, shift))
+        else:
+            open_by_number[number] = (onset, _octave_shift_delta(size, typ))
+    for start_onset, shift in open_by_number.values():
+        intervals.append((start_onset, None, shift))
+    return intervals
+
+
+def _shift_at(intervals, gonset):
+    for start, end, shift in intervals:
+        if start <= gonset and (end is None or gonset < end):
+            return shift
+    return 0
+
+
+def _clef_at(events, gonset):
+    """events: [(gonset, docidx, (sign, line))] for one staff. The event
+    with the greatest (onset, docidx) at or before gonset, or None."""
+    best = None
+    for onset, docidx, clef in events:
+        if onset <= gonset and (best is None or (onset, docidx) > (best[0], best[1])):
+            best = (onset, docidx, clef)
+    return best[2] if best else None
+
+
+def _part_rows(measure_els, numbers, part_id, staff_offset):
+    """Rows for one part's measure elements, with clefs and octave shifts
+    resolved by chronological position rather than document order."""
     rows = []
     divisions = 1
-    clefs = {}
+    clef_events = {}  # local staff -> [(gonset, docidx, (sign, line))]
+    oct_events = {}  # local staff -> [(gonset, docidx, type, size, number)]
     lengths = []
+    docidx = 0
+    abs_measure_start = Fraction(0)
     for mindex, measure in enumerate(measure_els):
         pos = Fraction(0)
         last_onset = Fraction(0)
         for el in measure:
             tag = el.tag
+            gonset = abs_measure_start + pos
             if tag == "attributes":
                 d = el.find("divisions")
                 if d is not None:
                     divisions = int(d.text)
                 for clef in el.findall("clef"):
-                    clefs[int(clef.get("number", "1"))] = (clef.findtext("sign"), int(clef.findtext("line") or 0))
+                    staff = int(clef.get("number", "1"))
+                    clef_events.setdefault(staff, []).append(
+                        (gonset, docidx, (clef.findtext("sign"), int(clef.findtext("line") or 0))))
+                    docidx += 1
+            elif tag == "direction":
+                staff = int(el.findtext("staff") or 1)
+                for shift in el.iterfind("direction-type/octave-shift"):
+                    typ = shift.get("type")
+                    size = int(shift.get("size") or 8)
+                    number = int(shift.get("number") or 1)
+                    oct_events.setdefault(staff, []).append((gonset, docidx, typ, size, number))
+                    docidx += 1
             elif tag == "backup":
                 pos -= Fraction(int(el.findtext("duration")), divisions)
             elif tag == "forward":
@@ -119,22 +204,26 @@ def note_table(root):
                 grace = el.find("grace") is not None
                 dur = Fraction(int(el.findtext("duration") or 0), divisions)
                 onset = last_onset if chord else pos
-                staff = int(el.findtext("staff") or 1)
+                local_staff = int(el.findtext("staff") or 1)
+                printed = el.get("print-object") != "no"
                 p = el.find("pitch")
-                row = dict(el=el, mindex=mindex, staff=staff,
+                row = dict(el=el, part=part_id, mindex=mindex, staff=local_staff + staff_offset,
                            voice=el.findtext("voice"), onset=onset, dur=dur, chord=chord, grace=grace,
-                           rest=el.find("rest") is not None, clef=clefs.get(staff),
-                           step=None, alter=0, octave=None)
+                           rest=el.find("rest") is not None, printed=printed,
+                           step=None, alter=0, octave=None,
+                           _local_staff=local_staff, _gonset=abs_measure_start + onset)
                 if p is not None:
                     row.update(step=p.findtext("step"), alter=int(float(p.findtext("alter") or 0)),
                                octave=int(p.findtext("octave")))
                 rows.append(row)
+                docidx += 1
                 if not chord and not grace:
                     last_onset = pos
                     pos += dur
                 elif not chord:
                     last_onset = pos
         lengths.append(pos)
+        abs_measure_start += pos
     # group consecutive measure elements sharing one app bar number (an
     # implicit split around a repeat), and the absolute beat each starts at
     group_start = [0] * len(measure_els)
@@ -145,10 +234,43 @@ def note_table(root):
         else:
             group_start[i] = i
         abs_start[i] = (abs_start[i - 1] + lengths[i - 1]) if i else Fraction(0)
+    intervals_by_staff = {s: _octave_intervals(evs) for s, evs in oct_events.items()}
     for row in rows:
         mindex = row["mindex"]
         row["measure"] = numbers[mindex]
         row["beat"] = abs_start[mindex] - abs_start[group_start[mindex]] + row["onset"]
+        local_staff = row.pop("_local_staff")
+        gonset = row.pop("_gonset")
+        row["clef"] = _clef_at(clef_events.get(local_staff, []), gonset)
+        row["octave_shift"] = _shift_at(intervals_by_staff.get(local_staff, []), gonset)
+    return rows
+
+
+def note_table(root):
+    """Rows: dict(el, part, measure, mindex, beat, staff, voice, onset, dur,
+    step, alter, octave, chord, grace, rest, printed, clef, octave_shift) in
+    document order (grouped by part, part 1 first); onset is a Fraction of
+    quarter beats from the start of the measure element, beat a Fraction
+    from the start of the measure element group sharing its app bar number
+    (see module docstring). `root` is a score's root element, as
+    `load`/`load_text` return. `staff` is the global staff index (part 1's
+    staves first); `clef`/`octave_shift` are resolved by chronological
+    position in that staff's own voice, not document order."""
+    parts = _parts(root)
+    counts = _validate_staff_total(parts)
+    measure_els0 = parts[0].findall("measure")
+    numbers = app_numbers(measure_els0)
+    n_measures = len(measure_els0)
+
+    rows = []
+    staff_offset = 0
+    for part, count in zip(parts, counts):
+        measure_els = part.findall("measure")
+        if len(measure_els) != n_measures:
+            raise ValueError(f"part {part.get('id')}: {len(measure_els)} measures, "
+                              f"expected {n_measures} (part 1's count)")
+        rows += _part_rows(measure_els, numbers, part.get("id"), staff_offset)
+        staff_offset += count
     return rows
 
 

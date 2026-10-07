@@ -4,3 +4,4 @@ __pycache__/
 runs/
 *.pdf
 !tests/fixture/*.pdf
+corpus/files/

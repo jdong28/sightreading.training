@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+Hand-encoded from the crop at loc_maple_leaf_p3_trio_seconds_chord.png: one
+measure of the Maple Leaf Rag trio (Library of Congress scan,
+musihas-200033264, page 3, public domain), its right hand repeating a
+seconds-apart A5b/A4b/D4b figure and its left hand a four-note chord
+(A3b, B3 natural, F3 natural, D3 natural: the natural signs are printed,
+cancelling the 4-flat key signature on D and B only) whose top two notes
+and whose bottom two notes are each a second apart: the shape heads.py's
+_split_wide_cluster exists for (see AGENTS.md's heads.py bullet). Pitches
+were read off the crop (staff position, then the printed accidentals) and
+cross-checked against the piece's own MusicXML (music21 corpus,
+joplin/maple_leaf_rag.mxl); grace notes are present in the source but
+omitted here (a small/grace head with no matching grace note in the
+MusicXML is dropped, not counted as a miss: see align.head_match.
+Rhythm is a placeholder (uniform eighths, left to right): only each
+note's measure, staff and staff position, and its left-to-right order
+among repeats at that position, are asserted by test_geometry.py.
+-->
+<score-partwise version="3.1">
+  <part-list>
+    <score-part id="P1">
+      <part-name>Piano</part-name>
+    </score-part>
+  </part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes>
+        <divisions>1</divisions>
+        <key><fifths>-4</fifths></key>
+        <staves>2</staves>
+        <clef number="1"><sign>G</sign><line>2</line></clef>
+        <clef number="2"><sign>F</sign><line>4</line></clef>
+      </attributes>
+      <!-- right hand: A5b A4b A5b A4b A5b A4b D4b A4b A5b D4b A5b A4b -->
+      <note><pitch><step>A</step><alter>-1</alter><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>eighth</type><staff>1</staff></note>
+      <note><pitch><step>A</step><alter>-1</alter><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>eighth</type><staff>1</staff></note>
+      <note><pitch><step>A</step><alter>-1</alter><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>eighth</type><staff>1</staff></note>
+      <note><pitch><step>A</step><alter>-1</alter><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>eighth</type><staff>1</staff></note>
+      <note><pitch><step>A</step><alter>-1</alter><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>eighth</type><staff>1</staff></note>
+      <note><pitch><step>A</step><alter>-1</alter><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>eighth</type><staff>1</staff></note>
+      <note><pitch><step>D</step><alter>-1</alter><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>eighth</type><staff>1</staff></note>
+      <note><pitch><step>A</step><alter>-1</alter><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>eighth</type><staff>1</staff></note>
+      <note><pitch><step>A</step><alter>-1</alter><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>eighth</type><staff>1</staff></note>
+      <note><pitch><step>D</step><alter>-1</alter><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>eighth</type><staff>1</staff></note>
+      <note><pitch><step>A</step><alter>-1</alter><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>eighth</type><staff>1</staff></note>
+      <note><pitch><step>A</step><alter>-1</alter><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>eighth</type><staff>1</staff></note>
+      <backup><duration>12</duration></backup>
+      <!-- left hand: (A3b B3nat F3nat D3nat) x3, with E2b before the 3rd and 4th chords -->
+      <note><pitch><step>A</step><alter>-1</alter><octave>3</octave></pitch><duration>1</duration><voice>2</voice><type>eighth</type><staff>2</staff></note>
+      <note><pitch><step>B</step><alter>0</alter><octave>3</octave></pitch><duration>1</duration><voice>2</voice><type>eighth</type><staff>2</staff></note>
+      <note><pitch><step>F</step><alter>0</alter><octave>3</octave></pitch><duration>1</duration><voice>2</voice><type>eighth</type><staff>2</staff></note>
+      <note><pitch><step>D</step><alter>0</alter><octave>3</octave></pitch><duration>1</duration><voice>2</voice><type>eighth</type><staff>2</staff></note>
+      <note><pitch><step>A</step><alter>-1</alter><octave>3</octave></pitch><duration>1</duration><voice>2</voice><type>eighth</type><staff>2</staff></note>
+      <note><pitch><step>B</step><alter>0</alter><octave>3</octave></pitch><duration>1</duration><voice>2</voice><type>eighth</type><staff>2</staff></note>
+      <note><pitch><step>F</step><alter>0</alter><octave>3</octave></pitch><duration>1</duration><voice>2</voice><type>eighth</type><staff>2</staff></note>
+      <note><pitch><step>D</step><alter>0</alter><octave>3</octave></pitch><duration>1</duration><voice>2</voice><type>eighth</type><staff>2</staff></note>
+      <note><pitch><step>A</step><alter>-1</alter><octave>3</octave></pitch><duration>1</duration><voice>2</voice><type>eighth</type><staff>2</staff></note>
+      <note><pitch><step>E</step><alter>-1</alter><octave>2</octave></pitch><duration>1</duration><voice>2</voice><type>eighth</type><staff>2</staff></note>
+      <note><pitch><step>F</step><alter>0</alter><octave>3</octave></pitch><duration>1</duration><voice>2</voice><type>eighth</type><staff>2</staff></note>
+      <note><pitch><step>D</step><alter>0</alter><octave>3</octave></pitch><duration>1</duration><voice>2</voice><type>eighth</type><staff>2</staff></note>
+      <note><pitch><step>B</step><alter>0</alter><octave>3</octave></pitch><duration>1</duration><voice>2</voice><type>eighth</type><staff>2</staff></note>
+      <note><pitch><step>E</step><alter>-1</alter><octave>2</octave></pitch><duration>1</duration><voice>2</voice><type>eighth</type><staff>2</staff></note>
+      <note><pitch><step>A</step><alter>-1</alter><octave>3</octave></pitch><duration>1</duration><voice>2</voice><type>eighth</type><staff>2</staff></note>
+      <note><pitch><step>B</step><alter>0</alter><octave>3</octave></pitch><duration>1</duration><voice>2</voice><type>eighth</type><staff>2</staff></note>
+      <note><pitch><step>F</step><alter>0</alter><octave>3</octave></pitch><duration>1</duration><voice>2</voice><type>eighth</type><staff>2</staff></note>
+      <note><pitch><step>D</step><alter>0</alter><octave>3</octave></pitch><duration>1</duration><voice>2</voice><type>eighth</type><staff>2</staff></note>
+    </measure>
+  </part>
+</score-partwise>

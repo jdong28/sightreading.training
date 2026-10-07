@@ -22,25 +22,79 @@ def expected_pos(row):
     return score.diatonic(row["step"], row["octave"]) - score.diatonic(rs, ro) + (line - 1) * 2 + 7 * row.get("octave_shift", 0)
 
 
-def page_measures(pages_geom, first_index=0):
-    """[(page, system index, measure x-range, xml measure index)]"""
+def page_measures(pages_geom, first_index=0, multirest=None):
+    """[(page, system index, measure x-range, xml measure index)]. A printed
+    bar that starts a multi-bar rest (`multirest`: {mindex: N}, from
+    `score.multirest_spans`) stands for N measure elements, so the next
+    detected bar's `mindex` skips the N-1 it covers."""
+    multirest = multirest or {}
     out = []
     idx = first_index
     for page, geom in pages_geom:
         for si, sys_ in enumerate(geom["systems"]):
             for m in sys_["measures"]:
                 out.append(dict(page=page, system=si, x0=m["x0"], x1=m["x1"], mindex=idx))
-                idx += 1
+                idx += multirest.get(idx, 1)
     return out, idx
+
+
+def expected_printed_count(nmeas, multirest, first_index=0):
+    """How many printed bars the MusicXML implies over `nmeas` measure
+    elements starting at `first_index`: one per multirest span (whatever
+    its N) rather than one per measure element."""
+    multirest = multirest or {}
+    idx = first_index
+    end = first_index + nmeas
+    count = 0
+    while idx < end:
+        count += 1
+        idx += multirest.get(idx, 1)
+    return count
 
 
 def xml_by_measure(rows):
     by = defaultdict(list)
     for r in rows:
-        if r["rest"] or r["step"] is None:
+        if r["rest"] or r["step"] is None or not r.get("printed", True):
             continue
         by[(r["mindex"], r["staff"])].append({**r, "pos": expected_pos(r)})
     return by
+
+
+def unison_matched_ids(xml_notes, matched_ids):
+    """Notes on one staff sharing (measure, onset, expected position) in
+    different voices are one printed column: when any of them matches a
+    head, every one of them counts as matched for the head-match rate
+    (though `head_match`'s own returned note, which placement and the
+    goldens depend on, is left alone)."""
+    groups = defaultdict(list)
+    for n in xml_notes:
+        if n["pos"] is not None:
+            groups[(n["mindex"], n["staff"], n["onset"], n["pos"])].append(n)
+    out = set(matched_ids)
+    for g in groups.values():
+        if len(g) > 1 and any(id(n["el"]) in matched_ids for n in g):
+            out.update(id(n["el"]) for n in g)
+    return out
+
+
+def per_system_floor(xml_notes_by_system, matched_ids, numbers, min_share=0.5, min_notes=8):
+    """[(system index, (first bar, last bar), matched, total)] for each
+    system whose matched share is below `min_share`, with at least
+    `min_notes` notes: a gate-integrity backstop, since the bar-count gate
+    alone can pass on a system that's wrong (a missing staff, a column of
+    stems read as bars) while its notes don't line up at all."""
+    out = []
+    for si, notes in xml_notes_by_system.items():
+        total = len(notes)
+        if total < min_notes:
+            continue
+        matched_ids_rate = unison_matched_ids(notes, matched_ids)
+        matched = sum(1 for n in notes if id(n["el"]) in matched_ids_rate)
+        if matched / total < min_share:
+            bars = sorted({numbers[n["mindex"]] for n in notes})
+            out.append((si, (bars[0], bars[-1]), matched, total))
+    return out
 
 
 def measure_of(measures, page, system, x):
@@ -83,16 +137,39 @@ def print_shifts(heads, measures, by):
 
 
 def head_match(head, page, measures, by, heads_on_page, shifts=None):
-    """The MusicXML note a detected head is, or (None, reason)."""
+    """The MusicXML note a detected head is, or (None, reason). A small
+    (grace/cue-size) head may match only a grace note, and a normal head
+    only a non-grace one. A normal head with no same-staff note at its
+    position falls back to a note of another staff of the same measure
+    whose expected position, recomputed in this staff's own clef, is the
+    same (a print that moves notes across staves while the MusicXML keeps
+    them on their own staff)."""
     m = measure_of(measures, page, head["system"], head["x"])
     if m is None:
         return None, "outside every measure"
     k = (shifts or {}).get((page, head["system"], head["staff"], m["mindex"]), 0)
-    notes = [n for n in by.get((m["mindex"], head["staff"]), []) if n["pos"] == head["step"] - k]
+    want_grace = bool(head.get("small"))
+    suffix = f", print clef shift {k:+d}" if k else ""
+    own = by.get((m["mindex"], head["staff"]), [])
+    notes = [n for n in own if n["pos"] == head["step"] - k and bool(n.get("grace")) == want_grace]
+    if not notes and not want_grace:
+        own_clef = next((n["clef"] for n in own), None)
+        if own_clef is None:
+            # this staff has no note at all in the bar (every note of it
+            # crossed away): fall back to its clef anywhere in the piece
+            own_clef = next((r["clef"] for (_mi, st), rows_ in by.items() if st == head["staff"] for r in rows_), None)
+        for (mindex, other_staff), rows_ in by.items():
+            if mindex != m["mindex"] or other_staff == head["staff"]:
+                continue
+            for r in rows_:
+                if r["step"] is None or bool(r.get("grace")):
+                    continue
+                if expected_pos({**r, "clef": own_clef}) == head["step"] - k:
+                    return r, "cross-staff" + suffix
     if not notes:
         return None, f"no note at staff position {head['step']} on staff {head['staff']} of measure index {m['mindex']}"
     if len(notes) == 1:
-        return notes[0], "unique" + (f", print clef shift {k:+d}" if k else "")
+        return notes[0], "unique" + suffix
     # repeated position in the bar: match by left-to-right order
     same = sorted([h for h in heads_on_page if h["system"] == head["system"] and h["staff"] == head["staff"]
                    and h["step"] == head["step"] and m["x0"] - 4 <= h["x"] <= m["x1"] + 4], key=lambda h: h["x"])
@@ -107,6 +184,15 @@ def head_match(head, page, measures, by, heads_on_page, shifts=None):
     frac = (head["x"] - m["x0"]) / max(1.0, (m["x1"] - m["x0"]))
     pick = min(notes, key=lambda n: abs(float(n["onset"] / length) - frac))
     return pick, f"proportional ({len(same)} heads for {len(onsets)} onsets)"
+
+
+def staff_mapping_candidates(k, score_staff_count):
+    """Order-preserving ways to map a system's k staves (1-indexed, local
+    to the system) onto a contiguous run of the score's score_staff_count
+    global staves (1-indexed): [{local: global}, ...]. One candidate (the
+    identity) when k == score_staff_count; k > score_staff_count gives
+    none (more staves than the score has)."""
+    return [{i + 1: start + i + 1 for i in range(k)} for start in range(score_staff_count - k + 1)]
 
 
 def columns_near(heads, system, x, tol):

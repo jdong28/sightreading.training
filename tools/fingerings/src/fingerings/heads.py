@@ -83,6 +83,77 @@ def disc(r):
     return x * x + y * y <= r * r
 
 
+def _small_heads(filled, clean, core, space):
+    """A second pass over what the normal opening left behind: grace and
+    cue-size heads, too small for the normal disc to keep whole. Opened
+    with a smaller disc over the remainder (filled minus the normal
+    heads' own footprint, dilated so a grace head touching a normal one
+    isn't claimed twice); kept only at a cue head's size."""
+    margin = max(1, int(round(space * 0.15)))
+    remainder = filled & ~ndimage.binary_dilation(core, structure=disc(margin))
+    small_core = ndimage.binary_opening(remainder, structure=disc(max(1, int(round(space * 0.22)))))
+    labels, n = ndimage.label(small_core)
+    out = []
+    for i, sl in enumerate(ndimage.find_objects(labels), start=1):
+        sub = labels[sl] == i
+        h = sl[0].stop - sl[0].start
+        w = sl[1].stop - sl[1].start
+        if not (0.5 * space <= w <= 1.0 * space and 0.4 * space <= h <= 0.85 * space):
+            continue
+        hollow = (filled[sl] & ~clean[sl] & sub).sum() > 0.15 * sub.sum()
+        ys, xs = np.nonzero(sub)
+        out.append(dict(x=float(xs.mean() + sl[1].start), y=float(ys.mean() + sl[0].start), w=w, h=h,
+                        hollow=bool(hollow), stacked=1, small=True))
+    return out
+
+
+MAX_CHORD_STACK = 6
+
+
+def _split_wide_cluster(filled, clean, sl, space):
+    """Two noteheads a second apart are always drawn side by side, offset
+    rather than stacked (notation avoids overlapping them directly), so
+    nothing separates them vertically the way a gap would -- they read as
+    one blob too wide for a single head. A fixed-radius re-opening only
+    splits the touching lobes apart when the two happen to overlap by
+    about that much; real engravings vary (ink spread, print wear), so
+    this finds each lobe's own centre instead, by the two farthest-apart
+    peaks of the blob's distance transform (each a lobe's deepest point,
+    the standard seed for splitting touching round shapes), then assigns
+    every pixel to its nearest peak. Returns [(head dict), ...], or None
+    when the blob doesn't have two such peaks or either half comes out
+    an implausible notehead size."""
+    sub_filled = filled[sl]
+    sub_clean = clean[sl]
+    dist = ndimage.distance_transform_edt(sub_filled)
+    p1 = np.unravel_index(np.argmax(dist), dist.shape)
+    yy, xx = np.ogrid[:dist.shape[0], :dist.shape[1]]
+    suppressed = (yy - p1[0]) ** 2 + (xx - p1[1]) ** 2 <= (0.35 * space) ** 2
+    d2 = np.where(suppressed, -1.0, dist)
+    p2 = np.unravel_index(np.argmax(d2), d2.shape)
+    if d2[p2] <= 0:
+        return None
+    markers = np.zeros(sub_filled.shape, dtype=np.int32)
+    markers[p1], markers[p2] = 1, 2
+    _, inds = ndimage.distance_transform_edt(markers == 0, return_indices=True)
+    nearest = markers[inds[0], inds[1]]
+    labels2 = np.where(sub_filled, nearest, 0)
+
+    out = []
+    for lab in (1, 2):
+        sub2 = labels2 == lab
+        ys, xs = np.nonzero(sub2)
+        if len(ys) == 0:
+            return None
+        hh, ww = int(ys.max() - ys.min()) + 1, int(xs.max() - xs.min()) + 1
+        if not (0.6 * space <= ww <= 2.0 * space and 0.5 * space <= hh <= 2.0 * space):
+            return None
+        hollow2 = (sub_filled[sub2] & ~sub_clean[sub2]).sum() > 0.15 * sub2.sum()
+        out.append(dict(x=float(xs.mean() + sl[1].start), y=float(ys.mean() + sl[0].start),
+                         w=ww, h=hh, hollow=bool(hollow2), stacked=1))
+    return out
+
+
 def noteheads(black, systems):
     space = float(np.median([st["space"] for s in systems for st in s["staves"]]))
     clean = erase_staff_lines(black, systems)
@@ -94,10 +165,21 @@ def noteheads(black, systems):
         sub = labels[sl] == i
         h = sl[0].stop - sl[0].start
         w = sl[1].stop - sl[1].start
+        if w > 2.0 * space and h <= 2.2 * space:
+            split = _split_wide_cluster(filled, clean, sl, space)
+            if split is not None:
+                heads += split
+            continue
         if w < 0.8 * space or w > 2.0 * space or h < 0.6 * space:
             continue
         hollow = (filled[sl] & ~clean[sl] & sub).sum() > 0.15 * sub.sum()
         k = max(1, int(round(h / space)))
+        if k > MAX_CHORD_STACK:
+            # no one-hand chord stacks six-plus notes a third apart (two
+            # octaves and then some): a blob this tall at a plausible
+            # chord's width is a thick bar line or repeat mark (its two
+            # strokes and dots opened into one blob), not a wide chord.
+            continue
         if k > 1 and h > 1.3 * space:
             # split a stack at whole spaces (heads a third apart touch)
             for j in range(k):
@@ -106,6 +188,7 @@ def noteheads(black, systems):
         else:
             ys, xs = np.nonzero(sub)
             heads.append(dict(x=float(xs.mean() + sl[1].start), y=float(ys.mean() + sl[0].start), w=w, h=h, hollow=bool(hollow), stacked=1))
+    heads += _small_heads(filled, clean, core, space)
     return heads, space
 
 
@@ -114,21 +197,76 @@ def staff_position(st, y):
     return (st["lines"][-1] - y) / (st["space"] / 2)
 
 
-def place(heads, systems, max_ledger=7):
+def _ledger_positions(pos):
+    """The even half-space positions (ledger lines) a note at `pos` needs,
+    by notation convention: one at every whole space beyond the staff up
+    to and including `pos` itself if it sits on one (a note in the gap
+    just past the staff, pos 9 or -1, needs none at all)."""
+    out = []
+    if pos > 8:
+        p = 10
+        while p <= pos:
+            out.append(p)
+            p += 2
+    elif pos < 0:
+        p = -2
+        while p >= pos:
+            out.append(p)
+            p -= 2
+    return out
+
+
+def _ledger_line_present(black, x, space, y):
+    """A short horizontal run of ink near (x, y), the width a ledger line
+    actually is (a little over a notehead's own width): real notation
+    always draws one at every position _ledger_positions names, so its
+    absence marks the blob as something else -- text, an artifact --
+    rather than a genuine ledger-line note."""
+    half = max(2, int(round(0.65 * space)))
+    y0, y1 = int(round(y - 0.18 * space)), int(round(y + 0.18 * space)) + 1
+    x0, x1 = max(0, int(round(x - half))), min(black.shape[1], int(round(x + half)) + 1)
+    if y0 < 0 or y1 > black.shape[0] or x1 <= x0:
+        return False
+    band = black[y0:y1, x0:x1]
+    return bool(band.any(axis=0).mean() >= 0.6)
+
+
+def place(heads, systems, black=None, max_ledger=7):
     """Give every head its system, staff and staff position; heads outside
-    every staff's reach (text, clef dots far away) are dropped."""
+    every staff's reach (text, clef dots far away) are dropped. A head
+    that would sit on a ledger line is kept only if the page actually
+    draws one there (when `black` is given): a measure number or other
+    system-start text can otherwise read as a plausible high note, since
+    its digits alone are an ordinary notehead's size and shape. Tries
+    every staff within reach in order of increasing ledger distance, not
+    just the single closest one: a note near the midpoint between two
+    staves (a deep chord note reaching several ledger lines up from the
+    staff below) can be numerically closer to the *other* staff's own
+    range while still genuinely belonging, ledger lines and all, to the
+    one it was written for."""
     out = []
     for hd in heads:
-        best = None
+        candidates = []
         for si, sys_ in enumerate(systems):
             for k, st in enumerate(sys_["staves"]):
                 pos = staff_position(st, hd["y"])
                 if -max_ledger * 2 <= pos <= 8 + max_ledger * 2:
                     dist = 0 if 0 <= pos <= 8 else min(abs(pos), abs(pos - 8))
-                    if best is None or dist < best[0]:
-                        best = (dist, si, k, pos)
-        if best is None:
+                    candidates.append((dist, si, k, pos, st))
+        candidates.sort(key=lambda c: c[0])
+        chosen = None
+        for _dist, si, k, pos, st in candidates:
+            if black is not None and (pos < 0 or pos > 8):
+                space = st["space"]
+                bot_y = st["lines"][-1]
+                needed = _ledger_positions(pos)
+                if needed and not all(_ledger_line_present(black, hd["x"], space, bot_y - p * (space / 2))
+                                       for p in needed):
+                    continue  # try the next-closest staff instead of giving up
+            chosen = (si, k, pos)
+            break
+        if chosen is None:
             continue
-        _, si, k, pos = best
+        si, k, pos = chosen
         out.append({**hd, "system": si, "staff": k + 1, "pos": pos, "step": int(round(pos))})
     return out

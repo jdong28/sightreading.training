@@ -36,7 +36,7 @@ SRC = HERE.parent.parent / "src"
 sys.path.insert(0, str(SRC))
 sys.path.insert(0, str(HERE))
 
-from fingerings import align, cluster, extract, heads, readings, run as run_mod, score, staves  # noqa: E402
+from fingerings import align, cluster, extract, geometry, readings, run as run_mod, score  # noqa: E402
 import source  # noqa: E402
 
 MSCORE = __import__("os").environ.get("MSCORE", "/Applications/MuseScore 4.app/Contents/MacOS/mscore")
@@ -76,12 +76,15 @@ def render(score_path, out_dir):
 
 
 def detect_pages(page_pngs):
-    """[(page number, gray array, geometry)]"""
+    """[(page number, gray array, geometry, placed heads, staff space)]"""
     out = []
     for i, p in enumerate(page_pngs, start=1):
         im = Image.open(p).convert("L")
         gray = np.asarray(im, dtype=np.uint8)
-        out.append((i, gray, staves.page_geometry(gray)))
+        G, hs, space, _meta = geometry.analyze_page(gray)
+        for h in hs:
+            h["page"] = i
+        out.append((i, gray, G, hs, space))
     return out
 
 
@@ -92,18 +95,11 @@ def head_map(pages_detected, rows):
     always has before any real note) and, within a chord, by y order
     against the chord's pitches high to low (document order for a chord
     built from an ascending pitch list is low to high)."""
-    geoms = [(pno, G) for pno, _, G in pages_detected]
+    geoms = [(pno, G) for pno, _gray, G, _hs, _space in pages_detected]
     measures, _total = align.page_measures(geoms)
-    all_heads = []
-    for pno, gray, G in pages_detected:
-        hs, space = heads.noteheads(G["black"], G["systems"])
-        hs = heads.place(hs, G["systems"])
-        for h in hs:
-            h["page"] = pno
-        all_heads.append((pno, hs, space))
     by_mindex_staff = {}
-    space_by_page = {pno: space for pno, _, space in all_heads}
-    heads_by_page = {pno: hs for pno, hs, _ in all_heads}
+    space_by_page = {pno: space for pno, _gray, _G, _hs, space in pages_detected}
+    heads_by_page = {pno: hs for pno, _gray, _G, hs, _space in pages_detected}
     for m in measures:
         hs = heads_by_page[m["page"]]
         for staff in (1, 2):
@@ -318,7 +314,7 @@ def build_ink_items(by_el, space_by_page, pages_detected):
     # --- a margin digit with no notehead near it (skip: no head) ---
     # placed in the blank gap between page 2's two systems, comfortably
     # away from both so align.sides() finds no staff it could belong to
-    page2_geom = next(G for pno, _gray, G in pages_detected if pno == 2)
+    page2_geom = next(G for pno, _gray, G, _hs, _space in pages_detected if pno == 2)
     sys0_bottom = page2_geom["systems"][0]["bottom"]
     sys1_top = page2_geom["systems"][1]["top"]
     margin_y = (sys0_bottom + sys1_top) / 2
@@ -388,7 +384,7 @@ def main():
         # --- fixture.pdf: scan (1-bit, from the MuseScore render) + ink ---
         pdf = pikepdf.Pdf.new()
         ink_by_page = {}
-        for pno, gray, _G in detected:
+        for pno, gray, _G, _hs, _space in detected:
             page = pdf.add_blank_page(page_size=(PAGE_W_PT, PAGE_H_PT))
             add_full_page_image(pdf, page, make_scan_xobject(pdf, gray), "Scan")
             page_items = [it for it in items if it["page"] == pno]
@@ -404,7 +400,7 @@ def main():
         # leaves the CTM in a non-identity state outside any q/Q, which a
         # naive appended "cm ... Do" composes with silently) ---
         vec = pikepdf.open(tmp / "printed.pdf")
-        for pno, gray, _G in detected:
+        for pno, gray, _G, _hs, _space in detected:
             ink_pdf = pikepdf.Pdf.new()
             ink_page = ink_pdf.add_blank_page(page_size=(PAGE_W_PT, PAGE_H_PT))
             add_full_page_image(ink_pdf, ink_page, make_ink_xobjects(ink_pdf, ink_by_page[pno]), "Ink")
@@ -418,7 +414,7 @@ def main():
         item_to_markid = {}
         page_sheets = {}
         with pikepdf.open(HERE / "fixture.pdf") as pdf2:
-            for pno, gray, _G in detected:
+            for pno, gray, _G, _hs, _space in detected:
                 L = extract.page_layers(pdf2, pno - 1)
                 mask = extract.ink_mask(L["ink"])
                 marks = cluster.clusters(mask, L["px_per_pt"][0], join_pt=1.0)

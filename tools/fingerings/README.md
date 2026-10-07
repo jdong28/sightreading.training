@@ -230,17 +230,84 @@ matches no note, more than one note, or collides with another entry on the
 same note, it writes nothing and exits 1. Prints
 `{"applied", "same", "conflicts", "unmatched"}`.
 
+## Checking a piece's geometry
+
+```
+uv run fingerings geometry <run dir> [--overlays]
+```
+
+Runs steps 1-4 (ink/scan extraction, staves and bar lines, noteheads and
+clefs, the head-match check) on every page the manifest names, ink or
+not, and applies the head-match gate to every page — it needs no
+fingerings, since the head-match rate checks itself. Lets an owner check
+that an edition's geometry works with the tool before an instructor
+writes on it. Writes into the run directory:
+
+| File | What |
+|---|---|
+| `geometry.json` / `geometry.md` | Checks, and per page: scan kind, size, skew, threshold, bar range, staff space, systems (staff count and bar count), heads found/matched and the rate, and print clef shifts; a stopped page names why. |
+| `geometry/pN.png` | With `--overlays`: staff lines, system boxes, bar lines, and heads boxed matched (green) or unmatched (red), for diagnosis. |
+
+Exit codes: `0` every gate passes, `1` otherwise.
+
 ## Known limits (build step 2's job)
 
-Geometry is tuned on Rêverie and the synthetic fixture; the following are
-refused with a clear error rather than mis-read, and are follow-up work:
-a rotated page or a skewed image placement; a score with more than one
-`<part>` or a part with more than two staves; a filter pikepdf can't
-decode (JBIG2 without `jbig2dec`, for example). Not yet handled, and not
-refused outright: repeats and voltas, multi-bar rests, 8va lines,
-grace-note fingerings, cross-staff notes, one- or three-staff systems, a
-part-per-hand score, and a fingering on a tie's continuation (never
-applied, per the edition library's design).
+Refused with a clear error rather than mis-read, and are follow-up work:
+a rotated page or a skewed image placement (deskew handles a skewed scan
+*inside* an upright image only); a score with more than 3 staves in all;
+a filter pikepdf can't decode (JBIG2 without `jbig2dec`, for example;
+real IMSLP-style scans are mostly JBIG2, so a render fallback for it, like
+the one a stacked-image/mixed-raster PDF already needs, is a natural
+follow-up); a scan below about 300 dpi (the resolution floor is measured
+and recorded per page in `geometry.json`; swept against a real passing
+scan downsampled to 20/18/16/14/12/10px staff spaces, every page at or
+above the 16px floor still runs — head match holds in the high 80s/low
+90s%, with some resampling-dependent noise rather than a smooth decline
+— and every page below it stops cleanly with the floor's own message
+rather than running anyway; see the PR for the full table). The
+geometry/head-match
+pipeline (`fingerings geometry`, and `run`'s own gates) fully supports a
+voice-plus-piano or other multi-part score and a one-part score of up to
+3 staves; *placing* fingerings (`run`'s stage 3) is still the two-hand
+model only (one part, at most 2 staves) and stops cleanly, after the
+geometry gates, on a score outside it. Not yet handled, and not refused
+outright: a printed multirest the MusicXML doesn't mark; a print clef
+that changes mid-bar where the transcription's doesn't, beyond what the
+per-bar print-clef-shift search already explains; grace-note fingerings
+in the reading/placement step (geometry detects and matches grace heads,
+but placement still targets only a non-grace note); a part-per-hand
+score; and a fingering on a tie's continuation (never applied, per the
+edition library's design). The ink/mark-clustering pipeline (contact
+sheets, readings, proof sheets) reads a page's original, un-deskewed
+raster: the geometry/head-match pipeline runs on the corrected grid, but
+reading handwritten marks on a skewed real scan needs that pipeline
+corrected too, which is follow-up work for whenever a real scan actually
+carries handwritten markup to read.
+
+Every corpus system/bar count is now correct (the dense-passage
+miscounts a prior pass of this work left open — the MuseScore Maple Leaf
+Rag's trio, and the real 1899 LoC scan's own three pages — are root-caused
+and fixed below); the three LoC pages still fail only the head-match
+gate, by under a point each. Measured gaps the corpus run (below) still
+shows, not yet closed:
+- The real 1899 LoC scan's three pages (89.3%, 89.2%, 89.8% head match;
+  every bar/system count on all three is correct) stay just under the
+  90% floor. The shortfall is a handful of notes per page (3, 5 and 1
+  respectively) whose detected centre lands within about half a staff
+  space of the integer position the gate needs exactly, which 125-year-
+  old letterpress and a 380dpi scan explain well enough on their own:
+  the deltas are centred on zero with no systematic bias (confirmed by
+  comparing every matched head's measured position against its
+  MusicXML-expected one), so nudging the match tolerance to close the
+  gap would be fitting noise, not fixing a bug. See the PR's per-page
+  table and known-gaps section for the investigation.
+- Genuine engraved cross-staff notation (a print that deliberately shows
+  a note in the other staff's clef position, as a "r.h./l.h." edited
+  passage does) has no synthetic corpus coverage: synthesising it needs
+  MusicXML surgery past what music21 exposes. The committed synthetic
+  cross-staff fixtures (now passing at 100%, after this pass's chord-
+  geometry fixes) instead exercise heads.place's extreme-ledger
+  staff-proximity assignment, a related but different case.
 
 ## Development
 
@@ -250,11 +317,16 @@ uv run pytest -q
 ```
 
 Tests are offline and deterministic (`PYTHONHASHSEED` is fixed per test
-where byte-identity matters) and use only the committed synthetic fixture
-under `tests/fixture/` — a public-domain piece, generated with music21 and
-engraved by MuseScore, with a drawn-on ink layer whose every answer is
-known (`tests/fixture/ink.json`, `expected.json`). Never commit a real
-scan, a teacher's PDF, or any other private input.
+where byte-identity matters) and use only committed fixtures: the main
+synthetic one under `tests/fixture/` — a public-domain piece, generated
+with music21 and engraved by MuseScore, with a drawn-on ink layer whose
+every answer is known (`tests/fixture/ink.json`, `expected.json`) — and
+`tests/fixture/geometry/`'s small, hand-encoded crops for
+`test_geometry.py` (`make_geometry_fixtures.py` documents how each was
+cropped, including the one real public-domain scan crop among them).
+Never commit a real scan, a teacher's PDF, or any other private input —
+the LoC scan crop is small, licensed public domain, and square with
+`corpus.json`'s own recorded provenance for that source.
 
 Golden files live under `tests/golden/`. If a test's output changed on
 purpose, regenerate them:
@@ -262,6 +334,39 @@ purpose, regenerate them:
 ```
 uv run pytest -q --update-goldens
 ```
+
+### Corpus
+
+`corpus/` is a wider, local-only check of the geometry/head-match
+pipeline across more engravings than the committed fixture covers:
+public-domain scans, MuseScore renders of public-domain and CC0
+MusicXML, and synthetic scores. `corpus/corpus.json` names each piece;
+`corpus/files/` (gitignored, never committed) holds what gets fetched or
+built there. Needs network access, MuseScore 4's command line, and the
+`music21` dependency's own corpus install; never run in CI.
+
+```
+MSCORE="/Applications/MuseScore 4.app/Contents/MacOS/mscore" uv run python corpus/fetch.py
+uv run python corpus/run_corpus.py --label after
+uv run python corpus/run_corpus.py --compare before after   # a saved earlier --label
+```
+
+`fetch.py` downloads each scan's page image (verifying its sha256) and
+wraps it into a PDF without re-encoding; copies each MuseScore piece's
+MusicXML from the installed `music21` package (local use only, per its
+`corpus/license.txt` — never committed, and `corpus/files/` stays
+gitignored); and renders both the MuseScore and the synthetic
+(`corpus/synth.py`) pieces, keeping MuseScore's own re-export as that
+piece's MusicXML and layout truth. `run_corpus.py` runs `fingerings
+geometry` on every piece, grades each page's detected systems against
+truth (a scan's hand-counted `systems` in corpus.json, or a MuseScore
+re-export's own `<print new-system/new-page>` breaks), and writes
+`corpus/files/results/<label>.{json,md}`.
+`resolution_sweep.py [piece-id] [--spaces 16 14 12 10]` downsamples one
+corpus scan to a series of target staff spaces and runs geometry (and,
+at every resolution that doesn't stop, the real head-match gate) at
+each, to check the resolution floor against a real scan rather than
+just the unit test.
 
 Rebuilding the fixture itself (`tests/fixture/score.musicxml`,
 `fixture.pdf`, `fixture-vector.pdf`, `readings/*.json`) needs MuseScore 4's
