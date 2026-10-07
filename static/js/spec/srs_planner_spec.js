@@ -963,6 +963,23 @@ describe("today's programme planner", function() {
       expect(state.toRead).not.toContain(1)
     })
 
+    it("reads a start-apart bar through with the session's hand", function() {
+      // decision 6 splits a bar at its introduction, not at the reading
+      // before it: a read-through grades nothing, and its bar counts as read
+      // by the session hand's own item, so a hand alone here would never
+      // leave the bar behind
+      let opts = {
+        readThrough: true, handMeasures: {upper: MEASURES, lower: MEASURES},
+        startApart: new Map([[1, ["lower"]]]),
+      }
+      let fresh = plan([], opts)
+      expect([fresh.entry.reason, fresh.entry.measure, fresh.entry.hand])
+        .toEqual([READ_THROUGH, 1, "both"])
+
+      let read = [bar(1, {attempts: 1, lastPracticed: NOW - MINUTE})]
+      expect(entryOf(read, opts)).toEqual([READ_THROUGH, 2])
+    })
+
     it("sums up the read-through for the plate", function() {
       expect(planSummary({pieceId: "p", items: [], measures: MEASURES, now: NOW, readThrough: true}))
         .toEqual(jasmine.objectContaining({toRead: 8, newMeasures: 8}))
