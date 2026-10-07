@@ -540,6 +540,103 @@ describe("score card overview", function() {
   })
 })
 
+describe("score card bar clicks", function() {
+  let container, root, card, drawn, spy
+
+  afterEach(function() {
+    if (root) { flushSync(() => root.unmount()); root = null }
+    if (container) { container.remove(); container = null }
+    card = null; drawn = null
+  })
+
+  let mount = props => {
+    container = document.createElement("div")
+    document.body.appendChild(container)
+    root = createRoot(container)
+    spy = jasmine.createSpy("onBar")
+    flushSync(() => root.render(React.createElement(ScoreCard, {
+      ref: c => { card = c },
+      musicXML: pickupScore(), fromMeasure: 0, toMeasure: 2, hand: "both", width: 500,
+      onBar: spy, onDrawn: ({result}) => { drawn = result },
+      ...props,
+    })))
+  }
+
+  // maps a measure's box centre to a MouseEvent dispatched on the svg,
+  // through the svg's actual boundingClientRect and natural size, as the
+  // real click handler must invert
+  let clickAt = (x, y) => {
+    let svg = drawn.svg
+    let rect = svg.getBoundingClientRect()
+    let width = svg.width.baseVal.value
+    let height = svg.height.baseVal.value
+    let clientX = rect.left + x / width * rect.width
+    let clientY = rect.top + y / height * rect.height
+    svg.dispatchEvent(new MouseEvent("click", {bubbles: true, clientX, clientY}))
+  }
+
+  let clickBox = box => clickAt(box.x + box.width / 2, box.y + box.height / 2)
+
+  it("calls onBar with the printed number of the bar clicked", async function() {
+    mount()
+    await waitFor(() => drawn, {message: "the drawn card"})
+
+    let bar1 = drawn.measures.find(m => m.number == 1)
+    flushSync(() => clickBox(bar1.box))
+    expect(spy).toHaveBeenCalledWith(1)
+
+    let pickup = drawn.measures.find(m => m.number == 0)
+    flushSync(() => clickBox(pickup.box))
+    expect(spy).toHaveBeenCalledWith(0)
+  })
+
+  it("ignores a click outside every bar", async function() {
+    mount()
+    await waitFor(() => drawn, {message: "the drawn card"})
+    spy.calls.reset()
+
+    let lowest = drawn.measures.reduce((max, m) => Math.max(max, m.box.y + m.box.height), 0)
+    flushSync(() => clickAt(drawn.measures[0].box.x, lowest + 3 * drawn.measures[0].box.height))
+    expect(spy).not.toHaveBeenCalled()
+  })
+
+  it("has a pointer cursor only with onBar", async function() {
+    mount()
+    await waitFor(() => drawn, {message: "the drawn card"})
+    expect(container.querySelector("[data-score-card]").className).toContain("bars_clickable")
+
+    drawn = null
+    mount({onBar: undefined})
+    await waitFor(() => drawn, {message: "the drawn card (no onBar)"})
+    let root_ = container.querySelector("[data-score-card]")
+    expect(root_.className).not.toContain("bars_clickable")
+    expect(() => flushSync(() =>
+      root_.dispatchEvent(new MouseEvent("click", {bubbles: true})))).not.toThrow()
+  })
+
+  it("never reports a bar on an overview", async function() {
+    let onShade = jasmine.createSpy("onShade")
+    mount({
+      overview: true, shades: [{id: "a", from: 1, to: 1, level: 2, on: true, label: "I"}], onShade,
+    })
+    await waitFor(() => card.result, {message: "the overview drawn"})
+
+    let bar2 = card.result.measures.find(m => m.number == 2)
+    let root_ = container.querySelector("[data-score-overview]")
+    let rect = card.result.svg.getBoundingClientRect()
+    let width = card.result.svg.width.baseVal.value
+    let height = card.result.svg.height.baseVal.value
+    let clientX = rect.left + (bar2.box.x + bar2.box.width / 2) / width * rect.width
+    let clientY = rect.top + (bar2.box.y + bar2.box.height / 2) / height * rect.height
+    flushSync(() => root_.dispatchEvent(new MouseEvent("click", {bubbles: true, clientX, clientY})))
+    expect(spy).not.toHaveBeenCalled()
+
+    let shadeRect = container.querySelector('rect[data-shade="a"]')
+    flushSync(() => shadeRect.dispatchEvent(new MouseEvent("click", {bubbles: true})))
+    expect(onShade).toHaveBeenCalledWith("a")
+  })
+})
+
 describe("score page engine card", function() {
   let container, root, page, store, previousStore, savedStorage
   const STORAGE_KEYS = [SCORE_DRILL_STORAGE_KEY, SHEET_MUSIC_STORAGE_KEY]
