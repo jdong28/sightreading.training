@@ -736,7 +736,6 @@ export function planState({
   let startApartOnLadder = [...startApartIntros.values()]
     .filter(intro => intro.item && scheduled(intro.item) && ON_LADDER.includes(intro.item.state))
   let startApartLadderMeasures = new Set(startApartOnLadder.map(intro => intro.measure))
-  unseen = unseen.filter(measure => !startApartLadderMeasures.has(measure))
   ladder = [...ladder, ...startApartOnLadder
     .filter(intro => !resting.has(intro.measure))
     .map(intro => ({
@@ -749,6 +748,13 @@ export function planState({
 
   let scaffolds = new Map(ladder.filter(slot => slot.hand != hand).map(slot => [slot.measure, slot.hand]))
 
+  // the measures this sitting may introduce now: unseen stays everything the
+  // piece has left to learn, whatever the sitting makes of it (planSummary,
+  // studyStatus), so a bar resting until the next sitting or already on its
+  // start-apart hand's own ladder is dropped here rather than there
+  let offerable = unseen.filter(measure =>
+    !resting.has(measure) && !startApartLadderMeasures.has(measure))
+
   let timed = live.filter(item => item.attempts > 0 && item.elapsedMs > 0)
   let barMs = timed.length ?
     timed.reduce((sum, item) => sum + item.elapsedMs / item.attempts, 0) / timed.length :
@@ -760,7 +766,8 @@ export function planState({
 
   return {
     pieceId, hand, now, settings, order, byMeasure, recent, today, endOfToday,
-    live, awake, failing, ladder, laddered, review, dueReviews, unseen, toRead, resting, scaffolds, sitting,
+    live, awake, failing, ladder, laddered, review, dueReviews, unseen, offerable, toRead, resting,
+    scaffolds, sitting,
     startApartIntros, startApartCaptions,
     cardMs, targetMs, elapsedMs,
     complete: elapsedMs >= targetMs || (!ladder.length && !dueReviews.length && !unseen.length),
@@ -773,7 +780,7 @@ const isRetry = item => ON_LADDER.includes(item.state) && item.lastGrade == AGAI
 // the queue in order, as lists of candidates: never empty while the piece
 // has a bar awake or a measure to learn
 function candidates(state, {avoid}) {
-  let {now, settings, order, recent, ladder, review, dueReviews, unseen, toRead, resting, sitting} = state
+  let {now, settings, order, recent, ladder, review, dueReviews, offerable, toRead, sitting} = state
   let recall = slot => predictedRecall(slot.item, now, settings)
   let measureOrder = (a, b) => order.get(a.measure) - order.get(b.measure)
   let other = slot => !avoid || !recent.has(slot.id) || slot.retry
@@ -794,14 +801,12 @@ function candidates(state, {avoid}) {
 
   let waiting = ladder.filter(other).sort((a, b) => a.due - b.due || measureOrder(a, b))
 
-  // a bar resting is offered no more in the sitting, hands apart or together,
-  // though it is still a measure the piece has left to learn (unseen). Never
+  // the measures the sitting may introduce now (state.offerable). Never
   // filtered by other: unlike a ladder rung or review, a new measure has
   // nothing graded on it yet, so a bar merely touched as a practice-only
   // neighbour (a read-through's lead-in, see introduction()) is still its
   // own to introduce right after, not a repeat of what was just played
-  let newMeasures = unseen.filter(measure => !resting.has(measure))
-    .map(measure => newSlot(state, measure, introHand(state, measure)))
+  let newMeasures = offerable.map(measure => newSlot(state, measure, introHand(state, measure)))
 
   let idle = !rungs.length && !due.length && !early.length && !runThrough.length
   let cap = idle ? IDLE_LADDER_CAP : LADDER_CAP
@@ -869,9 +874,9 @@ export function planNext(input) {
   // still offered this sitting, unless every bar it has in progress rests
   // until the next sitting
   let allResting = state.resting.size > 0 && !state.awake.length
-  let offerable = state.unseen.filter(measure => !state.resting.has(measure))
-  if (!next && offerable.length && !allResting) {
-    next = {reason: NEW, slot: newSlot(state, offerable[0], introHand(state, offerable[0]))}
+  let [first] = state.offerable
+  if (!next && first != null && !allResting) {
+    next = {reason: NEW, slot: newSlot(state, first, introHand(state, first))}
   }
 
   if (!next) {

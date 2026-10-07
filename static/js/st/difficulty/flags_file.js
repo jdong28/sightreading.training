@@ -167,6 +167,18 @@ function hasRange(obj) {
   return Number.isInteger(obj.startIndex) || Number.isInteger(obj.start)
 }
 
+// where a field's own bars land locally, or null when it has no index range
+// or that range doesn't place. Each range-bearing field is re-anchored from
+// its own bars, never from the decision's content range: `of` names the
+// proposal the local rematch is keyed on (groupKeyForProposal in
+// st/difficulty/decisions), which an edit narrowing the flag would otherwise
+// overwrite with the narrowed range and never find again
+function ownRange(alignment, obj) {
+  if (!obj || !Number.isInteger(obj.startIndex) || !Number.isInteger(obj.endIndex)) { return null }
+  let mapped = mapRange(alignment, obj.startIndex, obj.endIndex)
+  return mapped.place == "unplaced" ? null : mapped
+}
+
 function withLocalRange(obj, startIndex, endIndex, song) {
   let numbers = measureNumbers(song)
   return {
@@ -235,10 +247,14 @@ export function reanchorDecisions(file, record, song) {
         end: numberAt(fileNumbers, range.endIndex),
       }
     } else if (mapped) {
-      if (next.of) { next.of = {...next.of, startIndex: mapped.startIndex, endIndex: mapped.endIndex} }
-      if (next.given) { next.given = withLocalRange(next.given, mapped.startIndex, mapped.endIndex, song) }
+      let ofAt = ownRange(alignment, next.of)
+      let givenAt = ownRange(alignment, next.given)
+
+      if (ofAt) { next.of = {...next.of, startIndex: ofAt.startIndex, endIndex: ofAt.endIndex} }
+      if (givenAt) { next.given = withLocalRange(next.given, givenAt.startIndex, givenAt.endIndex, song) }
       if (next.flag && hasRange(next.flag)) {
-        next.flag = withLocalRange(next.flag, mapped.startIndex, mapped.endIndex, song)
+        let flagAt = ownRange(alignment, next.flag) || mapped
+        next.flag = withLocalRange(next.flag, flagAt.startIndex, flagAt.endIndex, song)
       }
       next.anchor = anchorFromFingerprint(record.fingerprint, mapped.startIndex, mapped.endIndex)
 

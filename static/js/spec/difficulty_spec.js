@@ -1256,6 +1256,50 @@ describe("st/difficulty", () => {
       expect(unplacedDecisions[0].unplaced.start).toEqual(hardest.start)
     })
 
+    it("re-anchors a decision's proposal reference from its own bars, not the edited flag's", () => {
+      let song = parseMusicXML(pianoScore({bars: barsWithDense([9, 10, 11])}))
+      let record = annotationWith(null, "p1", analyzePiece({song, source: null, at: 1}))
+      let hardest = flagsInForce(record).find(f => f.start <= 9 && f.end >= 11)
+
+      // the teacher narrows the proposal by a bar: `of` still names the
+      // proposal's own range, `flag` the narrowed one
+      let narrowed = editDecision({
+        record, flag: hardest, by: "Ms Laurent", at: 10,
+        overrides: {
+          start: hardest.start + 1, end: hardest.end,
+          startIndex: hardest.startIndex + 1, endIndex: hardest.endIndex,
+        },
+      })
+      expect([narrowed.of.startIndex, narrowed.of.endIndex])
+        .toEqual([hardest.startIndex, hardest.endIndex])
+      let file = flagsFileFor(withDecisions(record, [narrowed]), {title: "t"}, song, {by: "", at: 100})
+
+      // the student's copy gained a bar at the start, so their proposal has a
+      // different id and `of` is the only way back to it
+      let theirSong = parseMusicXML(pianoScore({bars: [quietBar(), ...barsWithDense([9, 10, 11])]}))
+      let theirs = annotationWith(null, "p2", analyzePiece({song: theirSong, source: null, at: 2}))
+      let theirProposal = theirs.proposals.find(p =>
+        p.startIndex == hardest.startIndex + 1 && p.endIndex == hardest.endIndex + 1)
+      expect(theirProposal).toBeTruthy()
+      expect(theirProposal.id).not.toEqual(hardest.id)
+
+      let {data} = readFlagsFile(JSON.stringify(file))
+      let {decisions} = reanchorDecisions(data, theirs, theirSong)
+
+      expect([decisions[0].of.startIndex, decisions[0].of.endIndex])
+        .toEqual([theirProposal.startIndex, theirProposal.endIndex])
+      expect(decisions[0].flag.startIndex).toEqual(hardest.startIndex + 2)
+
+      // so their proposal is claimed by the edit, not left beside a second
+      // copy of the same passage
+      let after = reviewFlags({...theirs, decisions})
+      expect(after.length).toEqual(theirs.proposals.length)
+
+      let claimed = after.find(f => f.id == theirProposal.id)
+      expect(claimed.status).toEqual("edited")
+      expect([claimed.start, claimed.end]).toEqual([theirProposal.start + 1, theirProposal.end])
+    })
+
     it("reanchorDecisions places a decision the log holds unplaced, and reports a second open already there", () => {
       let song = parseMusicXML(pianoScore({bars: barsWithDense([9, 10, 11])}))
       let record = annotationWith(null, "p1", analyzePiece({song, source: null, at: 1}))

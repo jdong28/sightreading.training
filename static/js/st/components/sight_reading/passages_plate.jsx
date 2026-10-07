@@ -567,7 +567,7 @@ export class PassagesPlate extends React.Component {
         {this.renderList(flags, selected)}
       </div>}
 
-      {!this.state.folded && this.renderTroubleSpots(trouble)}
+      {this.renderTroubleSpots(trouble)}
 
       {flags.length > 0 && this.renderScorePane(song, flags, selected)}
 

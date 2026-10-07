@@ -1030,8 +1030,19 @@ describe("today's programme planner", function() {
       let once = graded(3, [[ago(0.5), GOOD]], "lower")
       let onceState = stateOf([once], {startApart})
       expect(onceState.ladder.some(slot => slot.measure == 3 && slot.hand == "lower")).toBe(true)
-      expect(onceState.unseen).toEqual([])
       expect(onceState.laddered).toBeGreaterThan(0)
+
+      // it is no longer a measure to introduce, since its hand is on the
+      // ladder, but bar 3 has still never been scheduled hands together: it
+      // is what the piece has left to learn
+      expect(onceState.offerable).toEqual([])
+      expect(onceState.unseen).toEqual([3])
+      let onceInput = {
+        pieceId: "p", items: [...settled([3]), once], measures: MEASURES, now: NOW,
+        handMeasures: APART, startApart,
+      }
+      expect(studyStatus(onceInput)).toEqual("learning")
+      expect(planSummary(onceInput).newMeasures).toEqual(1)
 
       // two goods running: the hand holds, and the bar is unseen hands
       // together again, a normal NEW entry
@@ -1102,7 +1113,8 @@ describe("today's programme planner", function() {
       let state = stateOf([failing], {startApart})
       expect(state.resting.has(3)).toBe(true)
       expect(state.ladder.some(slot => slot.measure == 3)).toBe(false)
-      expect(state.unseen).toEqual([])
+      expect(state.offerable).toEqual([])
+      expect(state.unseen).toEqual([3])
       expect(state.laddered).toEqual(1)
       expect(cardCaption({reason: NEW, measure: 3, hand: "lower"}, failing, state))
         .toEqual("Bar 3 rests until your next sitting")
@@ -1134,6 +1146,7 @@ describe("today's programme planner", function() {
       // bar 3 has never been scheduled hands together: it is still a measure
       // the piece has to learn, whatever the sitting makes of it
       expect(state.unseen).toEqual([3])
+      expect(state.offerable).toEqual([])
       expect(studyStatus(input)).toEqual("learning")
       expect(planSummary(input).newMeasures).toEqual(1)
 

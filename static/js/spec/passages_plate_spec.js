@@ -20,7 +20,7 @@ import reviewStyles from "st/components/sight_reading/review_pane.module.css"
 import barStripStyles from "st/components/bar_strip.module.css"
 
 import {flagsInForce} from "st/difficulty/records"
-import {reviewFlags, withDecisions} from "st/difficulty/decisions"
+import {reviewFlags, withDecisions, dismissDecision} from "st/difficulty/decisions"
 
 import {openTestStore, pianoScore} from "spec/helpers"
 
@@ -1030,6 +1030,35 @@ describe("the passages view (st/difficulty)", function() {
       openReview()
       await waitFor(() => reviewPane(), {message: "the review pane"})
       expect(reviewPane().textContent).toContain("Waiting for you")
+    })
+
+    it("keeps the trouble spots out of the passages fold, so they stay reachable", async function() {
+      let piece = await drillPiece(workhorseScore())
+      await recordTroubleBar(piece)
+
+      // the player folded the passages on some other piece: the fold is
+      // remembered for every piece, not per piece
+      window.localStorage.setItem("st:passages_folded:v1", "1")
+
+      // and every flag of this one is dismissed, so there is no fold toggle
+      let record = store.annotation(piece.id)
+      await store.updateAnnotation(piece.id, current => withDecisions(current,
+        reviewFlags(record).map((flag, idx) =>
+          dismissDecision({record, flag, by: "", at: 100 + idx}))))
+      expect(flagsInForce(store.annotation(piece.id)).length).toEqual(0)
+
+      mountPlate(piece)
+      await waitFor(() => plate(), {message: "the plate"})
+
+      expect([...plate().querySelectorAll("button")].map(b => b.textContent.trim()))
+        .not.toContain("Show the passages")
+
+      // the rail's own list, not the review pane's (which the plate mounts
+      // inside itself, open or not)
+      let railList = plate().querySelector(`.${passagesStyles.trouble_list}`)
+      expect(railList).toBeTruthy()
+      expect([...railList.querySelectorAll("button")].map(b => b.textContent.trim()))
+        .toContain("Flag these bars")
     })
 
     it("a queue card shows the player's own evidence for a bar the teacher has already flagged", async function() {
