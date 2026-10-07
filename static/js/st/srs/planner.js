@@ -986,7 +986,7 @@ export function inStudy(study) {
 
 const HAND_WORDS = {both: "hands together", upper: "right hand", lower: "left hand"}
 
-function daysAgo(then, now) {
+export function daysAgo(then, now) {
   let days = localDay(now) - localDay(then)
   return days <= 0 ? "today" : days == 1 ? "yesterday" : `${days} days ago`
 }
