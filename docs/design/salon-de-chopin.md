@@ -150,8 +150,10 @@ Session is **endless** — it runs until the user presses Rest; there is no note
 `accuracy = readCount / (readCount + misses)`.
 
 **Implementation note (sheet music page):** on `/sheet-music`, the rail at rest carries the
-programme's own plates ("Tonight's programme" and the piece's flagged passages) in place of the
-engraving, so the card being practised stays on screen without scrolling; the engraving stays
+programme's own plates (a clicked bar's own stats, "Tonight's programme" and the piece's flagged
+passages) in place of the engraving, so the card being practised stays on screen without scrolling;
+clicking a bar of the card puts its stats plate first, above the others, until it is closed or the
+drilled piece changes. The engraving stays
 whenever those plates have nothing to show (no piece picked, pasted notation, a piece with nothing
 flagged and nothing left in the review), which the stylesheet decides from the empty slot. The score
 page's trainer is wider than the default (`max-width: 1240px`) and its rail is
