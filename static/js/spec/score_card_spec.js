@@ -20,8 +20,10 @@ import {parseMusicXML} from "st/musicxml"
 import {parseNote} from "st/music"
 import {setAppStore} from "st/storage"
 import {SCORE_DRILL_STORAGE_KEY} from "st/generators"
+import {itemId} from "st/srs/records"
 import staffStyles from "st/components/staff.module.css"
 import drawerStyles from "st/components/sight_reading/programme_drawer.module.css"
+import scoreCardStyles from "st/components/score_card.module.css"
 
 import {openTestStore, reverieOpening, pickupScore, noteXML} from "spec/helpers"
 
@@ -540,6 +542,104 @@ describe("score card overview", function() {
   })
 })
 
+describe("score card bar clicks", function() {
+  let container, root
+
+  let mount = props => {
+    container = document.createElement("div")
+    container.style.width = "600px"
+    document.body.appendChild(container)
+    root = createRoot(container)
+    flushSync(() => {
+      root.render(React.createElement(ScoreCard, {
+        musicXML: pickupScore(), fromMeasure: 0, toMeasure: 2, hand: "both", width: 500, ...props,
+      }))
+    })
+    return container
+  }
+
+  afterEach(function() {
+    flushSync(() => root.unmount())
+    container.remove()
+  })
+
+  // the point the natural svg units of a measure's box centre map to, in
+  // client coordinates, scaled by however the plate has the drawn svg down
+  let svgPoint = (svg, x, y) => {
+    let rect = svg.getBoundingClientRect()
+    let natural = {width: svg.width.baseVal.value, height: svg.height.baseVal.value}
+    return {
+      clientX: rect.left + x * rect.width / natural.width,
+      clientY: rect.top + y * rect.height / natural.height,
+    }
+  }
+
+  let clickAt = (svg, x, y) =>
+    flushSync(() => svg.dispatchEvent(new MouseEvent("click", {bubbles: true, ...svgPoint(svg, x, y)})))
+
+  let clickMeasure = (drawn, number) => {
+    let {box} = drawn.measures.find(m => m.number == number)
+    clickAt(drawn.svg, box.x + box.width / 2, box.y + box.height / 2)
+  }
+
+  it("calls onBar with the printed number of the bar clicked", async function() {
+    let onBar = jasmine.createSpy("onBar")
+    let drawn
+    mount({onBar, onDrawn: ({result}) => { drawn = result }})
+    await waitFor(() => drawn, {message: "the drawn card"})
+
+    clickMeasure(drawn, 1)
+    expect(onBar).toHaveBeenCalledWith(1)
+
+    clickMeasure(drawn, 0) // the pickup
+    expect(onBar).toHaveBeenCalledWith(0)
+  })
+
+  it("ignores a click outside every bar", async function() {
+    let onBar = jasmine.createSpy("onBar")
+    let drawn
+    mount({onBar, onDrawn: ({result}) => { drawn = result }})
+    await waitFor(() => drawn, {message: "the drawn card"})
+
+    let natural = {height: drawn.svg.height.baseVal.value}
+    let {box} = drawn.measures[0]
+    clickAt(drawn.svg, box.x, natural.height + 3 * box.height)
+    expect(onBar).not.toHaveBeenCalled()
+  })
+
+  it("has a pointer cursor only with onBar", async function() {
+    let onBar = jasmine.createSpy("onBar")
+    let el = mount({onBar})
+    await waitFor(() => el.querySelector("[data-score-card] svg"), {message: "the drawn card"})
+    expect(el.querySelector("[data-score-card]").classList.contains(scoreCardStyles.bars_clickable)).toBe(true)
+
+    flushSync(() => root.unmount())
+    container.remove()
+    el = mount({})
+    await waitFor(() => el.querySelector("[data-score-card] svg"), {message: "the drawn card"})
+    let root2 = el.querySelector("[data-score-card]")
+    expect(root2.classList.contains(scoreCardStyles.bars_clickable)).toBe(false)
+    expect(() => root2.dispatchEvent(new MouseEvent("click", {bubbles: true}))).not.toThrow()
+  })
+
+  it("never reports a bar on an overview", async function() {
+    let onBar = jasmine.createSpy("onBar")
+    let onShade = jasmine.createSpy("onShade")
+    let card
+    let shades = [{id: "a", from: 1, to: 1, level: 3, on: true, label: "I"}]
+    mount({overview: true, shades, onShade, onBar, ref: c => { card = c }})
+
+    await waitFor(() => container.querySelector("[data-score-overview] svg rect[data-shade]"),
+      {message: "the shaded overview"})
+
+    clickMeasure(card.result, 2)
+    expect(onBar).not.toHaveBeenCalled()
+
+    container.querySelector("rect[data-shade='a']").dispatchEvent(new MouseEvent("click", {bubbles: true}))
+    expect(onShade).toHaveBeenCalledWith("a")
+  })
+})
+
 describe("score page engine card", function() {
   let container, root, page, store, previousStore, savedStorage
   const STORAGE_KEYS = [SCORE_DRILL_STORAGE_KEY, SHEET_MUSIC_STORAGE_KEY]
@@ -615,6 +715,48 @@ describe("score page engine card", function() {
   let headElements = () => {
     let card = container.querySelector("[data-score-card]")
     return [...card.querySelectorAll(`.${MARK_CLASSES.current}`)]
+  }
+
+  // clicks the trainer's own engine card (st/components/score_card) at a
+  // bar's box centre, the same client-coordinate mapping as score_card_spec's
+  // "score card bar clicks" describe, but through the page's own ScoreCard
+  let clickBar = number => {
+    let card = page.staff
+    let {box} = card.result.measures.find(m => m.number == number)
+    let svg = card.result.svg
+    let rect = svg.getBoundingClientRect()
+    let natural = {width: svg.width.baseVal.value, height: svg.height.baseVal.value}
+    flushSync(() => svg.dispatchEvent(new MouseEvent("click", {
+      bubbles: true,
+      clientX: rect.left + (box.x + box.width / 2) * rect.width / natural.width,
+      clientY: rect.top + (box.y + box.height / 2) * rect.height / natural.height,
+    })))
+  }
+
+  let barPlate = () => container.querySelector("[data-bar-stats]")
+
+  // a bar's item and a matching review, modelled on recordTroubleBar
+  // (passages_plate_spec.js)
+  let writeBarItem = (piece, {measure, hand = "both", mode = "wait", grade = 3, ...fields}) => {
+    let now = Date.now()
+    let id = itemId({pieceId: piece.id, hand, startMeasure: measure, endMeasure: measure})
+    let item = {
+      id, pieceId: piece.id, hand, startMeasure: measure, endMeasure: measure,
+      level: "bar", state: "tracked", step: 0, reps: 0, lapses: 0, streak: 0,
+      hits: 0, misses: 0, attempts: 0, lastPracticed: 0, algo: 1, createdAt: now - 1000,
+      recent: [],
+      ...fields,
+    }
+
+    let review = mode == "self" ?
+      {itemId: id, pieceId: piece.id, at: now, kind: "attempt", mode: "self", grade, was: "new"} :
+      {
+        itemId: id, pieceId: piece.id, at: now, kind: "attempt", grade, was: "new",
+        columns: 1, clean: grade >= 3 ? 1 : 0, misses: grade >= 3 ? 0 : 1, stuck: 0, skipped: 0,
+        hesitations: 0, mode, algo: 1,
+      }
+
+    return store.recordAttempt({item, review})
   }
 
   it("draws the card from the piece's score and moves the marks as it is played", async function() {
@@ -1651,6 +1793,139 @@ describe("score page engine card", function() {
       await wait(600)
       click(buttonLike(el, "Stumbled"))
       expect(badges().length).toEqual(0)
+    })
+  })
+
+  describe("a clicked bar's stats", function() {
+    it("shows a bar never played at the head of the rail", async function() {
+      await drillPiece(reverieOpening(), {startMeasure: 2, endMeasure: 4})
+      renderScorePage()
+      await cardDrawn()
+
+      clickBar(3)
+      await waitFor(() => barPlate(), {message: "the bar plate"})
+      expect(barPlate().textContent).toContain("Bar 3")
+      expect(barPlate().textContent).toContain("No practice recorded for bar 3 yet.")
+
+      let passages = container.querySelector("[data-passages-plate]")
+      if (passages) {
+        expect(barPlate().compareDocumentPosition(passages) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      }
+    })
+
+    it("shows a bar's keyboard and acoustic records, one row per hand", async function() {
+      let piece = await drillPiece(reverieOpening(), {startMeasure: 2, endMeasure: 4})
+      let now = Date.now()
+      await writeBarItem(piece, {
+        measure: 3, hand: "both", attempts: 3, hits: 6, misses: 2, lastPracticed: now,
+        recent: [[now - 2000, 4, 2, 2], [now - 1000, 4, 4, 3], [now, null, null, 4]],
+        mode: "wait", grade: 4,
+      })
+      await writeBarItem(piece, {
+        measure: 3, hand: "upper", attempts: 1, hits: 0, misses: 0, lastPracticed: now,
+        recent: [[now, null, null, 1]], mode: "self", grade: 1,
+      })
+
+      renderScorePage()
+      await cardDrawn()
+      clickBar(3)
+      await waitFor(() => barPlate(), {message: "the bar plate"})
+
+      let text = barPlate().textContent
+      let order = [
+        "Hands together", "Played 3 times · last played today", "Recent: Stumbled → Clean → Easy",
+        "Accuracy 75%", "Right hand", "Played 1 time · last played today", "Recent: Fell apart",
+      ]
+      let last = -1
+      for (let phrase of order) {
+        let idx = text.indexOf(phrase)
+        expect(idx).toBeGreaterThan(last)
+        last = idx
+      }
+      expect((text.match(/Accuracy/g) || []).length).toEqual(1)
+    })
+
+    it("changes bar on another click, and closes with ×", async function() {
+      await drillPiece(reverieOpening(), {startMeasure: 2, endMeasure: 4})
+      renderScorePage()
+      await cardDrawn()
+
+      clickBar(2)
+      await waitFor(() => barPlate(), {message: "the bar plate"})
+      clickBar(4)
+      await waitFor(() => barPlate().textContent.includes("Bar 4"), {message: "bar 4's plate"})
+
+      flushSync(() => barPlate().querySelector("button[aria-label=\"Close the bar's stats\"]").click())
+      expect(barPlate()).toBe(null)
+      expect(container.querySelector("[data-score-card]")).toBeTruthy()
+    })
+
+    it("does nothing for a click outside every bar", async function() {
+      await drillPiece(reverieOpening(), {startMeasure: 2, endMeasure: 4})
+      renderScorePage()
+      await cardDrawn()
+
+      let svg = page.staff.result.svg
+      let rect = svg.getBoundingClientRect()
+      flushSync(() => svg.dispatchEvent(new MouseEvent("click", {
+        bubbles: true, clientX: rect.left, clientY: rect.bottom + 300,
+      })))
+      expect(barPlate()).toBe(null)
+    })
+
+    it("is at rest only: hidden in session, a click in session does nothing, and Rest brings it back", async function() {
+      await drillPiece(reverieOpening(), {startMeasure: 2, endMeasure: 4})
+      renderScorePage()
+      await cardDrawn()
+
+      clickBar(3)
+      await waitFor(() => barPlate(), {message: "the bar plate"})
+
+      flushSync(() => page.beginSession())
+      expect(barPlate()).toBe(null)
+
+      clickBar(2)
+      expect(barPlate()).toBe(null)
+
+      flushSync(() => page.restSession())
+      await waitFor(() => barPlate(), {message: "the bar plate back"})
+      expect(barPlate().textContent).toContain("Bar 3")
+    })
+
+    it("works on the scroll-mode system", async function() {
+      await scrollPiece(reverieOpening(), {startMeasure: 2, endMeasure: 4})
+      renderScorePage()
+      await systemDrawn()
+
+      clickBar(3)
+      await waitFor(() => barPlate(), {message: "the bar plate"})
+      expect(barPlate().textContent).toContain("Bar 3")
+    })
+
+    it("works in acoustic mode at rest", async function() {
+      await drillPiece(reverieOpening(), {startMeasure: 2, endMeasure: 4})
+      renderScorePage({acoustic: true})
+      await waitFor(() => container.querySelector("[data-score-card] svg"), {message: "the engine card"})
+
+      clickBar(3)
+      await waitFor(() => barPlate(), {message: "the bar plate"})
+      expect(barPlate().textContent).toContain("Bar 3")
+    })
+
+    it("drops the bar when the piece changes", async function() {
+      let piece = await drillPiece(reverieOpening(), {startMeasure: 2, endMeasure: 4})
+      let {piece: other} = await importMusicXMLPiece("other.musicxml", pickupScore(), store)
+
+      renderScorePage()
+      await cardDrawn()
+      clickBar(3)
+      await waitFor(() => barPlate(), {message: "the bar plate"})
+
+      flushSync(() => page.setGenerator(page.state.currentGenerator, {...page.currentSettings(), piece: other.id}))
+      expect(barPlate()).toBe(null)
+
+      flushSync(() => page.setGenerator(page.state.currentGenerator, {...page.currentSettings(), piece: piece.id}))
+      expect(barPlate()).toBe(null)
     })
   })
 })

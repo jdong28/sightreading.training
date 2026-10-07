@@ -14,6 +14,11 @@
     }
 }
 
+/* a bar of the card reports a click to onBar (st/bar_stats), at rest only */
+.bars_clickable :global(svg) {
+    cursor: pointer;
+}
+
 .plate {
     :global(svg) {
         display: block;

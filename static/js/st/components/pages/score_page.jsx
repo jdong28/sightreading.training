@@ -9,7 +9,9 @@
 // hand, else the app's staff.
 // A piece is practised freely, a section picked in the drawer, or in today's
 // programme, the planned session of st/srs/planner (the default once the
-// piece is in study), which the "Tonight's programme" plate prefaces
+// piece is in study), which the "Tonight's programme" plate prefaces.
+// At rest, clicking a bar of the card shows a clicked bar's stats, see
+// st/components/sight_reading/bar_stats_plate
 
 import * as React from "react"
 
@@ -17,6 +19,7 @@ import SightReadingPage from "st/components/pages/sight_reading_page"
 import {ScoreDrawer} from "st/components/sight_reading/settings_panel"
 import {ProgrammePlate} from "st/components/sight_reading/programme_plate"
 import {PassagesPlate} from "st/components/sight_reading/passages_plate"
+import {BarStatsPlate} from "st/components/sight_reading/bar_stats_plate"
 import {
   STAVES, SHEET_MUSIC_GENERATOR, PROGRAMME_PRACTICE, sheetMusicPiece, sheetMusicStaffFor
 } from "st/data"
@@ -50,11 +53,14 @@ function programmeOf(settings, id) {
   return {...input.pick(settings, id).settings, practice: PROGRAMME_PRACTICE}
 }
 
-// the score page's rail at rest: the plate before a planned session, see
-// st/components/sight_reading/programme_plate, and the piece's flagged
-// passages (st/difficulty), see st/components/sight_reading/passages_plate
+// the score page's rail at rest: a clicked bar's stats (st/bar_stats_plate,
+// st/bar_stats), see st/components/sight_reading/bar_stats_plate, then the
+// plate before a planned session, see st/components/sight_reading/
+// programme_plate, and the piece's flagged passages (st/difficulty), see
+// st/components/sight_reading/passages_plate
 function ScoreRail(props) {
   return <>
+    <BarStatsPlate settings={props.settings} measure={props.bar} close={props.closeBar} />
     <ProgrammePlate pickPiece={programmeOf} {...props} />
     <PassagesPlate {...props} />
   </>
