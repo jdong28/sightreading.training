@@ -986,6 +986,10 @@ export function inStudy(study) {
 
 const HAND_WORDS = {both: "hands together", upper: "right hand", lower: "left hand"}
 
+// "today", "yesterday" or "N days ago", counted in the scheduler's own
+// local days (localDay, which start at 4 am), for a timestamp's distance
+// from now; the wording the queue's own "last played" lines use, read by
+// st/bar_stats too
 export function daysAgo(then, now) {
   let days = localDay(now) - localDay(then)
   return days <= 0 ? "today" : days == 1 ? "yesterday" : `${days} days ago`

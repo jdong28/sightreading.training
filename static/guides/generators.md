@@ -80,7 +80,7 @@ In today's programme, a piece with flagged passages is read through once first, 
 
 ### How you're doing on a bar
 
-At rest, click a bar of the score to see, at the top of the right column, how often and when you played it, your last grades and your accuracy, from both keyboard and acoustic practice.
+At rest, click a bar of the card you are practising to see, above **The piece at a glance**, how often and when you played that bar, your last grades, your accuracy, and what your own practice records say about it — a row for each of hands together, right hand and left hand you have practised it under, from both keyboard and acoustic practice. It stays up until you close it or pick another piece, and is out of the way while a session is running, when bars are not clickable.
 
 ### Practising on an acoustic piano
 

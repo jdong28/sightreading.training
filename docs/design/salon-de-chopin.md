@@ -152,8 +152,8 @@ Session is **endless** — it runs until the user presses Rest; there is no note
 **Implementation note (sheet music page):** on `/sheet-music`, the rail at rest carries the
 programme's own plates ("Tonight's programme" and the piece's flagged passages) in place of the
 engraving, so the card being practised stays on screen without scrolling; clicking a bar of the card
-opens that bar's own practice stats at the rail's head, above those plates, in a pointer cursor over
-the score, until it is closed or the piece changes; the engraving stays
+(whose drawn bars take a pointer cursor at rest) opens that bar's own practice stats at the rail's
+head, above those plates, until it is closed or the piece changes; the engraving stays
 whenever those plates have nothing to show (no piece picked, pasted notation, a piece with nothing
 flagged and nothing left in the review), which the stylesheet decides from the empty slot. The score
 page's trainer is wider than the default (`max-width: 1240px`) and its rail is
