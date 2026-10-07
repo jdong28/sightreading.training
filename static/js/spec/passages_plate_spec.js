@@ -691,25 +691,99 @@ describe("the passages view (st/difficulty)", function() {
     }
   })
 
-  it("fits a narrow rail column without horizontal overflow (the programme plate)", function() {
+  it("names a pulled passage on the order row only while one is flagged hard", async function() {
+    let piece = await drillPiece(workhorseScore(), {practice: "programme"})
+    let settings = {piece: piece.id, hand: "both hands", practice: "programme"}
     let generator = {
-      summary: () => ({due: 2, dueMinutes: 4, newMeasures: 3, targetMinutes: 20, learned: 4, measures: 8}),
+      summary: () => ({due: 0, dueMinutes: 0, newMeasures: 3, toRead: 0, targetMinutes: 20, learned: 4, measures: 16}),
+    }
+
+    let flag = level => ({
+      id: `score:9-11:level-${level}`, source: "score", start: 9, end: 11, startIndex: 9, endIndex: 11,
+      hand: "both", level, kinds: ["density"], title: "Test passage",
+      reason: "test", reasons: ["test"], tip: "test",
+    })
+
+    let div = document.createElement("div")
+    document.body.appendChild(div)
+    let r = createRoot(div)
+
+    let describeOrder = async (level, introduce) => {
+      await store.putAnnotation({
+        pieceId: piece.id, fingerprint: {bars: []}, decisions: [], runs: {}, proposals: [flag(level)],
+      })
+      flushSync(() => r.render(React.createElement(ProgrammePlate, {
+        generator, settings: {...settings, introduce}, setSettings: () => {}, store,
+      })))
+      // the order row is offered either way: the read-through still applies
+      expect([...div.querySelectorAll("button")].map(b => b.textContent.trim()))
+        .toContain("Hardest first")
+      return div.querySelector("[class*='order_description']").textContent
+    }
+
+    // a passage flagged hard is named, with its bars, in both pulling orders
+    expect(await describeOrder(3, "read through"))
+      .toBe("Read the piece through once, then bars 9\u201311, the hardest passage; the rest in score order.")
+    expect(await describeOrder(2, "hardest first"))
+      .toBe("Starts on bars 9\u201311, the hard passage; the rest in score order.")
+
+    // worth a look alone: nothing is pulled, and neither line claims one is
+    let readFirst = await describeOrder(1, "read through")
+    expect(readFirst).toContain("None of this piece's passages is flagged hard")
+    expect(readFirst).toContain("read through once")
+    expect(readFirst).not.toContain("bars 9\u201311")
+
+    let hardestFirst = await describeOrder(1, "hardest first")
+    expect(hardestFirst).toContain("starts at the beginning")
+    expect(hardestFirst).not.toContain("bars 9\u201311")
+
+    expect(await describeOrder(1, "in score order"))
+      .toBe("New bars arrive in score order, flagged passages included.")
+
+    flushSync(() => r.unmount())
+    div.remove()
+  })
+
+  it("fits a narrow rail column without horizontal overflow (the programme plate)", async function() {
+    // a piece in the programme with a flag in force, so the Order row and
+    // its description line show too
+    let piece = await drillPiece(workhorseScore(), {practice: "programme"})
+    await store.putAnnotation({
+      pieceId: piece.id, fingerprint: {bars: []}, decisions: [], runs: {},
+      proposals: [{
+        id: "score:9-11:order-test", source: "score", start: 9, end: 11, startIndex: 9, endIndex: 11,
+        hand: "both", level: 3, kinds: ["density"], title: "Test passage",
+        reason: "test", reasons: ["test"], tip: "test",
+      }],
+    })
+
+    let generator = {
+      summary: () => ({due: 2, dueMinutes: 4, newMeasures: 3, toRead: 5, targetMinutes: 20, learned: 4, measures: 16}),
     }
 
     let overflowing = el => [...el.querySelectorAll('[class*="plate"]')]
       .filter(plateEl => plateEl.scrollWidth > plateEl.clientWidth + 1)
 
-    let div = document.createElement("div")
-    div.style.width = "260px"
-    document.body.appendChild(div)
-    let r = createRoot(div)
-    flushSync(() => r.render(React.createElement(ProgrammePlate, {
-      generator, settings: {piece: "x"}, setSettings: () => {}, store,
-    })))
+    for (let width of [260, 340]) {
+      let div = document.createElement("div")
+      div.style.width = `${width}px`
+      document.body.appendChild(div)
+      let r = createRoot(div)
+      flushSync(() => r.render(React.createElement(ProgrammePlate, {
+        generator, settings: {piece: piece.id, hand: "both hands", practice: "programme"},
+        setSettings: () => {}, store,
+      })))
 
-    expect(overflowing(div)).toEqual([])
+      let labels = [...div.querySelectorAll("button")].map(b => b.textContent.trim())
+      expect(labels).toContain("Read through")
+      expect(labels).toContain("Hardest first")
+      expect(labels).toContain("In score order")
+      expect(div.textContent).toContain("To read through")
 
-    flushSync(() => r.unmount())
-    div.remove()
+      expect(overflowing(div)).toEqual([])
+
+      flushSync(() => r.unmount())
+      div.remove()
+    }
   })
 })

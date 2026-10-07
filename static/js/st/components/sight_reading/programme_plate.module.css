@@ -74,6 +74,12 @@
     gap: 6px;
 }
 
+.order_description {
+    margin: 6px 0 0;
+    font-size: 12px;
+    color: var(--salon-ink-muted);
+}
+
 /* pill overrides double their class to win over the pill variants of
    st/components/salon.module.css */
 .small_pill.small_pill {

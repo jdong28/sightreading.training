@@ -214,7 +214,8 @@ export function runReport(pass) {
         grade: graded.grade,
         rule: graded.rule,
         reason: gradeReason(graded, {mode: grading.mode, firstSight, usualPace, beats: report.beats}),
-        practiceOnly: !!(id && pass.practiceOnly && pass.practiceOnly.includes(id)),
+        practiceOnly: id && pass.practiceOnly && pass.practiceOnly.includes(id) ?
+          (pass.readThrough ? "read-through" : "off schedule") : null,
       }
     }),
   }
