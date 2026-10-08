@@ -313,7 +313,8 @@ function sectionResult(staff, columns, parts, opts={}) {
   // Notes outside the staff's range are filtered out (not clamped) so the
   // drill only shows what the staff and on screen keyboard can present; the
   // status reports how many were skipped, and skipped alone is the sentence
-  // the score page's own Section hint adds (setup_pane)
+  // the score page's own Section hint adds while the app staff is what draws
+  // (setup_pane, ScoreView#engineDraws)
   let [visible, dropped] = filterColumnsToRange(columns, staff.range[0], staff.range[1])
   let skipped = null
 

@@ -76,6 +76,11 @@ export class SetupPane extends React.Component {
     setSettings: types.func.isRequired,
     generator: types.object,
     currentStaff: types.object,
+    // whether the session draws on the app's own staff rather than the
+    // engine (see ScoreView#engineDraws): only then is the section clipped
+    // to the staff's range, so only then does Section report the notes it
+    // skips
+    appStaff: types.bool,
     staves: types.array,
     setStaff: types.func,
     acoustic: types.bool,
@@ -454,7 +459,11 @@ export class SetupPane extends React.Component {
         <p className={styles.input_hint}>
           {piece ?
             `Marked in gilt on the score. Section has ${section.columns.length} columns.` +
-              (section.skipped ? ` ${section.skipped}.` : "") :
+              // the notes the staff drops, while the app staff is what
+              // draws: the engine draws (and the trainer judges) every note
+              // of a piece's score whatever the staff could show, so
+              // nothing is skipped there
+              (this.props.appStaff && section.skipped ? ` ${section.skipped}.` : "") :
             // pasted notation has no score to mark, and may not parse at
             // all: the generator's own status says what it made of it
             section.status}

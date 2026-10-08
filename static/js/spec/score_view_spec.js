@@ -570,10 +570,11 @@ describe("score view (the score-first page at rest)", function() {
     })
   })
 
-  it("reports the notes the staff skips in the Section hint", async function() {
+  describe("the notes the app staff skips", function() {
     // one treble staff, so the piece is drilled on the treble staff
-    // (A3-C6, see STAVES) and the notes it writes below A3 are skipped
-    let lowNotes = `<?xml version="1.0" encoding="UTF-8"?>
+    // (A3-C6, see STAVES) and the two notes it writes below A3 are outside
+    // that staff's own range
+    const TREBLE_ONLY = `<?xml version="1.0" encoding="UTF-8"?>
 <score-partwise version="4.0">
   <work><work-title>Treble Only</work-title></work>
   <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
@@ -593,15 +594,38 @@ describe("score view (the score-first page at rest)", function() {
     </measure>
   </part>
 </score-partwise>`
-    let {piece} = await importMusicXMLPiece("treble_only.musicxml", lowNotes, store)
-    window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+
+    let drill = piece => window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
       piece: piece.id, startMeasure: 1, endMeasure: 2, hand: BOTH_HANDS,
     }))
 
-    let el = renderScorePage()
-    let hint = await waitFor(() => setupPane(el).textContent.includes("Marked in gilt") &&
-      setupPane(el).textContent, "the Section hint")
-    expect(hint).toContain("Section has 6 columns. 2 notes outside the treble staff range skipped.")
+    it("reports them in the Section hint while the app staff draws", async function() {
+      // stored without its score, so the app staff draws in the engine's
+      // place and the section is clipped to its range
+      let {piece} = await addPiece("Treble Only", parseMusicXML(TREBLE_ONLY), store)
+      drill(piece)
+
+      let el = renderScorePage()
+      await waitFor(() => el.querySelector(`.${scoreViewStyles.fallback_note}`), "the fallback note")
+      let hint = await waitFor(() => setupPane(el).textContent.includes("Marked in gilt") &&
+        setupPane(el).textContent, "the Section hint")
+      expect(hint).toContain("Section has 6 columns. 2 notes outside the treble staff range skipped.")
+    })
+
+    it("says nothing of them while the engine draws the piece", async function() {
+      // the engine draws every note of the score whatever the staff could
+      // show, and detection covers the whole keyboard with it, so nothing
+      // is skipped to report
+      let {piece} = await importMusicXMLPiece("treble_only.musicxml", TREBLE_ONLY, store)
+      drill(piece)
+
+      let el = renderScorePage()
+      await awaitEngraved(el)
+
+      let hint = setupPane(el).textContent
+      expect(hint).toContain("Marked in gilt on the score.")
+      expect(hint).not.toContain("skipped")
+    })
   })
 
   it("has no horizontal overflow at 390px wide", async function() {

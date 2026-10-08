@@ -155,6 +155,19 @@ export class ScoreView extends React.Component {
     return settingsItemHand(this.props.settings.hand)
   }
 
+  // whether the engine draws this piece — its score here and its cards in
+  // the session: the programme has one, the piece's source is stored, and
+  // it hasn't failed to draw. Pasted notation (no piece, so no source), a
+  // piece imported before the app kept each score, and an engine failure
+  // all fall back to the app staff, the one path that clips a section to
+  // the staff's own range (SightReadingPage#columnStaff) and so the one the
+  // setup pane's Section hint reports skipped notes under
+  engineDraws() {
+    let source = this.engineSource()
+    return !!(this.props.engine && source && source.status == "ready" &&
+      source.musicXML && !this.state.engineFailed)
+  }
+
   selectBar(measure) {
     this.setState({selectedBar: measure, passagePaneOpen: false})
   }
@@ -381,7 +394,7 @@ export class ScoreView extends React.Component {
 
     let noSource = !source || source.status == "missing"
     let failed = this.state.engineFailed
-    let hasEngine = !!this.props.engine && source && source.status == "ready" && source.musicXML && !failed
+    let hasEngine = this.engineDraws()
 
     return <>
       <div className={styles.title_row}>
@@ -517,7 +530,7 @@ export class ScoreView extends React.Component {
           </Plate>}
         </div>
 
-        <SetupPane {...this.props} />
+        <SetupPane {...this.props} appStaff={!this.engineDraws()} />
       </div>
     </div>
   }
