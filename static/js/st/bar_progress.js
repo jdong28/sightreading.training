@@ -9,9 +9,8 @@
 // The session log the score page keeps (every pass the generator reports
 // between Begin and End session, see setOnPass in st/measure_cards) is an
 // array of {at, startMeasure, endMeasure, hand, readThrough, self, grade,
-// bars}, each bars entry a tuple [measure, columns, clean, grade] in the
-// same shape as a passes entry (see barPasses in st/srs/attempt): columns
-// and clean null for a self-graded pass.
+// bars}, each bars entry {measure, columns, clean, grade} (see barPasses in
+// st/srs/attempt): columns and clean null for a self-graded pass.
 
 import {GOOD} from "st/srs/grade"
 
@@ -118,7 +117,7 @@ function tintOf(value) {
 export function sessionMarks(log) {
   let totals = new Map()
   for (let entry of log || []) {
-    for (let [measure, columns, clean, grade] of entry.bars) {
+    for (let {measure, columns, clean, grade} of entry.bars) {
       let total = totals.get(measure) || {columns: 0, clean: 0, selfTotal: 0, selfClean: 0}
       if (columns == null) {
         total.selfTotal += 1
@@ -180,7 +179,7 @@ function minutesWords(seconds) {
 function countedMeasures(log) {
   let measures = new Set()
   for (let entry of log || []) {
-    for (let [measure] of entry.bars) { measures.add(measure) }
+    for (let {measure} of entry.bars) { measures.add(measure) }
   }
   return measures.size
 }

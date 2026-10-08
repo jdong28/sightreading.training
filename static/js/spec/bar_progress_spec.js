@@ -108,7 +108,7 @@ describe("bar progress", function() {
   })
 
   describe("sessionMarks", function() {
-    let detected = (measure, columns, clean) => ({bars: [[measure, columns, clean, null]]})
+    let detected = (measure, columns, clean) => ({bars: [{measure, columns, clean, grade: null}]})
 
     it("sums columns and clean across passes at a bar, tinting at the thresholds", function() {
       let log = [detected(1, 10, 10), detected(2, 9, 8), detected(3, 7, 5)]
@@ -126,9 +126,9 @@ describe("bar progress", function() {
 
     it("marks a bar with only self passes by the share clean", function() {
       let log = [
-        {bars: [[5, null, null, 3]]},
-        {bars: [[5, null, null, 2]]},
-        {bars: [[5, null, null, 4]]},
+        {bars: [{measure: 5, columns: null, clean: null, grade: 3}]},
+        {bars: [{measure: 5, columns: null, clean: null, grade: 2}]},
+        {bars: [{measure: 5, columns: null, clean: null, grade: 4}]},
       ]
       expect(sessionMarks(log).get(5)).toEqual(jasmine.objectContaining({
         acoustic: true, tint: "trouble", label: "2 of 3 clean",
@@ -143,7 +143,10 @@ describe("bar progress", function() {
   describe("endedSummary", function() {
     let record = (notesRead, misses, extra={}) =>
       ({notesRead, misses, elapsedSeconds: 600, settings: {piece: "a"}, startedAt: 10000, ...extra})
-    let log = [{bars: [[1, 4, 4, null]]}, {bars: [[2, 4, 3, null]]}]
+    let log = [
+      {bars: [{measure: 1, columns: 4, clean: 4, grade: null}]},
+      {bars: [{measure: 2, columns: 4, clean: 3, grade: null}]},
+    ]
 
     it("heads with the session's accuracy, equal to accuracyPercent", function() {
       let summary = endedSummary({record: record(50, 5), log})
@@ -174,7 +177,8 @@ describe("bar progress", function() {
     it("words the minutes and bars played", function() {
       expect(endedSummary({record: record(4, 0, {elapsedSeconds: 10}), log: []}).detail)
         .toEqual("Under a minute · 0 bars played · each bar's accuracy is marked on the score")
-      expect(endedSummary({record: record(4, 0, {elapsedSeconds: 60}), log: [{bars: [[1, 4, 4, null]]}]}).detail)
+      let oneBar = [{bars: [{measure: 1, columns: 4, clean: 4, grade: null}]}]
+      expect(endedSummary({record: record(4, 0, {elapsedSeconds: 60}), log: oneBar}).detail)
         .toEqual("1 minute · 1 bar played · each bar's accuracy is marked on the score")
       expect(endedSummary({record: record(4, 0, {elapsedSeconds: 1200}), log}).detail)
         .toEqual("20 minutes · 2 bars played · each bar's accuracy is marked on the score")
