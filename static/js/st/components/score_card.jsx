@@ -28,6 +28,28 @@ import styles from "./score_card.module.css"
 // cards of every ScoreCard are drawn one after another
 let drawing = Promise.resolve()
 
+/**
+ * Queues a draw on the engines' shared queue (above): an engine draws one
+ * score at a time, so every ScoreCard and the score-first score page's
+ * whole-piece sheet (st/components/score_sheet) must draw through this one
+ * queue, never an engine directly.
+ * @param {function(): boolean} stale whether the draw that queued task is
+ * no longer wanted (a later one replaced it, or the caller unmounted):
+ * checked both before task runs and before onError does, so a result or
+ * error that arrives too late is dropped
+ * @param {function(): Promise<void>} task runs once the draws queued
+ * before it are done, unless stale() by then
+ * @param {function(Error): void} onError called with an error task threw,
+ * unless stale() by then
+ * @returns {Promise<void>}
+ */
+export function enqueueDraw(stale, task, onError) {
+  drawing = drawing
+    .then(() => stale() ? null : task())
+    .catch(error => stale() ? null : onError(error))
+  return drawing
+}
+
 // a content key of a badges prop, so componentDidUpdate only replaces them
 // on a real change (a new array every render of engineCard() otherwise loops)
 const badgeKey = badges => (badges || []).map(b => `${b.column}:${b.on}`).join(",")
@@ -243,10 +265,7 @@ export class ScoreCard extends React.Component {
     this.clearBadges()
 
     let stale = () => count != this.drawCount || this.unmounted
-    drawing = drawing
-      .then(() => stale() ? null : this.drawNow(stale))
-      .catch(error => stale() ? null : this.fail(error))
-    return drawing
+    return enqueueDraw(stale, () => this.drawNow(stale), error => this.fail(error))
   }
 
   fail(error) {
