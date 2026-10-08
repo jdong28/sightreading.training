@@ -1,107 +1,136 @@
 import {itemId} from "st/srs/records"
 import {localDay, dayStart, HOUR, DAY} from "st/srs/schedule"
-import {barStats} from "st/bar_stats"
+import {daysAgo} from "st/srs/planner"
+import {AGAIN, HARD, GOOD, EASY} from "st/srs/grade"
+import {barPopup, PIP_COUNT} from "st/bar_stats"
 
 // local days start at 4am, so noon is safely inside today's local day
 let now = dayStart(localDay(Date.now())) + 8 * HOUR
 
-// built like the trouble-spot spec's helper (difficulty_spec.js), plus id
-// (from itemId), attempts, hits, misses, lastPracticed and recent
-function item({
-  pieceId = "p1", hand = "both", startMeasure, endMeasure, beats,
-  reps = 0, lapses = 0, d = 0, paceMs,
-  attempts = 0, hits = 0, misses = 0, lastPracticed = 0, recent = [],
-} = {}) {
-  let fields = {
-    pieceId, hand, startMeasure: startMeasure ?? endMeasure, endMeasure: endMeasure ?? startMeasure,
-    reps, lapses, d, paceMs, attempts, hits, misses, lastPracticed, recent,
-  }
-  if (beats) { fields.beats = beats }
-  return {...fields, id: itemId(fields)}
+const item = (fields={}) => {
+  let base = {pieceId: "p", hand: "both", startMeasure: 5, endMeasure: 5, attempts: 1, recent: [], ...fields}
+  return {...base, id: itemId(base)}
 }
+// a detected pass tuple of the given accuracy (columns fixed at 100, so
+// clean == accuracy)
+const pass = (at, accuracy, grade=GOOD) => [at, 100, accuracy, grade]
+const selfPass = (at, grade) => [at, null, null, grade]
 
-describe("barStats", function() {
-  it("gives no hands and no trouble with no items", () => {
-    expect(barStats({pieceId: "p1", measure: 12, items: [], measures: [12], now}))
-      .toEqual({measure: 12, hands: [], trouble: null})
+const capitalize = words => words.charAt(0).toUpperCase() + words.slice(1)
+
+const flag = (num, start, end, level=3, alsoAt) => ({num, start, end, level, alsoAt})
+
+describe("barPopup", function() {
+  it("gives empty, with the New tag, for a bar never played", function() {
+    expect(barPopup({pieceId: "p", measure: 5, hand: "both", items: [], now}))
+      .toEqual({measure: 5, tag: "New", inPassage: false, empty: true})
   })
 
-  it("reads a keyboard-played bar", () => {
-    let both = item({
-      startMeasure: 12, attempts: 3, hits: 9, misses: 3, lastPracticed: now,
-      recent: [[now - 2, 4, 2, 2], [now - 1, 4, 4, 3], [now, 4, 4, 4]],
+  it("gives empty for an item with no attempts", function() {
+    let untouched = item({attempts: 0, recent: []})
+    let bar = barPopup({pieceId: "p", measure: 5, hand: "both", items: [untouched], now})
+    expect(bar.empty).toBe(true)
+  })
+
+  it("plots a detected history, latest, best and the day words at its ends", function() {
+    let accuracies = [52, 61, 70, 78, 66, 82, 71]
+    let history = accuracies.map((acc, idx) => pass(now - (accuracies.length - idx) * DAY, acc))
+    let bar = barPopup({
+      pieceId: "p", measure: 5, hand: "both",
+      items: [item({attempts: accuracies.length, passes: history})],
+      now,
     })
-    let stats = barStats({pieceId: "p1", measure: 12, items: [both], measures: [12], now})
-    expect(stats.hands).toEqual([{
-      hand: "both", heading: "Hands together", played: 3, lastPlayed: "today",
-      recent: ["Stumbled", "Clean", "Easy"], accuracy: 75,
-    }])
+
+    expect(bar.empty).toBe(false)
+    expect(bar.latest).toEqual("71%")
+    expect(bar.latestWeak).toBe(true)
+    expect(bar.best).toEqual("82%")
+    expect(bar.chart.points.map(p => p.accuracy)).toEqual(accuracies)
+    expect(bar.chart.points.map(p => p.weak)).toEqual([true, true, true, true, true, false, true])
+    expect(bar.chart.first).toEqual(capitalize(daysAgo(history[0][0], now)))
+    expect(bar.chart.last).toEqual(capitalize(daysAgo(history[history.length - 1][0], now)))
+    expect(bar.chart.ariaLabel).toEqual(
+      "Accuracy each time played, oldest first: 52%, 61%, 70%, 78%, 66%, 82%, 71%. Target 100%.")
+    // none of these passes was clean, so nothing is streaking
+    expect(bar.streak).toEqual({count: 0, label: "0 of 3 clean passes in a row"})
   })
 
-  it("reads an acoustic-only bar: no hits or misses, so no accuracy", () => {
-    let both = item({
-      startMeasure: 12, hits: 0, misses: 0, attempts: 2, lastPracticed: now,
-      recent: [[now, null, null, 1], [now, null, null, 3]],
-    })
-    let stats = barStats({pieceId: "p1", measure: 12, items: [both], measures: [12], now})
-    expect(stats.hands[0].accuracy).toEqual(null)
-    expect(stats.hands[0].recent).toEqual(["Fell apart", "Clean"])
+  it("counts a clean run at the end of the history, capped at 3 pips, as Learned", function() {
+    expect(PIP_COUNT).toEqual(3)
+
+    let two = item({attempts: 3, passes: [pass(now - 2 * DAY, 60), pass(now - DAY, 100), pass(now, 100)]})
+    let twoBar = barPopup({pieceId: "p", measure: 5, hand: "both", items: [two], now})
+    expect(twoBar.streak).toEqual({count: 2, label: "2 of 3 clean passes in a row"})
+
+    let three = item({attempts: 3, passes: [pass(now - 2 * DAY, 100), pass(now - DAY, 100), pass(now, 100)]})
+    let threeBar = barPopup({pieceId: "p", measure: 5, hand: "both", items: [three], now})
+    expect(threeBar.streak).toEqual({count: 3, label: "Learned"})
   })
 
-  it("gives one row per hand with a record, in HANDS order, leaving out an empty one", () => {
-    let lower = item({hand: "lower", startMeasure: 12, attempts: 1, lastPracticed: now})
-    let both = item({hand: "both", startMeasure: 12, attempts: 1, lastPracticed: now})
-    let upper = item({hand: "upper", startMeasure: 12, attempts: 0, recent: []})
-    let stats = barStats({pieceId: "p1", measure: 12, items: [lower, both, upper], measures: [12], now})
-    expect(stats.hands.map(h => h.hand)).toEqual(["both", "lower"])
-    expect(stats.hands.map(h => h.heading)).toEqual(["Hands together", "Left hand"])
+  it("plots only the last 8 entries of a longer history", function() {
+    let history = Array.from({length: 10}, (_, idx) => pass(now - (9 - idx) * DAY, 90))
+    let bar = barPopup({pieceId: "p", measure: 5, hand: "both", items: [item({attempts: 10, passes: history})], now})
+    expect(bar.chart.points.length).toEqual(8)
+    expect(bar.chart.first).toEqual(capitalize(daysAgo(history[2][0], now)))
   })
 
-  it("ignores another bar, a multi-bar range, a beat range and another piece's bar", () => {
-    let items = [
-      item({startMeasure: 11, attempts: 2, lastPracticed: now}),
-      item({startMeasure: 12, endMeasure: 13, attempts: 2, lastPracticed: now}),
-      item({startMeasure: 12, beats: [0, 2], attempts: 2, lastPracticed: now}),
-      item({pieceId: "p2", startMeasure: 12, attempts: 2, lastPracticed: now}),
-    ]
-    let stats = barStats({pieceId: "p1", measure: 12, items, measures: [11, 12, 13], now})
-    expect(stats.hands).toEqual([])
+  it("says No passes yet for an item with attempts but no full pass recorded", function() {
+    let practiceOnly = item({attempts: 2, recent: [], passes: []})
+    let bar = barPopup({pieceId: "p", measure: 5, hand: "both", items: [practiceOnly], now})
+    expect(bar.empty).toBe(false)
+    expect(bar.noPasses).toBe(true)
+    expect(bar.chart).toBeUndefined()
   })
 
-  it("words how long ago a bar was last played, local days from 4am", () => {
-    let yesterday = item({startMeasure: 12, attempts: 1, lastPracticed: now - DAY})
-    expect(barStats({pieceId: "p1", measure: 12, items: [yesterday], measures: [12], now}).hands[0].lastPlayed)
-      .toEqual("yesterday")
+  it("lists self-graded passes as words, with no percentage for them", function() {
+    let selfOnly = item({attempts: 3, passes: [selfPass(now - 2 * DAY, AGAIN), selfPass(now - DAY, GOOD), selfPass(now, EASY)]})
+    let bar = barPopup({pieceId: "p", measure: 5, hand: "both", items: [selfOnly], now})
 
-    let threeDays = item({startMeasure: 12, attempts: 1, lastPracticed: now - 3 * DAY})
-    expect(barStats({pieceId: "p1", measure: 12, items: [threeDays], measures: [12], now}).hands[0].lastPlayed)
-      .toEqual("3 days ago")
+    expect(bar.chart).toBeUndefined()
+    expect(bar.latest).toEqual("Easy")
+    expect(bar.best).toEqual("Easy")
+    expect(bar.selfLine).toEqual("Graded by ear: Fell apart → Clean → Easy")
+    // Clean and Easy count as clean passes, Fell apart doesn't
+    expect(bar.streak.count).toEqual(2)
   })
 
-  it("gives no lastPlayed or recent for a legacy-style item, accuracy from its totals", () => {
-    let legacy = item({startMeasure: 12, attempts: 1, hits: 2, misses: 2, lastPracticed: 0, recent: []})
-    let hand = barStats({pieceId: "p1", measure: 12, items: [legacy], measures: [12], now}).hands[0]
-    expect(hand.lastPlayed).toEqual(null)
-    expect(hand.recent).toEqual([])
-    expect(hand.accuracy).toEqual(50)
+  it("shows a self line under the chart for a history mixing detected and self passes", function() {
+    let mixed = item({attempts: 2, passes: [pass(now - DAY, 90), selfPass(now, HARD)]})
+    let bar = barPopup({pieceId: "p", measure: 5, hand: "both", items: [mixed], now})
+
+    expect(bar.chart.points.map(p => p.accuracy)).toEqual([90])
+    expect(bar.latest).toEqual("90%")
+    expect(bar.selfLine).toEqual("Graded by ear: Stumbled")
   })
 
-  it("gives the trouble-spot sentence troubleSpots gives, for the bar it covers", () => {
-    let troubled = item({startMeasure: 12, reps: 3, lapses: 2})
-    let stats = barStats({pieceId: "p1", measure: 12, items: [troubled], measures: [11, 12, 13], now})
-    expect(stats.trouble).toEqual("Slipped back 2 times.")
+  it("tags a bar in a flag in force, including a repeat at alsoAt", function() {
+    let flags = [flag(1, 5, 9, 3)]
+    expect(barPopup({pieceId: "p", measure: 5, hand: "both", items: [], flags, now}).tag)
+      .toEqual("Passage I · Hardest")
+    expect(barPopup({pieceId: "p", measure: 5, hand: "both", items: [], flags, now}).inPassage).toBe(true)
 
-    let untroubled = barStats({pieceId: "p1", measure: 13, items: [troubled], measures: [11, 12, 13], now})
-    expect(untroubled.trouble).toEqual(null)
+    let withRepeat = [flag(2, 5, 6, 2, [[20, 21]])]
+    expect(barPopup({pieceId: "p", measure: 20, hand: "both", items: [], flags: withRepeat, now}).tag)
+      .toEqual("Passage II · Hard")
+
+    // outside the flag and its repeat: Learned/Learning/New instead
+    expect(barPopup({pieceId: "p", measure: 10, hand: "both", items: [], flags, now}).tag).toEqual("New")
   })
 
-  it("gives the same sentence to every bar of a merged trouble spot", () => {
-    let a = item({startMeasure: 11, reps: 3, lapses: 2})
-    let b = item({startMeasure: 12, reps: 3, lapses: 2})
-    let measures = [11, 12, 13]
-    let first = barStats({pieceId: "p1", measure: 11, items: [a, b], measures, now})
-    let second = barStats({pieceId: "p1", measure: 12, items: [a, b], measures, now})
-    expect(first.trouble).not.toEqual(null)
-    expect(first.trouble).toEqual(second.trouble)
+  it("tags a played bar Learning, and a learned one Learned, outside any flag", function() {
+    let started = item({attempts: 1, passes: [pass(now, 50)]})
+    expect(barPopup({pieceId: "p", measure: 5, hand: "both", items: [started], now}).tag).toEqual("Learning")
+
+    let learned = item({attempts: 3, passes: [pass(now - 2 * DAY, 100), pass(now - DAY, 100), pass(now, 100)]})
+    expect(barPopup({pieceId: "p", measure: 5, hand: "both", items: [learned], now}).tag).toEqual("Learned")
+  })
+
+  it("reads only the requested hand's item", function() {
+    let upper = item({hand: "upper", attempts: 3, passes: [pass(now, 100)]})
+    let both = barPopup({pieceId: "p", measure: 5, hand: "both", items: [upper], now})
+    expect(both.empty).toBe(true)
+
+    let right = barPopup({pieceId: "p", measure: 5, hand: "upper", items: [upper], now})
+    expect(right.empty).toBe(false)
   })
 })
