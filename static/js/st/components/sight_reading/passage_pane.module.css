@@ -1,0 +1,103 @@
+.detail_plate {
+    padding: 18px 20px 20px;
+}
+
+.level_label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+}
+
+.level_label.level_1 { color: var(--salon-ink-muted); }
+.level_label.level_2 { color: var(--salon-gilt); }
+.level_label.level_3 { color: var(--salon-oxblood); }
+
+.flag_title {
+    font-family: var(--font-display);
+    font-size: 22px;
+    font-style: italic;
+    margin: 0 0 2px;
+    color: var(--salon-ink);
+}
+
+.flag_sub {
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 15px;
+    color: var(--salon-ink-soft);
+    margin-bottom: 14px;
+}
+
+.given_title, .moved_note {
+    font-size: 12px;
+    color: var(--salon-ink-muted);
+    margin: -10px 0 10px;
+}
+
+.status_mark {
+    font-family: var(--font-ui);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .04em;
+    color: var(--salon-gilt);
+    margin-bottom: 10px;
+}
+
+.reasons {
+    list-style: none;
+    margin: 0 0 14px;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--salon-ink-soft);
+}
+
+.source_chip {
+    display: inline-block;
+    font-family: var(--font-ui);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--salon-ink-muted);
+    border: 1px solid var(--salon-rule);
+    padding: 1px 6px;
+    margin-right: 6px;
+}
+
+.tip {
+    background: var(--salon-paper-warm);
+    border: var(--salon-hairline);
+    padding: 10px 12px;
+    margin-bottom: 16px;
+}
+
+.tip_label {
+    font-family: var(--font-ui);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .15em;
+    text-transform: uppercase;
+    color: var(--salon-ink-muted);
+    margin-bottom: 4px;
+}
+
+.tip p {
+    margin: 0;
+    font-size: 13px;
+    color: var(--salon-ink-soft);
+}
+
+.actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.small_pill {
+    font-size: 12px;
+    padding: 7px 14px;
+}

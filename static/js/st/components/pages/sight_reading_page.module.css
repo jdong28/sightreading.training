@@ -57,6 +57,37 @@
         }
     }
 
+    /* the score-first page's frame (D1): a wider trainer, a flex grid in
+       place of the fixed-column one, so the score column and the setup
+       pane/session rail share the row by their own flex-basis */
+    &.score_layout {
+        .trainer {
+            max-width: 1400px;
+        }
+
+        .trainer_grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 22px;
+            align-items: flex-start;
+        }
+
+        .trainer_main {
+            flex: 999 1 640px;
+            min-width: 0;
+        }
+
+        .rail {
+            flex: 1 1 340px;
+            max-width: 420px;
+            min-width: 0;
+        }
+
+        &.fullscreen .trainer_grid {
+            display: block;
+        }
+    }
+
     &.scroll_mode .staff_wrapper::before {
         content: "";
         position: absolute;
@@ -228,6 +259,43 @@
     font-size: 16px;
     color: var(--salon-nav-ink);
     white-space: nowrap;
+}
+
+.end_session_pill.end_session_pill {
+    padding: 12px 22px;
+    background: var(--salon-paper);
+    border-color: var(--salon-oxblood);
+    color: var(--salon-oxblood);
+}
+
+/* the card dims while paused (D8); the paused banner sits below it */
+.paused_card {
+    opacity: .55;
+}
+
+.paused_banner {
+    margin-top: 12px;
+    padding: 12px 16px;
+    background: var(--salon-paper-warm);
+    border-top: 3px double var(--salon-rule-strong);
+    border-bottom: var(--salon-hairline);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+
+    p {
+        flex: 1 1 260px;
+        margin: 0;
+        font-family: var(--font-display);
+        font-style: italic;
+        font-size: 16px;
+        color: var(--salon-ink-soft);
+    }
+}
+
+.resume_pill.resume_pill {
+    min-height: 40px;
 }
 
 .gilt {

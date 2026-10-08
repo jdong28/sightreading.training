@@ -1,0 +1,247 @@
+.setup_pane {
+    padding: 20px 22px 22px;
+    display: flex;
+    flex-direction: column;
+}
+
+.header_row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 4px;
+}
+
+.header_title {
+    font-family: var(--font-display);
+    font-size: 24px;
+    color: var(--salon-ink);
+}
+
+.italic {
+    font-style: italic;
+}
+
+.header_aside {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .18em;
+    text-transform: uppercase;
+    color: var(--salon-ink-muted);
+}
+
+.group {
+    padding: 14px 0;
+    border-bottom: var(--salon-hairline);
+}
+
+.group:last-of-type {
+    border-bottom: none;
+}
+
+.group_header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+}
+
+.group_label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .2em;
+    text-transform: uppercase;
+    color: var(--salon-ink-muted);
+    margin-bottom: 8px;
+}
+
+.sub_label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--salon-ink-muted);
+    margin-bottom: 6px;
+}
+
+.subgroup {
+    margin-top: 12px;
+}
+
+.input_hint {
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--salon-ink-muted);
+    margin: 6px 0 0;
+}
+
+.input_notice {
+    font-size: 12px;
+    color: var(--salon-ink-soft);
+    margin-top: 6px;
+}
+
+.input_error {
+    font-size: 12px;
+    color: var(--salon-oxblood);
+    margin-top: 6px;
+}
+
+.pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.choice_pill {
+    padding: 9px 16px;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.piece_row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.select_component {
+    flex: 1 1 auto;
+}
+
+.small_pill {
+    padding: 9px 14px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    background: transparent;
+    border: 1px solid var(--salon-rule);
+}
+
+.piece_links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+    margin-top: 10px;
+}
+
+.file_link, .link_button {
+    font-size: 12px;
+    color: var(--salon-oxblood);
+    cursor: pointer;
+    background: none;
+    border: none;
+    padding: 0;
+    font-family: var(--font-ui);
+}
+
+.file_link input {
+    display: none;
+}
+
+.figures {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+}
+
+.figure {
+    background: var(--salon-paper-warm);
+    border-top: 3px double var(--salon-rule-strong);
+    border-left: var(--salon-hairline);
+    border-right: var(--salon-hairline);
+    border-bottom: var(--salon-hairline);
+    padding: 8px 10px;
+}
+
+.figure_label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--salon-ink-muted);
+}
+
+.figure_value {
+    font-family: var(--font-display);
+    font-size: 22px;
+    color: var(--salon-ink);
+}
+
+.figure_value_small {
+    font-size: 14px;
+    color: var(--salon-ink-muted);
+}
+
+.suggestion_row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 8px;
+    margin-top: 10px;
+    font-size: 12px;
+    color: var(--salon-ink-soft);
+}
+
+.order_description {
+    font-size: 12px;
+    color: var(--salon-ink-muted);
+}
+
+.section_row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.of_last {
+    font-family: var(--font-display);
+    font-style: italic;
+    color: var(--salon-ink-soft);
+}
+
+.tempo_header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+}
+
+.tempo_value {
+    font-family: var(--font-display);
+    font-size: 19px;
+    color: var(--salon-ink);
+}
+
+.footer {
+    border-top: 3px double var(--salon-rule-strong);
+    padding-top: 16px;
+    margin-top: 6px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    text-align: center;
+}
+
+.begin_line {
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 15px;
+    line-height: 1.45;
+    color: var(--salon-ink-soft);
+    margin: 0;
+}
+
+.begin_button {
+    width: 100%;
+    min-height: 48px;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+}
+
+.engines_link {
+    font-size: 12px;
+    color: var(--salon-nav-ink);
+}

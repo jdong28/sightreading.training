@@ -4,6 +4,7 @@ import {flushSync} from "react-dom"
 import {MemoryRouter, Routes, Route} from "react-router-dom"
 
 import App, {HomeGate, HeaderChrome} from "st/components/app"
+import setupPaneStyles from "st/components/sight_reading/setup_pane.module.css"
 import drawerStyles from "st/components/sight_reading/programme_drawer.module.css"
 import headerStyles from "st/components/header.module.css"
 import staffStyles from "st/components/staff.module.css"
@@ -115,6 +116,9 @@ describe("app routing", function() {
       return svg ? [...svg.querySelectorAll(".staffLine")] : []
     }
 
+    let setupPaneText = el => el.querySelector("[data-setup-pane]").textContent
+    // the exercises page's own programme drawer, unchanged by the score-first
+    // page's setup pane (see AGENTS.md)
     let drawerText = el => el.querySelector(`.${drawerStyles.drawer}[aria-label="Programme"]`).textContent
     let activeNav = el => [...el.querySelectorAll("nav a.active")].map(a => a.textContent)
 
@@ -123,8 +127,8 @@ describe("app routing", function() {
 
       expect(document.title).toEqual("Sheet music | Sight Reading Trainer")
       expect(activeNav(el)).toEqual(["Sheet music"])
-      expect(drawerText(el)).toContain("Import MusicXML")
-      expect(drawerText(el)).not.toContain("Clef")
+      expect(setupPaneText(el)).toContain("Import MusicXML")
+      expect(setupPaneText(el)).not.toContain("Clef")
     })
 
     it("renders the engraving engines page at /score-engines, kept out of the navigation", function() {
@@ -136,19 +140,22 @@ describe("app routing", function() {
       expect([...el.querySelectorAll("nav a")].map(a => a.getAttribute("href"))).not.toContain("/score-engines")
     })
 
-    it("links the score page's drawer to the engraving engines page", function() {
+    it("links the setup pane to the engraving engines page", function() {
       let el = renderApp("/sheet-music")
-      let link = [...el.querySelectorAll(`.${drawerStyles.drawer} a`)]
-        .find(a => a.textContent == "Compare engraving engines")
-      expect(link).toBeDefined()
+      let link = el.querySelector("[data-setup-pane] a")
+      expect(link).not.toBe(null)
+      expect(link.textContent).toEqual("Compare engraving engines")
       expect(link.getAttribute("href")).toMatch(/^\/score-engines/)
     })
 
-    it("imports a compressed .mxl file picked in the score page's deck, and picks it", async function() {
+    // picking a piece now also makes the score view draw it whole (D5), a
+    // real OSMD engrave the old drawer's own picker never waited through
+    it("imports a compressed .mxl file picked in the setup pane's piece group, and picks it", async function() {
       let el = renderApp("/sheet-music")
-      let drawer = el.querySelector(`.${drawerStyles.drawer}[aria-label="Programme"]`)
+      let pane = el.querySelector("[data-setup-pane]")
 
-      let fileInput = drawer.querySelector(`.${drawerStyles.file_input} > input[type=file]`)
+      let fileInput = [...pane.querySelectorAll(`.${setupPaneStyles.file_link} > input[type=file]`)]
+        .find(input => input.accept.includes(".mxl"))
       expect(fileInput.accept.split(",")).toContain(".mxl")
 
       Object.defineProperty(fileInput, "files", {
@@ -157,21 +164,22 @@ describe("app routing", function() {
       })
       flushSync(() => fileInput.dispatchEvent(new Event("change", {bubbles: true})))
 
-      for (let tries = 0; tries < 100 && !drawer.textContent.includes("is in the deck"); tries++) {
+      for (let tries = 0; tries < 1500 && !pane.textContent.includes("is in the deck"); tries++) {
         await new Promise(resolve => setTimeout(resolve, 10))
       }
 
-      expect(drawer.textContent).toContain("\"little waltz\" is in the deck")
+      expect(pane.textContent).toContain("\"little waltz\" is in the deck")
       let [piece] = store.pieces()
       expect(piece.title).toEqual("little waltz")
-      expect(drawer.querySelector(`.${drawerStyles.deck_row} select`).value).toEqual(piece.id)
+      expect(pane.querySelector("select").value).toEqual(piece.id)
       expect(await pieceSource(piece.id, store)).toEqual(LITTLE_WALTZ_XML)
-    })
+    }, 20000)
 
-    it("answers a PDF picked in the score page's deck with the conversion steps and adds no piece", async function() {
+    it("answers a PDF picked in the setup pane's piece group with the conversion steps and adds no piece", async function() {
       let el = renderApp("/sheet-music")
-      let drawer = el.querySelector(`.${drawerStyles.drawer}[aria-label="Programme"]`)
-      let fileInput = drawer.querySelector(`.${drawerStyles.file_input} > input[type=file]`)
+      let pane = el.querySelector("[data-setup-pane]")
+      let fileInput = [...pane.querySelectorAll(`.${setupPaneStyles.file_link} > input[type=file]`)]
+        .find(input => input.accept.includes(".pdf"))
       expect(fileInput.accept.split(",")).toContain(".pdf")
 
       Object.defineProperty(fileInput, "files", {
@@ -181,13 +189,13 @@ describe("app routing", function() {
       flushSync(() => fileInput.dispatchEvent(new Event("change", {bubbles: true})))
       flushSync(() => {})
 
-      let text = drawer.textContent
+      let text = pane.textContent
       expect(text).toContain("PDFs need converting first")
       expect(text).toContain("nocturne.pdf")
       expect(text).toContain("Audiveris")
       expect(text).toContain("MuseScore Studio")
       expect(text).toContain("keeps the piece's stats")
-      expect([...drawer.querySelectorAll("a")].map(a => a.getAttribute("href")))
+      expect([...pane.querySelectorAll("a")].map(a => a.getAttribute("href")))
         .toContain("https://audiveris.github.io/audiveris/")
       expect(text).not.toContain("Importing nocturne.pdf")
       expect(store.pieces()).toEqual([])
@@ -199,19 +207,20 @@ describe("app routing", function() {
       })
       flushSync(() => fileInput.dispatchEvent(new Event("change", {bubbles: true})))
 
-      for (let tries = 0; tries < 100 && !drawer.textContent.includes("is in the deck"); tries++) {
+      for (let tries = 0; tries < 1500 && !pane.textContent.includes("is in the deck"); tries++) {
         await new Promise(resolve => setTimeout(resolve, 10))
       }
 
-      expect(drawer.textContent).toContain("\"little waltz\" is in the deck")
-      expect(drawer.textContent).not.toContain("PDFs need converting first")
+      expect(pane.textContent).toContain("\"little waltz\" is in the deck")
+      expect(pane.textContent).not.toContain("PDFs need converting first")
       expect(store.pieces().length).toEqual(1)
-    })
+    }, 20000)
 
     it("answers a PDF with no file name with the conversion steps too", function() {
       let el = renderApp("/sheet-music")
-      let drawer = el.querySelector(`.${drawerStyles.drawer}[aria-label="Programme"]`)
-      let fileInput = drawer.querySelector(`.${drawerStyles.file_input} > input[type=file]`)
+      let pane = el.querySelector("[data-setup-pane]")
+      let fileInput = [...pane.querySelectorAll(`.${setupPaneStyles.file_link} > input[type=file]`)]
+        .find(input => input.accept.includes(".pdf"))
 
       Object.defineProperty(fileInput, "files", {
         value: [new File(["%PDF-1.4"], "", {type: "application/pdf"})],
@@ -220,8 +229,8 @@ describe("app routing", function() {
       flushSync(() => fileInput.dispatchEvent(new Event("change", {bubbles: true})))
       flushSync(() => {})
 
-      expect(drawer.textContent).toContain("PDFs need converting first")
-      expect(drawer.textContent).toContain("keeps the piece's stats")
+      expect(pane.textContent).toContain("PDFs need converting first")
+      expect(pane.textContent).toContain("keeps the piece's stats")
       expect(store.pieces()).toEqual([])
     })
 

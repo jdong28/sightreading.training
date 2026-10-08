@@ -261,7 +261,7 @@ export function planGenerator(staff, settings) {
     passages: () => programmePassages(settings, store),
     startApart: () => startApartBars(sheetMusicPassages(settings, store)),
     // a piece without an annotation record yet is analysed lazily
-    // (PassagesPlate#ensure); without passagesReady the deck would plan its
+    // (ScoreView#ensure); without passagesReady the deck would plan its
     // first card in score order and play it before the flags land
     passagesReady: store.annotation(piece.id) ? null : ensureAnnotation(piece.id, store),
   })

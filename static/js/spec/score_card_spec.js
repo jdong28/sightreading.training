@@ -21,7 +21,6 @@ import {parseNote} from "st/music"
 import {setAppStore} from "st/storage"
 import {SCORE_DRILL_STORAGE_KEY} from "st/generators"
 import staffStyles from "st/components/staff.module.css"
-import drawerStyles from "st/components/sight_reading/programme_drawer.module.css"
 import scoreCardStyles from "st/components/score_card.module.css"
 
 import {openTestStore, reverieOpening, pickupScore, noteXML} from "spec/helpers"
@@ -678,14 +677,21 @@ describe("score page engine card", function() {
     }
   })
 
-  let renderScorePage = (props={}) => {
+  // this file is about the trainer's own engine card (in session), never
+  // the score-first page's own score view at rest; ScoreView: null keeps
+  // the trainer rendering directly, as before it existed (see AGENTS.md)
+  let renderScorePage = ({programme, ...props}={}) => {
     container = document.createElement("div")
     container.style.width = "1100px"
     document.body.appendChild(container)
     root = createRoot(container)
     flushSync(() => {
       root.render(React.createElement(MemoryRouter, {},
-        React.createElement(ScorePage, {ref: p => page = p, ...props})))
+        React.createElement(ScorePage, {
+          ref: p => page = p,
+          programme: {...SCORE_PROGRAMME, ...programme, ScoreView: null},
+          ...props,
+        })))
     })
     flushSync(() => {})
     return container
@@ -864,28 +870,18 @@ describe("score page engine card", function() {
     expect(el.textContent).toContain("measures 1–4")
   })
 
-  // the programme drawer, opened
-  let openDrawer = el => {
-    flushSync(() => el.querySelector("button[aria-label=\"Programme\"]").click())
-    return el.querySelector(`.${drawerStyles.drawer}[aria-label="Programme"]`)
-  }
-
-  let perCardPicker = drawer => drawer.querySelector("[role=\"spinbutton\"][aria-label=\"measures per card\"]")
+  // the setup pane is a separate component now (st/components/sight_reading/
+  // setup_pane), so this file (about the trainer's own engine card) sets
+  // the generator's settings directly, as the pane itself would end up doing
+  let setCardSize = measuresPerCard => flushSync(() =>
+    page.setGenerator(page.state.currentGenerator, {...page.state.currentGeneratorSettings, measuresPerCard}))
 
   it("picks a card size up to the whole section for the score's cards, in scroll mode too", async function() {
     await drillPiece(reverieOpening(), {startMeasure: 1, endMeasure: 4, measuresPerCard: "2"})
     let el = renderScorePage()
     await cardDrawn()
 
-    let drawer = openDrawer(el)
-    let input = perCardPicker(drawer)
-    expect(input.getAttribute("aria-valuemax")).toEqual("4")
-    expect(drawer.textContent).toContain("of 4")
-    expect(drawer.textContent).not.toContain("Cards stop")
-
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(input, "4")
-    flushSync(() => input.dispatchEvent(new Event("input", {bubbles: true})))
-    flushSync(() => input.dispatchEvent(new KeyboardEvent("keydown", {key: "Enter", bubbles: true})))
+    setCardSize(4)
     flushSync(() => {})
 
     expect(page.state.currentGeneratorSettings.measuresPerCard).toEqual(4)
@@ -896,9 +892,6 @@ describe("score page engine card", function() {
     // and keeps it in scroll mode
     flushSync(() => page.setMode("scroll"))
     flushSync(() => {})
-    expect(perCardPicker(drawer).getAttribute("aria-valuemax")).toEqual("4")
-    expect(perCardPicker(drawer).value).toEqual("4")
-    expect(drawer.textContent).not.toContain("Cards stop")
     expect(page.currentCard().card.measures).toEqual([1, 2, 3, 4])
   })
 
@@ -1150,11 +1143,9 @@ describe("score page engine card", function() {
     await waitFor(() => el.querySelector(`.${staffStyles.staff_notes}`), {message: "the app's staff"})
 
     expect(el.querySelector("[data-score-card]")).toBe(null)
-    // the same card, which the card size says, and why it is drawn this way
+    // the same card, which is still drawn this way
     let {card} = page.currentCard()
     expect(card.measures).toEqual([1, 2, 3, 4])
-    let drawer = openDrawer(el)
-    expect(perCardPicker(drawer).getAttribute("aria-valuemax")).toEqual("4")
     expect(el.textContent).toContain(FAILED_ENGINE_SOURCE)
   })
 
