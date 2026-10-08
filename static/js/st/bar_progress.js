@@ -138,7 +138,10 @@ export function sessionMarks(log) {
     let accuracy = Math.round(100 * clean / columns)
     marks.set(measure, {kind: markKind(accuracy), label: `${accuracy}%`})
   }
+  // a bar with any detected pass this session keeps its accuracy label; the
+  // self-graded label is only for a bar with nothing but self-graded passes
   for (let [measure, {passes, clean}] of self) {
+    if (detected.has(measure)) { continue }
     let share = Math.round(100 * clean / passes)
     marks.set(measure, {kind: markKind(share), label: `${clean} of ${passes} clean`})
   }

@@ -1205,6 +1205,15 @@ export default class SightReadingPage extends React.Component {
     this.resumeFrom(this.state.pausedAt)
   }
 
+  // A stand-in for endSession's ended strip when the log has entries but
+  // the current NoteStats has nothing to write (a mid-session reset left
+  // recordSession() with a null session): the strip's own bar marks and
+  // bar count come from the log, not this record, which only supplies the
+  // figures endedSummary reads off it directly (st/bar_progress)
+  emptyEndedRecord() {
+    return {notesRead: 0, misses: 0, startedAt: this.state.sessionStartedAt, elapsedSeconds: this.elapsedSeconds()}
+  }
+
   // End session, running or paused: records the session if it was still
   // running (a paused one was already recorded at pauseSession), builds the
   // ended strip from the record that leaves (this.lastRecord, never read
@@ -1217,10 +1226,21 @@ export default class SightReadingPage extends React.Component {
 
     this.stopClock()
     this.endedPausedAt = Date.now()
+    // ending from a pause folds its open stretch into pausedMs now, so Play
+    // on's own pause (endedPausedAt to then) is the only one resumeFrom
+    // still has to add: otherwise the time already spent paused before End
+    // session would count as playing time once the session resumes
+    let pausedMs = this.state.paused ?
+      this.state.pausedMs + Math.max(0, this.endedPausedAt - this.state.pausedAt) : this.state.pausedMs
+
+    // the strip shows whenever there is something to show it for (D10): a
+    // written record, or, short of that, a session log a reset of the
+    // stats mid-session left recordSession() with nothing current to write
+    let session = this.lastRecord ? this.lastRecord.session : null
+    let ended = session || (this.state.sessionLog.length ? this.emptyEndedRecord() : null)
 
     this.setState({
-      session: false, paused: false, view: "score",
-      ended: this.lastRecord ? this.lastRecord.session : null,
+      session: false, paused: false, pausedMs, view: "score", ended,
     })
 
     let generator = this.currentNotesGenerator()
@@ -2185,9 +2205,15 @@ export default class SightReadingPage extends React.Component {
 
   renderTitle() {
     let {title, italic} = this.titleParts()
+    // a restPauses page (the score page) only reaches renderTitle in
+    // session, never at rest (ScoreView takes its place there), so its
+    // eyebrow names the piece it's in session on rather than the salon
+    let section = this.currentPieceSection()
+    let eyebrow = this.programme.restPauses && section ?
+      `In session · ${section.pieceTitle}` : "Salon de Paris · 1836"
 
     return <div className={styles.title}>
-      <TitleBlock eyebrow="Salon de Paris · 1836" title={title} italic={italic} />
+      <TitleBlock eyebrow={eyebrow} title={title} italic={italic} />
       <FleuronRule />
     </div>
   }

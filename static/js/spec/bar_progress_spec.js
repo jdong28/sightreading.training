@@ -146,6 +146,20 @@ describe("bar progress", function() {
       expect(sessionMarks([selfEntry(11, AGAIN)]).get(11)).toEqual({kind: "trouble", label: "0 of 1 clean"})
     })
 
+    // a bar with any detected pass this session keeps its accuracy label,
+    // whatever self-graded passes it also has (the instrument toggled
+    // mid-session): the self-graded label is only for a bar with nothing
+    // but self-graded passes
+    it("keeps a bar's detected accuracy label over a self-graded one, even one graded worse", function() {
+      let marks = sessionMarks([entry(12, 4, 4), selfEntry(12, AGAIN)])
+      expect(marks.get(12)).toEqual({kind: "clean", label: "100%"})
+
+      // order doesn't matter: a self-graded pass before the detected one
+      // still loses to it
+      let reversed = sessionMarks([selfEntry(13, GOOD), entry(13, 10, 7, AGAIN)])
+      expect(reversed.get(13)).toEqual({kind: "trouble", label: "70%"})
+    })
+
     it("leaves a bar not in the log untinted (absent from the map)", function() {
       expect(sessionMarks([entry(1, 4, 4)]).has(2)).toBe(false)
     })
