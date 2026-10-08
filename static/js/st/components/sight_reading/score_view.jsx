@@ -83,7 +83,11 @@ export class ScoreView extends React.Component {
   constructor(props) {
     super(props)
     this.state = {
-      shade: "learnedness",
+      // the page remounts fresh on every return from the session (see
+      // render()'s inScoreView ternary on SightReadingPage), so an ended
+      // strip already in props at mount must start the shade on it too,
+      // not just componentDidUpdate's later transitions
+      shade: props.ended ? "session" : "learnedness",
       page: 0,
       pages: [],
       selectedBar: null,
@@ -106,8 +110,8 @@ export class ScoreView extends React.Component {
       this.ensure()
     }
 
-    if (prevProps.ended != this.props.ended && this.props.ended) {
-      this.setState({shade: "session"})
+    if (prevProps.ended != this.props.ended) {
+      this.setState({shade: this.props.ended ? "session" : "learnedness"})
     }
   }
 
@@ -226,6 +230,20 @@ export class ScoreView extends React.Component {
     return decorations
   }
 
+  // "Page p of P · bars X–Y" (singular "bar X" for a one-bar page), the
+  // current page's own printed bar range after its index/count
+  pageLabel() {
+    let {page, pages} = this.state
+    let count = Math.max(1, pages.length)
+    let current = pages[page]
+    let label = `Page ${page + 1} of ${count}`
+    if (!current || !current.measures.length) { return label }
+
+    let first = current.measures[0].number
+    let last = current.measures[current.measures.length - 1].number
+    return `${label} · ${first == last ? `bar ${first}` : `bars ${first}–${last}`}`
+  }
+
   renderToolbar(pageLabel) {
     return <div className={styles.toolbar}>
       <div className={styles.page_label}>{pageLabel}</div>
@@ -341,7 +359,7 @@ export class ScoreView extends React.Component {
     }) : null
 
     let noSource = !source || source.status == "missing"
-    let failed = source && source.status == "failed"
+    let failed = this.state.engineFailed
     let hasEngine = !!this.props.engine && source && source.status == "ready" && source.musicXML && !failed
 
     return <>
@@ -357,7 +375,7 @@ export class ScoreView extends React.Component {
       {ended && summary ? this.renderEndedStrip(summary) : null}
 
       <Plate className={styles.score_plate}>
-        {this.renderToolbar(`Page ${this.state.page + 1} of ${Math.max(1, this.state.pages.length)}`)}
+        {this.renderToolbar(this.pageLabel())}
 
         {hasEngine ? <ScoreSheet
           musicXML={source.musicXML}
@@ -413,7 +431,7 @@ export class ScoreView extends React.Component {
             onClick={() => this.setState(state => ({page: Math.max(0, state.page - 1)}))}>
             ‹ Previous page
           </Pill>
-          <span className={styles.pager_label}>Page {this.state.page + 1} of {Math.max(1, this.state.pages.length)}</span>
+          <span className={styles.pager_label}>{this.pageLabel()}</span>
           <Pill
             variant="ghost"
             className={styles.pager_pill}

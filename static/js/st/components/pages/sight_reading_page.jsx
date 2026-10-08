@@ -1256,7 +1256,7 @@ export default class SightReadingPage extends React.Component {
   // Play on, from the ended strip (D10): dismisses it and resumes the same
   // session, the time since End session counted as paused
   playOn() {
-    this.setState({ended: null, paused: true}, () => this.resumeSession())
+    this.setState({ended: null, paused: true, view: "session"}, () => this.resumeSession())
   }
 
   // Done, from the ended strip (D10): dismisses it, back to the
@@ -2213,11 +2213,19 @@ export default class SightReadingPage extends React.Component {
     }
   }
 
+  // a score-first programme's session view (D8) reads "In session · {title}"
+  // in place of the trainer's usual eyebrow, so it never reads like the
+  // score view it replaces
+  titleEyebrow() {
+    let section = this.programme.scoreLayout && this.currentPieceSection()
+    return section ? `In session · ${section.pieceTitle}` : "Salon de Paris · 1836"
+  }
+
   renderTitle() {
     let {title, italic} = this.titleParts()
 
     return <div className={styles.title}>
-      <TitleBlock eyebrow="Salon de Paris · 1836" title={title} italic={italic} />
+      <TitleBlock eyebrow={this.titleEyebrow()} title={title} italic={italic} />
       <FleuronRule />
     </div>
   }
