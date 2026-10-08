@@ -1,6 +1,7 @@
 import "./specs.css"
 import "spec/difficulty_spec"
 import "spec/bar_stats_spec"
+import "spec/bar_progress_spec"
 import "spec/passages_plate_spec"
 import "spec/generators_spec"
 import "spec/song_sections_spec"
