@@ -25,8 +25,26 @@ import {barAt} from "st/score_render/card_hit"
 import styles from "./score_card.module.css"
 
 // an engine draws one card at a time (OSMD keeps one score loaded), so the
-// cards of every ScoreCard are drawn one after another
+// cards of every ScoreCard (and the score page's whole-section ScoreSheet)
+// are drawn one after another
 let drawing = Promise.resolve()
+
+/**
+ * Queues task behind every draw already waiting, so two callers (a trainer
+ * card and the score page's own sheet) never draw through an engine at the
+ * same time. stale() is checked both before task runs (a draw superseded
+ * while it waited) and if it throws (onError is skipped too).
+ * @param {function(): boolean} stale
+ * @param {function(): Promise} task
+ * @param {function(Error)} onError
+ * @returns {Promise}
+ */
+export function enqueueDraw(stale, task, onError) {
+  drawing = drawing
+    .then(() => stale() ? null : task())
+    .catch(error => stale() ? null : onError(error))
+  return drawing
+}
 
 // a content key of a badges prop, so componentDidUpdate only replaces them
 // on a real change (a new array every render of engineCard() otherwise loops)
@@ -243,10 +261,7 @@ export class ScoreCard extends React.Component {
     this.clearBadges()
 
     let stale = () => count != this.drawCount || this.unmounted
-    drawing = drawing
-      .then(() => stale() ? null : this.drawNow(stale))
-      .catch(error => stale() ? null : this.fail(error))
-    return drawing
+    return enqueueDraw(stale, () => this.drawNow(stale), error => this.fail(error))
   }
 
   fail(error) {
