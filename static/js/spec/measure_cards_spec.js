@@ -738,6 +738,38 @@ describe("measure cards", function() {
         expect(learnedness(bar).count).toEqual(0)
       })
 
+      it("tells setOnPass each finished pass's bars, never an abandoned one", async function() {
+        let deck = new MeasureCardDeck(measureCards(pickupMeasures(), 3), {
+          pieceId: "p", order: IN_ORDER, store,
+        })
+        let generator = track(new MeasureCardGenerator(deck, {now: () => time}))
+        let reported = []
+        generator.setOnPass(report => reported.push(report))
+        let notes = new NoteList([], {generator})
+        let stats = new NoteStats()
+        notes.fillBuffer(6)
+
+        for (let t of [1000, 1500, 2000, 2500, 3000]) {
+          time = t
+          notes = hit(notes, stats)
+        }
+        await generator.finishing
+
+        expect(reported.length).toEqual(1)
+        expect(reported[0]).toEqual(jasmine.objectContaining({
+          startMeasure: 0, endMeasure: 2, hand: "both", readThrough: false, self: false, grade: null,
+        }))
+        expect(reported[0].bars.map(b => [b.measure, b.columns, b.clean])).toEqual([[0, 1, 1], [1, 3, 3], [2, 1, 1]])
+
+        // a card the pass is abandoned on (Rest) is never reported: this
+        // single card loops, so the next lap starts right away
+        time = 4000
+        notes = hit(notes, stats)
+        generator.takePractice()
+        await generator.finishing
+        expect(reported.length).toEqual(1)
+      })
+
       it("captions each pass played through in wait mode with its pace and stops", async function() {
         // bars 18 and 19 in crotchets
         let crotchets = (number, notes, from) => ({

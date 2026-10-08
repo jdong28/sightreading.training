@@ -477,6 +477,41 @@ export function passAttempts(pass, {pieceId, hand, at=pass.lastAt, sessionId, de
   })
 }
 
+/**
+ * Each measure a complete, graded pass counts for (see passRanges), as the
+ * score page's session log reports it (st/bar_progress#sessionMarks): a
+ * detected pass graded bar by bar the way passAttempts grades it under
+ * opts.items (the measure_cards generator's pass.found, a map of item id
+ * to its stored item, so the grade matches the review passAttempts writes
+ * from the same items), first sight without one; a self-graded pass's one
+ * grade stands for every bar it reached. [] for a pass that isn't one
+ * (continued, never played through in one go; see passAttempts).
+ * @param {AttemptPass} pass complete
+ * @param {Object} [opts]
+ * @param {Object<string, ItemRecord|null>} [opts.items] a single-bar item's
+ * id (st/srs/records#itemId) to its stored item
+ * @param {{pieceId: string, hand: string}} [opts.range] required with items
+ * @returns {{measure: number, columns: number|null, clean: number|null, grade: number}[]}
+ */
+export function barPasses(pass, {items, range}={}) {
+  if (pass.selfGrade) {
+    if (!pass.graded) { return [] }
+    let {grade, bars} = pass.selfGrade
+    let selectedBars = bars ?? pass.card.measures
+    return selectedBars.map(measure => ({measure, columns: null, clean: null, grade}))
+  }
+
+  if (!pass.complete || !pass.graded || !pass.played || !pass.drill) { return [] }
+
+  let grading = passGrading(pass)
+  return passRanges(pass.card).filter(r => !r.bars).map(({startMeasure, indices}) => {
+    let current = items && range ?
+      items(itemId({...range, startMeasure, endMeasure: startMeasure})) : null
+    let {graded} = gradeRange(grading, indices, current)
+    return {measure: startMeasure, columns: graded.columns, clean: graded.clean, grade: graded.grade}
+  })
+}
+
 // the elapsed time from the card shown (or Begin) to the grade, left out
 // over SELF_PAUSE_MS, see st/srs/self_grade
 function selfElapsed(pass, at) {

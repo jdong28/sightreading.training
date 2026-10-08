@@ -22,7 +22,7 @@ import {addNoteListener} from "st/note_stats"
 import {getAppStore} from "st/storage"
 import {
   AttemptPass, passAttempts, passPractice, passPace, passRanges, columnClefs,
-  selfAttempts, selfPractice,
+  selfAttempts, selfPractice, barPasses,
 } from "st/srs/attempt"
 import {AGAIN, HARD} from "st/srs/grade"
 import {itemId} from "st/srs/records"
@@ -326,6 +326,8 @@ export class MeasureCardGenerator {
     this.now = now
     this.loop = deck.playableCount <= 1
     this.drill = () => ({mode: "wait"})
+    // told each finished pass's bars, see setOnPass
+    this.onPass = null
     // the pass finished last, which the caption and the receipt read
     this.lastPass = null
     // the looping card's graded laps this sitting, which a self-graded
@@ -359,6 +361,18 @@ export class MeasureCardGenerator {
    */
   setDrill(drill) {
     this.drill = drill
+  }
+
+  /**
+   * @param {function(Object)} fn told each pass that finishes graded (see
+   * barPasses in st/srs/attempt): {at, startMeasure, endMeasure, hand,
+   * readThrough, self, grade, bars}, bars from barPasses, grade the
+   * self-graded grade (null for a detected pass). Never called for a pass
+   * that isn't one (continued, abandoned). Fed to the score page's session
+   * log (st/bar_progress#sessionMarks)
+   */
+  setOnPass(fn) {
+    this.onPass = fn
   }
 
   startCard(time=null) {
@@ -639,6 +653,22 @@ export class MeasureCardGenerator {
         let id = itemId({pieceId: written.pieceId, hand: written.hand, startMeasure, endMeasure})
         return [id, store.item(id)]
       }))
+
+      // the column's hit is counted (notePlayed) in the same task as the
+      // shift that completed it, before this microtask runs, so the pass's
+      // columns are all settled by now (see AttemptPass#hit)
+      if (this.onPass && pass.graded) {
+        this.onPass({
+          at,
+          startMeasure: pass.card.startMeasure,
+          endMeasure: pass.card.endMeasure,
+          hand: written.hand,
+          readThrough: !!pass.readThrough,
+          self: !!pass.selfGrade,
+          grade: pass.selfGrade ? pass.selfGrade.grade : null,
+          bars: barPasses(pass, {items: id => pass.found[id], range: {pieceId: written.pieceId, hand: written.hand}}),
+        })
+      }
 
       let {attempts, practice} = this.passRecords(pass, {...written, sessionId: this.sessionId})
 
