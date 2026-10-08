@@ -4,7 +4,7 @@ import {flushSync} from "react-dom"
 import {MemoryRouter} from "react-router-dom"
 
 import SightReadingPage, {
-  formatElapsed, accuracyPercent, MISSING_ENGINE_SOURCE, FAILED_ENGINE_SOURCE
+  formatElapsed, accuracyPercent, MISSING_ENGINE_SOURCE, FAILED_ENGINE_SOURCE, EXERCISES_PROGRAMME,
 } from "st/components/pages/sight_reading_page"
 import {romanNumeral} from "st/music"
 import ScorePage, {SCORE_PROGRAMME} from "st/components/pages/score_page"
@@ -362,14 +362,23 @@ describe("sight reading page", function() {
     }
   })
 
+  // ScorePage's own default programme (SCORE_PROGRAMME) opens on the
+  // score-first view (ScoreView), which these specs reach past to the
+  // trainer's own grid and internals, the same pattern as today's
+  // {...SCORE_PROGRAMME, engine: null, ScoreView: null}: with ScoreView null the trainer
+  // renders its own grid and today's Begin/Rest throughout (see
+  // SightReadingPage#inScoreView/restPauses). A spec that wants the
+  // score-first view itself passes its own programme prop instead
   let renderPage = (component=SightReadingPage, props={}) => {
     container = document.createElement("div")
     document.body.appendChild(container)
     root = createRoot(container)
+    let merged = component === ScorePage && !props.programme ?
+      {...props, programme: {...SCORE_PROGRAMME, ScoreView: null}} : props
     flushSync(() => {
       // the programme drawer links to the setup page
       root.render(React.createElement(MemoryRouter, {},
-        React.createElement(component, {ref: p => page = p, ...props})))
+        React.createElement(component, {ref: p => page = p, ...merged})))
     })
     // the mount's own state updates
     flushSync(() => {})
@@ -380,7 +389,7 @@ describe("sight reading page", function() {
   // own staff (as when the engine can't draw it, or for a piece stored
   // without its score);
   // the engine card has its own specs (see score_card_spec)
-  let renderScorePage = () => renderPage(ScorePage, {programme: {...SCORE_PROGRAMME, engine: null}})
+  let renderScorePage = () => renderPage(ScorePage, {programme: {...SCORE_PROGRAMME, engine: null, ScoreView: null}})
 
   // whether the rail's engraving is on show: the programme's plates stand in
   // for it while they draw something, so it is in the tree either way
@@ -426,7 +435,7 @@ describe("sight reading page", function() {
   it("titles the score page by what it drills", function() {
     window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({piece: "", song: ""}))
     let el = renderScorePage()
-    expect(el.textContent).toContain("pick a piece in the programme")
+    expect(el.textContent).toContain("import a piece to begin")
     flushSync(() => root.unmount())
     container.remove()
 
@@ -436,7 +445,7 @@ describe("sight reading page", function() {
     el = renderScorePage()
     expect(el.textContent).toContain("Pasted song notation")
     expect(el.textContent).toContain("measures 1–2")
-    expect(el.textContent).not.toContain("pick a piece in the programme")
+    expect(el.textContent).not.toContain("import a piece to begin")
   })
 
   it("shows the measure card on the staff and in the plate header", async function() {
@@ -543,7 +552,10 @@ describe("sight reading page", function() {
     expect(plateLabel()).toEqual("3 ♩ a bar · Card 2 · measures 3–4 of 1–8")
   })
 
-  it("offers the order control only once a card size is picked", async function() {
+  // Pending: the score page has no Programme drawer any more (Drawer:
+  // null); "Order" and "Bars per card" move to the setup pane (score-first
+  // sheet music plan, build 5), where this interaction is re-covered
+  xit("offers the order control only once a card size is picked", async function() {
     let {piece} = await importMusicXMLPiece("salon_octet.musicxml", octetXML, store)
 
     window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
@@ -568,7 +580,10 @@ describe("sight reading page", function() {
     expect(page.state.notes.generator.deck.order).toEqual(RANDOM_ORDER)
   })
 
-  it("picks the section and card size with number pickers clamped to the piece", async function() {
+  // Pending: the score page has no Programme drawer any more (Drawer:
+  // null); "Section" and "Bars per card" move to the setup pane (score-first
+  // sheet music plan, build 5), where this clamping is re-covered
+  xit("picks the section and card size with number pickers clamped to the piece", async function() {
     let {piece} = await importMusicXMLPiece("salon_octet.musicxml", octetXML, store)
 
     window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
@@ -636,11 +651,6 @@ describe("sight reading page", function() {
     expect(el.querySelector("h1").textContent).toContain("measure 8")
     // the one measure of the section left
     expect(page.currentCard().card.measures).toEqual([8])
-
-    click(buttonLabelled(el, "Programme"))
-    let drawer = el.querySelector(`.${drawerStyles.drawer}[aria-label="Programme"]`)
-    expect(["start measure", "end measure", "measures per card"].map(label => picker(drawer, label).value))
-      .toEqual(["8", "8", "1"])
   })
 
   it("opens, closes and applies the programme drawer", function() {
@@ -1018,26 +1028,17 @@ describe("sight reading page", function() {
     }))
 
     let el = renderScorePage()
-    click(buttonLabelled(el, "Programme"))
 
-    let drawer = el.querySelector(`.${drawerStyles.drawer}[aria-label="Programme"]`)
     expect(page.state.keySignature.name()).toEqual("C")
-    expect(drawer.textContent).toContain("Re-import to follow the score key")
   })
 
   it("follows the score's key as the piece and its start measure change", async function() {
     let {piece} = await importMusicXMLPiece("key_change.musicxml", keyChangeScore(), store)
 
-    let el = renderScorePage()
-    click(buttonLabelled(el, "Programme"))
-
-    let drawer = el.querySelector(`.${drawerStyles.drawer}[aria-label="Programme"]`)
-    let pickPiece = id => {
-      let select = drawer.querySelector("select")
-      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(select, id)
-      flushSync(() => select.dispatchEvent(new Event("change", {bubbles: true})))
-      flushSync(() => {})
-    }
+    renderScorePage()
+    let pickPiece = id => flushSync(() => page.setGenerator(page.state.currentGenerator, {
+      ...page.state.currentGeneratorSettings, piece: id,
+    }))
 
     // pasted notation has no key of its own
     expect(page.state.keySignature.name()).toEqual("C")
@@ -1048,7 +1049,9 @@ describe("sight reading page", function() {
     expect(page.state.keySignature.name()).toEqual("F")
 
     // the E major section
-    typeNumber(drawer, "start measure", "3")
+    flushSync(() => page.setGenerator(page.state.currentGenerator, {
+      ...page.state.currentGeneratorSettings, startMeasure: 3,
+    }))
     expect(page.state.keySignature.name()).toEqual("E")
 
     pickPiece("")
@@ -1067,7 +1070,10 @@ describe("sight reading page", function() {
     expect(page.state.keySignature.name()).toEqual("C")
   })
 
-  it("keeps the sheet music deck, measure range and hand in the score page's drawer", async function() {
+  // Pending: the score page has no Programme drawer any more (Drawer:
+  // null); the deck, section and hand move to the setup pane (score-first
+  // sheet music plan, build 5), where this is re-covered
+  xit("keeps the sheet music deck, measure range and hand in the score page's drawer", async function() {
     let {piece} = await importMusicXMLPiece("salon_minuet.musicxml", minuetXML, store)
 
     window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
@@ -1159,14 +1165,11 @@ describe("sight reading page", function() {
     let {piece} = await importMusicXMLPiece("salon_octet.musicxml", octetXML, store)
 
     let el = renderScorePage()
-    click(buttonLabelled(el, "Programme"))
-
-    let drawer = el.querySelector(`.${drawerStyles.drawer}[aria-label="Programme"]`)
-    let select = drawer.querySelector("select")
-    Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(select, piece.id)
-    flushSync(() => select.dispatchEvent(new Event("change", {bubbles: true})))
-    flushSync(() => {})
-    click(buttonNamed(drawer, "Take your seat"))
+    // picking a piece applies at once: no drawer, no "Take your seat" (see
+    // the setup pane, score-first sheet music plan, build 5)
+    flushSync(() => page.setGenerator(page.state.currentGenerator, {
+      ...page.state.currentGeneratorSettings, piece: piece.id,
+    }))
 
     // the opening four measures, both hands, on the grand staff
     expect(page.state.currentStaff.name).toEqual("grand")
@@ -2450,7 +2453,11 @@ describe("sight reading page", function() {
       span.children.length == 0 && span.textContent == "Tonight's programme")
     let caption = el => el.querySelector("[data-caption]")
 
-    it("is the default for a piece in study, prefaced by tonight's programme at rest", async function() {
+    // Pending: the score page's rail no longer carries ProgrammePlate (the
+    // Rail/wideRail programme fields are gone, see score_page.jsx); its
+    // figures move to the setup pane (score-first sheet music plan, build
+    // 5), where this is re-covered
+    xit("is the default for a piece in study, prefaced by tonight's programme at rest", async function() {
       let el = await renderProgramme()
 
       expect(page.state.notes.generator instanceof PlanGenerator).toBe(true)
@@ -2482,7 +2489,10 @@ describe("sight reading page", function() {
       }],
     })
 
-    it("offers today's programme order on the plate and in the drawer for a flagged piece", async function() {
+    // Pending: no drawer or ProgrammePlate on the score page any more; the
+    // Order row moves to the setup pane (score-first sheet music plan,
+    // build 5), where this is re-covered
+    xit("offers today's programme order on the plate and in the drawer for a flagged piece", async function() {
       let el = await renderProgramme({
         settings: {introduce: READ_FIRST}, seed: () => store.putAnnotation(flagRecordFor(piece)),
       })
@@ -2518,7 +2528,11 @@ describe("sight reading page", function() {
 
     // the sheet-music UI polish: the rail, not the main column, carries the
     // programme's plates at rest, and the wider score page trainer
-    it("carries the programme's plates in the rail, not the main column, at rest", async function() {
+    // Pending: the trainer no longer has a Rail/wideRail (removed with
+    // ScoreRail, see score_page.jsx and sight_reading_page.jsx); the
+    // score-first layout (scoreLayout) and setup pane replace this
+    // (score-first sheet music plan, build 5)
+    xit("carries the programme's plates in the rail, not the main column, at rest", async function() {
       let el = await renderProgramme()
 
       let root = el.querySelector(`.${pageStyles.sight_reading_page}`)
@@ -2583,7 +2597,10 @@ describe("sight reading page", function() {
       expect(caption(el)).toBe(null)
     })
 
-    it("suggests the piece in study most overdue", async function() {
+    // Pending: the most-overdue suggestion moves from ProgrammePlate (gone
+    // with the rail) to a line in the setup pane (score-first sheet music
+    // plan, build 5/6, Open question 4c), where this is re-covered
+    xit("suggests the piece in study most overdue", async function() {
       let other = (await importMusicXMLPiece("minuet.musicxml", minuetXML, store)).piece
       await store.putStudy({pieceId: other.id, status: "maintaining", startedAt: 0})
       let past = Date.now() - 3 * 24 * 3600 * 1000
@@ -4138,13 +4155,13 @@ describe("sight reading page", function() {
       window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
         piece: piece.id, startMeasure: 1, endMeasure: 8, hand: BOTH_HANDS, ...settings,
       }))
-      return renderPage(ScorePage, {programme: {...SCORE_PROGRAMME, engine: null}, acoustic: true})
+      return renderPage(ScorePage, {programme: {...SCORE_PROGRAMME, engine: null, ScoreView: null}, acoustic: true})
     }
 
     let rerenderAcoustic = acoustic => {
       flushSync(() => root.render(React.createElement(MemoryRouter, {},
         React.createElement(ScorePage, {
-          ref: p => page = p, programme: {...SCORE_PROGRAMME, engine: null}, acoustic,
+          ref: p => page = p, programme: {...SCORE_PROGRAMME, engine: null, ScoreView: null}, acoustic,
         }))))
       flushSync(() => {})
     }
@@ -4611,7 +4628,7 @@ describe("sight reading page", function() {
       window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
         piece: piece.id, startMeasure: 3, endMeasure: 4, hand: BOTH_HANDS, measuresPerCard: "2",
       }))
-      let el = renderPage(ScorePage, {programme: {...SCORE_PROGRAMME, engine: null}, acoustic: true})
+      let el = renderPage(ScorePage, {programme: {...SCORE_PROGRAMME, engine: null, ScoreView: null}, acoustic: true})
       await page.state.notes?.generator?.ready
       flushSync(() => {})
 
@@ -4689,7 +4706,7 @@ describe("sight reading page", function() {
       window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
         piece: piece.id, startMeasure: 1, endMeasure: 8, hand: BOTH_HANDS, measuresPerCard: "2",
       }))
-      let el = renderPage(ScorePage, {programme: {...SCORE_PROGRAMME, engine: null}, acoustic: true})
+      let el = renderPage(ScorePage, {programme: {...SCORE_PROGRAMME, engine: null, ScoreView: null}, acoustic: true})
       await page.state.notes?.generator?.ready
       flushSync(() => {})
 
@@ -4842,6 +4859,137 @@ describe("sight reading page", function() {
       click(buttonNamed(el, "Begin"))
       click(buttonNamed(el, "Rest"))
       expect(el.querySelector("dialog")).toBe(null)
+    })
+  })
+
+  // the score-first page's view/pause/end/log state machine (D10),
+  // behind programme.restPauses/ScoreView: a programme without them (the
+  // exercises page) keeps today's Begin/Rest-opens-the-summary behaviour
+  // throughout, exercised by every other test in this file
+  describe("restPauses (score-first view/pause/end/log state machine)", function() {
+    let restPausesProgramme = () => ({
+      ...EXERCISES_PROGRAMME, ScoreView: SCORE_PROGRAMME.ScoreView, SessionRail: SCORE_PROGRAMME.SessionRail,
+      restPauses: true, scoreLayout: true,
+    })
+
+    let renderRestPauses = () => renderPage(SightReadingPage, {programme: restPausesProgramme()})
+
+    let playHeadColumn = () => play(page.state.notes.currentColumn())
+
+    it("opens on the score view, never the trainer's own grid or the summary dialog", function() {
+      let el = renderRestPauses()
+      expect(page.state.view).toEqual("score")
+      expect(el.querySelector("[data-score-view]")).not.toBe(null)
+      expect(el.querySelector("[data-session-rail]")).toBe(null)
+      expect(buttonNamed(el, "Begin")).toBeDefined()
+    })
+
+    it("Begin switches to the session view and starts a fresh session", function() {
+      let el = renderRestPauses()
+      click(buttonNamed(el, "Begin"))
+
+      expect(page.state.view).toEqual("session")
+      expect(page.state.session).toBe(true)
+      expect(page.state.ended).toBe(null)
+      expect(page.state.sessionLog).toEqual([])
+      expect(el.querySelector("[data-score-view]")).toBe(null)
+      expect(el.querySelector("[data-session-rail]")).not.toBe(null)
+    })
+
+    it("Rest pauses rather than ending: no dialog, the clock stops, and keys are ignored", function() {
+      let el = renderRestPauses()
+      click(buttonNamed(el, "Begin"))
+      playHeadColumn()
+      let readSoFar = page.state.stats.hits
+
+      click(buttonNamed(el, "Rest"))
+      expect(page.state.session).toBe(false)
+      expect(page.state.paused).toBe(true)
+      expect(page.state.view).toEqual("session")
+      expect(el.querySelector("dialog")).toBe(null)
+
+      let elapsedAtRest = page.elapsedSeconds()
+      playHeadColumn()
+      expect(page.state.stats.hits).toEqual(readSoFar)
+      expect(page.elapsedSeconds()).toEqual(elapsedAtRest)
+    })
+
+    it("Resume continues the same session: the same stats, counting on", function() {
+      let el = renderRestPauses()
+      click(buttonNamed(el, "Begin"))
+      playHeadColumn()
+      let stats = page.state.stats
+      let readSoFar = stats.hits
+
+      click(buttonNamed(el, "Rest"))
+      click(buttonNamed(el, "Resume"))
+      expect(page.state.session).toBe(true)
+      expect(page.state.paused).toBe(false)
+      expect(page.state.stats).toBe(stats)
+
+      playHeadColumn()
+      expect(page.state.stats.hits).toEqual(readSoFar + 1)
+    })
+
+    it("End session builds the ended strip and returns to the score view, excluding paused time from elapsed", function() {
+      let el = renderRestPauses()
+      click(buttonNamed(el, "Begin"))
+      playHeadColumn()
+      playHeadColumn()
+
+      click(buttonNamed(el, "End session"))
+      expect(page.state.view).toEqual("score")
+      expect(page.state.session).toBe(false)
+      expect(page.state.paused).toBe(false)
+      expect(page.state.ended).not.toBe(null)
+      expect(page.state.ended.headline).toEqual(`${accuracyPercent(page.state.stats.hits, page.state.stats.misses)}%`)
+      expect(el.querySelector("[data-ended-strip]")).not.toBe(null)
+    })
+
+    it("gives no ended strip when nothing was played", function() {
+      let el = renderRestPauses()
+      click(buttonNamed(el, "Begin"))
+      click(buttonNamed(el, "End session"))
+      expect(page.state.ended).toBe(null)
+      expect(el.querySelector("[data-ended-strip]")).toBe(null)
+    })
+
+    it("Play on resumes the same session from the ended strip, the gap counted as a pause", function() {
+      let el = renderRestPauses()
+      click(buttonNamed(el, "Begin"))
+      playHeadColumn()
+      let stats = page.state.stats
+
+      click(buttonNamed(el, "End session"))
+      click(buttonNamed(el, "Play on"))
+
+      expect(page.state.view).toEqual("session")
+      expect(page.state.session).toBe(true)
+      expect(page.state.ended).toBe(null)
+      expect(page.state.stats).toBe(stats)
+    })
+
+    it("Done dismisses the ended strip without starting a new session", function() {
+      let el = renderRestPauses()
+      click(buttonNamed(el, "Begin"))
+      playHeadColumn()
+      click(buttonNamed(el, "End session"))
+
+      click(buttonNamed(el, "Done"))
+      expect(page.state.ended).toBe(null)
+      expect(page.state.view).toEqual("score")
+      expect(page.state.session).toBe(false)
+    })
+
+    it("ignores Space while at rest on the score view", function() {
+      renderRestPauses()
+      spyOn(page, "skipCurrentNote")
+      page.keyMap[" "]()
+      expect(page.skipCurrentNote).not.toHaveBeenCalled()
+
+      click(buttonNamed(container, "Begin"))
+      page.keyMap[" "]()
+      expect(page.skipCurrentNote).toHaveBeenCalled()
     })
   })
 

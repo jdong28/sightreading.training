@@ -123,8 +123,9 @@ describe("app routing", function() {
 
       expect(document.title).toEqual("Sheet music | Sight Reading Trainer")
       expect(activeNav(el)).toEqual(["Sheet music"])
-      expect(drawerText(el)).toContain("Import MusicXML")
-      expect(drawerText(el)).not.toContain("Clef")
+      // the score-first page has no drawer (Drawer: null): the setup pane
+      // takes over its Import MusicXML link and "Compare engraving engines"
+      // once built (score-first sheet music plan, builds 5 and 9)
     })
 
     it("renders the engraving engines page at /score-engines, kept out of the navigation", function() {
@@ -136,7 +137,11 @@ describe("app routing", function() {
       expect([...el.querySelectorAll("nav a")].map(a => a.getAttribute("href"))).not.toContain("/score-engines")
     })
 
-    it("links the score page's drawer to the engraving engines page", function() {
+    // Pending: the score page has no drawer any more (Drawer: null, see
+    // score_page.jsx); the setup pane's "Compare engraving engines" link and
+    // its Import MusicXML/deck UI land once built (score-first sheet music
+    // plan, builds 5 and 9)
+    xit("links the score page's drawer to the engraving engines page", function() {
       let el = renderApp("/sheet-music")
       let link = [...el.querySelectorAll(`.${drawerStyles.drawer} a`)]
         .find(a => a.textContent == "Compare engraving engines")
@@ -144,7 +149,7 @@ describe("app routing", function() {
       expect(link.getAttribute("href")).toMatch(/^\/score-engines/)
     })
 
-    it("imports a compressed .mxl file picked in the score page's deck, and picks it", async function() {
+    xit("imports a compressed .mxl file picked in the score page's deck, and picks it", async function() {
       let el = renderApp("/sheet-music")
       let drawer = el.querySelector(`.${drawerStyles.drawer}[aria-label="Programme"]`)
 
@@ -168,7 +173,7 @@ describe("app routing", function() {
       expect(await pieceSource(piece.id, store)).toEqual(LITTLE_WALTZ_XML)
     })
 
-    it("answers a PDF picked in the score page's deck with the conversion steps and adds no piece", async function() {
+    xit("answers a PDF picked in the score page's deck with the conversion steps and adds no piece", async function() {
       let el = renderApp("/sheet-music")
       let drawer = el.querySelector(`.${drawerStyles.drawer}[aria-label="Programme"]`)
       let fileInput = drawer.querySelector(`.${drawerStyles.file_input} > input[type=file]`)
@@ -208,7 +213,7 @@ describe("app routing", function() {
       expect(store.pieces().length).toEqual(1)
     })
 
-    it("answers a PDF with no file name with the conversion steps too", function() {
+    xit("answers a PDF with no file name with the conversion steps too", function() {
       let el = renderApp("/sheet-music")
       let drawer = el.querySelector(`.${drawerStyles.drawer}[aria-label="Programme"]`)
       let fileInput = drawer.querySelector(`.${drawerStyles.file_input} > input[type=file]`)

@@ -144,7 +144,15 @@ describe("the passages view (st/difficulty)", function() {
 
   let plate = () => container.querySelector("[data-passages-plate]")
 
-  it("shows the piece at a glance at rest, and hides for Begin/Rest", async function() {
+  // Pending: the score page's trainer no longer renders a Rail (removed
+  // with ScoreRail/ProgrammePlate/PassagesPlate, see score_page.jsx), so
+  // PassagesPlate is unreachable through ScorePage any more. These cases
+  // are re-pointed at the score-first page's Score difficulty shade and
+  // passage pane once they exist (score-first sheet music plan, builds 5-7),
+  // per plan.md's Files: "its review-pane cases move to score_view_spec.js
+  // ... the passage cases move to the pane." The review pane describe below
+  // mounts PassagesPlate/ProgrammePlate directly and is unaffected.
+  xit("shows the piece at a glance at rest, and hides for Begin/Rest", async function() {
     await drillPiece(workhorseScore())
     renderScorePage()
     await waitFor(() => plate(), {message: "the passages plate"})
@@ -166,7 +174,7 @@ describe("the passages view (st/difficulty)", function() {
     await waitFor(() => plate(), {message: "the passages plate again"})
   })
 
-  it("draws the shaded score only once its pane is open", async function() {
+  xit("draws the shaded score only once its pane is open", async function() {
     let {overviewCalls, loadEngines} = countOverviewDraws()
 
     await drillPiece(workhorseScore())
@@ -206,7 +214,7 @@ describe("the passages view (st/difficulty)", function() {
     expect(container.querySelector("[data-score-overview]")).toBe(null)
   })
 
-  it("reads why a shaded passage is hard from the score pane", async function() {
+  xit("reads why a shaded passage is hard from the score pane", async function() {
     await drillPiece(workhorseScore({barCount: 24, denseAt: [5, 6, 7], alsoDenseAt: [17, 18, 19]}))
     renderScorePage()
     await waitFor(() => plate(), {message: "the passages plate"})
@@ -238,7 +246,7 @@ describe("the passages view (st/difficulty)", function() {
   // scroller, so the passage detail — which carries the tap legend as its
   // last line — stays with the reader rather than scrolling away with the
   // score (see .pane_detail, sticky once there is room for the two columns)
-  it("keeps the passage detail and its legend out of the pane's scrolling score", async function() {
+  xit("keeps the passage detail and its legend out of the pane's scrolling score", async function() {
     await drillPiece(workhorseScore({barCount: 48, denseAt: [5, 6, 7], alsoDenseAt: [40, 41, 42]}))
     renderScorePage()
     await waitFor(() => plate(), {message: "the passages plate"})
@@ -283,7 +291,7 @@ describe("the passages view (st/difficulty)", function() {
   // the pane is the scroller and the piece it holds is long, so its header —
   // the only way out of it, with no scrim to click on a window no wider than
   // the pane — stays pinned at the top however far the score has scrolled
-  it("keeps the score pane's close button on screen as the score scrolls", async function() {
+  xit("keeps the score pane's close button on screen as the score scrolls", async function() {
     await drillPiece(workhorseScore({barCount: 48, denseAt: [5, 6, 7], alsoDenseAt: [40, 41, 42]}))
     renderScorePage()
     await waitFor(() => plate(), {message: "the passages plate"})
@@ -319,7 +327,7 @@ describe("the passages view (st/difficulty)", function() {
     expect(pane.getAttribute("aria-hidden")).toEqual("true")
   })
 
-  it("selects a passage from a bracket or a list row", async function() {
+  xit("selects a passage from a bracket or a list row", async function() {
     await drillPiece(workhorseScore({barCount: 24, denseAt: [5, 6, 7], alsoDenseAt: [17, 18, 19]}))
     renderScorePage()
     await waitFor(() => plate(), {message: "the passages plate"})
@@ -349,7 +357,7 @@ describe("the passages view (st/difficulty)", function() {
     expect(shownBars()).toContain(other.textContent.match(/(\d+)–(\d+)/)[0])
   })
 
-  it("practises exactly the selected passage's bars as one card", async function() {
+  xit("practises exactly the selected passage's bars as one card", async function() {
     let piece = await drillPiece(workhorseScore())
     renderScorePage()
     await waitFor(() => plate(), {message: "the passages plate"})
@@ -368,7 +376,7 @@ describe("the passages view (st/difficulty)", function() {
     expect(stored.measuresPerCard).toEqual("all")
   })
 
-  it("practises a passage from the score pane", async function() {
+  xit("practises a passage from the score pane", async function() {
     let piece = await drillPiece(workhorseScore())
     renderScorePage()
     await waitFor(() => plate(), {message: "the passages plate"})
@@ -401,7 +409,7 @@ describe("the passages view (st/difficulty)", function() {
   // column, so the scroll waits on the drawing itself: an engine that takes
   // longer than a second (a long import's first engraving does) must still
   // scroll the pane to the chosen band, not give up on a fixed budget
-  it("opens the score pane at the passage shown, scrolled to it", async function() {
+  xit("opens the score pane at the passage shown, scrolled to it", async function() {
     // the overview alone draws slowly, well past the second a fixed retry
     // budget allowed: the trainer's own cards (any range but the whole
     // piece) are left as they are
@@ -454,7 +462,7 @@ describe("the passages view (st/difficulty)", function() {
     expect(bandTop).toBeLessThan(headerBottom + 40)
   }, 20000)
 
-  it("analyses a piece added without an annotation on first open", async function() {
+  xit("analyses a piece added without an annotation on first open", async function() {
     // stored directly, as a piece imported before this change would be:
     // addPiece always annotates a freshly imported piece
     let xml = workhorseScore()
@@ -480,7 +488,7 @@ describe("the passages view (st/difficulty)", function() {
       {message: "the shaded engraving"})
   })
 
-  it("names a one-bar passage in the singular", async function() {
+  xit("names a one-bar passage in the singular", async function() {
     let piece = await drillPiece(workhorseScore())
     let record = store.annotation(piece.id)
     let [hardest, ...rest] = record.proposals
@@ -529,7 +537,7 @@ describe("the passages view (st/difficulty)", function() {
   // the drawn range on a render before the drill's columns follow it, and in
   // scroll mode the passage drilled first comes back from the kept system
   // (see systemCache in st/components/score_card)
-  it("keeps the engraving when a passage already drilled in scroll mode is picked again", async function() {
+  xit("keeps the engraving when a passage already drilled in scroll mode is picked again", async function() {
     window.localStorage.setItem(SCORE_DRILL_STORAGE_KEY, JSON.stringify({mode: "scroll"}))
     await drillPiece(workhorseScore({barCount: 24, denseAt: [5, 6, 7], alsoDenseAt: [17, 18, 19]}))
     renderScorePage()
@@ -562,7 +570,7 @@ describe("the passages view (st/difficulty)", function() {
     expect(container.textContent).not.toContain("couldn't be engraved")
   })
 
-  it("hides the score plate when the engine can't draw the piece", async function() {
+  xit("hides the score plate when the engine can't draw the piece", async function() {
     let xml = workhorseScore()
     let piece = await drillPiece(xml)
 
@@ -605,7 +613,7 @@ describe("the passages view (st/difficulty)", function() {
     expect(pane.textContent).not.toContain("Tap a shaded passage")
   })
 
-  it("offers no score pane without a stored source", async function() {
+  xit("offers no score pane without a stored source", async function() {
     let piece = await drillPiece(workhorseScore())
 
     container = document.createElement("div")
@@ -626,7 +634,7 @@ describe("the passages view (st/difficulty)", function() {
       .toBeUndefined()
   })
 
-  it("shows nothing for a piece without passages", async function() {
+  xit("shows nothing for a piece without passages", async function() {
     await drillPiece(pianoScore({bars: [{upper: [{name: "C4"}]}]}))
     renderScorePage()
     await waitFor(() => container.querySelector("[data-score-card]"), {message: "the page to settle"})
@@ -636,7 +644,7 @@ describe("the passages view (st/difficulty)", function() {
   // the rail's plates stand in for its engraving only while they show
   // something: in free practice there is no programme plate, so a piece with
   // no flagged passages leaves the rail as it has always been
-  it("keeps the rail's engraving while the rail's plates show nothing", async function() {
+  xit("keeps the rail's engraving while the rail's plates show nothing", async function() {
     let engravingShown = () => {
       let img = container.querySelector(`.${pageStyles.rail} .${pageStyles.engraving} img`)
       return !!img && img.getClientRects().length > 0
@@ -663,7 +671,7 @@ describe("the passages view (st/difficulty)", function() {
   // the sheet-music UI polish: the glance plate's header and counts row, and
   // the programme plate's figures, both fit a rail column (clamp(260px,
   // 26vw, 340px), see docs/design/salon-de-chopin.md) without overflowing it
-  it("fits a narrow rail column without horizontal overflow", async function() {
+  xit("fits a narrow rail column without horizontal overflow", async function() {
     let xml = workhorseScore({barCount: 101, denseAt: [9, 10, 11], alsoDenseAt: [53, 54]})
     let piece = await drillPiece(xml)
 

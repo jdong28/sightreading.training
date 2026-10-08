@@ -432,6 +432,65 @@
     }
 }
 
+/* the score-first page's frame (see docs/design/salon-de-chopin.md "6.
+   Sheet music, score first"): the score column and the setup pane sit in a
+   flex row that wraps on a phone, rather than the exercises page's fixed
+   grid columns */
+.sight_reading_page.score_layout {
+    .trainer {
+        max-width: 1400px;
+    }
+
+    .trainer_grid {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 22px;
+        align-items: flex-start;
+    }
+
+    .trainer_main {
+        flex: 999 1 640px;
+        min-width: 0;
+    }
+
+    .rail {
+        flex: 1 1 340px;
+        max-width: 420px;
+        min-width: 0;
+    }
+}
+
+.paused_dim {
+    opacity: .55;
+}
+
+.paused_banner {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 16px;
+    margin-top: 12px;
+    padding: 12px 16px;
+    background: var(--salon-paper-warm);
+    border-top: 3px double var(--salon-rule-strong);
+}
+
+.paused_text {
+    flex: 1 1 260px;
+    margin: 0;
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 16px;
+    color: var(--salon-ink);
+}
+
+.end_session_pill.end_session_pill {
+    padding: 12px 22px;
+    background: var(--salon-paper);
+    border: 1px solid var(--salon-oxblood);
+    color: var(--salon-oxblood);
+}
+
 .keyboard_well {
     position: relative;
     height: 116px;

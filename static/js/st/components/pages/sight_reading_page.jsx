@@ -43,6 +43,7 @@ import {SELF_GRADES, SELF_GRADE_FLASH_MS} from "st/srs/self_grade"
 import {SELF_ASPECTS} from "st/srs/records"
 import {AGAIN} from "st/srs/grade"
 import {troubleNotes, focusFromRows} from "st/session_summary"
+import {endedSummary} from "st/bar_progress"
 
 import * as React from "react"
 import {createPortal} from "react-dom"
@@ -165,15 +166,25 @@ export const EXERCISES_PROGRAMME = {
   // own staff (see engineCard): in wait mode card by card, in scroll mode the
   // whole section on one line, save a bar today's programme offers as one
   // hand alone, drawn as its own one-bar system
-  // Rail, a component shown at rest at the head of the trainer's right
-  // rail, in place of the rail's engraving, handed the generator, its
-  // settings (defaults filled in) and a setter of them, the engine source
-  // and loadEngines, eg. the score page's "Tonight's programme" and "The
-  // piece at a glance" plates. Also handed bar, the measure of a bar
-  // clicked on the trainer's own engine card while it belongs to the
-  // drilled piece (else null), and closeBar to drop the selection.
-  // wideRail, true for a wider trainer and rail (see the score page), which
-  // sets .wide_rail on the page root.
+  // ScoreView, a component the trainer renders in place of its own grid
+  // while state.view == "score" (the score-first page's at rest view, see
+  // the score page), handed the current settings and a setter of them, the
+  // generator, the engine source, loadEngines, acoustic, the ended strip's
+  // summary (st/bar_progress.endedSummary) and begin/playOn/dismissEnded.
+  // Unset, as the exercises page leaves it, keeps the trainer's own grid
+  // and today's Begin/Rest/summary dialog throughout (state.view stays
+  // null, see inScoreView).
+  // SessionRail, a component shown as the rail in place of the default one
+  // while state.view == "session" (both only meaningful together with
+  // restPauses), handed the session log, current settings and elapsedSeconds.
+  // restPauses, true for Rest to pause rather than end the session: Resume
+  // continues it, and a separate End session action returns to the score
+  // view with its ended strip (see begin/pauseSession/resumeSession/
+  // endSession/playOn/dismissEnded). Unset, as the exercises page leaves
+  // it, keeps today's Rest-opens-the-summary behaviour exactly.
+  // scoreLayout, true for the score-first frame (score column plus a
+  // setup pane always on the right), which sets .score_layout on the page
+  // root in place of wideRail.
   //
   // A generator may also name what it plays (all optional): sectionLabel(),
   // the title's words for its measures; cardLabel(), the plate's for its
@@ -234,15 +245,6 @@ export default class SightReadingPage extends React.Component {
       this.staff = card
       if (card && this.state.slider) { card.setOffset(this.state.slider.value) }
     }
-    // a bar clicked on the trainer's own engine card, at rest only (the
-    // card withholds onBar in session, but a stale handler from a card held
-    // past Begin would still fire otherwise)
-    this.selectBar = measure => {
-      let piece = this.currentPieceSection() && sheetMusicPiece(this.currentSettings())
-      if (this.state.session || !piece) { return }
-      this.setState({selectedBar: {pieceId: piece.id, measure}})
-    }
-    this.closeBar = () => this.setState({selectedBar: null})
     this.openSettings = () => this.setState({settingsOpen: true})
     this.closeSettings = () => this.setState({settingsOpen: false})
     this.applySettings = () => {
@@ -254,12 +256,96 @@ export default class SightReadingPage extends React.Component {
     this.toggleSession = e => {
       // so the space bar skips a note instead of pressing the pill again
       if (e && e.currentTarget) { e.currentTarget.blur() }
-      if (this.state.session) {
+      if (this.restPauses()) {
+        if (this.state.paused) {
+          this.resumeSession()
+        } else if (this.state.session) {
+          this.pauseSession()
+        }
+      } else if (this.state.session) {
         this.restSession()
       } else {
         this.beginSession()
       }
     }
+
+    // Begin, from the score view: the setup pane, a bar pop-up's "Practise",
+    // or a passage pane's. Clears any ended strip and the session log, and
+    // switches to the session view before beginSession() starts fresh stats
+    // and a fresh clock, so no note can be played before the view has moved
+    this.begin = () => {
+      this.setState({ended: null, sessionLog: [], view: "session"}, () => this.beginSession())
+    }
+
+    // Rest, on the score-first page: pauses rather than ending the session
+    // (see restPauses on the programme). Resume continues it; only End
+    // session returns to the score
+    this.pauseSession = () => {
+      if (!this.state.session) { return }
+
+      let recorded = this.recordSession()
+      if (recorded) { this.lastRecord = recorded.session }
+      this.stopClock()
+      this.matcher.clear()
+      this.setState({
+        session: false, paused: true, pausedAt: Date.now(),
+        clockNow: Date.now(), heldNotes: {}, touchedNotes: {},
+      }, () => this.followHead())
+    }
+
+    this.resumeSession = () => {
+      if (!this.state.paused) { return }
+      let pausedMs = this.resumePlayClock(this.state.pausedAt)
+      this.setState({
+        session: true, paused: false, pausedMs, pausedAt: null,
+        clockNow: Date.now(), heldNotes: {}, touchedNotes: {},
+      }, () => this.followHead())
+    }
+
+    // End session (running or paused): writes the pause half first when
+    // still running, then builds the ended strip's summary from the last
+    // record written, the session log and the piece's previous session, and
+    // returns to the score view
+    this.endSession = () => {
+      if (!this.state.session && !this.state.paused) { return }
+
+      if (this.state.session) {
+        let recorded = this.recordSession()
+        if (recorded) { this.lastRecord = recorded.session }
+        this.stopClock()
+        this.matcher.clear()
+      }
+
+      let record = this.lastRecord
+      let log = this.state.sessionLog
+      let ended = null
+      if (record || log.length) {
+        ended = endedSummary({
+          record: record || {notesRead: 0, misses: 0, elapsedSeconds: this.elapsedSeconds(), selfGraded: null},
+          previous: this.previousSessionRecord(),
+          log,
+          acoustic: this.selfGraded(),
+        })
+      }
+
+      this.setState({
+        session: false, paused: false, pausedAt: Date.now(),
+        view: "score", ended, heldNotes: {}, touchedNotes: {},
+      })
+    }
+
+    // Play on, from the ended strip: resumes the same session, the time
+    // since End session counted as a pause
+    this.playOn = () => {
+      let pausedMs = this.resumePlayClock(this.state.pausedAt)
+      this.setState({
+        ended: null, view: "session", session: true, paused: false,
+        pausedMs, pausedAt: null, clockNow: Date.now(), heldNotes: {}, touchedNotes: {},
+      }, () => this.followHead())
+    }
+
+    // Done, from the ended strip
+    this.dismissEnded = () => this.setState({ended: null})
 
     // the grade row of acoustic mode, which the grade hotkeys go through
     this.selfGradeRow = React.createRef()
@@ -281,11 +367,11 @@ export default class SightReadingPage extends React.Component {
     // Hotkeys would otherwise still send space/1-4 through to the drill
     // underneath while it's open
     this.keyMap = {
-      " ": e => { if (!this.state.summary) { this.skipCurrentNote() } },
-      "1": e => { if (!this.state.summary) { this.selfGradeHotkey(1) } },
-      "2": e => { if (!this.state.summary) { this.selfGradeHotkey(2) } },
-      "3": e => { if (!this.state.summary) { this.selfGradeHotkey(3) } },
-      "4": e => { if (!this.state.summary) { this.selfGradeHotkey(4) } },
+      " ": e => { if (!this.state.summary && !this.inScoreView()) { this.skipCurrentNote() } },
+      "1": e => { if (!this.state.summary && !this.inScoreView()) { this.selfGradeHotkey(1) } },
+      "2": e => { if (!this.state.summary && !this.inScoreView()) { this.selfGradeHotkey(2) } },
+      "3": e => { if (!this.state.summary && !this.inScoreView()) { this.selfGradeHotkey(3) } },
+      "4": e => { if (!this.state.summary && !this.inScoreView()) { this.selfGradeHotkey(4) } },
     }
 
     // the key the user picked, drawn unless the generator sets its own
@@ -342,6 +428,27 @@ export default class SightReadingPage extends React.Component {
       // opened by Rest alone: null, or {record, eyebrow} (see openSummary)
       summary: null,
 
+      // score-first pages only (programme.restPauses): "score" or "session",
+      // which view the trainer renders in place of its own grid (see begin);
+      // unset (null) for a programme without a ScoreView, which always
+      // renders the grid
+      view: this.programme.ScoreView ? "score" : null,
+      // Rest pauses rather than ending the session; Resume continues it
+      paused: false,
+      // time paused so far this session, not counting a pause in progress
+      // (see totalPausedMs), kept across Rest/Resume so Elapsed excludes it
+      pausedMs: 0,
+      // when the current pause (or the gap since End session, for Play on)
+      // began, null while not paused
+      pausedAt: null,
+      // the session-ended strip's summary (st/bar_progress.endedSummary),
+      // shown above the score plate until Play on or Done; null for none
+      ended: null,
+      // every pass MeasureCardGenerator#setOnPass reports between Begin and
+      // End session, through pauses: the score view's session marks and the
+      // ended strip are read from this, never the review log
+      sessionLog: [],
+
       // the source MusicXML of the drilled piece, for the programme's
       // engine: {piece, status: "loading" | "ready" | "missing" | "failed",
       // musicXML, measureStarts}
@@ -369,10 +476,6 @@ export default class SightReadingPage extends React.Component {
       // bumped once per judgement (a wrong key or chord) to re-light the
       // plate's ink smudge (see PlateFeedback and countMiss)
       smudges: 0,
-
-      // the bar clicked on the trainer's own engine card, at rest: null, or
-      // {pieceId, measure}, read by the programme's Rail (see selectBar)
-      selectedBar: null,
     }
   }
 
@@ -424,15 +527,6 @@ export default class SightReadingPage extends React.Component {
     }
 
     this.updateEngineCard(prevState)
-
-    // the selection belongs to one piece; it drops once the drill moves to
-    // another, or to none, rather than following the card to it
-    if (this.state.selectedBar) {
-      let section = this.currentPieceSection()
-      if (!section || section.pieceId != this.state.selectedBar.pieceId) {
-        this.setState({selectedBar: null})
-      }
-    }
   }
 
   // Keeps the engine card's inputs in step with the drill: the source of the
@@ -741,10 +835,6 @@ export default class SightReadingPage extends React.Component {
       head,
       missed: self ? [] : this.state.engineMissed,
       badges: self ? this.selfGradeBadges(card) : null,
-      // withheld in session: a click there would change which bar the
-      // rail's plate shows at the next Rest, with nothing on screen to
-      // explain why
-      onBar: this.state.session ? null : this.selectBar,
     }
   }
 
@@ -925,6 +1015,13 @@ export default class SightReadingPage extends React.Component {
       generatorInstance.setHandsApart(() => this.handsApart())
     }
 
+    // the score-first page's session log (D10): every pass the generator
+    // finishes between Begin and End session, through pauses
+    if (!keepGenerator && generatorInstance.setOnPass && this.restPauses()) {
+      generatorInstance.setOnPass(report =>
+        this.setState(state => ({sessionLog: [...state.sessionLog, report]})))
+    }
+
     // today's programme reads the log when a bar that can split is failing,
     // so the staff is filled again from the card it then picks
     if (!keepGenerator && generatorInstance.ready) {
@@ -1061,8 +1158,67 @@ export default class SightReadingPage extends React.Component {
       touchedNotes: {},
       // defensive only: the modal normally hides Begin
       summary: null,
+      // a fresh Begin starts with none of an earlier sitting's pauses
+      paused: false,
+      pausedMs: 0,
+      pausedAt: null,
     })
+    this.lastRecord = null
     this.followHead()
+  }
+
+  // whether the score-first page is at rest on its score view (programme.
+  // restPauses/ScoreView), where Space/1-4 are inert (see the keyMap) and
+  // the keyboard footer is hidden
+  inScoreView() {
+    return !!(this.programme.ScoreView && this.state.view == "score")
+  }
+
+  // whether Rest pauses rather than ends the session (begin/pauseSession/
+  // resumeSession/endSession/playOn/dismissEnded): only with a ScoreView to
+  // return to, so a spec reaching the trainer's internals on the score page
+  // with {...SCORE_PROGRAMME, ScoreView: null} gets today's Rest-opens-the-
+  // summary behaviour throughout, exactly as the exercises page's
+  restPauses() {
+    return !!(this.programme.restPauses && this.programme.ScoreView)
+  }
+
+  // the time paused so far, including a pause (or the gap since End
+  // session, for Play on) still in progress at `now`
+  totalPausedMs(now=Date.now()) {
+    let {pausedMs, paused, pausedAt} = this.state
+    return (pausedMs || 0) + (paused && pausedAt != null ? now - pausedAt : 0)
+  }
+
+  // Resume/Play on's shared clock bookkeeping: adds the finished pause to
+  // pausedMs, restarts the clock, clears the matcher and replans today's
+  // programme as beginSession does (so a piece whose every bar rested stays
+  // offered), resetting D4(c)'s "first column since" flag
+  resumePlayClock(pausedAt) {
+    let pausedMs = (this.state.pausedMs || 0) + (pausedAt != null ? Date.now() - pausedAt : 0)
+    this.startClock()
+    this.matcher.clear()
+    this.playedThisSegment = false
+
+    let playing = this.state.notes && this.state.notes.generator
+    if (playing && playing.replan && playing.replan()) {
+      this.refreshNoteList(playing)
+    }
+
+    return pausedMs
+  }
+
+  // the piece's previous session (C3): the latest recentSessions() record on
+  // this piece, started before this one, that read or graded anything
+  previousSessionRecord() {
+    let section = this.currentPieceSection()
+    let startedAt = this.state.sessionStartedAt
+    if (!section || startedAt == null) { return null }
+
+    let candidates = getAppStore().recentSessions().filter(session =>
+      session.settings?.piece == section.pieceId && session.startedAt < startedAt &&
+      (session.notesRead || session.misses))
+    return candidates.length ? candidates[candidates.length - 1] : null
   }
 
   // saves the stats so far and counts afresh from now, clock included
@@ -1178,7 +1334,7 @@ export default class SightReadingPage extends React.Component {
   elapsedSeconds() {
     let {sessionStartedAt, clockNow} = this.state
     if (sessionStartedAt == null || clockNow == null) { return 0 }
-    return Math.floor((clockNow - sessionStartedAt) / 1000)
+    return Math.floor((clockNow - sessionStartedAt - this.totalPausedMs(clockNow)) / 1000)
   }
 
   // Judges one MIDI event through the matcher: it tells the page each
@@ -1656,14 +1812,6 @@ export default class SightReadingPage extends React.Component {
     }
   }
 
-  // the clicked bar's measure while it belongs to the drilled piece, else
-  // null (see selectBar)
-  selectedBarMeasure() {
-    let {selectedBar} = this.state
-    let section = this.currentPieceSection()
-    return selectedBar && section && selectedBar.pieceId == section.pieceId ? selectedBar.measure : null
-  }
-
   // Adds the practice on the pass the generator abandons (see
   // MeasureCardGenerator#takePractice) to the local store
   flushPractice(generator) {
@@ -1727,11 +1875,12 @@ export default class SightReadingPage extends React.Component {
       staff: this.state.currentStaff?.name,
       generator: this.state.currentGenerator?.name,
       settings,
-      // the session clock, Begin to now: activeSeconds leaves out pauses,
-      // and acoustic mode barely marks activity at all, so this is the only
-      // clock the summary card and progress screen can read (see the
-      // elapsedSeconds doc on SessionRecord in st/storage)
-      elapsedSeconds: Math.floor((Date.now() - this.state.sessionStartedAt) / 1000),
+      // the session clock, Begin to now, less any Rest/Resume pauses:
+      // activeSeconds leaves out pauses too, and acoustic mode barely marks
+      // activity at all, so this is the only clock the summary card,
+      // the score-first page's ended strip and progress screen can read
+      // (see the elapsedSeconds doc on SessionRecord in st/storage)
+      elapsedSeconds: Math.floor((Date.now() - this.state.sessionStartedAt - this.totalPausedMs()) / 1000),
     })
 
     if (!session) {
@@ -1767,20 +1916,22 @@ export default class SightReadingPage extends React.Component {
   }
 
   render() {
+    let scoreView = this.inScoreView()
+
     return <div
       ref="page_container"
       className={classNames(styles.sight_reading_page, {
         [styles.fullscreen]: this.state.fullscreen,
         [styles.scroll_mode]: this.state.mode == "scroll",
         [styles.wait_mode]: this.state.mode == "wait",
-        [styles.wide_rail]: this.programme.wideRail,
+        [styles.score_layout]: this.programme.scoreLayout,
     })}>
       <div className={styles.trainer_scroller}>
         <main className={styles.trainer}>
-          {this.renderProgrammeButton()}
-          {this.renderTitle()}
+          {!scoreView && this.renderProgrammeButton()}
+          {!scoreView && this.renderTitle()}
 
-          <div className={styles.trainer_grid}>
+          {scoreView ? this.renderScoreView() : <div className={styles.trainer_grid}>
             <div className={styles.trainer_main}>
               {this.renderStaffPlate()}
               {this.renderSelfGrade()}
@@ -1788,13 +1939,13 @@ export default class SightReadingPage extends React.Component {
               {this.renderStatCards()}
             </div>
             {this.renderRail()}
-          </div>
+          </div>}
         </main>
       </div>
 
-      {this.renderKeyboardFooter()}
+      {(!this.restPauses() || this.state.view == "session") && this.renderKeyboardFooter()}
 
-      <this.programme.Drawer
+      {this.programme.Drawer && <this.programme.Drawer
         open={this.state.settingsOpen}
         close={this.closeSettings}
         apply={this.applySettings}
@@ -1822,13 +1973,39 @@ export default class SightReadingPage extends React.Component {
         tempo={this.state.tempo}
         setTempo={this._setTempo ||= on => this.setTempo(on)}
         acoustic={this.selfGraded()}
-      />
+      />}
 
       {this.renderDevMetrics()}
 
       <Hotkeys keyMap={this.keyMap} />
       {this.renderSummary()}
     </div>;
+  }
+
+  // the score-first page's at-rest view (programme.ScoreView), in place of
+  // the trainer's own grid while state.view == "score" (see begin/endSession)
+  renderScoreView() {
+    let ScoreView = this.programme.ScoreView
+    return <ScoreView
+      settings={this.currentSettings()}
+      setSettings={this._setScoreSettings ||= settings => {
+        let generator = this.state.currentGenerator
+        if (generator.storageKey) {
+          storeGeneratorSettings(generator.storageKey, settings)
+        }
+        this.setGenerator(generator, settings)
+      }}
+      generator={this.currentNotesGenerator()}
+      source={this.state.engineSource}
+      engine={this.programme.engine}
+      loadEngines={this.props.loadEngines}
+      acoustic={this.selfGraded()}
+      ended={this.state.ended}
+      begin={this.begin}
+      playOn={this.playOn}
+      dismissEnded={this.dismissEnded}
+      viewportHeight={this.props.viewportHeight}
+    />
   }
 
   // The session summary card (st/components/sight_reading/session_summary),
@@ -2127,13 +2304,28 @@ export default class SightReadingPage extends React.Component {
         ref={this.setStaffWrapper}
         className={classNames(staffStyles.staff_wrapper, styles.staff_wrapper, {
           [styles.engine_system]: engineCard && engineCard.system,
+          [styles.paused_dim]: this.restPauses() && this.state.paused,
         })}>
         {staff}
       </div>
       {this.renderCaption()}
       {this.renderEngineSourceNote()}
       {this.renderFeedback()}
+      {this.restPauses() && this.state.paused && this.renderPausedBanner()}
     </Plate>
+  }
+
+  // the "At rest" banner inside the staff plate while the score-first page
+  // is paused (D8): Resume and End session repeat the transport row's
+  // actions, as the artboard has them in both places
+  renderPausedBanner() {
+    return <div className={styles.paused_banner}>
+      <p className={styles.paused_text}>
+        At rest. The clock is stopped and the card waits here; resume when you are ready.
+      </p>
+      <Pill variant="primary" className={styles.resume_pill} onClick={this.resumeSession}>Resume</Pill>
+      <Pill variant="ghost" className={styles.end_session_pill} onClick={this.endSession}>End session</Pill>
+    </div>
   }
 
   // the generator's word on the card just played, eg. when it comes back;
@@ -2220,12 +2412,23 @@ export default class SightReadingPage extends React.Component {
       </Pill>
     }
 
+    let endSessionButton
+    if (this.restPauses()) {
+      endSessionButton = <Pill
+        variant="ghost"
+        className={styles.end_session_pill}
+        onClick={this.endSession}>End session</Pill>
+    }
+
     return <div className={styles.transport}>
       <Pill
         variant="primary"
         className={styles.session_pill}
         aria-pressed={this.state.session}
-        onClick={this.toggleSession}>{this.state.session ? "Rest" : "Begin"}</Pill>
+        onClick={this.toggleSession}>
+        {this.restPauses() ? (this.state.paused ? "Resume" : "Rest") : (this.state.session ? "Rest" : "Begin")}
+      </Pill>
+      {endSessionButton}
       <Pill
         variant="ghost"
         className={styles.transport_pill}
@@ -2303,6 +2506,16 @@ export default class SightReadingPage extends React.Component {
   }
 
   renderRail() {
+    if (this.programme.SessionRail && this.state.view == "session") {
+      return <aside className={styles.rail}>
+        <this.programme.SessionRail
+          sessionLog={this.state.sessionLog}
+          settings={this.currentSettings()}
+          elapsedSeconds={this.elapsedSeconds()}
+        />
+      </aside>
+    }
+
     let sessions = this.eveningSessions()
 
     let evening
@@ -2341,33 +2554,7 @@ export default class SightReadingPage extends React.Component {
       evening = <p className={styles.evening_empty}>Nothing played yet</p>
     }
 
-    // the programme's own plates at the head of the rail, while a generator
-    // is up at rest; in session the rail is always the default one below.
-    // They stand in for the engraving only while they render something: the
-    // slot is left empty otherwise, and the engraving below it shows as ever
-    // (see .rail_top in the stylesheet)
-    let Rail = this.programme.Rail
-    let generator = this.currentNotesGenerator()
-
     return <aside className={styles.rail}>
-      <div className={styles.rail_top}>
-        {Rail && !this.state.session && generator ? <Rail
-          generator={generator}
-          settings={this.currentSettings()}
-          setSettings={this._setSettings ||= settings => {
-            let generator = this.state.currentGenerator
-            if (generator.storageKey) {
-              storeGeneratorSettings(generator.storageKey, settings)
-            }
-            this.setGenerator(generator, settings)
-          }}
-          source={this.state.engineSource}
-          engine={this.programme.engine}
-          loadEngines={this.props.loadEngines}
-          bar={this.selectedBarMeasure()}
-          closeBar={this.closeBar} /> : null}
-      </div>
-
       <figure className={styles.engraving}>
         <div className={styles.engraving_slot}>
           <img
