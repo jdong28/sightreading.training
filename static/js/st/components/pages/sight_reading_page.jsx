@@ -154,8 +154,9 @@ export const EXERCISES_PROGRAMME = {
   // that pill, since the sheet music generator can't take a seed
   focusGenerator: GENERATORS.find(generator => generator.name == "random"),
   // the session summary's "New programme" destination, a path rendered as
-  // a link; unset, as the score page leaves it, closes the card and opens
-  // the programme drawer instead (see newProgramme)
+  // a link; unset, it closes the card and opens the page's own programme
+  // drawer instead (see newProgramme). The score page leaves it unset, but
+  // Rest only pauses there (restPauses), so it never opens this card
   newProgramme: "/setup",
 
   // Optional:
@@ -171,12 +172,12 @@ export const EXERCISES_PROGRAMME = {
   // Rail, a component shown at rest at the head of the trainer's right
   // rail, in place of the rail's engraving, handed the generator, its
   // settings (defaults filled in) and a setter of them, the engine source
-  // and loadEngines, eg. the score page's "Tonight's programme" and "The
-  // piece at a glance" plates. Also handed bar, the measure of a bar
-  // clicked on the trainer's own engine card while it belongs to the
-  // drilled piece (else null), and closeBar to drop the selection.
-  // wideRail, true for a wider trainer and rail (see the score page), which
-  // sets .wide_rail on the page root.
+  // and loadEngines. Also handed bar, the measure of a bar clicked on the
+  // trainer's own engine card while it belongs to the drilled piece (else
+  // null), and closeBar to drop the selection. No programme supplies one
+  // today: the score page shows its own ScoreView at rest instead.
+  // wideRail, true for a wider trainer and rail, which sets .wide_rail on
+  // the page root; the score page uses its own scoreLayout instead.
   //
   // A generator may also name what it plays (all optional): sectionLabel(),
   // the title's words for its measures; cardLabel(), the plate's for its
@@ -1297,8 +1298,7 @@ export default class SightReadingPage extends React.Component {
 
   // "New programme" where the programme has no destination of its own (see
   // EXERCISES_PROGRAMME.newProgramme): closes the card and opens the
-  // programme drawer, eg. the score page, which can't pick a piece from
-  // /setup
+  // programme drawer, for a page that can't pick what it plays from /setup
   newProgramme() {
     this.closeSummary()
     this.openSettings()

@@ -153,8 +153,9 @@ Session is **endless** — it runs until the user presses Rest; there is no note
 rail-plates-and-drawer layout described above. It opens on the piece's own score instead, with its
 own setup pane always on the right; see "6. Sheet music, score first" below. The instructor's
 review (accept, edit, dismiss, restore, mark a passage, the hands-separately tick, trouble spots,
-and the flags file) still lives in a right-hand pane titled "Review the passages," reached from
-that screen's "Score difficulty" shade.
+and the flags file) still lives in a right-hand pane titled "Review the passages," which the score
+view owns as its one instance: the "Score difficulty" legend opens it bare, and a passage's own
+Edit opens it on that flag.
 
 ### 4. Session summary — `screens/salon-summary/SalonSummary.dc.html`
 
@@ -182,9 +183,10 @@ to each trouble row is its miss count. "Practise these notes" switches the train
 notes focused on the weak rows alone, the ones drawn in oxblood
 (`SightReadingPage#practiseNotes`), and is hidden when nothing shown is weak or on a page whose
 generator can't take a seed (the sheet music generator, so the score page never shows it). "New
-programme" is a link to `/setup` on the exercises page, and on the score page closes the card and
-opens its own drawer instead. "See all progress →" links to `/stats` until the progress screen
-(a later step) replaces it.
+programme" is a link to `/setup` on the exercises page; the score page never opens this card at
+all, since Rest only pauses there and its own session-ended strip reports the sitting (screen 6
+below). "See all progress →" links to `/stats` until the progress screen (a later step) replaces
+it.
 
 ### 5. Progress — `screens/salon-progress/SalonProgress.dc.html`
 
@@ -229,35 +231,42 @@ hit and a miss of the same note can arrive under different spellings. A backend 
 exercises page's rail. This replaced the "Implementation note (sheet music page)" under screen 3
 above: the rail-plates-and-drawer layout no longer applies to this page.
 
-**At rest (`ScoreView`).** Title row: eyebrow "Sheet music · *N* bars · *staff* staff", h1 the
-piece's title italicised "the score", "Click any bar for its stats" right. An engraved plate holds
-a toolbar (the current page's label left, "Shade" pills right — This session, Learnedness, Score
-difficulty, Off; This session only once a session has ended), the score itself — one page of whole
-systems at a time, each bar an absolutely-positioned overlay button over the one engraving, tinted
-by the active shade, labelled where the shade gives one, tagged where a difficulty flag starts, and
-gilt-bordered along the free-practice section — a legend for the active shade, and a pager
-("‹ Previous page" / "Page *p* of *P* · bars *x*–*y*" / "Next page ›", always shown, ends disabled).
-A piece without a stored source, or whose engine failed to draw, falls back to a plain grid of bar
-buttons with a note explaining why. The setup pane ("Tonight's *session*", `setup_pane.jsx`) sits to
-its right, always on screen, never a drawer: Piece (the deck, import/export, library and flags
-files), Session (today's programme or free practice, whichever the piece defaults to), Cards (hand,
-bars per card, card order) and Tempo, ending in a full-width "Begin" and a link to
-`/score-engines`. Below 600px wide this stacks, the pane under the score.
+**At rest (`ScoreView`).** Title row: eyebrow "Sheet music · *N* bars · *staff* staff · *key*
+major", h1 the piece's title italicised "the score", "Click any bar for its stats" right. An
+engraved plate holds a toolbar (the current page's label left, "Shade" pills right — This session,
+Learnedness, Score difficulty, Off; This session only once a session has ended), the score itself
+— one page of whole systems at a time, each bar an absolutely-positioned overlay button over the
+one engraving, tinted by the active shade, labelled where the shade gives one, tagged where a
+difficulty flag starts, and gilt-bordered along the free-practice section — a legend for the
+active shade, and a pager ("‹ Previous page" / "Page *p* of *P* · bars *x*–*y*" / "Next page ›",
+always shown, ends disabled). A piece without a stored source, or whose engine failed to draw,
+falls back to a plain grid of bar buttons with a note explaining why. The setup pane ("Tonight's
+*session*", `setup_pane.jsx`) sits to its right, always on screen, never a drawer: Piece (the
+deck, import/export, library and flags files), Session (today's programme or free practice,
+whichever the piece defaults to), Cards (hand, bars per card, card order) and Tempo, ending in a
+full-width "Begin" and a link to `/score-engines`. Score and pane are one flex row (`.score_layout`
+in `sight_reading_page.module.css`, bases 640px and 340px), so they wrap — the pane under the score
+— once the row can no longer hold both, around 1000px.
 
 **Bar pop-up (`bar_popup.jsx`).** Clicking a bar's overlay opens its stats anchored to it: a
 300px box, oxblood-bordered, titled "Bar *n*" with the bar's tag (its difficulty flag, or New /
 Learning / Learned) top right, a Latest/Best accuracy pair, an 8-point accuracy chart (oldest
 first), a streak of three pips captioned "Learned" or "*n* of 3 clean passes in a row", and
-"Practise bar *n*" (free practice, that bar alone, Begin). Escape and the × close it.
+"Practise bar *n*" (free practice, that bar alone, Begin). Escape and the × close it. It opens
+below the bar, and above it for a bar on the last system of a page of two or more systems; in a
+page box narrower than two pop-ups (a phone) it spans the box instead of hanging off one side of
+the bar.
 
 **Session (Begin, `restPauses`).** Begin replaces the score with the session: the usual card,
-transport and stat cards, title eyebrow "In session · *title*", and a "This session" rail in place
-of the setup pane (`session_rail.jsx`) — the session clock against its target, a grid of the
-piece's bars (played, on the stand, coming up, with tick labels at the first and last bar and the
-hardest flag's own bars), "Up next" (today's programme's next cards, or free practice's, in
-order), and "This evening" (this session's own passes, last five). Rest only pauses (a banner in
-place of the card, the clock stopped, nothing judged); End session is a separate action. In
-acoustic mode the self-grade row replaces detection as it already does for the exercises page.
+transport and stat cards, title eyebrow "In session · *title*", the card plate's own label
+counting the session's cards in today's programme ("· card *n*"), and a "This session" rail in
+place of the setup pane (`session_rail.jsx`) — the session clock against its target, or, in free
+practice, which has none, against its own bars, a grid of the piece's bars (played, on the stand,
+coming up, with tick labels at the first and last bar and the hardest flag's own bars), "Up next"
+(today's programme's next cards, or free practice's, in order), and "This evening" (this session's
+own passes, last five). Rest only pauses (a banner in place of the card, the clock stopped,
+nothing judged); End session is a separate action. In acoustic mode the self-grade row replaces
+detection as it already does for the exercises page.
 
 **Session ended.** End session returns to the score with a strip across its top: "Session ended",
 the headline figure (accuracy, or clean self-graded passes), a comparison with the piece's last
@@ -282,8 +291,10 @@ own pass history (`ItemRecord#passes`, `st/bar_progress.js`), never the review l
 - **One drawn svg, cropped per page** (`components/score_sheet.jsx`): the whole piece is engraved
   once (never per page), and turning a page only changes the svg's own `viewBox`/`height`, never
   redraws it. Re-engraves only when the drawn width (clamped to `ENGRAVE_MAX_WIDTH`, 644px) itself
-  changes, not on every pixel of a resize. Shares the trainer card's one-engine-at-a-time draw
-  queue (`enqueueDraw`, `components/score_card.jsx`).
+  changes, not on every pixel of a resize; a resize that leaves the drawn width alone still
+  repaginates against the new viewport height, keeping the page the first bar shown now falls on
+  (`pageOfBar`). Shares the trainer card's one-engine-at-a-time draw queue (`enqueueDraw`,
+  `components/score_card.jsx`).
 - **The setup pane replaced the drawer.** `programme.Drawer` is `null` for the score page; its old
   `ScoreDrawer` is deleted. A spec that wants the trainer at rest without the score view passes
   `{...SCORE_PROGRAMME, ScoreView: null}`.
