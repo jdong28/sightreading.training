@@ -1,6 +1,8 @@
 .bar_popup {
     position: absolute;
     z-index: 5;
+    box-sizing: border-box;
+    /* POPUP_WIDTH in bar_popup.jsx */
     width: 300px;
     max-width: 100%;
     margin: 6px 0;
@@ -201,10 +203,4 @@
 
 .practise_button:hover {
     background: var(--salon-oxblood-dark);
-}
-
-@media (max-width: 600px) {
-    .bar_popup {
-        width: 100%;
-    }
 }

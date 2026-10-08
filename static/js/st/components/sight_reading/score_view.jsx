@@ -13,7 +13,7 @@ import classNames from "classnames"
 import {Plate, Pill, TitleBlock} from "st/components/salon"
 import {ScoreSheet} from "st/components/score_sheet"
 import {SetupPane} from "st/components/sight_reading/setup_pane"
-import {BarPopup} from "st/components/sight_reading/bar_popup"
+import {BarPopup, POPUP_WIDTH} from "st/components/sight_reading/bar_popup"
 import {PassagePane} from "st/components/sight_reading/passage_pane"
 import {ReviewPane} from "st/components/sight_reading/review_pane"
 import {barPopup} from "st/bar_stats"
@@ -415,7 +415,7 @@ export class ScoreView extends React.Component {
           selected={this.state.selectedBar}
           onBar={n => this.selectBar(n)}
           onError={() => this.setState({engineFailed: true})}>
-          {overlays => {
+          {(overlays, boxWidth) => {
             if (this.state.selectedBar == null) { return null }
             let overlay = overlays.get(this.state.selectedBar)
             if (!overlay) { return null }
@@ -427,8 +427,14 @@ export class ScoreView extends React.Component {
 
             let left = overlay.left + overlay.width / 2 < 50
             let above = overlay.systems > 1 && overlay.system == overlay.systems - 1
+            // a box narrower than two pop-ups can't hold one anchored to a
+            // bar, since the anchor sits at the bar's own edge and so as
+            // far in as the box's middle: there (a phone) the pop-up spans
+            // the box instead of hanging off one side of it
+            let spans = boxWidth > 0 && boxWidth < POPUP_WIDTH * 2
             let style = {
-              ...(left ? {left: `${overlay.left}%`} : {right: `${100 - (overlay.left + overlay.width)}%`}),
+              ...(spans ? {left: 0, right: 0, width: "auto"} :
+                left ? {left: `${overlay.left}%`} : {right: `${100 - (overlay.left + overlay.width)}%`}),
               ...(above ? {bottom: `${100 - overlay.top}%`} : {top: `${overlay.top + overlay.height}%`}),
             }
 

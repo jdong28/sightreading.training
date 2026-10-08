@@ -9,6 +9,12 @@ import classNames from "classnames"
 
 import styles from "./bar_popup.module.css"
 
+// the pop-up's own width, in step with bar_popup.module.css (border-box, so
+// its padding is inside it): the score view anchors it to a bar only in a
+// page box wide enough to hold it there (st/components/sight_reading/
+// score_view)
+export const POPUP_WIDTH = 300
+
 function Chart({chart}) {
   if (!chart) { return null }
 

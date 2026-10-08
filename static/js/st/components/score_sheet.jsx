@@ -64,8 +64,9 @@ export class ScoreSheet extends React.Component {
     selected: types.number,
     onBar: types.func,
     onError: types.func,
-    // a function (overlaysByMeasure: Map<number, {left,top,width,height} %>)
-    // => node, rendered inside the page box, eg. the bar pop-up
+    // a function (overlaysByMeasure: Map<number, {left,top,width,height} %>,
+    // boxWidth: px) => node, rendered inside the page box, eg. the bar
+    // pop-up, which positions itself against the box it is drawn in
     children: types.func,
   }
 
@@ -278,7 +279,8 @@ export class ScoreSheet extends React.Component {
       <div ref={this.boxRef} className={styles.page_box}>
         <div ref={this.plateRef} className={styles.plate} />
         {!failed ? this.renderOverlays() : null}
-        {typeof this.props.children == "function" ? this.props.children(this.overlaysByMeasure()) : null}
+        {typeof this.props.children == "function" ?
+          this.props.children(this.overlaysByMeasure(), this.state.boxWidth) : null}
       </div>
     </div>
   }

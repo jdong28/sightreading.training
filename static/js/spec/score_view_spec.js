@@ -278,6 +278,35 @@ describe("score view (the score-first page at rest)", function() {
       expect(dialog(el).style.bottom).not.toEqual("")
       expect(dialog(el).style.top).toEqual("")
     })
+
+    // at phone width the page box is narrower than two pop-ups, so an
+    // anchored pop-up would hang off one side of the box, which the
+    // trainer's scroller clips rather than scrolls. The page is positioned
+    // off its container (sight_reading_page.module.css), so a positioned
+    // 390px container is what lays it out that narrow here
+    it("spans the page box at 390px wide, keeping every bar's pop-up on screen", async function() {
+      await importFixture()
+      let el = renderScorePage({}, 390)
+      container.style.position = "relative"
+
+      await awaitEngraved(el)
+      let pageBox = () => el.querySelector(`.${scoreSheetStyles.page_box}`).getBoundingClientRect()
+      let box = await waitFor(() => { let r = pageBox(); return r.width && r.width < 390 ? r : null },
+        "the narrow page box")
+
+      for (let bar of barButtons(el)) {
+        click(bar)
+        let rect = dialog(el).getBoundingClientRect()
+        expect(rect.left).toBeGreaterThanOrEqual(box.left - 1)
+        expect(rect.right).toBeLessThanOrEqual(box.right + 1)
+
+        let close = buttonLabelled(el, "Close bar stats").getBoundingClientRect()
+        expect(close.right).toBeLessThanOrEqual(box.right + 1)
+      }
+
+      click(buttonLabelled(el, "Close bar stats"))
+      expect(dialog(el)).toBe(null)
+    })
   })
 
   describe("Begin, Rest, Resume, End session and Play on", function() {
