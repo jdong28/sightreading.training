@@ -655,7 +655,8 @@ export class MeasureCardGenerator {
    * What a finished pass is written as: its graded attempts (see
    * passAttempts, or selfAttempts for a self-graded pass), but the practice
    * of its measures played off schedule that didn't fail (see practiceOnly),
-   * else its practice (see passPractice, or selfPractice)
+   * each carrying the pass it would have graded (ItemRecord#passes), else
+   * its practice (see passPractice, or selfPractice)
    * @param {AttemptPass} pass
    * @param {Object} opts as for passAttempts
    * @returns {{attempts: Object[], practice: Object[]}}
@@ -665,7 +666,7 @@ export class MeasureCardGenerator {
       let practiceOnly = this.practiceOnly(pass, opts)
       return {
         attempts: selfAttempts(pass, opts).filter(({id}) => !practiceOnly.includes(id)),
-        practice: selfPractice(pass, {...opts, also: practiceOnly}),
+        practice: this.withDemotedPasses(pass, selfPractice(pass, {...opts, also: practiceOnly})),
       }
     }
 
@@ -677,8 +678,19 @@ export class MeasureCardGenerator {
     let practiceOnly = this.practiceOnly(pass, opts)
     return {
       attempts: attempts.filter(({id}) => !practiceOnly.includes(id)),
-      practice: passPractice(pass, opts).filter(stint => practiceOnly.includes(itemId(stint))),
+      practice: this.withDemotedPasses(pass,
+        passPractice(pass, opts).filter(stint => practiceOnly.includes(itemId(stint)))),
     }
+  }
+
+  // stints, with the pass they'd have graded (see practiceOnly) attached as
+  // ItemRecord#passes' entry, for a single-bar stint demoted to practice
+  withDemotedPasses(pass, stints) {
+    let passes = pass.practiceOnlyPasses || {}
+    return stints.map(stint => {
+      let entry = passes[itemId(stint)]
+      return entry ? {...stint, pass: entry} : stint
+    })
   }
 
   /**
@@ -686,7 +698,9 @@ export class MeasureCardGenerator {
    * rung not due yet, see onScheduleMeasures in st/srs/planner) that the
    * pass didn't fail: massed passes are practice, not evidence of recall, so
    * they are written to the totals alone. Worked out once a pass, from its
-   * items as the pass found them (see MeasureCardDeck#item).
+   * items as the pass found them (see MeasureCardDeck#item); also fills
+   * pass.practiceOnlyPasses, each id's [columns, clean, grade] (detected) or
+   * [null, null, grade] (self), for withDemotedPasses.
    * @param {AttemptPass} pass complete
    * @param {Object} opts as for passAttempts
    * @returns {string[]}
@@ -699,9 +713,18 @@ export class MeasureCardGenerator {
       let offSchedule = pass.card.measures.filter(measure => !onSchedule.includes(measure)).map(barId)
 
       let attemptsOf = pass.selfGrade ? selfAttempts : passAttempts
-      pass.practiceOnly = attemptsOf(pass, opts)
-        .filter(({id, build}) => offSchedule.includes(id) && build(this.deck.item(id)).review.grade > AGAIN)
-        .map(({id}) => id)
+      let ids = []
+      let passes = {}
+      for (let {id, build} of attemptsOf(pass, opts)) {
+        if (!offSchedule.includes(id)) { continue }
+        let {review} = build(this.deck.item(id))
+        if (review.grade <= AGAIN) { continue }
+        ids.push(id)
+        passes[id] = review.mode == "self" ? [null, null, review.grade] : [review.columns, review.clean, review.grade]
+      }
+
+      pass.practiceOnly = ids
+      pass.practiceOnlyPasses = passes
     }
 
     return pass.practiceOnly

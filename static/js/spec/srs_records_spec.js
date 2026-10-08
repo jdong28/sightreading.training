@@ -6,7 +6,7 @@ import {openDB, deleteDB} from "idb"
 import {DECK_MIGRATION_MARKER, LIBRARY_FORMAT, LIBRARY_VERSION, DB_VERSION} from "st/storage"
 
 import {
-  itemId, newItem, itemFromSectionStats, legacyReview, itemWithPractice, validItem,
+  itemId, newItem, itemFromSectionStats, legacyReview, itemWithPractice, withPass, validItem,
   validReview, SELF_ASPECTS
 } from "st/srs/records"
 import {applyGrade} from "st/srs/schedule"
@@ -180,6 +180,17 @@ describe("spaced repetition records", function() {
       expect(validReview(attempt("p", 1, 1, 5, {mode: "free"}))).toBe(false)
     })
 
+    it("accepts a single-bar item's passes history, pairs or self grades, rejecting a malformed one", function() {
+      let bar = newItem({pieceId: "p", startMeasure: 5, endMeasure: 5}, 10)
+      expect(validItem({...bar, passes: [[1, 4, 4, 3], [2, 4, 3, null], [3, null, null, 2]]})).toBe(true)
+      expect(validItem({...bar, passes: Array.from({length: 9}, (_, i) => [i, 4, 4, 3])})).toBe(false)
+      expect(validItem({...bar, passes: [[1, 4, 5, 3]]})).toBe(false) // clean > columns
+      expect(validItem({...bar, passes: [[1, 4, 4]]})).toBe(false) // length 3
+      expect(validItem({...bar, passes: [[1, null, 4, 3]]})).toBe(false) // only one of columns/clean null
+      expect(validItem({...bar, passes: [[1, null, null, 5]]})).toBe(false) // invalid grade
+      expect(validItem({...bar, passes: [[1, null, null, null]]})).toBe(false) // neither counts nor a grade
+    })
+
     // acoustic mode: the player grades the pass themself, so the review
     // carries a grade and none of detection's measurements (st/srs/self_grade)
     it("accepts a self-graded review with a grade and none of detection's fields", function() {
@@ -242,6 +253,44 @@ describe("spaced repetition records", function() {
       // scaffold's own pass
       let again = itemWithPractice(marked, {hits: 1, misses: 0, at: 3000})
       expect(again.deliberate).toBe(true)
+    })
+
+    it("appends a pass to a single-bar item's passes, seeded from recent, only when given", function() {
+      let bar = {
+        ...newItem({pieceId: "p", startMeasure: 5, endMeasure: 5}, 10),
+        recent: [[1, 3, 3, 4]],
+      }
+
+      let untouched = itemWithPractice(bar, {hits: 0, misses: 0, at: 2000})
+      expect(untouched.passes).toBeUndefined()
+
+      let withOne = itemWithPractice(bar, {hits: 1, misses: 0, at: 2000, pass: [3, 3, null]})
+      expect(withOne.passes).toEqual([[1, 3, 3, 4], [2000, 3, 3, null]])
+
+      let selfGraded = itemWithPractice(bar, {hits: 0, misses: 0, at: 2000, played: true, pass: [null, null, 2]})
+      expect(selfGraded.passes).toEqual([[1, 3, 3, 4], [2000, null, null, 2]])
+    })
+  })
+
+  describe("withPass", function() {
+    it("seeds from recent on the first write, then appends to passes", function() {
+      let bar = newItem({pieceId: "p", startMeasure: 5, endMeasure: 5}, 10)
+      let seeded = {...bar, recent: [[1, 3, 3, 4], [2, 3, 2, 2]]}
+      expect(withPass(seeded, [3000, 3, 3, 4])).toEqual([[1, 3, 3, 4], [2, 3, 2, 2], [3000, 3, 3, 4]])
+
+      let already = {...bar, passes: [[1, 3, 3, 4]], recent: []}
+      expect(withPass(already, [3000, 3, 3, 4])).toEqual([[1, 3, 3, 4], [3000, 3, 3, 4]])
+    })
+
+    it("caps at PASS_HISTORY, oldest dropped", function() {
+      let bar = {
+        ...newItem({pieceId: "p", startMeasure: 5, endMeasure: 5}, 10),
+        passes: Array.from({length: 8}, (_, i) => [i, 3, 3, 4]),
+      }
+      let grown = withPass(bar, [8, 3, 3, 4])
+      expect(grown.length).toEqual(8)
+      expect(grown[0]).toEqual([1, 3, 3, 4])
+      expect(grown[7]).toEqual([8, 3, 3, 4])
     })
   })
 
@@ -649,6 +698,25 @@ describe("spaced repetition records", function() {
       expect(again.report.addedStudies).toEqual(0)
       expect(reopened.items()).toEqual(data.items)
       expect((await storedReviews(reopened)).length).toEqual(2)
+    })
+
+    it("round trips a single-bar item's passes history through a library export and import", async function() {
+      let store = await open()
+      await store.putPiece(pieceData("a", "First", 1000))
+      await store.recordAttempt({
+        item: practicedItem("a", 1, 1, 1000, {passes: [[1000, 4, 3, 3], [2000, null, null, 2]]}),
+        review: attempt("a", 1, 1, 1000),
+      })
+
+      let file = await exportLibraryFile(store)
+      let data = JSON.parse(file.text)
+      expect(data.items[0].passes).toEqual([[1000, 4, 3, 3], [2000, null, null, 2]])
+
+      await store.close()
+      let other = await open()
+      await importLibraryFile(file.text, other)
+      expect(other.items().find(item => item.id == "a:both:1-1").passes)
+        .toEqual([[1000, 4, 3, 3], [2000, null, null, 2]])
     })
 
     it("merges two libraries: a union of reviews, the more recently practiced item, under the stored piece's id", async function() {

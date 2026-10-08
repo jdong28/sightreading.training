@@ -25,7 +25,7 @@
 // passPractice, writing reviews with mode "self" and none of the above
 // measurements (st/srs/self_grade).
 
-import {itemId, newItem, itemWithPractice, RECENT_ATTEMPTS, STAVES} from "st/srs/records"
+import {itemId, newItem, itemWithPractice, withPass, RECENT_ATTEMPTS, STAVES} from "st/srs/records"
 import {gradeAttempt, attemptPace, hesitations, openingColumn, GRADE_ALGO} from "st/srs/grade"
 import {SELF_PAUSE_MS} from "st/srs/self_grade"
 
@@ -400,6 +400,9 @@ export function passAttempts(pass, {pieceId, hand, at=pass.lastAt, sessionId, de
       let record = itemWithPractice(current, {...totals, at, deliberate})
       record.recent = [...current.recent, [at, graded.columns, graded.clean, graded.grade]]
         .slice(-RECENT_ATTEMPTS)
+      if (startMeasure == endMeasure) {
+        record.passes = withPass(current, [at, graded.columns, graded.clean, graded.grade])
+      }
       if (graded.pace != null && !graded.slips && !graded.skipped) {
         let usual = current.paceMs == null ? graded.pace :
           current.paceMs + (graded.pace - current.paceMs) * PACE_WEIGHT
@@ -525,6 +528,9 @@ export function selfAttempts(pass, {pieceId, hand, at=pass.lastAt, sessionId, de
 
         let record = itemWithPractice(current, {hits: 0, misses: 0, at, elapsedMs, played: true, deliberate})
         record.recent = [...current.recent, [at, null, null, grade]].slice(-RECENT_ATTEMPTS)
+        if (itemRange.startMeasure == itemRange.endMeasure) {
+          record.passes = withPass(current, [at, null, null, grade])
+        }
 
         let review = {
           itemId: record.id,

@@ -361,6 +361,50 @@ describe("srs attempt", function() {
     expect(unmarked.every(stint => stint.deliberate === undefined)).toBe(true)
   })
 
+  it("appends a pass entry to each single-bar item, and none to the range item", function() {
+    play(pass, 3000)
+    play(pass, 3500)
+    play(pass, 4000)
+    play(pass, 4500)
+
+    let [card, bar1, bar2] = attemptsOf(pass)
+    expect(card.item.passes).toBeUndefined()
+    expect(bar1.item.passes).toEqual([[4500, 3, 3, EASY]])
+    expect(bar2.item.passes).toEqual([[4500, 1, 1, EASY]])
+  })
+
+  it("seeds a single-bar item's passes from its recent on the first write, then appends", function() {
+    let stored = {
+      ...newItem({pieceId: "p", startMeasure: 1, endMeasure: 1}, 10),
+      recent: [[1, 3, 3, 4], [2, 3, 2, 2]],
+    }
+
+    play(pass, 3000)
+    play(pass, 3500)
+    play(pass, 4000)
+    play(pass, 4500)
+
+    let items = id => id == stored.id ? stored : null
+    let [, bar1] = attemptsOf(pass, {items})
+    expect(bar1.item.passes).toEqual([[1, 3, 3, 4], [2, 3, 2, 2], [4500, 3, 3, EASY]])
+  })
+
+  it("caps a single-bar item's passes at PASS_HISTORY, oldest dropped", function() {
+    let full = Array.from({length: 8}, (_, i) => [i, 3, 3, 4])
+    let stored = {...newItem({pieceId: "p", startMeasure: 1, endMeasure: 1}, 10), passes: full}
+
+    play(pass, 3000)
+    play(pass, 3500)
+    play(pass, 4000)
+    play(pass, 4500)
+
+    let items = id => id == stored.id ? stored : null
+    let [, bar1] = attemptsOf(pass, {items})
+    expect(bar1.item.passes.length).toEqual(8)
+    expect(bar1.item.passes[0]).toEqual([1, 3, 3, 4])
+    expect(bar1.item.passes[7]).toEqual([4500, 3, 3, EASY])
+  })
+
   it("leaves out the staff misses of columns without staves", function() {
     let plain = new AttemptPass(sectionCard([{number: 1, columns: [["C4"], ["D4"]]}]), {startedAt: 0})
     plain.drill = {mode: "wait"}
@@ -431,6 +475,16 @@ describe("srs attempt", function() {
       pass.drill = {mode: "self"}
       expect(passPace(pass)).toBe(null)
       expect(passAttempts(pass, {pieceId: "p", hand: "both"})).toEqual([])
+    })
+
+    it("appends a self-graded pass entry to each bar's passes, only the bars the grade reached", function() {
+      pass.selfGrade = {grade: GOOD, bars: [2]}
+      let attempts = selfAttemptsOf(pass, {at: 5000})
+      let bar2 = attempts.find(a => a.id == "p:both:2-2")
+      expect(bar2.item.passes).toEqual([[5000, null, null, GOOD]])
+
+      let card = attempts.find(a => a.id == "p:both:1-2")
+      expect(card.item.passes).toBeUndefined()
     })
 
     it("carries deliberate onto a self-graded attempt and its leftover practice only when given", function() {
