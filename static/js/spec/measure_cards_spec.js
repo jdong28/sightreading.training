@@ -334,6 +334,28 @@ describe("measure cards", function() {
       expect(notesOf(notes)).toEqual([["D5"], ["G3", "G4"], ["A4"], ["B4"], [], []])
     })
 
+    it("previews the next cards in order, but not for random order or a single looping card", function() {
+      let deck = new MeasureCardDeck(measureCards(pickupMeasures(), 1), {
+        pieceId: "p", order: IN_ORDER, store: emptyStore,
+      })
+      let generator = track(new MeasureCardGenerator(deck))
+      expect(generator.upNext(2)).toEqual([
+        {label: "Bar 1", detail: "Card 2 of 3"},
+        {label: "Bar 2", detail: "Card 3 of 3"},
+      ])
+
+      let randomDeck = new MeasureCardDeck(measureCards(pickupMeasures(), 1), {
+        pieceId: "p", order: RANDOM_ORDER,
+        store: {...emptyStore, items: () => [], schedulerSettings: () => DEFAULT_SCHEDULER_SETTINGS},
+      })
+      expect(track(new MeasureCardGenerator(randomDeck)).upNext(2)).toEqual([])
+
+      let loopingDeck = new MeasureCardDeck(measureCards(pickupMeasures(), 3), {
+        pieceId: "p", order: IN_ORDER, store: emptyStore,
+      })
+      expect(track(new MeasureCardGenerator(loopingDeck)).upNext(2)).toEqual([])
+    })
+
     it("loops a card covering the whole pool like the plain sheet music drill", function() {
       let deck = new MeasureCardDeck(measureCards(pickupMeasures(), 3), {
         pieceId: "p", order: IN_ORDER, store: emptyStore,

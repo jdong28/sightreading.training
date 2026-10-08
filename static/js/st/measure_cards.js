@@ -414,6 +414,35 @@ export class MeasureCardGenerator {
   }
 
   /**
+   * A preview of the next count cards, in order, free practice's "Up next"
+   * (st/components/sight_reading/session_rail): [] for random order or a
+   * deck with one playable card (looped, nothing to come).
+   * @param {number} count
+   * @returns {{label: string, detail: string}[]}
+   */
+  upNext(count) {
+    if (this.loop || this.deck.order == RANDOM_ORDER) { return [] }
+
+    let {cards} = this.deck
+    let seen = new Set([this.deck.index])
+    let upcoming = []
+    let i = this.deck.index
+
+    while (upcoming.length < count) {
+      i = nextCardIndex(cards, i, {order: IN_ORDER})
+      if (i == null || seen.has(i)) { break }
+      seen.add(i)
+
+      let card = cards[i]
+      let bars = card.startMeasure == card.endMeasure ?
+        `Bar ${card.startMeasure}` : `Bars ${card.startMeasure}–${card.endMeasure}`
+      upcoming.push({label: bars, detail: `Card ${i + 1} of ${cards.length}`})
+    }
+
+    return upcoming
+  }
+
+  /**
    * @returns {string|null} the pace of the pass finished last (see
    * paceCaption), null for a self-graded pass: its receipt (selfReceipt)
    * says it instead

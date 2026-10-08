@@ -1426,6 +1426,11 @@ describe("today's programme on the staff", function() {
     expect(generator.cardLabel()).toEqual("measures 0–1")
     expect(generator.statusLine()).toEqual("New · bar 0")
     expect(generator.caption()).toBe(null)
+
+    // nothing is offerable past the stand until it's played: a fresh new
+    // measure is never filtered by "previous", but upNext drops it anyway
+    // since it's the one on the stand
+    expect(generator.upNext(2)).toEqual([])
   })
 
   it("plans the next card from the attempt just played, and says when it returns", async function() {
@@ -1449,6 +1454,12 @@ describe("today's programme on the staff", function() {
 
     // the piece is in study
     expect(store.study(piece.id)).toEqual(jasmine.objectContaining({status: "learning", startedAt: time}))
+
+    // the stand (bar 2) never appears in its own "Up next", whatever else
+    // it has to offer right after a pass (the bars just played are "recent"
+    // too, so there may be nothing better yet)
+    let upNext = generator.upNext(2)
+    expect(upNext.every(row => row.label != "Bar 2")).toBe(true)
   })
 
   // T8: a column's measurements reach the pass as the column is done, so the

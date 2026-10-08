@@ -34,7 +34,7 @@ import {scheduledAttempt} from "st/srs/schedule"
 import {passAttempts, selfAttempts} from "st/srs/attempt"
 import {
   planNext, planState, planSummary, studyStatus, anchoredCard, introduction,
-  entryStatus, cardCaption, entryCaption, WAIT, READ_THROUGH, SCORE_ORDER,
+  entryStatus, cardCaption, entryCaption, planUpcoming, upNextWords, WAIT, READ_THROUGH, SCORE_ORDER,
 } from "st/srs/planner"
 
 // keeps the later of each item's graded reviews
@@ -469,6 +469,30 @@ export class PlanGenerator extends MeasureCardGenerator {
   /** @returns {Object} what the programme holds, see planSummary */
   summary() {
     return this.deck.summary()
+  }
+
+  /**
+   * A preview of the queue's next entries, without the one on the stand
+   * (see planUpcoming), each worded for the session rail's "Up next".
+   * @param {number} count
+   * @returns {{label: string, detail: string}[]}
+   */
+  upNext(count) {
+    let deck = this.deck
+    let previous = deck.entry ? deck.entry.itemId : null
+    let onStand = deck.entry ? deck.entry.measure : null
+
+    // a new measure is never filtered by planUpcoming's own avoid logic
+    // (candidates() offers it whether or not it was "just played", since
+    // nothing is graded on it yet): the stand's own bar, on offer again
+    // because nothing has introduced the next one yet, is dropped here
+    return planUpcoming({...deck.planInput(), previous}, count + 1)
+      .filter(entry => entry.measure != onStand)
+      .slice(0, count)
+      .map(entry => ({
+        label: `Bar ${entry.measure}`,
+        detail: upNextWords(entry, deck.passageOf(entry.measure)),
+      }))
   }
 
   // the planner is told how the pass went before it plans the next card:
