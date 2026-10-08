@@ -240,10 +240,13 @@ one engraving, tinted by the active shade, labelled where the shade gives one, t
 difficulty flag starts, and gilt-bordered along the free-practice section — a legend for the
 active shade, and a pager ("‹ Previous page" / "Page *p* of *P* · bars *x*–*y*" / "Next page ›",
 always shown, ends disabled). A piece without a stored source, or whose engine failed to draw,
-falls back to a plain grid of bar buttons with a note explaining why. The setup pane ("Tonight's
-*session*", `setup_pane.jsx`) sits to its right, always on screen, never a drawer: Piece (the
-deck, import/export, library and flags files), Session (today's programme or free practice,
-whichever the piece defaults to), Cards (hand, bars per card, card order) and Tempo, ending in a
+falls back to a plain grid of bar buttons with a note explaining why, and with no piece picked the
+column invites an import — or, once notation is pasted, says there is no score to engrave. The
+setup pane ("Tonight's *session*", `setup_pane.jsx`) sits to its right, always on screen, never a
+drawer: Piece (the deck, import/export, library and flags files, and — under the deck's first
+option, "Pasted song notation" — the notation box and its track), Session (today's programme or
+free practice, whichever the piece defaults to; free practice alone for pasted notation, which has
+no study, no score and no cards), Cards (hand, bars per card, card order) and Tempo, ending in a
 full-width "Begin" and a link to `/score-engines`. Score and pane are one flex row (`.score_layout`
 in `sight_reading_page.module.css`, bases 640px and 340px), so they wrap — the pane under the score
 — once the row can no longer hold both, around 1000px.

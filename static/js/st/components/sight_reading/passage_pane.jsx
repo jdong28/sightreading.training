@@ -4,8 +4,7 @@
 // plate's trouble-spot and overview features, which this page reaches
 // instead through the one ReviewPane the score view owns: the Score
 // difficulty legend's "Review the passages" link opens it, and Edit here
-// asks the score view to open it on this flag (openReview). Detail markup
-// lifted from passages_plate.jsx#renderDetail.
+// asks the score view to open it on this flag (openReview).
 
 import * as React from "react"
 import * as types from "prop-types"

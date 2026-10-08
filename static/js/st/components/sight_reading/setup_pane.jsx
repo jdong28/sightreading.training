@@ -282,6 +282,45 @@ export class SetupPane extends React.Component {
         <div className={message.error ? styles.input_error : styles.input_notice}>{message.text}</div> : null}
       {message && message.pdf ? <PdfSteps fileName={message.fileName} /> : null}
       {keyHint ? <div className={styles.input_hint}>{keyHint}</div> : null}
+
+      {currentValue ? null : this.renderNotation()}
+    </div>
+  }
+
+  // "Pasted song notation", the piece select's first option: the notation
+  // itself and the track to drill of it, the generator's own song and track
+  // inputs. A pasted song has no score to engrave, no study and no cards,
+  // so the rest of the pane offers free practice of its measures alone
+  renderNotation() {
+    let {settings} = this.props
+    let songInput = SHEET_MUSIC_GENERATOR.inputs.find(i => i.name == "song")
+    let trackInput = SHEET_MUSIC_GENERATOR.inputs.find(i => i.name == "track")
+    let tracks = trackInput.values(settings)
+    let track = tracks.some(option => option.name == settings.track) ? settings.track : trackInput.default
+
+    return <div className={styles.subgroup}>
+      <div className={styles.sub_label}>{songInput.label}</div>
+      <textarea
+        className={styles.text_input}
+        aria-label={songInput.label}
+        rows={8}
+        spellCheck={false}
+        value={settings.song || ""}
+        onChange={e => this.props.setSettings({...settings, song: e.target.value})} />
+      <p className={styles.input_hint}>{songInput.hint}</p>
+
+      {/* only the parsed song's own tracks are worth choosing between */}
+      {tracks.length > 1 ? <div className={styles.subgroup}>
+        <div className={styles.sub_label}>Track</div>
+        <div className={styles.pills}>
+          {tracks.map(({name}) => <Pill
+            key={name}
+            variant="choice"
+            className={styles.choice_pill}
+            selected={name == track}
+            onClick={() => this.props.setSettings({...settings, track: name})}>{name}</Pill>)}
+        </div>
+      </div> : null}
     </div>
   }
 
@@ -413,7 +452,12 @@ export class SetupPane extends React.Component {
           <span className={styles.of_last}>of {last}</span>
         </div>
         <p className={styles.input_hint}>
-          {`Marked in gilt on the score. Section has ${section.columns.length} columns.`}
+          {piece ?
+            `Marked in gilt on the score. Section has ${section.columns.length} columns.` +
+              (section.skipped ? ` ${section.skipped}.` : "") :
+            // pasted notation has no score to mark, and may not parse at
+            // all: the generator's own status says what it made of it
+            section.status}
         </p>
       </div>
 
@@ -431,7 +475,7 @@ export class SetupPane extends React.Component {
         <p className={styles.input_hint}>From the score analysis, hardest first. Picking one sets the section.</p>
       </div> : null}
 
-      {Number(measuresPerCard) >= 1 ? <div className={styles.subgroup}>
+      {piece && Number(measuresPerCard) >= 1 ? <div className={styles.subgroup}>
         <div className={styles.sub_label}>Card order</div>
         <div className={styles.pills}>
           {[[IN_ORDER, "In order"], [RANDOM_ORDER, "Random"]].map(([value, label]) => <Pill
@@ -446,10 +490,19 @@ export class SetupPane extends React.Component {
     </>
   }
 
+  // nothing to practise yet: no piece picked and no notation pasted. The
+  // pane then shows the Piece group alone (plan D11), and Begin is disabled
+  nothingToPlay() {
+    let {settings} = this.props
+    return !sheetMusicPiece(settings) && !(settings.song || "").trim()
+  }
+
   renderSession() {
     let {settings} = this.props
-    if (!sheetMusicPiece(settings)) { return null }
+    if (this.nothingToPlay()) { return null }
 
+    // pasted notation is never in study, so plannedPractice is false for it
+    // and the group offers free practice alone
     let planned = plannedPractice(settings, this.getStore())
 
     return <div className={styles.group}>
@@ -579,7 +632,7 @@ export class SetupPane extends React.Component {
 
   render() {
     let {settings} = this.props
-    let disabled = !sheetMusicPiece(settings) && !(settings.song || "").trim()
+    let disabled = this.nothingToPlay()
 
     return <div data-setup-pane>
       <Plate className={styles.setup_pane} compact>

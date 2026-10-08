@@ -4,7 +4,9 @@ import {flushSync} from "react-dom"
 import {MemoryRouter} from "react-router-dom"
 
 import ScorePage from "st/components/pages/score_page"
-import {MISSING_ENGINE_SOURCE, FAILED_ENGINE_SOURCE} from "st/components/sight_reading/score_view"
+import {
+  MISSING_ENGINE_SOURCE, FAILED_ENGINE_SOURCE, NO_PIECE_SCORE, PASTED_NOTATION_SCORE
+} from "st/components/sight_reading/score_view"
 import scoreViewStyles from "st/components/sight_reading/score_view.module.css"
 import scoreSheetStyles from "st/components/score_sheet.module.css"
 import sessionRailStyles from "st/components/sight_reading/session_rail.module.css"
@@ -16,7 +18,7 @@ import {SHEET_MUSIC_STORAGE_KEY, BOTH_HANDS} from "st/data"
 import {SCORE_DRILL_STORAGE_KEY} from "st/generators"
 import {GOOD} from "st/srs/grade"
 import {SELF_GRADE_DWELL_MS, SELF_GRADE_FLASH_MS} from "st/srs/self_grade"
-import {openTestStore} from "spec/helpers"
+import {openTestStore, noteXML} from "spec/helpers"
 
 // captured before any spec installs jasmine's mock clock, so waits still
 // run in real time under it (see the acoustic mode describe below)
@@ -511,6 +513,95 @@ describe("score view (the score-first page at rest)", function() {
       expect(el.querySelector(`.${scoreViewStyles.grid_plate}`)).not.toBe(null)
       expect(el.querySelector(`.${scoreViewStyles.fallback_note}`).textContent).toEqual(FAILED_ENGINE_SOURCE)
     })
+  })
+
+  describe("pasted song notation", function() {
+    // the piece select's first option: no piece, so no engraved score, no
+    // programme and no cards, only the notation's own measures
+    const TWO_HANDS = "t0 m0 c4 e4 g4 c5\nt1 m0 c2.2 g2.2\nt0 m1 d4 f4 a4 d5\nt1 m1 d2.4"
+
+    let renderPasted = (settings={}) => {
+      window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+        piece: "", startMeasure: 1, endMeasure: 2, ...settings,
+      }))
+      return renderScorePage()
+    }
+
+    it("holds the notation box and its track, and offers free practice alone", function() {
+      let el = renderPasted({song: TWO_HANDS})
+      let pane = setupPane(el)
+
+      let box = pane.querySelector('textarea[aria-label="song notation"]')
+      expect(box).not.toBe(null)
+      expect(box.value).toEqual(TWO_HANDS)
+
+      // the parsed song's own tracks, beside "all"
+      let tracks = [...pane.querySelectorAll("button")]
+        .filter(b => /^(all|track t\d+)$/.test(b.textContent.trim()))
+        .map(b => b.textContent.trim())
+      expect(tracks).toEqual(["all", "track t0", "track t1"])
+
+      expect(buttonNamed(el, "Today's programme")).toBeUndefined()
+      expect(buttonNamed(el, "Free practice")).toBeUndefined()
+      expect(pane.textContent).toContain("Free practice plays the bars you pick")
+      // the generator's own status in place of the gilt section, which only
+      // an engraved score can be marked on
+      expect(pane.textContent).toContain("Song has 2 measures")
+      expect(pane.textContent).not.toContain("Marked in gilt")
+
+      // cards are a piece's: there is no hand, bars per card or card order
+      expect(buttonNamed(el, "Both hands")).toBeUndefined()
+      expect(pane.textContent).not.toContain("Bars per card")
+
+      expect(el.querySelector(`.${scoreViewStyles.empty_text}`).textContent).toEqual(PASTED_NOTATION_SCORE)
+      expect(buttonNamed(el, "Begin").disabled).toBe(false)
+    })
+
+    it("shows the Piece group alone until something is picked or pasted", function() {
+      let el = renderPasted({song: ""})
+      let pane = setupPane(el)
+
+      expect(pane.querySelector('textarea[aria-label="song notation"]')).not.toBe(null)
+      expect(pane.textContent).not.toContain("Free practice plays the bars you pick")
+      expect(pane.textContent).not.toContain("Section")
+
+      expect(el.querySelector(`.${scoreViewStyles.empty_text}`).textContent).toEqual(NO_PIECE_SCORE)
+      expect(buttonNamed(el, "Begin").disabled).toBe(true)
+    })
+  })
+
+  it("reports the notes the staff skips in the Section hint", async function() {
+    // one treble staff, so the piece is drilled on the treble staff
+    // (A3-C6, see STAVES) and the notes it writes below A3 are skipped
+    let lowNotes = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <work><work-title>Treble Only</work-title></work>
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes>
+        <divisions>1</divisions>
+        <key><fifths>0</fifths></key>
+        <time><beats>4</beats><beat-type>4</beat-type></time>
+        <staves>1</staves>
+        <clef number="1"><sign>G</sign><line>2</line></clef>
+      </attributes>
+      ${noteXML("C", 4, 1, 1)}${noteXML("C", 3, 1, 1)}${noteXML("D", 4, 1, 1)}${noteXML("E", 3, 1, 1)}
+    </measure>
+    <measure number="2">
+      ${noteXML("E", 4, 1, 1)}${noteXML("F", 4, 1, 1)}${noteXML("G", 4, 1, 1)}${noteXML("A", 4, 1, 1)}
+    </measure>
+  </part>
+</score-partwise>`
+    let {piece} = await importMusicXMLPiece("treble_only.musicxml", lowNotes, store)
+    window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+      piece: piece.id, startMeasure: 1, endMeasure: 2, hand: BOTH_HANDS,
+    }))
+
+    let el = renderScorePage()
+    let hint = await waitFor(() => setupPane(el).textContent.includes("Marked in gilt") &&
+      setupPane(el).textContent, "the Section hint")
+    expect(hint).toContain("Section has 6 columns. 2 notes outside the treble staff range skipped.")
   })
 
   it("has no horizontal overflow at 390px wide", async function() {

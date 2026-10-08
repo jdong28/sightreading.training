@@ -21,8 +21,7 @@
 .drawer {
     /* the sticky header's exact height: its padding plus the close button,
        which the title's pinned line box never exceeds. Anything inside the
-       drawer that has to clear the header reads this (.pane_detail in
-       passages_plate.module.css, scrollToSelected in passages_plate.jsx) */
+       drawer that has to clear the header reads this */
     --drawer-header-height: 64px;
 
     position: fixed;
@@ -66,8 +65,9 @@
         border-right: 0;
     }
 
-    /* "The score" pane (passages_plate.jsx), right-anchored: the same shell,
-       mirrored, and wide enough for the score beside its passage's detail */
+    /* the score page's own panes (passage_pane.jsx, review_pane.jsx),
+       right-anchored: the same shell, mirrored, and wide enough for the
+       score beside its passage's detail */
     &.right {
         left: auto;
         right: 0;

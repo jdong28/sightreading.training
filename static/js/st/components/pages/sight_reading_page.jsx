@@ -191,11 +191,12 @@ export const EXERCISES_PROGRAMME = {
 }
 
 export const MISSING_ENGINE_SOURCE = "Drawn on the trainer's staff: this piece was imported " +
-  "before the app kept each piece's score. Import its file again in the programme (its stats are " +
-  "kept) to practise from the engraved score."
+  "before the app kept each piece's score. Import its file again in Tonight's session (its stats " +
+  "are kept) to practise from the engraved score."
 
 export const FAILED_ENGINE_SOURCE = "Drawn on the trainer's staff: this piece's score couldn't be " +
-  "engraved. Importing its file again in the programme (its stats are kept) may bring the score back."
+  "engraved. Importing its file again in Tonight's session (its stats are kept) may bring the " +
+  "score back."
 
 // the score staff each track of the score's song model reads (see
 // st/musicxml), null when the score can't be read

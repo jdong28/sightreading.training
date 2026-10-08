@@ -312,8 +312,10 @@ export function handTracks(song, hand) {
 function sectionResult(staff, columns, parts, opts={}) {
   // Notes outside the staff's range are filtered out (not clamped) so the
   // drill only shows what the staff and on screen keyboard can present; the
-  // status reports how many were skipped.
+  // status reports how many were skipped, and skipped alone is the sentence
+  // the score page's own Section hint adds (setup_pane)
   let [visible, dropped] = filterColumnsToRange(columns, staff.range[0], staff.range[1])
+  let skipped = null
 
   if (visible.length) {
     parts.push(`section has ${plural(visible.length, "column")}`)
@@ -322,14 +324,14 @@ function sectionResult(staff, columns, parts, opts={}) {
   }
 
   if (dropped.length) {
-    let skipped = `${plural(dropped.length, "note")} outside the ${staff.name} staff range skipped`
+    skipped = `${plural(dropped.length, "note")} outside the ${staff.name} staff range skipped`
     if (opts.suggestGrand && staff.name != "grand") {
       skipped += "; pick the grand staff to drill both hands"
     }
     parts.push(skipped)
   }
 
-  return {columns: visible, status: parts.join(", ")}
+  return {columns: visible, status: parts.join(", "), skipped}
 }
 
 // columns for an imported piece, see sheetMusicSection

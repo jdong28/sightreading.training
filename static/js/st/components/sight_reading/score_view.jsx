@@ -38,6 +38,12 @@ export const MISSING_ENGINE_SOURCE = "Shown as a grid of bars: this piece was im
 export const FAILED_ENGINE_SOURCE = "Shown as a grid of bars: this piece's score couldn't be " +
   "engraved. Importing its file again may bring it back."
 
+// the score column with nothing to engrave: no piece picked, or the piece
+// select's first option, pasted song notation, which has no score at all
+export const NO_PIECE_SCORE = "Import a MusicXML file in Tonight's session to see its score here."
+export const PASTED_NOTATION_SCORE = "Pasted notation has no engraved score; it is drawn on the " +
+  "trainer's staff once you begin."
+
 const SHADES = [
   {value: "session", label: "This session"},
   {value: "learnedness", label: "Learnedness"},
@@ -505,7 +511,9 @@ export class ScoreView extends React.Component {
       <div className={styles.columns}>
         <div className={styles.score_column}>
           {piece && song ? this.renderPiece(piece, song) : <Plate>
-            <p className={styles.empty_text}>Import a MusicXML file in Tonight's session to see its score here.</p>
+            <p className={styles.empty_text}>
+              {(settings.song || "").trim() ? PASTED_NOTATION_SCORE : NO_PIECE_SCORE}
+            </p>
           </Plate>}
         </div>
 
