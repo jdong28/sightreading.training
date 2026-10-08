@@ -4,7 +4,7 @@ import {flushSync} from "react-dom"
 import {MemoryRouter} from "react-router-dom"
 
 import ScorePage, {SCORE_PROGRAMME} from "st/components/pages/score_page"
-import {SCORE_VIEW_NO_SOURCE, SCORE_VIEW_FAILED} from "st/components/sight_reading/score_view"
+import {ScoreView, SCORE_VIEW_NO_SOURCE, SCORE_VIEW_FAILED} from "st/components/sight_reading/score_view"
 import {importMusicXMLPiece} from "st/sheet_music_deck"
 import {setAppStore} from "st/storage"
 import {SHEET_MUSIC_STORAGE_KEY, BOTH_HANDS} from "st/data"
@@ -113,6 +113,18 @@ describe("ScoreView (the score-first page's at-rest view)", function() {
     expect(popup()).toBe(null)
   })
 
+  it("closes the bar pop-up on Escape", async function() {
+    await drillPiece(reverieOpening())
+    let el = renderScorePage()
+
+    let button = await waitFor(() => barButton(2))
+    flushSync(() => button.click())
+    expect(popup()).not.toBe(null)
+
+    flushSync(() => document.body.dispatchEvent(new KeyboardEvent("keydown", {key: "Escape", bubbles: true})))
+    expect(popup()).toBe(null)
+  })
+
   it("moves the pop-up to another bar on a second click", async function() {
     await drillPiece(reverieOpening())
     let el = renderScorePage()
@@ -154,6 +166,32 @@ describe("ScoreView (the score-first page's at-rest view)", function() {
     let difficulty = shadeButtons().find(b => b.textContent.trim() == "Score difficulty")
     flushSync(() => difficulty.click())
     expect(el.textContent).toContain("Easier")
+  })
+
+  it("opens on the This session shade when it mounts with a session already ended", async function() {
+    // End session returns SightReadingPage to view == "score", which mounts
+    // a fresh ScoreView with `ended` already set as its first prop: there is
+    // no componentDidUpdate transition to catch, so the initial shade must
+    // come from the constructor, not only from componentDidUpdate
+    let piece = await drillPiece(reverieOpening())
+    let noop = () => {}
+    let ended = {headline: "91%", headlineSuffix: "accuracy", comparison: null, second: "1 minute · 1 bar played"}
+
+    flushSync(() => {
+      container = document.createElement("div")
+      document.body.appendChild(container)
+      root = createRoot(container)
+      root.render(React.createElement(ScoreView, {
+        settings: {piece: piece.id, hand: BOTH_HANDS}, setSettings: noop,
+        begin: noop, playOn: noop, dismissEnded: noop, ended,
+      }))
+    })
+    flushSync(() => {})
+
+    let shadeButtons = () => [...container.querySelectorAll("button")].filter(b =>
+      ["This session", "Learnedness", "Score difficulty", "Off"].includes(b.textContent.trim()))
+    let selected = () => shadeButtons().find(b => b.getAttribute("aria-pressed") == "true").textContent.trim()
+    expect(selected()).toEqual("This session")
   })
 
   it("shows a bar grid, not the engraved score, for a piece without a stored source", async function() {

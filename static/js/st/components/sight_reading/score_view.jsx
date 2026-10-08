@@ -76,13 +76,18 @@ export class ScoreView extends React.Component {
   constructor(props) {
     super(props)
     this.state = {
-      selectedBar: null, page: 0, pageCount: 1, shade: "learnedness", sheetFailed: false,
-      passageOpen: false, passageSelectedId: null, reviewOpen: false, reviewFlagId: null,
+      // End session returns from the session view, mounting a fresh
+      // ScoreView with `ended` already set: componentDidUpdate's own
+      // ended->shade switch never fires for that first render, so the
+      // initial shade must already read props.ended
+      selectedBar: null, page: 0, pageCount: 1, shade: props.ended ? "session" : "learnedness",
+      sheetFailed: false, passageOpen: false, passageSelectedId: null, reviewOpen: false, reviewFlagId: null,
     }
   }
 
   componentDidMount() {
     this.ensureAnnotation()
+    document.addEventListener("keydown", this.handleKeyDown)
   }
 
   componentDidUpdate(prevProps) {
@@ -118,6 +123,12 @@ export class ScoreView extends React.Component {
 
   componentWillUnmount() {
     this.unmounted = true
+    document.removeEventListener("keydown", this.handleKeyDown)
+  }
+
+  // Escape closes the bar pop-up (D6), same as its own close button
+  handleKeyDown = e => {
+    if (e.key == "Escape" && this.state.selectedBar != null) { this.closeBar() }
   }
 
   piece() {
