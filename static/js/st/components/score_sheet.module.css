@@ -21,8 +21,16 @@
     pointer-events: none;
 }
 
+.bar_box {
+    position: absolute;
+    box-sizing: border-box;
+}
+
 .bar_overlay {
     position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
     box-sizing: border-box;
     border: 1px solid transparent;
     background: none;
@@ -38,11 +46,18 @@
     }
 }
 
-.bar_label {
+.overlay_marks {
     position: absolute;
-    top: 0;
     left: 0;
-    transform: translateY(-100%);
+    bottom: 100%;
+    display: flex;
+    flex-direction: column-reverse;
+    align-items: flex-start;
+    gap: 2px;
+    pointer-events: none;
+}
+
+.bar_label {
     padding: 1px 6px;
     font-size: 11px;
     font-weight: 700;
@@ -50,5 +65,40 @@
     white-space: nowrap;
     background: var(--salon-paper);
     border: 1px solid var(--salon-rule-strong);
+    pointer-events: none;
+}
+
+.tag {
+    display: inline-block;
+    padding: 1px 6px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    line-height: 1.3;
+    white-space: nowrap;
+    background: var(--salon-paper);
+    border: 1px solid currentColor;
+    pointer-events: auto;
+}
+
+button.tag {
+    cursor: pointer;
+}
+
+.tag_level-1 {
+    color: var(--salon-ink-muted);
+}
+
+.tag_level-2 {
+    color: var(--salon-gilt);
+}
+
+.tag_level-3 {
+    color: var(--salon-oxblood);
+}
+
+.tag_section {
+    color: var(--salon-gilt-ink);
     pointer-events: none;
 }

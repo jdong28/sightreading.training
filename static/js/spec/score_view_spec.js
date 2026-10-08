@@ -179,4 +179,116 @@ describe("ScoreView (the score-first page's at-rest view)", function() {
     await waitFor(() => barButton(1))
     expect(el.scrollWidth).toBeLessThanOrEqual(el.clientWidth + 1)
   })
+
+  describe("difficulty tags and the passage pane", function() {
+    // the real analysis has already run and stamped its own fingerprint by
+    // the time a bar button is drawn; overriding only its proposals (not
+    // the fingerprint) keeps ensureAnnotation from recomputing it away
+    let flagPiece = async (piece, start, end, level=3) => {
+      let record = await waitFor(() => store.annotation(piece.id), {timeout: 10000})
+      await store.putAnnotation({
+        ...record,
+        proposals: [{
+          id: `score:${start}-${end}:test`, source: "score", start, end, startIndex: start - 1, endIndex: end - 1,
+          hand: "both", level, kinds: ["density"], title: "Test passage",
+          reason: "test", reasons: ["test"], tip: "test",
+        }],
+      })
+    }
+
+    let clickShade = (el, name) => {
+      let button = [...el.querySelectorAll("button")].find(b => b.textContent.trim() == name)
+      flushSync(() => button.click())
+    }
+
+    let pane = (el, label) => el.querySelector(`aside[aria-label="${label}"]`)
+
+    it("shows a difficulty tag per flagged passage, opening the passage pane", async function() {
+      let piece = await drillPiece(reverieOpening())
+      let el = renderScorePage()
+      await waitFor(() => barButton(1))
+      await flagPiece(piece, 2, 3)
+
+      clickShade(el, "Score difficulty")
+      let tag = await waitFor(() => [...el.querySelectorAll("button")].find(b => b.textContent.includes("Hardest")))
+      expect(tag.textContent).toContain("bars 2–3")
+
+      expect(pane(el, "Passage detail").getAttribute("aria-hidden")).toEqual("true")
+      flushSync(() => tag.click())
+      expect(pane(el, "Passage detail").getAttribute("aria-hidden")).toEqual("false")
+      expect(el.textContent).toContain("Passage I of I")
+    })
+
+    it("Practise in the passage pane sets free practice on it and begins at once", async function() {
+      let piece = await drillPiece(reverieOpening())
+      let el = renderScorePage()
+      await waitFor(() => barButton(1))
+      await flagPiece(piece, 2, 3)
+
+      clickShade(el, "Score difficulty")
+      let tag = await waitFor(() => [...el.querySelectorAll("button")].find(b => b.textContent.includes("Hardest")))
+      flushSync(() => tag.click())
+
+      let practise = [...pane(el, "Passage detail").querySelectorAll("button")]
+        .find(b => b.textContent.trim() == "Practise bars 2–3")
+      flushSync(() => practise.click())
+
+      expect(page.state.currentGeneratorSettings.startMeasure).toEqual(2)
+      expect(page.state.currentGeneratorSettings.endMeasure).toEqual(3)
+      expect(page.state.view).toEqual("session")
+      expect(page.state.session).toBe(true)
+    })
+
+    it("opens the review pane from the difficulty legend's Review the passages link", async function() {
+      let piece = await drillPiece(reverieOpening())
+      let el = renderScorePage()
+      await waitFor(() => barButton(1))
+      await flagPiece(piece, 2, 3)
+
+      clickShade(el, "Score difficulty")
+      let link = await waitFor(() =>
+        [...el.querySelectorAll("button, a")].find(b => b.textContent.trim() == "Review the passages"))
+
+      expect(pane(el, "Review the passages").getAttribute("aria-hidden")).toEqual("true")
+      flushSync(() => link.click())
+      expect(pane(el, "Review the passages").getAttribute("aria-hidden")).toEqual("false")
+    })
+
+    it("marks the section in free practice outside the difficulty shade, never inside it", async function() {
+      await drillPiece(reverieOpening(), {startMeasure: 2, endMeasure: 3})
+      let el = renderScorePage()
+      await waitFor(() => barButton(1))
+
+      expect(el.textContent).toContain("Section · bars 2–3")
+
+      clickShade(el, "Score difficulty")
+      expect(el.textContent).not.toContain("Section · bars 2–3")
+    })
+
+    it("keeps a selected bar's own tint over the shade's fill", async function() {
+      let piece = await drillPiece(reverieOpening())
+      let id = `${piece.id}:both:2-2`
+      await store.recordAttempt({
+        item: {
+          id, pieceId: piece.id, hand: "both", startMeasure: 2, endMeasure: 2,
+          level: "bar", state: "tracked", step: 0, reps: 1, lapses: 0, streak: 0, lastGrade: 3,
+          hits: 4, misses: 0, attempts: 1, lastPracticed: Date.now(), elapsedMs: 2000, algo: 1,
+          createdAt: Date.now(), recent: [[Date.now(), 4, 4, 3]],
+        },
+        review: {
+          itemId: id, pieceId: piece.id, at: Date.now(), kind: "attempt", grade: 3, was: "new",
+          columns: 4, clean: 4, misses: 0, stuck: 0, skipped: 0, hesitations: 0, mode: "wait", algo: 1,
+        },
+      })
+
+      let el = renderScorePage()
+      let button = await waitFor(() => barButton(2))
+      flushSync(() => button.click())
+
+      expect(button.getAttribute("aria-pressed")).toEqual("true")
+      // the learnedness fill would otherwise win as an inline style, hiding
+      // the CSS rule's selected tint and border behind it
+      expect(button.style.background).toBeFalsy()
+    })
+  })
 })

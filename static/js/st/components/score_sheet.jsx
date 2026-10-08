@@ -9,6 +9,7 @@
 
 import * as React from "react"
 import * as types from "prop-types"
+import classNames from "classnames"
 
 import {enqueueDraw} from "st/components/score_card"
 import {
@@ -45,6 +46,12 @@ export class ScoreSheet extends React.Component {
     // the overlay fill/label for each bar position, keyed by measure index
     // (CardMeasure#index): {fill, label}
     overlaysByIndex: types.object,
+    // a difficulty passage tag or free-practice section tag at a bar
+    // position, keyed the same way: {text, tone: "level-1"|"level-2"|
+    // "level-3"|"section", onClick?} -- a tag with onClick is a button (a
+    // difficulty tag, opening the passage pane), else a plain label (the
+    // section tag)
+    tagsByIndex: types.object,
     children: types.node, // the bar pop-up, rendered inside the page box
     onError: types.func,
   }
@@ -189,22 +196,35 @@ export class ScoreSheet extends React.Component {
       {page && width ? <div className={styles.overlays}>
         {barOverlays(page, width).map(overlay => {
           let extra = this.props.overlaysByIndex && this.props.overlaysByIndex[overlay.index]
-          let style = {
+          let tag = this.props.tagsByIndex && this.props.tagsByIndex[overlay.index]
+          let selected = this.props.selected == overlay.number
+          let boxStyle = {
             left: `${overlay.left * 100}%`, width: `${overlay.width * 100}%`,
             top: `${overlay.top * 100}%`, height: `${overlay.height * 100}%`,
-            background: (extra && extra.fill) || undefined,
           }
+          // a selected bar's own tint and border (the CSS [aria-pressed]
+          // rule) must win over the shade's own fill, an inline style that
+          // would otherwise always beat it
+          let fillStyle = selected ? undefined : {background: (extra && extra.fill) || undefined}
 
-          return <button
-            key={overlay.index}
-            type="button"
-            aria-label={`Bar ${overlay.number}`}
-            aria-pressed={this.props.selected == overlay.number}
-            className={styles.bar_overlay}
-            style={style}
-            onClick={() => this.props.onBar && this.props.onBar(overlay.number)}>
-            {extra && extra.label ? <span className={styles.bar_label}>{extra.label}</span> : null}
-          </button>
+          return <div key={overlay.index} className={styles.bar_box} style={boxStyle}>
+            <button
+              type="button"
+              aria-label={`Bar ${overlay.number}`}
+              aria-pressed={selected}
+              className={styles.bar_overlay}
+              style={fillStyle}
+              onClick={() => this.props.onBar && this.props.onBar(overlay.number)} />
+            {tag || (extra && extra.label) ? <div className={styles.overlay_marks}>
+              {extra && extra.label ? <span className={styles.bar_label}>{extra.label}</span> : null}
+              {tag ? (tag.onClick ?
+                <button
+                  type="button"
+                  className={classNames(styles.tag, styles[`tag_${tag.tone}`])}
+                  onClick={tag.onClick}>{tag.text}</button> :
+                <span className={classNames(styles.tag, styles[`tag_${tag.tone}`])}>{tag.text}</span>) : null}
+            </div> : null}
+          </div>
         })}
       </div> : null}
       {this.props.children}

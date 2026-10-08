@@ -11,6 +11,8 @@ import {Plate, Pill, TitleBlock} from "st/components/salon"
 import {ScoreSheet} from "st/components/score_sheet"
 import {BarPopup} from "st/components/sight_reading/bar_popup"
 import {SetupPane} from "st/components/sight_reading/setup_pane"
+import {PassagePane} from "st/components/sight_reading/passage_pane"
+import {ReviewPane} from "st/components/sight_reading/review_pane"
 import {learnedness, learnedCount, sessionMarks, TROUBLE_BELOW} from "st/bar_progress"
 import {itemId} from "st/srs/records"
 import {heat as heatLevel} from "st/difficulty/sections"
@@ -18,7 +20,9 @@ import {flagsInForce} from "st/difficulty/records"
 import {ensureAnnotation, pieceSong} from "st/sheet_music_deck"
 import {getAppStore} from "st/storage"
 import {measureNumberList} from "st/song_sections"
-import {sheetMusicPiece, passageSettings, itemHand} from "st/data"
+import {romanNumeral, barsLabel} from "st/music"
+import {LEVEL_WORDS} from "st/difficulty/index"
+import {sheetMusicPiece, passageSettings, itemHand, FREE_PRACTICE} from "st/data"
 
 import styles from "./score_view.module.css"
 
@@ -71,7 +75,10 @@ export class ScoreView extends React.Component {
 
   constructor(props) {
     super(props)
-    this.state = {selectedBar: null, page: 0, pageCount: 1, shade: "learnedness", sheetFailed: false}
+    this.state = {
+      selectedBar: null, page: 0, pageCount: 1, shade: "learnedness", sheetFailed: false,
+      passageOpen: false, passageSelectedId: null, reviewOpen: false, reviewFlagId: null,
+    }
   }
 
   componentDidMount() {
@@ -136,6 +143,65 @@ export class ScoreView extends React.Component {
     this.props.setSettings(passageSettings(this.props.settings, {start: number, end: number}))
     this.setState({selectedBar: null})
     this.props.begin()
+  }
+
+  openPassage = id => this.setState({passageOpen: true, passageSelectedId: id})
+  closePassage = () => this.setState({passageOpen: false})
+  selectPassage = id => this.setState({passageSelectedId: id})
+
+  // Practise and the hand pill begin the session at once, like the bar
+  // pop-up's own Practise button (Open question 4a)
+  practisePassage = flag => {
+    this.props.setSettings(passageSettings(this.props.settings, flag))
+    this.setState({passageOpen: false})
+    this.props.begin()
+  }
+
+  practisePassageHand = flag => {
+    // a passage to practise hands separately offers the right hand first
+    let hand = flag.hand == "both" ? "upper" : flag.hand
+    this.props.setSettings(passageSettings(this.props.settings, flag, hand))
+    this.setState({passageOpen: false})
+    this.props.begin()
+  }
+
+  editPassage = id => this.setState({passageOpen: false, reviewOpen: true, reviewFlagId: id})
+  openReview = () => this.setState({reviewOpen: true, reviewFlagId: null})
+  closeReview = () => this.setState({reviewOpen: false, reviewFlagId: null})
+
+  flagsInForce() {
+    let piece = this.piece()
+    let annotation = piece && this.getStore().annotation(piece.id)
+    return annotation ? flagsInForce(annotation) : []
+  }
+
+  // the difficulty tag or free-practice section tag at a bar position,
+  // keyed by measure index, for ScoreSheet's tagsByIndex (D4): a passage tag
+  // per flag in force in Score difficulty, else, in free practice, the
+  // section's own tag in any other shade (Off included)
+  tagsByIndex(numbers) {
+    let {shade} = this.state
+    let settings = this.props.settings
+    let tags = {}
+
+    if (shade == "difficulty") {
+      for (let flag of this.flagsInForce()) {
+        let idx = numbers.indexOf(flag.start)
+        if (idx == -1) { continue }
+        tags[idx] = {
+          text: `${romanNumeral(flag.num)} · ${LEVEL_WORDS[flag.level]} · ${barsLabel(flag.start, flag.end)}`,
+          tone: `level-${flag.level}`,
+          onClick: () => this.openPassage(flag.id),
+        }
+      }
+    } else if (settings.practice == FREE_PRACTICE) {
+      let idx = numbers.indexOf(settings.startMeasure)
+      if (idx != -1) {
+        tags[idx] = {text: `Section · ${barsLabel(settings.startMeasure, settings.endMeasure)}`, tone: "section"}
+      }
+    }
+
+    return tags
   }
 
   // the overlay fill/label for every drawn bar position, keyed by measure
@@ -230,6 +296,9 @@ export class ScoreView extends React.Component {
         {color ? <span className={styles.swatch} style={{background: color}} /> : null}
         {label}
       </span>)}
+      {shade == "difficulty" ? <button type="button" className={styles.review_link} onClick={this.openReview}>
+        Review the passages
+      </button> : null}
     </div>
   }
 
@@ -324,13 +393,14 @@ export class ScoreView extends React.Component {
             selected={selected}
             onBar={this.openBar}
             overlaysByIndex={this.overlaysByIndex(song)}
+            tagsByIndex={this.tagsByIndex(numbers)}
             onError={() => this.setState({sheetFailed: true})}>
             {selected != null ? <BarPopup
               pieceId={piece.id}
               measure={selected}
               hand={itemHand(hand)}
               items={this.getStore().items(piece.id)}
-              flags={flagsInForce(this.getStore().annotation(piece.id) || {proposals: [], decisions: []})}
+              flags={this.flagsInForce()}
               now={this.props.now()}
               onClose={this.closeBar}
               onPractise={this.practiseBar} /> : null}
@@ -363,6 +433,27 @@ export class ScoreView extends React.Component {
             begin={this.props.begin} pickPiece={this.props.pickPiece} store={this.props.store} />
         </div>
       </div>
+
+      <PassagePane
+        flags={this.flagsInForce()}
+        selectedId={this.state.passageSelectedId}
+        open={this.state.passageOpen}
+        close={this.closePassage}
+        onSelect={this.selectPassage}
+        onPractise={this.practisePassage}
+        onPractiseHand={this.practisePassageHand}
+        onEdit={this.editPassage} />
+
+      <ReviewPane
+        settings={settings}
+        setSettings={this.props.setSettings}
+        source={this.props.source}
+        engine={this.props.engine}
+        loadEngines={this.props.loadEngines}
+        store={this.props.store}
+        open={this.state.reviewOpen}
+        close={this.closeReview}
+        initialFlagId={this.state.reviewFlagId} />
     </div>
   }
 }
