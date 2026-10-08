@@ -28,6 +28,25 @@ import styles from "./score_card.module.css"
 // cards of every ScoreCard are drawn one after another
 let drawing = Promise.resolve()
 
+/**
+ * Queues one draw behind every other engine draw in flight, wherever it
+ * comes from: the trainer's own ScoreCard and the score-first page's
+ * ScoreSheet share this one queue, since an engine (OSMD) keeps one score
+ * loaded at a time.
+ * @param {function(): boolean} stale called before running task, and again
+ * before reporting its error: a draw a later one has overtaken (or an
+ * unmount) is dropped silently
+ * @param {function(): Promise} task the draw itself
+ * @param {function(Error)} onError
+ * @returns {Promise}
+ */
+export function enqueueDraw(stale, task, onError) {
+  drawing = drawing
+    .then(() => stale() ? null : task())
+    .catch(error => stale() ? null : onError(error))
+  return drawing
+}
+
 // a content key of a badges prop, so componentDidUpdate only replaces them
 // on a real change (a new array every render of engineCard() otherwise loops)
 const badgeKey = badges => (badges || []).map(b => `${b.column}:${b.on}`).join(",")
@@ -243,10 +262,7 @@ export class ScoreCard extends React.Component {
     this.clearBadges()
 
     let stale = () => count != this.drawCount || this.unmounted
-    drawing = drawing
-      .then(() => stale() ? null : this.drawNow(stale))
-      .catch(error => stale() ? null : this.fail(error))
-    return drawing
+    return enqueueDraw(stale, () => this.drawNow(stale), error => this.fail(error))
   }
 
   fail(error) {

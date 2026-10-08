@@ -5,6 +5,7 @@
 // reads the measures an engine's CardResult already reported.
 
 import type {CardMeasure, CardBox} from "./types"
+import {systemsOf} from "./score_pages"
 
 export interface Shade {
   id: string
@@ -34,26 +35,6 @@ function union(boxes: CardBox[]): CardBox {
     bottom = Math.max(bottom, box.y + box.height)
   }
   return {x: left, y: top, width: right - left, height: bottom - top}
-}
-
-// one system number per measure (by index order), a new one whenever a
-// measure's box sits far enough from the previous measure's to be a new
-// line rather than the next bar along it
-function systemsOf(measures: CardMeasure[]): Map<number, number> {
-  const ordered = [...measures].sort((a, b) => a.index - b.index)
-  const systemOf = new Map<number, number>()
-  let system = -1
-  let lastY: number | null = null
-
-  for (const measure of ordered) {
-    if (lastY == null || Math.abs(measure.box.y - lastY) > measure.box.height / 2) {
-      system += 1
-    }
-    systemOf.set(measure.index, system)
-    lastY = measure.box.y
-  }
-
-  return systemOf
 }
 
 // shadeBands(measures, shades): for each shade, one band per system it
