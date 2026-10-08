@@ -18,6 +18,7 @@ import {AGAIN, HARD, GOOD, EASY} from "st/srs/grade"
 import {PAUSE_MS} from "st/srs/attempt"
 import {newItem} from "st/srs/records"
 import {receiptParts} from "st/srs/self_grade"
+import {learnedness} from "st/bar_progress"
 import {predictedRecall, UNSCHEDULED_RECALL, DEFAULT_SCHEDULER_SETTINGS, DAY} from "st/srs/schedule"
 
 import {openTestStore, pickupScore, noteXML} from "spec/helpers"
@@ -672,6 +673,69 @@ describe("measure cards", function() {
         // and the pass its rung comes due is graded
         await lap(bar().due + 1000)
         expect(await barGrades()).toEqual([GOOD, AGAIN, GOOD])
+      })
+
+      // the plan's core case for ItemRecord#passes: three clean laps of a
+      // looping single-bar card, all inside the first rung's 30s, give one
+      // review (the first, on sight) and the demoted laps add to passes as
+      // practice alone (grade null), each still clean, so learnedness sees
+      // all three
+      it("keeps a bar's exact pass history even when massed passes are written as practice alone", async function() {
+        let deck = new MeasureCardDeck(measureCards([pickupMeasures()[1]], 1), {
+          pieceId: "p", order: IN_ORDER, store,
+        })
+        let generator = track(new MeasureCardGenerator(deck, {now: () => time}))
+        generator.setDrill(() => ({mode: "scroll", speed: 25}))
+        let notes = new NoteList([], {generator})
+        let stats = new NoteStats()
+        notes.fillBuffer(6)
+
+        let lap = async t => {
+          for (let i = 0; i < 3; i++) {
+            time = t + i * 100
+            notes = hit(notes, stats)
+          }
+          await generator.finishing
+        }
+
+        await lap(0)
+        await lap(10 * 1000)
+        await lap(20 * 1000)
+
+        let bar = store.item("p:both:1-1")
+        expect((await store.reviews({pieceId: "p"})).map(r => r.itemId)).toEqual(["p:both:1-1"])
+        expect(bar.passes.length).toEqual(3)
+        expect(bar.passes.every(([, columns, clean]) => columns === clean)).toBe(true)
+        expect(bar.passes[1][3]).toBeNull() // demoted laps carry no grade
+        expect(bar.passes[2][3]).toBeNull()
+        expect(learnedness(bar).count).toEqual(3)
+      })
+
+      it("resets learnedness on a lap with a slip, whatever grade it's written under", async function() {
+        let deck = new MeasureCardDeck(measureCards([pickupMeasures()[1]], 1), {
+          pieceId: "p", order: IN_ORDER, store,
+        })
+        let generator = track(new MeasureCardGenerator(deck, {now: () => time}))
+        generator.setDrill(() => ({mode: "scroll", speed: 25}))
+        let notes = new NoteList([], {generator})
+        let stats = new NoteStats()
+        notes.fillBuffer(6)
+
+        let lap = async (t, {slip=false}={}) => {
+          for (let i = 0; i < 3; i++) {
+            time = t + i * 100
+            if (slip && i == 1) { stats.missNotes(["A4"]) }
+            notes = hit(notes, stats)
+          }
+          await generator.finishing
+        }
+
+        await lap(0)
+        await lap(10 * 1000, {slip: true})
+
+        let bar = store.item("p:both:1-1")
+        expect(bar.passes.length).toEqual(2)
+        expect(learnedness(bar).count).toEqual(0)
       })
 
       it("captions each pass played through in wait mode with its pace and stops", async function() {
