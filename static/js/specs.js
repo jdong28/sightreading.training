@@ -1,4 +1,5 @@
 import "./specs.css"
+import "spec/bar_progress_spec"
 import "spec/difficulty_spec"
 import "spec/bar_stats_spec"
 import "spec/passages_plate_spec"
