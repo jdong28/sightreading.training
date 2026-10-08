@@ -95,6 +95,7 @@ export class ScoreView extends React.Component {
       passagePaneOpen: false,
       engineFailed: false,
       reviewOpen: false,
+      reviewFlagId: null,
     }
   }
 
@@ -158,6 +159,16 @@ export class ScoreView extends React.Component {
 
   closePassage() {
     this.setState({passagePaneOpen: false})
+  }
+
+  // the page's one review pane, opened either bare from the difficulty
+  // legend or on a flag from the passage pane's Edit
+  openReview(flagId) {
+    this.setState({reviewOpen: true, reviewFlagId: flagId || null})
+  }
+
+  closeReview() {
+    this.setState({reviewOpen: false})
   }
 
   practiseBar(measure) {
@@ -296,7 +307,7 @@ export class ScoreView extends React.Component {
       <span className={styles.swatch} />Easier
       <span className={styles.swatch} />
       <span className={styles.swatch} />Harder, from the score analysis
-      <button type="button" className={styles.review_link} onClick={() => this.setState({reviewOpen: true})}>
+      <button type="button" className={styles.review_link} onClick={() => this.openReview(null)}>
         Review the passages
       </button>
     </div>
@@ -448,9 +459,7 @@ export class ScoreView extends React.Component {
         settings={settings}
         setSettings={this.props.setSettings}
         flagId={this.state.passageFlagId}
-        source={source}
-        engine={this.props.engine}
-        loadEngines={this.props.loadEngines}
+        openReview={flagId => this.openReview(flagId)}
         store={this.getStore()} />
 
       <ReviewPane
@@ -461,7 +470,8 @@ export class ScoreView extends React.Component {
         loadEngines={this.props.loadEngines}
         store={this.getStore()}
         open={this.state.reviewOpen}
-        close={() => this.setState({reviewOpen: false})} />
+        close={() => this.closeReview()}
+        initialFlagId={this.state.reviewFlagId} />
     </>
   }
 

@@ -404,9 +404,8 @@ describe("score view (the score-first page at rest)", function() {
   })
 
   describe("the review pane", function() {
-    // the passage pane embeds its own (always-closed, until its own Edit
-    // is clicked) ReviewPane too, so "Review the passages" is ambiguous:
-    // find the instance that is actually open
+    // the pane is always mounted, closed until opened: find it only while
+    // it is actually open
     let openReviewPane = el => [...el.querySelectorAll('aside[aria-label="Review the passages"]')]
       .find(aside => aside.getAttribute("aria-hidden") != "true")
 
@@ -502,6 +501,26 @@ describe("score view (the score-first page at rest)", function() {
       let settings = JSON.parse(window.localStorage.getItem(SHEET_MUSIC_STORAGE_KEY))
       expect([settings.startMeasure, settings.endMeasure]).toEqual([5, 9])
       expect(settings.piece).toEqual(piece.id)
+    })
+
+    it("Edit opens the page's one review pane on that passage", async function() {
+      await importFixture()
+      let el = renderScorePage()
+      await awaitEngraved(el)
+
+      click(shadePill(el, "Score difficulty"))
+      let tag = await waitFor(() => buttonNamed(el, "I · Hardest · bars 5–9"), "the difficulty tag")
+      click(tag)
+
+      let pane = await waitFor(() => el.querySelector('aside[aria-label="Passage detail"]'), "the passage pane")
+      click(buttonNamed(pane, "Edit"))
+
+      expect(el.querySelectorAll('aside[aria-label="Review the passages"]').length).toEqual(1)
+      let review = await waitFor(
+        () => [...el.querySelectorAll('aside[aria-label="Review the passages"]')]
+          .find(aside => aside.getAttribute("aria-hidden") != "true"),
+        "the review pane")
+      await waitFor(() => review.textContent.includes("Edit the passage"), "the passage editor")
     })
   })
 })

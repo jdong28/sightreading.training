@@ -2,9 +2,10 @@
 // detail, reasons, how to practise it and Edit, in a right-hand SidePane.
 // The flagged list and "The score" preview stay with the old passages
 // plate's trouble-spot and overview features, which this page reaches
-// instead through the Score difficulty legend's "Review the passages"
-// link (the existing ReviewPane). Detail markup lifted from
-// passages_plate.jsx#renderDetail.
+// instead through the one ReviewPane the score view owns: the Score
+// difficulty legend's "Review the passages" link opens it, and Edit here
+// asks the score view to open it on this flag (openReview). Detail markup
+// lifted from passages_plate.jsx#renderDetail.
 
 import * as React from "react"
 import * as types from "prop-types"
@@ -12,7 +13,6 @@ import classNames from "classnames"
 
 import {Plate, Pill} from "st/components/salon"
 import {SidePane} from "st/components/sight_reading/settings_panel"
-import {ReviewPane} from "st/components/sight_reading/review_pane"
 import {romanNumeral, barsLabel, barsHeading} from "st/music"
 import {sheetMusicPiece, passageSettings} from "st/data"
 import {getAppStore} from "st/storage"
@@ -43,15 +43,8 @@ export class PassagePane extends React.Component {
     settings: types.object.isRequired,
     setSettings: types.func.isRequired,
     flagId: types.string,
-    source: types.object,
-    engine: types.string,
-    loadEngines: types.func,
+    openReview: types.func.isRequired,
     store: types.object,
-  }
-
-  constructor(props) {
-    super(props)
-    this.state = {reviewOpen: false}
   }
 
   getStore() {
@@ -77,14 +70,6 @@ export class PassagePane extends React.Component {
   practiseHand(flag) {
     this.props.setSettings(passageSettings(this.props.settings, flag, handPillHand(flag)))
     this.props.close()
-  }
-
-  openReview() {
-    this.setState({reviewOpen: true})
-  }
-
-  closeReview() {
-    this.setState({reviewOpen: false})
   }
 
   renderDetail(flag, flags) {
@@ -129,7 +114,7 @@ export class PassagePane extends React.Component {
         <Pill variant="ghost" className={styles.small_pill} onClick={() => this.practiseHand(flag)}>
           {HAND_LABEL[flag.hand]}
         </Pill>
-        <Pill variant="ghost" className={styles.small_pill} onClick={() => this.openReview()}>
+        <Pill variant="ghost" className={styles.small_pill} onClick={() => this.props.openReview(flag.id)}>
           Edit
         </Pill>
       </div>
@@ -139,28 +124,15 @@ export class PassagePane extends React.Component {
   render() {
     let flag = this.flag()
 
-    return <>
-      <SidePane
-        side="right"
-        open={!!this.props.open && !!flag}
-        close={this.props.close}
-        title="Passage"
-        label="Passage detail"
-        closeLabel="Close passage detail">
-        {flag ? this.renderDetail(flag, this.flags()) : null}
-      </SidePane>
-
-      <ReviewPane
-        settings={this.props.settings}
-        setSettings={this.props.setSettings}
-        source={this.props.source}
-        engine={this.props.engine}
-        loadEngines={this.props.loadEngines}
-        store={this.getStore()}
-        open={this.state.reviewOpen}
-        close={() => this.closeReview()}
-        initialFlagId={flag ? flag.id : null} />
-    </>
+    return <SidePane
+      side="right"
+      open={!!this.props.open && !!flag}
+      close={this.props.close}
+      title="Passage"
+      label="Passage detail"
+      closeLabel="Close passage detail">
+      {flag ? this.renderDetail(flag, this.flags()) : null}
+    </SidePane>
   }
 }
 
