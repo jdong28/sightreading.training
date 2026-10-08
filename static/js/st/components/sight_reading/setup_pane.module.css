@@ -1,0 +1,170 @@
+/* "Tonight's session" (D7). The field markup GeneratorSettings renders
+   (deck, pills, measure pickers...) is restyled only where this file
+   defines a matching class name (see GeneratorSettings#styles); anything
+   left out falls back to programme_drawer.module.css's own styling. */
+
+.setup_pane {
+    padding: 20px 22px 22px;
+}
+
+.header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 4px;
+}
+
+.title {
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: 24px;
+    font-weight: 400;
+
+    em {
+        font-style: italic;
+    }
+}
+
+.aside {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .18em;
+    text-transform: uppercase;
+    color: var(--salon-ink-muted);
+    white-space: nowrap;
+}
+
+.group {
+    padding: 14px 0;
+    border-bottom: 1px solid var(--salon-rule-light);
+
+    &:last-of-type {
+        border-bottom: none;
+    }
+}
+
+.group_label {
+    margin-bottom: 8px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .2em;
+    text-transform: uppercase;
+    color: var(--salon-ink-muted);
+}
+
+.sub_group {
+    margin-top: 12px;
+}
+
+.hidden_label {
+    display: none;
+}
+
+.sub_label {
+    margin-bottom: 6px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--salon-ink-muted);
+}
+
+.hint, .input_hint {
+    margin: 6px 0 0;
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--salon-ink-muted);
+}
+
+.pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.small_pill.small_pill {
+    padding: 7px 13px;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.figures {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.figure {
+    padding: 8px 10px;
+    background: var(--salon-paper-warm);
+    border-top: var(--salon-double-rule);
+    border-bottom: 1px solid var(--salon-rule-light);
+}
+
+.figure_label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--salon-ink-muted);
+}
+
+.figure_value {
+    margin-top: 2px;
+    font-family: var(--font-display);
+    font-size: 22px;
+}
+
+.figure_detail {
+    font-size: 14px;
+    color: var(--salon-ink-muted);
+}
+
+.order_description {
+    margin: 8px 0 0;
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--salon-ink-muted);
+}
+
+.suggestion {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 12px;
+    margin-top: 10px;
+    font-size: 13px;
+}
+
+.footer {
+    padding-top: 16px;
+    border-top: var(--salon-double-rule);
+    text-align: center;
+}
+
+.begin_line {
+    margin: 0 0 12px;
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 15px;
+    line-height: 1.45;
+    color: var(--salon-ink);
+}
+
+.begin_button.begin_button {
+    width: 100%;
+    min-height: 48px;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+}
+
+.engines_link {
+    display: inline-block;
+    margin-top: 10px;
+    font-size: 12px;
+    color: var(--salon-nav-ink);
+}

@@ -69,6 +69,8 @@ export const SCORE_PROGRAMME = {
   // the score-first at-rest view and in-session rail (see SightReadingPage)
   ScoreView,
   SessionRail,
+  // the setup pane's most-overdue suggestion picks another piece's programme
+  pickPiece: programmeOf,
   restPauses: true,
   scoreLayout: true,
   // opts into acoustic mode (st/srs/self_grade): a self-graded pass in place

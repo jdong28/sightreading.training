@@ -4867,12 +4867,17 @@ describe("sight reading page", function() {
   // exercises page) keeps today's Begin/Rest-opens-the-summary behaviour
   // throughout, exercised by every other test in this file
   describe("restPauses (score-first view/pause/end/log state machine)", function() {
-    let restPausesProgramme = () => ({
-      ...EXERCISES_PROGRAMME, ScoreView: SCORE_PROGRAMME.ScoreView, SessionRail: SCORE_PROGRAMME.SessionRail,
-      restPauses: true, scoreLayout: true,
+    let piece
+
+    beforeEach(async function() {
+      piece = (await importMusicXMLPiece("salon_octet.musicxml", octetXML, store)).piece
+      window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+        piece: piece.id, startMeasure: 1, endMeasure: 1, hand: BOTH_HANDS, measuresPerCard: "all",
+        practice: "free practice",
+      }))
     })
 
-    let renderRestPauses = () => renderPage(SightReadingPage, {programme: restPausesProgramme()})
+    let renderRestPauses = () => renderPage(ScorePage, {programme: SCORE_PROGRAMME})
 
     let playHeadColumn = () => play(page.state.notes.currentColumn())
 

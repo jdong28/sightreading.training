@@ -1,0 +1,185 @@
+.popup {
+    position: absolute;
+    z-index: 5;
+    width: 300px;
+    max-width: 100%;
+    margin: 6px 0;
+    padding: 14px 16px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    background: var(--salon-paper);
+    border: 1px solid var(--salon-oxblood);
+    box-shadow: 0 8px 24px rgba(36, 31, 24, .22);
+}
+
+.header {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+}
+
+.heading {
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: 24px;
+    font-weight: 400;
+
+    em {
+        font-style: italic;
+    }
+}
+
+.tag {
+    flex: 1;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--salon-ink-muted);
+
+    &[data-variant="passage"] {
+        color: var(--salon-oxblood);
+    }
+
+    &[data-variant="learned"] {
+        color: var(--salon-gilt-deep);
+    }
+}
+
+.close_button {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: 1px solid var(--salon-rule-strong);
+    background: none;
+    cursor: pointer;
+}
+
+.empty_text {
+    margin: 0;
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 16px;
+}
+
+.figures {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 6px 16px;
+}
+
+.figure_label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--salon-ink-muted);
+}
+
+.latest_value {
+    font-family: var(--font-display);
+    font-size: 30px;
+
+    &[data-oxblood="true"] {
+        color: var(--salon-oxblood);
+    }
+}
+
+.best_value {
+    font-family: var(--font-display);
+    font-size: 18px;
+}
+
+.played {
+    margin-left: auto;
+    font-size: 12px;
+    color: var(--salon-ink-muted);
+}
+
+.chart {
+    display: flex;
+    align-items: flex-end;
+    gap: 4px;
+    height: 122px;
+    padding-top: 4px;
+    border-bottom: 1px dashed var(--salon-gilt);
+    position: relative;
+}
+
+.chart_column {
+    flex: 1;
+    max-width: 40px;
+    min-height: 1px;
+    background: var(--salon-gilt);
+    position: relative;
+
+    &[data-oxblood="true"] {
+        background: var(--salon-oxblood);
+    }
+}
+
+.chart_value {
+    position: absolute;
+    top: -14px;
+    left: 0;
+    right: 0;
+    text-align: center;
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.chart_days {
+    position: absolute;
+    bottom: -18px;
+    left: 0;
+    right: 0;
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    color: var(--salon-ink-muted);
+}
+
+.self_words {
+    margin: 0;
+    font-size: 13px;
+}
+
+.streak {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--font-display);
+    font-size: 15px;
+}
+
+.pips {
+    display: flex;
+    gap: 4px;
+}
+
+.pip {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    border: 1px solid var(--salon-pip-rule);
+
+    &[data-filled="true"] {
+        background: var(--salon-gilt-deep);
+        border-color: var(--salon-gilt-deep);
+    }
+}
+
+.practise_button {
+    width: 100%;
+    min-height: 44px;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    background: var(--salon-oxblood);
+    color: var(--salon-paper);
+    border: none;
+    cursor: pointer;
+}

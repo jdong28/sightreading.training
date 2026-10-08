@@ -1928,8 +1928,8 @@ export default class SightReadingPage extends React.Component {
     })}>
       <div className={styles.trainer_scroller}>
         <main className={styles.trainer}>
-          {!scoreView && this.renderProgrammeButton()}
-          {!scoreView && this.renderTitle()}
+          {!this.restPauses() && this.renderProgrammeButton()}
+          {this.restPauses() ? (!scoreView && this.renderSessionTitle()) : this.renderTitle()}
 
           {scoreView ? this.renderScoreView() : <div className={styles.trainer_grid}>
             <div className={styles.trainer_main}>
@@ -1995,15 +1995,30 @@ export default class SightReadingPage extends React.Component {
         }
         this.setGenerator(generator, settings)
       }}
-      generator={this.currentNotesGenerator()}
+      liveGenerator={this.currentNotesGenerator()}
+      generator={this.state.currentGenerator}
+      currentStaff={this.state.currentStaff}
+      staves={STAVES}
+      keySignature={this.state.keySignature}
+      mode={this.state.mode}
+      setMode={this._setMode ||= this.setMode.bind(this)}
+      scrollSpeed={this.state.scrollSpeed}
+      setScrollSpeed={this._setScrollSpeed ||= scrollSpeed => {
+        storeCurrentDrill({speed: scrollSpeed}, this.programme.storageKey)
+        this.setState({scrollSpeed})
+      }}
+      tempo={this.state.tempo}
+      setTempo={this._setTempo ||= on => this.setTempo(on)}
       source={this.state.engineSource}
       engine={this.programme.engine}
       loadEngines={this.props.loadEngines}
       acoustic={this.selfGraded()}
       ended={this.state.ended}
+      sessionLog={this.state.sessionLog}
       begin={this.begin}
       playOn={this.playOn}
       dismissEnded={this.dismissEnded}
+      pickPiece={this.programme.pickPiece}
       viewportHeight={this.props.viewportHeight}
     />
   }
@@ -2201,6 +2216,16 @@ export default class SightReadingPage extends React.Component {
     return <div className={styles.title}>
       <TitleBlock eyebrow="Salon de Paris · 1836" title={title} italic={italic} />
       <FleuronRule />
+    </div>
+  }
+
+  // D8: the score-first page's session-view title, "In session · {title}"
+  // over today's titleParts(), no pull quote or right-hand note
+  renderSessionTitle() {
+    let {title, italic} = this.titleParts()
+
+    return <div className={styles.title}>
+      <TitleBlock eyebrow={`In session · ${title}`} title={title} italic={italic} />
     </div>
   }
 

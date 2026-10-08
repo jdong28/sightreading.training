@@ -149,7 +149,7 @@ export class SettingsDrawer extends React.PureComponent {
 // scroll-mode "Keep tempo" setting (D4(c)): a column that scrolls past the
 // hit line by the tolerance is missed, rather than waited for. Disabled in
 // wait mode, which it has no effect on
-function TempoSettings({mode, setMode, scrollSpeed, setScrollSpeed, tempo, setTempo}) {
+export function TempoSettings({mode, setMode, scrollSpeed, setScrollSpeed, tempo, setTempo}) {
   return <SettingsGroup label="Tempo" aside={scrollSpeed}>
     <div className={styles.pills}>
       {[["wait", "Wait"], ["scroll", "Scroll"]].map(([value, label]) =>
