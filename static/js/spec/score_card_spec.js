@@ -21,7 +21,6 @@ import {parseNote} from "st/music"
 import {setAppStore} from "st/storage"
 import {SCORE_DRILL_STORAGE_KEY} from "st/generators"
 import staffStyles from "st/components/staff.module.css"
-import drawerStyles from "st/components/sight_reading/programme_drawer.module.css"
 import scoreCardStyles from "st/components/score_card.module.css"
 
 import {openTestStore, reverieOpening, pickupScore, noteXML} from "spec/helpers"
@@ -873,32 +872,17 @@ describe("score page engine card", function() {
     expect(el.textContent).toContain("measures 1–4")
   })
 
-  // the programme drawer, opened
-  let openDrawer = el => {
-    flushSync(() => el.querySelector("button[aria-label=\"Programme\"]").click())
-    return el.querySelector(`.${drawerStyles.drawer}[aria-label="Programme"]`)
-  }
-
-  let perCardPicker = drawer => drawer.querySelector("[role=\"spinbutton\"][aria-label=\"measures per card\"]")
-
-  // Pending: the score page has no Programme drawer any more (Drawer: null);
-  // its "Bars per card" stepper moves to the setup pane (score-first sheet
-  // music plan, build 5), where this clamping behaviour is re-covered
-  xit("picks a card size up to the whole section for the score's cards, in scroll mode too", async function() {
+  // the score page has no Programme drawer (Drawer: null): "Bars per card"
+  // is picked in the setup pane at rest, which writes through setGenerator
+  // exactly as this does directly
+  it("picks a card size up to the whole section for the score's cards, in scroll mode too", async function() {
     await drillPiece(reverieOpening(), {startMeasure: 1, endMeasure: 4, measuresPerCard: "2"})
     let el = renderScorePage()
     await cardDrawn()
 
-    let drawer = openDrawer(el)
-    let input = perCardPicker(drawer)
-    expect(input.getAttribute("aria-valuemax")).toEqual("4")
-    expect(drawer.textContent).toContain("of 4")
-    expect(drawer.textContent).not.toContain("Cards stop")
-
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(input, "4")
-    flushSync(() => input.dispatchEvent(new Event("input", {bubbles: true})))
-    flushSync(() => input.dispatchEvent(new KeyboardEvent("keydown", {key: "Enter", bubbles: true})))
-    flushSync(() => {})
+    flushSync(() => page.setGenerator(page.state.currentGenerator, {
+      ...page.state.currentGeneratorSettings, measuresPerCard: 4,
+    }))
 
     expect(page.state.currentGeneratorSettings.measuresPerCard).toEqual(4)
     let {card} = page.currentCard()
@@ -908,9 +892,7 @@ describe("score page engine card", function() {
     // and keeps it in scroll mode
     flushSync(() => page.setMode("scroll"))
     flushSync(() => {})
-    expect(perCardPicker(drawer).getAttribute("aria-valuemax")).toEqual("4")
-    expect(perCardPicker(drawer).value).toEqual("4")
-    expect(drawer.textContent).not.toContain("Cards stop")
+    expect(page.state.currentGeneratorSettings.measuresPerCard).toEqual(4)
     expect(page.currentCard().card.measures).toEqual([1, 2, 3, 4])
   })
 

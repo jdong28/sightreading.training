@@ -391,13 +391,6 @@ describe("sight reading page", function() {
   // the engine card has its own specs (see score_card_spec)
   let renderScorePage = () => renderPage(ScorePage, {programme: {...SCORE_PROGRAMME, engine: null, ScoreView: null}})
 
-  // whether the rail's engraving is on show: the programme's plates stand in
-  // for it while they draw something, so it is in the tree either way
-  let engravingShown = rail => {
-    let img = rail.querySelector(`.${pageStyles.engraving} img`)
-    return !!img && img.getClientRects().length > 0
-  }
-
   let click = button => flushSync(() => button.click())
 
   // the number picker (st/components/number_picker) of the label in el
@@ -552,10 +545,9 @@ describe("sight reading page", function() {
     expect(plateLabel()).toEqual("3 ♩ a bar · Card 2 · measures 3–4 of 1–8")
   })
 
-  // Pending: the score page has no Programme drawer any more (Drawer:
-  // null); "Order" and "Bars per card" move to the setup pane (score-first
-  // sheet music plan, build 5), where this interaction is re-covered
-  xit("offers the order control only once a card size is picked", async function() {
+  // the score page has no Programme drawer (Drawer: null): "Order" and
+  // "Bars per card" are always-visible fields of the setup pane, at rest
+  it("offers the order control only once a card size is picked", async function() {
     let {piece} = await importMusicXMLPiece("salon_octet.musicxml", octetXML, store)
 
     window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
@@ -563,81 +555,74 @@ describe("sight reading page", function() {
       measuresPerCard: "all", order: RANDOM_ORDER,
     }))
 
-    let el = renderScorePage()
-    click(buttonLabelled(el, "Programme"))
-
-    let drawer = el.querySelector(`.${drawerStyles.drawer}[aria-label="Programme"]`)
-    let pills = label => drawer.querySelector(`[role="group"][aria-label="${label}"]`)
+    let el = renderPage(ScorePage, {programme: {...SCORE_PROGRAMME, engine: null}})
+    let pills = label => el.querySelector(`[role="group"][aria-label="${label}"]`)
 
     // the whole section is always walked in order, so no order to pick
     expect(pills("measures per card presets")).not.toBe(null)
     expect(pills("order")).toBe(null)
 
     // and the stored random order is still there to apply to a card size
-    typeNumber(drawer, "measures per card", "2")
+    typeNumber(el, "measures per card", "2")
 
     expect(pills("order")).not.toBe(null)
     expect(page.state.notes.generator.deck.order).toEqual(RANDOM_ORDER)
   })
 
-  // Pending: the score page has no Programme drawer any more (Drawer:
-  // null); "Section" and "Bars per card" move to the setup pane (score-first
-  // sheet music plan, build 5), where this clamping is re-covered
-  xit("picks the section and card size with number pickers clamped to the piece", async function() {
+  // the score page has no Programme drawer (Drawer: null): "Section" and
+  // "Bars per card" are always-visible fields of the setup pane, at rest
+  it("picks the section and card size with number pickers clamped to the piece", async function() {
     let {piece} = await importMusicXMLPiece("salon_octet.musicxml", octetXML, store)
 
     window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
       piece: piece.id, startMeasure: 2, endMeasure: 5, hand: BOTH_HANDS, measuresPerCard: "all",
     }))
 
-    let el = renderScorePage()
-    click(buttonLabelled(el, "Programme"))
-    let drawer = el.querySelector(`.${drawerStyles.drawer}[aria-label="Programme"]`)
-    let values = () => ["start measure", "end measure"].map(label => picker(drawer, label).value)
+    let el = renderPage(ScorePage, {programme: {...SCORE_PROGRAMME, engine: null}})
+    let values = () => ["start measure", "end measure"].map(label => picker(el, label).value)
     let section = () => {
       let {startMeasure, endMeasure} = page.state.currentGeneratorSettings
       return [startMeasure, endMeasure]
     }
 
     // the piece's measure count is beside each
-    expect(picker(drawer, "end measure").getAttribute("aria-valuemax")).toEqual("8")
-    expect(drawer.textContent).toContain("of 8")
+    expect(picker(el, "end measure").getAttribute("aria-valuemax")).toEqual("8")
+    expect(el.textContent).toContain("of 8")
 
     // a typed measure past the piece is its last
-    typeNumber(drawer, "end measure", "40")
+    typeNumber(el, "end measure", "40")
     expect(values()).toEqual(["2", "8"])
     expect(section()).toEqual([2, 8])
 
     // moving one end past the other drags it along
-    typeNumber(drawer, "end measure", "6")
-    typeNumber(drawer, "start measure", "7")
+    typeNumber(el, "end measure", "6")
+    typeNumber(el, "start measure", "7")
     expect(section()).toEqual([7, 7])
-    typeNumber(drawer, "end measure", "3")
+    typeNumber(el, "end measure", "3")
     expect(section()).toEqual([3, 3])
 
     // the step buttons and keys nudge it, never past the piece
-    click(buttonLabelled(drawer, "Increase end measure"))
+    click(buttonLabelled(el, "Increase end measure"))
     expect(section()).toEqual([3, 4])
-    let end = picker(drawer, "end measure")
+    let end = picker(el, "end measure")
     flushSync(() => end.dispatchEvent(new KeyboardEvent("keydown", {key: "End", bubbles: true})))
     expect(section()).toEqual([3, 8])
-    expect(buttonLabelled(drawer, "Increase end measure").disabled).toBe(true)
+    expect(buttonLabelled(el, "Increase end measure").disabled).toBe(true)
     flushSync(() => end.dispatchEvent(new KeyboardEvent("keydown", {key: "ArrowDown", bubbles: true})))
     expect(section()).toEqual([3, 7])
-    expect(el.querySelector("h1").textContent).toContain("measures 3–7")
 
     // a card takes up to the whole section, on the app's staff too
-    typeNumber(drawer, "measures per card", "9")
+    typeNumber(el, "measures per card", "9")
     expect(page.state.currentGeneratorSettings.measuresPerCard).toEqual(5)
-    expect(picker(drawer, "measures per card").getAttribute("aria-valuemax")).toEqual("5")
-    expect(drawer.textContent).toContain("of 5")
-    expect(drawer.textContent).not.toContain("Cards stop")
+    expect(picker(el, "measures per card").getAttribute("aria-valuemax")).toEqual("5")
+    expect(el.textContent).toContain("of 5")
+    expect(el.textContent).not.toContain("Cards stop")
     expect(page.currentCard().card.measures).toEqual([3, 4, 5, 6, 7])
 
     // and the whole section is a pill beside it
-    click(buttonNamed(drawer, "all"))
+    click(buttonNamed(el, "all"))
     expect(page.state.currentGeneratorSettings.measuresPerCard).toEqual(WHOLE_SECTION)
-    expect(picker(drawer, "measures per card").value).toEqual("")
+    expect(picker(el, "measures per card").value).toEqual("")
   })
 
   it("keeps a stored section longer than a shorter piece inside it", async function() {
@@ -1070,46 +1055,46 @@ describe("sight reading page", function() {
     expect(page.state.keySignature.name()).toEqual("C")
   })
 
-  // Pending: the score page has no Programme drawer any more (Drawer:
-  // null); the deck, section and hand move to the setup pane (score-first
-  // sheet music plan, build 5), where this is re-covered
-  xit("keeps the sheet music deck, measure range and hand in the score page's drawer", async function() {
+  // the score page has no Programme drawer (Drawer: null): the deck,
+  // section and hand are always-visible fields of the setup pane, at rest
+  it("keeps the sheet music deck, measure range and hand in the setup pane", async function() {
     let {piece} = await importMusicXMLPiece("salon_minuet.musicxml", minuetXML, store)
 
     window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
       piece: piece.id, startMeasure: 1, endMeasure: 2, hand: BOTH_HANDS,
     }))
 
-    let el = renderScorePage()
-    click(buttonLabelled(el, "Programme"))
+    let el = renderPage(ScorePage, {programme: {...SCORE_PROGRAMME, engine: null}})
 
-    let drawer = el.querySelector(`.${drawerStyles.drawer}[aria-label="Programme"]`)
-    let text = drawer.textContent
+    let text = el.textContent
     for (let label of ["piece", "start measure", "end measure", "hand", "Tempo", "Wait", "Scroll"]) {
       expect(text).toContain(label)
     }
     expect(text).toContain("Salon Minuet")
     expect(text).toContain("both hands")
-    expect(buttonNamed(drawer, "Remove")).toBeDefined()
-    expect(buttonNamed(drawer, "Export library")).toBeDefined()
-    expect(buttonNamed(drawer, "Take your seat")).toBeDefined()
-    expect(drawer.querySelectorAll("input[type=file]").length).toEqual(3)
-    expect(["start measure", "end measure"].map(label => picker(drawer, label).value)).toEqual(["1", "2"])
+    expect(buttonNamed(el, "Remove")).toBeDefined()
+    expect(buttonNamed(el, "Export library")).toBeDefined()
+    // settings apply as picked; Begin starts at once, with no "take your
+    // seat" step
+    expect(buttonNamed(el, "Begin")).toBeDefined()
+    // the deck's own 3, plus the review pane's own flags-file importer
+    // (ReviewPane, always mounted so "Review the passages" can open it)
+    expect(el.querySelectorAll("input[type=file]").length).toEqual(4)
+    expect(["start measure", "end measure"].map(label => picker(el, label).value)).toEqual(["1", "2"])
 
-    // the score supplies the staves, clefs and key, so the drawer has none of
-    // the exercises' clef, exercise or key settings
+    // the score supplies the staves, clefs and key, so the setup pane has
+    // none of the exercises' clef, exercise or key settings
     expect(text).not.toContain("Clef")
     expect(text).not.toContain("Exercise")
     expect(text).not.toContain("Key")
     expect(text).not.toContain("note range")
-    expect(buttonNamed(drawer, "Treble")).toBeUndefined()
-    expect(buttonNamed(drawer, "Grand")).toBeUndefined()
-    expect(buttonNamed(drawer, "B♭")).toBeUndefined()
-    expect(drawer.querySelector(`.${drawerStyles.exercise_list}`)).toBe(null)
-    expect(drawer.querySelector("a[href='/setup']")).toBe(null)
+    expect(buttonNamed(el, "Treble")).toBeUndefined()
+    expect(buttonNamed(el, "Grand")).toBeUndefined()
+    expect(buttonNamed(el, "B♭")).toBeUndefined()
 
-    expect(el.querySelector("h1").textContent).toEqual("Salon Minuet measures 1–2, both hands")
-    expect(el.textContent).toContain("3 ♩ a bar · measures 1–2")
+    // the title is always the piece and "the score" at rest; the card's own
+    // status line only shows in the session view
+    expect(el.querySelector("h1").textContent).toEqual("Salon Minuet the score")
     expect(page.state.currentStaff.name).toEqual("grand")
   })
 
@@ -2388,7 +2373,7 @@ describe("sight reading page", function() {
   describe("today's programme", function() {
     let piece
 
-    let renderProgramme = async ({study=true, settings={}, seed=null}={}) => {
+    let renderProgramme = async ({study=true, settings={}, seed=null, scoreView=false}={}) => {
       piece = (await importMusicXMLPiece("salon_octet.musicxml", octetXML, store)).piece
       if (study) {
         await store.putStudy({pieceId: piece.id, status: "learning", startedAt: Date.now()})
@@ -2400,7 +2385,10 @@ describe("sight reading page", function() {
         piece: piece.id, startMeasure: 3, endMeasure: 4, hand: BOTH_HANDS, measuresPerCard: "2",
         introduce: SCORE_ORDER, ...settings,
       }))
-      let el = renderScorePage()
+      // scoreView: true reaches the real at-rest setup pane (ScoreView,
+      // SetupPane), for tests about its own figures/order/suggestion;
+      // engine stays null either way, so no real engraving is drawn
+      let el = scoreView ? renderPage(ScorePage, {programme: {...SCORE_PROGRAMME, engine: null}}) : renderScorePage()
       // today's programme reads the log when a bar that can split is failing
       await page.state.notes?.generator?.ready
       flushSync(() => {})
@@ -2453,26 +2441,23 @@ describe("sight reading page", function() {
       span.children.length == 0 && span.textContent == "Tonight's programme")
     let caption = el => el.querySelector("[data-caption]")
 
-    // Pending: the score page's rail no longer carries ProgrammePlate (the
-    // Rail/wideRail programme fields are gone, see score_page.jsx); its
-    // figures move to the setup pane (score-first sheet music plan, build
-    // 5), where this is re-covered
-    xit("is the default for a piece in study, prefaced by tonight's programme at rest", async function() {
-      let el = await renderProgramme()
+    // the score page's rail no longer carries ProgrammePlate: its figures
+    // (Due/New/Learned) and session length live in the setup pane instead
+    // (always visible at rest, see score_view.jsx/setup_pane.jsx)
+    it("is the default for a piece in study, prefaced by tonight's session figures at rest", async function() {
+      let el = await renderProgramme({scoreView: true})
 
       expect(page.state.notes.generator instanceof PlanGenerator).toBe(true)
-      expect(el.querySelector("h1").textContent).toContain("today's programme, both hands")
-      expect(plate(el)).toBeDefined()
-      expect(el.textContent).toContain("New bars on offer8")
-      expect(el.textContent).toContain("0 of 8 bars learned")
-      expect(plateStatus(el)).toEqual("At rest")
+      expect(el.querySelector("h1").textContent).toContain("the score")
+      let figures = () => [...el.querySelectorAll('[class*="figure_value"]')].map(f => f.textContent)
+      expect(figures()).toEqual(["0", "8", "0 /8"])
 
-      // the session length is a soft target the plate sets
+      // the session length is a soft target the setup pane sets
       click(buttonNamed(el, "10 min"))
       await waitFor(() => store.practiceSettings().sessionMinutes == 10, "the target to be saved")
 
       click(buttonNamed(el, "Begin"))
-      expect(plate(el)).toBeUndefined()
+      expect(el.querySelector("h1").textContent).toContain("today's programme, both hands")
       expect(plateStatus(el)).toEqual("New · bar 1")
       expect(el.textContent).toContain("measures 1–2")
     })
@@ -2489,21 +2474,20 @@ describe("sight reading page", function() {
       }],
     })
 
-    // Pending: no drawer or ProgrammePlate on the score page any more; the
-    // Order row moves to the setup pane (score-first sheet music plan,
-    // build 5), where this is re-covered
-    xit("offers today's programme order on the plate and in the drawer for a flagged piece", async function() {
+    // no drawer or ProgrammePlate on the score page any more; the Order
+    // row is an always-visible field of the setup pane, at rest
+    it("offers today's programme order in the setup pane for a flagged piece", async function() {
       let el = await renderProgramme({
-        settings: {introduce: READ_FIRST}, seed: () => store.putAnnotation(flagRecordFor(piece)),
+        scoreView: true, settings: {introduce: READ_FIRST}, seed: () => store.putAnnotation(flagRecordFor(piece)),
       })
 
       expect(buttonNamed(el, "Read through").getAttribute("aria-pressed")).toEqual("true")
-      expect(el.textContent).toContain("To read through")
 
       click(buttonNamed(el, "Begin"))
       expect(plateStatus(el)).toEqual("Read-through · bar 1")
 
-      click(buttonNamed(el, "Rest"))
+      // End session (not Rest, which only pauses) returns to the setup pane
+      click(buttonNamed(el, "End session"))
       click(buttonNamed(el, "In score order"))
       expect(JSON.parse(window.localStorage.getItem(SHEET_MUSIC_STORAGE_KEY)).introduce)
         .toEqual("in score order")
@@ -2513,41 +2497,6 @@ describe("sight reading page", function() {
       // status still names the passage (introduction() marks it in every
       // order, see st/srs/planner)
       expect(plateStatus(el)).toEqual("New · bar 1 · hardest passage")
-      click(buttonNamed(el, "Rest"))
-
-      click(buttonLabelled(el, "Programme"))
-      let drawer = el.querySelector(`.${drawerStyles.drawer}[aria-label="Programme"]`)
-      // the drawer's generic select pills show the raw stored value
-      // ("read through"), not the plate's own capitalized label
-      expect(buttonNamed(drawer, "read through")).toBeTruthy()
-
-      click(buttonNamed(drawer, "free practice"))
-      drawer = el.querySelector(`.${drawerStyles.drawer}[aria-label="Programme"]`)
-      expect(buttonNamed(drawer, "read through")).toBeFalsy()
-    })
-
-    // the sheet-music UI polish: the rail, not the main column, carries the
-    // programme's plates at rest, and the wider score page trainer
-    // Pending: the trainer no longer has a Rail/wideRail (removed with
-    // ScoreRail, see score_page.jsx and sight_reading_page.jsx); the
-    // score-first layout (scoreLayout) and setup pane replace this
-    // (score-first sheet music plan, build 5)
-    xit("carries the programme's plates in the rail, not the main column, at rest", async function() {
-      let el = await renderProgramme()
-
-      let root = el.querySelector(`.${pageStyles.sight_reading_page}`)
-      let rail = el.querySelector(`.${pageStyles.rail}`)
-      let main = el.querySelector(`.${pageStyles.trainer_main}`)
-
-      expect(root.classList.contains(pageStyles.wide_rail)).toBe(true)
-      expect(rail.contains(plate(el))).toBe(true)
-      expect(main.contains(plate(el))).toBe(false)
-      expect(main.firstElementChild.classList.contains(pageStyles.staff_plate)).toBe(true)
-      expect(engravingShown(rail)).toBe(false)
-
-      click(buttonNamed(el, "Begin"))
-      expect(plate(el)).toBeUndefined()
-      expect(engravingShown(el.querySelector(`.${pageStyles.rail}`))).toBe(true)
     })
 
     it("names each card and says when its measure comes back", async function() {
@@ -2597,10 +2546,9 @@ describe("sight reading page", function() {
       expect(caption(el)).toBe(null)
     })
 
-    // Pending: the most-overdue suggestion moves from ProgrammePlate (gone
-    // with the rail) to a line in the setup pane (score-first sheet music
-    // plan, build 5/6, Open question 4c), where this is re-covered
-    xit("suggests the piece in study most overdue", async function() {
+    // the most-overdue suggestion moved from ProgrammePlate (gone with the
+    // rail) to a line in the setup pane (Open question 4c)
+    it("suggests the piece in study most overdue", async function() {
       let other = (await importMusicXMLPiece("minuet.musicxml", minuetXML, store)).piece
       await store.putStudy({pieceId: other.id, status: "maintaining", startedAt: 0})
       let past = Date.now() - 3 * 24 * 3600 * 1000
@@ -2617,7 +2565,7 @@ describe("sight reading page", function() {
         },
       })
 
-      let el = await renderProgramme()
+      let el = await renderProgramme({scoreView: true})
       expect(el.textContent).toContain("Salon Minuet has the most bars due.")
       click(buttonNamed(el, "Practise it instead"))
       flushSync(() => {})

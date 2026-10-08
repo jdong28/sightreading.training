@@ -302,125 +302,120 @@ export class ScoreView extends React.Component {
     </div>
   }
 
-  render() {
-    let {settings} = this.props
-    let piece = this.piece()
-    let song = this.song()
-    let noPiece = !piece && !settings.song?.trim()
-
-    if (noPiece) {
-      return <div className={styles.score_view} data-score-view>
-        <div className={styles.title_row}>
-          <TitleBlock eyebrow="Sheet music" title="Sheet music" italic="import a piece to begin" />
-        </div>
-        <div className={styles.columns}>
-          <Plate className={styles.score_plate}>
-            <p className={styles.empty_note}>Import a MusicXML file in Tonight's session to see its score here.</p>
-          </Plate>
-          <div className={styles.setup_column}>
-            <SetupPane
-              settings={settings} setSettings={this.props.setSettings} generator={this.props.generator}
-              liveGenerator={this.props.liveGenerator} currentStaff={this.props.currentStaff} staves={this.props.staves}
-              keySignature={this.props.keySignature} mode={this.props.mode} setMode={this.props.setMode}
-              scrollSpeed={this.props.scrollSpeed} setScrollSpeed={this.props.setScrollSpeed}
-              tempo={this.props.tempo} setTempo={this.props.setTempo} acoustic={this.props.acoustic}
-              begin={this.props.begin} pickPiece={this.props.pickPiece} store={this.props.store} />
-          </div>
-        </div>
-      </div>
+  // the score plate's own content, piece picked or not: kept in one return
+  // statement with the rest of render (never an early return for noPiece),
+  // so the tree shape -- and with it SetupPane, which must stay mounted
+  // through a piece pick to keep its own deck message visible -- never
+  // changes shape merely because a piece was just picked
+  renderScorePlate(piece, song, numbers) {
+    if (!piece) {
+      return <p className={styles.empty_note}>Import a MusicXML file in Tonight's session to see its score here.</p>
     }
 
-    let numbers = measureNumberList(song)
     let hand = this.props.settings.hand || "both hands"
-    let learned = piece ? learnedCount(this.getStore().items(piece.id), numbers, itemHand(hand)) : 0
     let noSource = this.props.source && this.props.source.status == "missing"
     let failed = (this.props.source && this.props.source.status == "failed") || this.state.sheetFailed
     let selected = this.state.selectedBar
 
+    return <>
+      <div className={styles.toolbar}>
+        <span className={styles.page_indicator}>
+          Page {this.state.page + 1} of {this.state.pageCount}
+        </span>
+        <div className={styles.shade_group} role="group" aria-label="Shade bars by">
+          <span className={styles.shade_label}>Shade</span>
+          {SHADES.filter(s => s.value != "session" || !!this.props.ended || this.state.shade == "session").map(s =>
+            <Pill
+              key={s.value}
+              variant="choice"
+              className={styles.small_pill}
+              selected={this.state.shade == s.value}
+              aria-pressed={this.state.shade == s.value}
+              onClick={() => this.setShade(s.value)}>{s.label}</Pill>)}
+        </div>
+      </div>
+
+      {noSource || failed ? <div className={styles.grid_fallback}>
+        <div className={styles.bar_grid}>
+          {numbers.map(number => <button
+            key={number}
+            type="button"
+            aria-label={`Bar ${number}`}
+            className={styles.grid_cell}
+            aria-pressed={selected == number}
+            onClick={() => this.openBar(number)}>{number}</button>)}
+        </div>
+        <p className={styles.engine_note}>{noSource ? SCORE_VIEW_NO_SOURCE : SCORE_VIEW_FAILED}</p>
+      </div> : <ScoreSheet
+        musicXML={this.props.source && this.props.source.musicXML}
+        measureStarts={this.props.source && this.props.source.measureStarts}
+        engine={this.props.engine}
+        loadEngines={this.props.loadEngines}
+        fromMeasure={numbers[0]}
+        toMeasure={numbers[numbers.length - 1]}
+        viewportHeight={this.props.viewportHeight}
+        page={this.state.page}
+        onPages={pageCount => this.setState({pageCount})}
+        selected={selected}
+        onBar={this.openBar}
+        overlaysByIndex={this.overlaysByIndex(song)}
+        tagsByIndex={this.tagsByIndex(numbers)}
+        onError={() => this.setState({sheetFailed: true})}>
+        {selected != null ? <BarPopup
+          pieceId={piece.id}
+          measure={selected}
+          hand={itemHand(hand)}
+          items={this.getStore().items(piece.id)}
+          flags={this.flagsInForce()}
+          now={this.props.now()}
+          onClose={this.closeBar}
+          onPractise={this.practiseBar} /> : null}
+      </ScoreSheet>}
+
+      {this.renderLegend()}
+
+      <div className={styles.pager}>
+        <Pill
+          variant="ghost"
+          className={styles.pager_pill}
+          disabled={this.state.page <= 0}
+          onClick={() => this.setPage(this.state.page - 1)}>‹ Previous page</Pill>
+        <span className={styles.pager_label}>Page {this.state.page + 1} of {this.state.pageCount}</span>
+        <Pill
+          variant="ghost"
+          className={styles.pager_pill}
+          disabled={this.state.page >= this.state.pageCount - 1}
+          onClick={() => this.setPage(this.state.page + 1)}>Next page ›</Pill>
+      </div>
+    </>
+  }
+
+  render() {
+    let {settings} = this.props
+    let piece = this.piece()
+    let song = this.song()
+    let numbers = song ? measureNumberList(song) : []
+
+    let titleBlock = piece ?
+      <TitleBlock
+        eyebrow={`Sheet music · ${numbers.length} ${numbers.length == 1 ? "bar" : "bars"} · ` +
+          `${this.props.currentStaff ? this.props.currentStaff.name : "grand"} staff · ` +
+          `${this.props.keySignature ? this.props.keySignature.name() : "C"} major`}
+        title={piece.title}
+        italic="the score" /> :
+      <TitleBlock eyebrow="Sheet music" title="Sheet music" italic="import a piece to begin" />
+
     return <div className={styles.score_view} data-score-view>
       <div className={styles.title_row}>
-        <TitleBlock
-          eyebrow={`Sheet music · ${numbers.length} ${numbers.length == 1 ? "bar" : "bars"} · ` +
-            `${this.props.currentStaff ? this.props.currentStaff.name : "grand"} staff · ` +
-            `${this.props.keySignature ? this.props.keySignature.name() : "C"} major`}
-          title={piece.title}
-          italic="the score" />
-        <p className={styles.rest_note}>Click any bar for its stats</p>
+        {titleBlock}
+        {piece ? <p className={styles.rest_note}>Click any bar for its stats</p> : null}
       </div>
 
       {this.renderEndedStrip()}
 
       <div className={styles.columns}>
         <Plate className={styles.score_plate}>
-          <div className={styles.toolbar}>
-            <span className={styles.page_indicator}>
-              Page {this.state.page + 1} of {this.state.pageCount}
-            </span>
-            <div className={styles.shade_group} role="group" aria-label="Shade bars by">
-              <span className={styles.shade_label}>Shade</span>
-              {SHADES.filter(s => s.value != "session" || !!this.props.ended || this.state.shade == "session").map(s =>
-                <Pill
-                  key={s.value}
-                  variant="choice"
-                  className={styles.small_pill}
-                  selected={this.state.shade == s.value}
-                  aria-pressed={this.state.shade == s.value}
-                  onClick={() => this.setShade(s.value)}>{s.label}</Pill>)}
-            </div>
-          </div>
-
-          {noSource || failed ? <div className={styles.grid_fallback}>
-            <div className={styles.bar_grid}>
-              {numbers.map(number => <button
-                key={number}
-                type="button"
-                aria-label={`Bar ${number}`}
-                className={styles.grid_cell}
-                aria-pressed={selected == number}
-                onClick={() => this.openBar(number)}>{number}</button>)}
-            </div>
-            <p className={styles.engine_note}>{noSource ? SCORE_VIEW_NO_SOURCE : SCORE_VIEW_FAILED}</p>
-          </div> : <ScoreSheet
-            musicXML={this.props.source && this.props.source.musicXML}
-            measureStarts={this.props.source && this.props.source.measureStarts}
-            engine={this.props.engine}
-            loadEngines={this.props.loadEngines}
-            fromMeasure={numbers[0]}
-            toMeasure={numbers[numbers.length - 1]}
-            viewportHeight={this.props.viewportHeight}
-            page={this.state.page}
-            onPages={pageCount => this.setState({pageCount})}
-            selected={selected}
-            onBar={this.openBar}
-            overlaysByIndex={this.overlaysByIndex(song)}
-            tagsByIndex={this.tagsByIndex(numbers)}
-            onError={() => this.setState({sheetFailed: true})}>
-            {selected != null ? <BarPopup
-              pieceId={piece.id}
-              measure={selected}
-              hand={itemHand(hand)}
-              items={this.getStore().items(piece.id)}
-              flags={this.flagsInForce()}
-              now={this.props.now()}
-              onClose={this.closeBar}
-              onPractise={this.practiseBar} /> : null}
-          </ScoreSheet>}
-
-          {this.renderLegend()}
-
-          <div className={styles.pager}>
-            <Pill
-              variant="ghost"
-              className={styles.pager_pill}
-              disabled={this.state.page <= 0}
-              onClick={() => this.setPage(this.state.page - 1)}>‹ Previous page</Pill>
-            <span className={styles.pager_label}>Page {this.state.page + 1} of {this.state.pageCount}</span>
-            <Pill
-              variant="ghost"
-              className={styles.pager_pill}
-              disabled={this.state.page >= this.state.pageCount - 1}
-              onClick={() => this.setPage(this.state.page + 1)}>Next page ›</Pill>
-          </div>
+          {this.renderScorePlate(piece, song, numbers)}
         </Plate>
 
         <div className={styles.setup_column}>

@@ -6,7 +6,6 @@ import Select from "st/components/select"
 import {Pill} from "st/components/salon"
 import {LEVEL_WORDS} from "st/difficulty/index"
 import PdfSteps from "st/components/sight_reading/pdf_steps"
-import {scoreEnginesPath} from "st/score_render/route"
 import {trigger} from "st/events"
 import {
   generatorDefaultSettings, fixGeneratorSettings, storeGeneratorSettings, allKeySignatures,
@@ -422,85 +421,6 @@ export class ProgrammeDrawer extends React.PureComponent {
   }
 }
 
-// The score page's drawer: the imported piece, the section of it to drill
-// and the tempo. The score supplies its own staves, clefs and key, so none of
-// the exercises' clef, exercise or key settings are here
-export class ScoreDrawer extends React.PureComponent {
-  static propTypes = {
-    open: types.bool,
-    close: types.func.isRequired,
-    apply: types.func.isRequired,
-    currentStaff: types.object,
-    currentGenerator: types.object,
-    currentGeneratorSettings: types.object,
-    currentKey: types.object.isRequired,
-    setGenerator: types.func.isRequired,
-    mode: types.oneOf(["wait", "scroll"]),
-    setMode: types.func.isRequired,
-    scrollSpeed: types.number.isRequired,
-    setScrollSpeed: types.func.isRequired,
-    tempo: types.bool,
-    setTempo: types.func.isRequired,
-    // acoustic mode (st/srs/self_grade): each card waits for the player's own
-    // grade, so there is no tempo to set
-    acoustic: types.bool,
-  }
-
-  render() {
-    let generator = this.props.currentGenerator
-    let staff = this.props.currentStaff
-
-    return <SettingsDrawer open={this.props.open} close={this.props.close}>
-      {generator && staff ?
-        <SettingsGroup label="Score">
-          <GeneratorSettings
-            generator={generator}
-            currentKey={this.props.currentKey}
-            currentStaff={staff}
-            currentSettings={this.props.currentGeneratorSettings}
-            setGenerator={this.props.setGenerator}
-            shown={this.props.open} />
-          {this.renderKeyHint()}
-        </SettingsGroup> : null}
-
-      {this.props.acoustic ?
-        <SettingsGroup label="Tempo">
-          <p className={styles.input_hint}>Acoustic piano: each card waits for your grade</p>
-        </SettingsGroup> :
-        <TempoSettings
-          mode={this.props.mode}
-          setMode={this.props.setMode}
-          scrollSpeed={this.props.scrollSpeed}
-          setScrollSpeed={this.props.setScrollSpeed}
-          tempo={this.props.tempo}
-          setTempo={this.props.setTempo} />}
-
-      <Pill
-        variant="primary"
-        className={styles.apply_button}
-        onClick={this.props.apply}>Take your seat</Pill>
-
-      <Pill
-        variant="ghost"
-        className={styles.apply_button}
-        to={scoreEnginesPath(this.props.currentGeneratorSettings)}>Compare engraving engines</Pill>
-    </SettingsDrawer>
-  }
-
-  // eg. why a piece is drawn without its score's key
-  renderKeyHint() {
-    let generator = this.props.currentGenerator
-    if (!generator.keyHint) { return }
-
-    let hint = generator.keyHint({
-      ...generatorDefaultSettings(generator, this.props.currentStaff),
-      ...this.props.currentGeneratorSettings,
-    })
-
-    return hint ? <div className={styles.input_hint}>{hint}</div> : null
-  }
-}
-
 export class GeneratorSettings extends React.PureComponent {
   static propTypes = {
     generator: types.object.isRequired,
@@ -646,7 +566,7 @@ export class GeneratorSettings extends React.PureComponent {
 
     let options = values.map((input_val, input_val_idx) => {
       return {
-        name: input_val.name,
+        name: input_val.label || input_val.name,
         value: input_val.name,
       }
     })

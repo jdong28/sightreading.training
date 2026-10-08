@@ -4,8 +4,8 @@
 // reusing GeneratorSettings for each field so this never restates its
 // rules: a filtered copy of the generator (same inputs array, narrowed to
 // the names a group shows) renders just that group's fields. The
-// programme figures, order and session-length rows carry ProgrammePlate's
-// logic (moved here; programme_plate.jsx is no longer wired into any page).
+// programme figures, order and session-length rows carry the logic
+// programme_plate.jsx used to (deleted; its only page was this one).
 
 import * as React from "react"
 import * as types from "prop-types"
@@ -76,7 +76,16 @@ function narrowedGenerator(names) {
 
 const PIECE_INPUTS = narrowedGenerator(["piece"])
 const PRACTICE_INPUTS = narrowedGenerator(["practice"])
-const ORDER_INPUTS = narrowedGenerator(["introduce"])
+// the "introduce" field's own values are READ_FIRST/HARDEST_FIRST/SCORE_ORDER
+// (lowercase, for storage and the begin line's prose); its pills show
+// ORDER_PILLS' capitalized labels instead (D7), matching the artboard
+const ORDER_INPUTS = {
+  ...narrowedGenerator(["introduce"]),
+  inputs: narrowedGenerator(["introduce"]).inputs.map(input => ({
+    ...input,
+    values: ORDER_PILLS.map(p => ({name: p.value, label: p.label})),
+  })),
+}
 const SECTION_INPUTS = narrowedGenerator(["startMeasure", "endMeasure"])
 const PASSAGE_INPUTS = narrowedGenerator(["passage"])
 const SONG_INPUTS = narrowedGenerator(["song", "track"])
