@@ -3,7 +3,7 @@ import MersenneTwister from "mersennetwister"
 import {
   planNext, planState, planSummary, studyStatus, anchoredCard, onScheduleMeasures, mostOverduePiece,
   inStudy, entryStatus, entryCaption, cardCaption, blamedStaves, introduction, passagesForHand,
-  pulledPassage, PASSAGE_LEVEL,
+  pulledPassage, PASSAGE_LEVEL, planUpcoming, upNextWords,
   RETRY, LADDER, REVIEW, NEW, EARLY, RUN_THROUGH, WAIT, READ_THROUGH, LADDER_CAP, IDLE_LADDER_CAP,
   SITTING_GAP_MS, READ_FIRST, HARDEST_FIRST, SCORE_ORDER,
 } from "st/srs/planner"
@@ -372,6 +372,77 @@ describe("today's programme planner", function() {
       }
       expect(planState(resting).resting.has(1)).toBe(true)
       expect(planSummary(resting)).toEqual(jasmine.objectContaining({due: 1, learned: 2}))
+    })
+  })
+
+  describe("planUpcoming", function() {
+    it("gives planNext's own next entry first, as a preview", function() {
+      let items = [
+        onLadder(1, {due: NOW - MINUTE}),
+        onLadder(2, {due: NOW - 2 * MINUTE}),
+        onLadder(3, {due: NOW - 3 * MINUTE}),
+      ]
+      let input = {pieceId: "p", items, measures: MEASURES, now: NOW}
+      let {entry} = planNext(input)
+      let [first] = planUpcoming(input, 3)
+      expect(first).toEqual(entry)
+    })
+
+    it("excludes the entry on the stand (previous), up to count", function() {
+      // last practiced well outside this sitting, so only the explicit
+      // previous (not sittingOf's own last-card guess) excludes a measure
+      let items = [
+        onLadder(1, {due: NOW - 3 * MINUTE, last: NOW - DAY}),
+        onLadder(2, {due: NOW - 2 * MINUTE, last: NOW - DAY}),
+        onLadder(3, {due: NOW - MINUTE, last: NOW - DAY}),
+      ]
+      let previous = itemId({pieceId: "p", hand: "both", startMeasure: 1, endMeasure: 1})
+      let input = {pieceId: "p", items, measures: MEASURES, now: NOW, previous}
+      let upcoming = planUpcoming(input, 2)
+      expect(upcoming.map(e => e.measure)).toEqual([2, 3])
+    })
+
+    it("dedupes by measure: a due rung is also an undated wait, counted once", function() {
+      // a ladder item due now is both a rung (candidates' first, due <= now)
+      // and a wait (the same ladder list again, with no due filter): the
+      // raw queue carries it twice, deduped here to the one entry
+      let items = [onLadder(4, {due: NOW - MINUTE, last: NOW - DAY})]
+      let input = {pieceId: "p", items, measures: MEASURES, now: NOW}
+      let upcoming = planUpcoming(input, 5)
+      expect(upcoming.filter(e => e.measure == 4).length).toEqual(1)
+    })
+
+    it("never mutates its input", function() {
+      let items = [onLadder(1, {due: NOW - MINUTE}), onLadder(2, {due: NOW - 2 * MINUTE})]
+      let input = {pieceId: "p", items, measures: MEASURES, now: NOW}
+      let before = JSON.parse(JSON.stringify(input))
+      planUpcoming(input, 3)
+      expect(input).toEqual(before)
+    })
+  })
+
+  describe("upNextWords", function() {
+    let entry = (reason, measure=5, hand="both") => ({reason, measure, hand})
+
+    it("words each reason, 'New' plus the bar's passage role", function() {
+      expect(upNextWords(entry(NEW))).toEqual("New")
+      expect(upNextWords(entry(NEW), {role: "passage", start: 5, end: 9, level: 3})).toEqual("New · hardest passage")
+      expect(upNextWords(entry(NEW), {role: "passage", start: 5, end: 9, level: 2})).toEqual("New · hard passage")
+      expect(upNextWords(entry(NEW), {role: "lead-in", start: 5, end: 9, level: 3})).toEqual("New · lead-in to bars 5–9")
+      expect(upNextWords(entry(NEW), {role: "repeat", start: 5, end: 9, level: 3})).toEqual("New · repeats bars 5–9")
+      expect(upNextWords(entry(RETRY))).toEqual("Again, in a moment")
+      expect(upNextWords(entry(LADDER))).toEqual("Once more")
+      expect(upNextWords(entry(WAIT))).toEqual("Once more")
+      expect(upNextWords(entry(REVIEW))).toEqual("Review")
+      expect(upNextWords(entry(EARLY))).toEqual("Review")
+      expect(upNextWords(entry(RUN_THROUGH))).toEqual("Run-through")
+      expect(upNextWords(entry(READ_THROUGH))).toEqual("Read-through")
+    })
+
+    it("appends the hand for a hand alone, every reason", function() {
+      expect(upNextWords(entry(NEW, 5, "upper"))).toEqual("New · right hand")
+      expect(upNextWords(entry(LADDER, 5, "lower"))).toEqual("Once more · left hand")
+      expect(upNextWords(entry(READ_THROUGH, 5, "upper"))).toEqual("Read-through · right hand")
     })
   })
 

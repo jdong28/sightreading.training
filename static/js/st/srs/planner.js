@@ -896,6 +896,80 @@ export function planNext(input) {
 }
 
 /**
+ * A preview of the queue's next entries, without the entry on the stand
+ * (recent, read the same way planNext avoids it), deduped by measure, the
+ * first count. A preview only: the queue is replanned from scratch after
+ * every card (planNext), so this says nothing about what the session will
+ * actually offer once another pass changes the items it reads.
+ * @param {PlanInput} input
+ * @param {number} count
+ * @returns {PlanEntry[]}
+ */
+export function planUpcoming(input, count) {
+  let state = planState(input)
+  let list = candidates(state, {avoid: true})
+  if (!list.length) { list = candidates(state, {avoid: false}) }
+
+  let allResting = state.resting.size > 0 && !state.awake.length
+  let [first] = state.offerable
+  if (!list.length && first != null && !allResting) {
+    list = [{reason: NEW, slot: newSlot(state, first, introHand(state, first))}]
+  }
+
+  let seen = new Set()
+  let entries = []
+  for (let {reason, slot} of list) {
+    if (seen.has(slot.measure)) { continue }
+    seen.add(slot.measure)
+    entries.push({reason, measure: slot.measure, itemId: slot.id, item: slot.item || null, hand: slot.hand})
+    if (entries.length >= count) { break }
+  }
+
+  return entries
+}
+
+/**
+ * The words of an upcoming entry (st/components/sight_reading/session_rail's
+ * "Up next"): "New" (plus the bar's passage role, a NEW entry only),
+ * "Again, in a moment" (RETRY), "Review" (REVIEW/EARLY), "Run-through"
+ * (RUN_THROUGH), "Read-through" (READ_THROUGH), else "Once more"
+ * (LADDER/WAIT), each with " · right hand" or " · left hand" appended for a
+ * hand alone.
+ * @param {PlanEntry} entry
+ * @param {PassageRole} [passage] the entry's bar's role (see
+ * PlanDeck#passageOf), read only for a NEW entry
+ * @returns {string}
+ */
+export function upNextWords(entry, passage=null) {
+  let words
+  switch (entry.reason) {
+    case NEW: {
+      words = "New"
+      let suffix = passageWords(passage)
+      if (suffix) { words += ` · ${suffix}` }
+      break
+    }
+    case RETRY:
+      words = "Again, in a moment"
+      break
+    case REVIEW:
+    case EARLY:
+      words = "Review"
+      break
+    case RUN_THROUGH:
+      words = "Run-through"
+      break
+    case READ_THROUGH:
+      words = "Read-through"
+      break
+    default:
+      words = "Once more"
+  }
+
+  return entry.hand != "both" ? `${words} · ${HAND_WORDS[entry.hand]}` : words
+}
+
+/**
  * What the programme holds for the piece before a session: the reviews due
  * and about how long they take, the new measures on offer, the bars still to
  * read through (0 outside a read-through), the target, and the measures
