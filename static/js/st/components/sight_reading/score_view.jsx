@@ -501,18 +501,28 @@ export class ScoreView extends React.Component {
       initialFlagId={this.state.reviewFlagId} />
   }
 
+  // no piece picked: the empty state (D11), or pasted notation (open
+  // question 4d) once it has content, which plays but is never engraved
   renderNoPiece() {
-    let {title, italic} = this.props.idleTitle || {title: "Sheet music", italic: "import a piece to begin"}
+    let hasSong = !!(this.props.settings.song && this.props.settings.song.trim())
+    let {title, italic} = hasSong ?
+      {title: "Pasted song notation", italic: null} :
+      (this.props.idleTitle || {title: "Sheet music", italic: "import a piece to begin"})
+    let message = hasSong ?
+      "Pasted notation has no engraved score; it is drawn on the trainer's staff once you begin." :
+      "Import a MusicXML file in Tonight's session to see its score here."
 
     return <React.Fragment>
       <div className={styles.title_row}>
         <div className={styles.title_block}>
-          <h1 className={styles.heading}>{title} <span className={styles.heading_italic}>{italic}</span></h1>
+          <h1 className={styles.heading}>
+            {title}{italic ? <> <span className={styles.heading_italic}>{italic}</span></> : null}
+          </h1>
         </div>
       </div>
       <div className={styles.columns}>
         <section className={styles.score_column} aria-label="The score">
-          <Plate>Import a MusicXML file in Tonight's session to see its score here.</Plate>
+          <Plate>{message}</Plate>
         </section>
         <aside className={styles.setup_column}>{this.renderSetupPane()}</aside>
       </div>

@@ -255,20 +255,22 @@ export class SetupPane extends React.Component {
     return <div className={styles.group}>
       <div className={styles.group_label}>Piece</div>
       <div className={styles.piece_body}>
-        {pieces.length > 0 && <div className={styles.piece_row}>
+        <div className={styles.piece_row}>
           <label className={styles.piece_select}>
-            <span>{piece ? piece.title : "Choose a piece"}</span>
+            <span>{piece ? piece.title : "Pasted notation"}</span>
             <span aria-hidden="true">▾</span>
             <select
               className={styles.native_select}
               value={piece ? piece.id : ""}
               onChange={e => this.pickPiece(e.target.value)}>
-              {!piece && <option value="">Choose a piece</option>}
+              <option value="">Pasted notation</option>
               {pieces.map(p => <option key={p.id} value={p.id}>{p.title}</option>)}
             </select>
           </label>
           {piece && <Pill variant="ghost" className={styles.remove} onClick={() => this.removePiece()}>Remove</Pill>}
-        </div>}
+        </div>
+
+        {!piece && this.renderNotation()}
 
         <div className={styles.links}>
           <label className={styles.file_link}>
@@ -296,6 +298,37 @@ export class SetupPane extends React.Component {
         {message && message.pdf && <PdfSteps fileName={message.fileName} />}
         {piece && this.renderKeyHint()}
       </div>
+    </div>
+  }
+
+  // the piece select's first option (open question 4d): the Piece group's
+  // notation box and track select, free practice's own section/cards/tempo
+  // groups still apply to it the same as an imported piece
+  renderNotation() {
+    let {settings} = this.props
+    let trackInput = SHEET_MUSIC_GENERATOR.inputs.find(input => input.name == "track")
+    let tracks = trackInput.values(settings)
+
+    return <div className={styles.sub}>
+      <div className={styles.sub_label}>Song notation</div>
+      <textarea
+        className={styles.notation_box}
+        aria-label="song notation"
+        spellCheck={false}
+        placeholder="Paste song notation (the play along format). Notes at the same beat become one column."
+        value={settings.song || ""}
+        onChange={e => this.updateSettings({song: e.target.value})} />
+      {tracks.length > 1 && <div className={styles.pills} role="group" aria-label="Track">
+        {tracks.map(track =>
+          <Pill
+            key={track.name}
+            variant="choice"
+            className={styles.small_pill}
+            selected={(settings.track || trackInput.default) == track.name}
+            onClick={() => this.updateSettings({track: track.name})}>
+            {track.name}
+          </Pill>)}
+      </div>}
     </div>
   }
 
@@ -613,7 +646,13 @@ export class SetupPane extends React.Component {
   render() {
     let {settings} = this.props
     let piece = sheetMusicPiece(settings)
-    let disabled = !piece && !(settings.song && settings.song.trim())
+    let hasSong = !!(settings.song && settings.song.trim())
+    let disabled = !piece && !hasSong
+    // pasted notation (open question 4d) drills the same way as an
+    // imported piece once it has content: the Session, Cards and Tempo
+    // groups apply to it too, free practice only (programmeOffered is
+    // false without a real piece)
+    let playable = piece || hasSong
 
     return <Plate className={styles.pane}>
       <div className={styles.header}>
@@ -622,12 +661,12 @@ export class SetupPane extends React.Component {
       </div>
 
       {this.renderPiece()}
-      {piece && this.renderSession()}
-      {piece && this.renderCards()}
-      {piece && this.renderTempo()}
+      {playable && this.renderSession()}
+      {playable && this.renderCards()}
+      {playable && this.renderTempo()}
 
       <div className={styles.footer}>
-        <p className={styles.begin_line}>{piece ? this.beginLine() : ""}</p>
+        <p className={styles.begin_line}>{playable ? this.beginLine() : ""}</p>
         <Pill variant="primary" className={styles.begin} disabled={disabled} onClick={this.props.onBegin}>
           Begin
         </Pill>

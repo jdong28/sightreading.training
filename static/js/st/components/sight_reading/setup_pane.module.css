@@ -127,6 +127,19 @@
     cursor: pointer;
 }
 
+.notation_box {
+    width: 100%;
+    min-height: 110px;
+    resize: vertical;
+    border: 1px solid var(--salon-rule);
+    background: var(--salon-paper);
+    padding: 9px 12px;
+    font-family: var(--font-ui);
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--salon-ink);
+}
+
 .remove.remove {
     background: transparent;
     border: 1px solid var(--salon-rule);
