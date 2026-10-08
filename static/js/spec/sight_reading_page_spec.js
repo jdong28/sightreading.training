@@ -17,7 +17,8 @@ import {setAppStore} from "st/storage"
 import {importMusicXMLPiece, addPiece} from "st/sheet_music_deck"
 import {parseMusicXML} from "st/musicxml"
 import {
-  GENERATORS, SHEET_MUSIC_STORAGE_KEY, BOTH_HANDS, RIGHT_HAND, WHOLE_SECTION, FREE_PRACTICE, STAVES
+  GENERATORS, SHEET_MUSIC_STORAGE_KEY, BOTH_HANDS, RIGHT_HAND, WHOLE_SECTION, FREE_PRACTICE, STAVES,
+  SHEET_MUSIC_GENERATOR,
 } from "st/data"
 import {SCROLL_WAIT} from "st/score_render/card_scroll"
 import {PlanGenerator} from "st/plan_cards"
@@ -378,9 +379,18 @@ describe("sight reading page", function() {
 
   // the trainer drilling an imported piece, as the score page, on the app's
   // own staff (as when the engine can't draw it, or for a piece stored
-  // without its score);
-  // the engine card has its own specs (see score_card_spec)
-  let renderScorePage = () => renderPage(ScorePage, {programme: {...SCORE_PROGRAMME, engine: null}})
+  // without its score); ScoreView: null keeps the trainer rendering
+  // directly, as before the score-first page existed (see AGENTS.md): this
+  // file is about the trainer the score page shares with the exercises
+  // page, never the score-first page's own score view (see score_view_spec)
+  // or its own engine card (see score_card_spec)
+  let renderScorePage = (props={}) => renderPage(ScorePage, {
+    ...props,
+    programme: {
+      ...SCORE_PROGRAMME, engine: null, ScoreView: null, SessionRail: null,
+      restPauses: false, scoreLayout: false, ...props.programme,
+    },
+  })
 
   // whether the rail's engraving is on show: the programme's plates stand in
   // for it while they draw something, so it is in the tree either way
@@ -426,7 +436,7 @@ describe("sight reading page", function() {
   it("titles the score page by what it drills", function() {
     window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({piece: "", song: ""}))
     let el = renderScorePage()
-    expect(el.textContent).toContain("pick a piece in the programme")
+    expect(el.textContent).toContain("import a piece to begin")
     flushSync(() => root.unmount())
     container.remove()
 
@@ -436,7 +446,7 @@ describe("sight reading page", function() {
     el = renderScorePage()
     expect(el.textContent).toContain("Pasted song notation")
     expect(el.textContent).toContain("measures 1–2")
-    expect(el.textContent).not.toContain("pick a piece in the programme")
+    expect(el.textContent).not.toContain("import a piece to begin")
   })
 
   it("shows the measure card on the staff and in the plate header", async function() {
@@ -551,20 +561,16 @@ describe("sight reading page", function() {
       measuresPerCard: "all", order: RANDOM_ORDER,
     }))
 
-    let el = renderScorePage()
-    click(buttonLabelled(el, "Programme"))
+    let el = renderPage(ScorePage, {programme: {...SCORE_PROGRAMME, engine: null}})
+    let pane = el.querySelector("[data-setup-pane]")
 
-    let drawer = el.querySelector(`.${drawerStyles.drawer}[aria-label="Programme"]`)
-    let pills = label => drawer.querySelector(`[role="group"][aria-label="${label}"]`)
-
-    // the whole section is always walked in order, so no order to pick
-    expect(pills("measures per card presets")).not.toBe(null)
-    expect(pills("order")).toBe(null)
+    // the whole section is always walked in order, so no card order to pick
+    expect(pane.textContent).not.toContain("Card order")
 
     // and the stored random order is still there to apply to a card size
-    typeNumber(drawer, "measures per card", "2")
+    typeNumber(pane, "Bars per card", "2")
 
-    expect(pills("order")).not.toBe(null)
+    expect(pane.textContent).toContain("Card order")
     expect(page.state.notes.generator.deck.order).toEqual(RANDOM_ORDER)
   })
 
@@ -575,54 +581,51 @@ describe("sight reading page", function() {
       piece: piece.id, startMeasure: 2, endMeasure: 5, hand: BOTH_HANDS, measuresPerCard: "all",
     }))
 
-    let el = renderScorePage()
-    click(buttonLabelled(el, "Programme"))
-    let drawer = el.querySelector(`.${drawerStyles.drawer}[aria-label="Programme"]`)
-    let values = () => ["start measure", "end measure"].map(label => picker(drawer, label).value)
+    let el = renderPage(ScorePage, {programme: {...SCORE_PROGRAMME, engine: null}})
+    let pane = el.querySelector("[data-setup-pane]")
+    let values = () => ["Start measure", "End measure"].map(label => picker(pane, label).value)
     let section = () => {
       let {startMeasure, endMeasure} = page.state.currentGeneratorSettings
       return [startMeasure, endMeasure]
     }
 
     // the piece's measure count is beside each
-    expect(picker(drawer, "end measure").getAttribute("aria-valuemax")).toEqual("8")
-    expect(drawer.textContent).toContain("of 8")
+    expect(picker(pane, "End measure").getAttribute("aria-valuemax")).toEqual("8")
+    expect(pane.textContent).toContain("of 8")
 
     // a typed measure past the piece is its last
-    typeNumber(drawer, "end measure", "40")
+    typeNumber(pane, "End measure", "40")
     expect(values()).toEqual(["2", "8"])
     expect(section()).toEqual([2, 8])
 
     // moving one end past the other drags it along
-    typeNumber(drawer, "end measure", "6")
-    typeNumber(drawer, "start measure", "7")
+    typeNumber(pane, "End measure", "6")
+    typeNumber(pane, "Start measure", "7")
     expect(section()).toEqual([7, 7])
-    typeNumber(drawer, "end measure", "3")
+    typeNumber(pane, "End measure", "3")
     expect(section()).toEqual([3, 3])
 
     // the step buttons and keys nudge it, never past the piece
-    click(buttonLabelled(drawer, "Increase end measure"))
+    click(buttonLabelled(pane, "Increase End measure"))
     expect(section()).toEqual([3, 4])
-    let end = picker(drawer, "end measure")
+    let end = picker(pane, "End measure")
     flushSync(() => end.dispatchEvent(new KeyboardEvent("keydown", {key: "End", bubbles: true})))
     expect(section()).toEqual([3, 8])
-    expect(buttonLabelled(drawer, "Increase end measure").disabled).toBe(true)
+    expect(buttonLabelled(pane, "Increase End measure").disabled).toBe(true)
     flushSync(() => end.dispatchEvent(new KeyboardEvent("keydown", {key: "ArrowDown", bubbles: true})))
     expect(section()).toEqual([3, 7])
-    expect(el.querySelector("h1").textContent).toContain("measures 3–7")
 
     // a card takes up to the whole section, on the app's staff too
-    typeNumber(drawer, "measures per card", "9")
+    typeNumber(pane, "Bars per card", "9")
     expect(page.state.currentGeneratorSettings.measuresPerCard).toEqual(5)
-    expect(picker(drawer, "measures per card").getAttribute("aria-valuemax")).toEqual("5")
-    expect(drawer.textContent).toContain("of 5")
-    expect(drawer.textContent).not.toContain("Cards stop")
+    expect(picker(pane, "Bars per card").getAttribute("aria-valuemax")).toEqual("5")
+    expect(pane.textContent).toContain("of 5")
     expect(page.currentCard().card.measures).toEqual([3, 4, 5, 6, 7])
 
     // and the whole section is a pill beside it
-    click(buttonNamed(drawer, "all"))
+    click(buttonNamed(pane, "all"))
     expect(page.state.currentGeneratorSettings.measuresPerCard).toEqual(WHOLE_SECTION)
-    expect(picker(drawer, "measures per card").value).toEqual("")
+    expect(picker(pane, "Bars per card").value).toEqual("")
   })
 
   it("keeps a stored section longer than a shorter piece inside it", async function() {
@@ -636,10 +639,12 @@ describe("sight reading page", function() {
     expect(el.querySelector("h1").textContent).toContain("measure 8")
     // the one measure of the section left
     expect(page.currentCard().card.measures).toEqual([8])
+    flushSync(() => root.unmount())
+    container.remove()
 
-    click(buttonLabelled(el, "Programme"))
-    let drawer = el.querySelector(`.${drawerStyles.drawer}[aria-label="Programme"]`)
-    expect(["start measure", "end measure", "measures per card"].map(label => picker(drawer, label).value))
+    let pane = renderPage(ScorePage, {programme: {...SCORE_PROGRAMME, engine: null}})
+      .querySelector("[data-setup-pane]")
+    expect(["Start measure", "End measure", "Bars per card"].map(label => picker(pane, label).value))
       .toEqual(["8", "8", "1"])
   })
 
@@ -1017,23 +1022,19 @@ describe("sight reading page", function() {
       piece: piece.id, startMeasure: 1, endMeasure: 4, hand: BOTH_HANDS,
     }))
 
-    let el = renderScorePage()
-    click(buttonLabelled(el, "Programme"))
-
-    let drawer = el.querySelector(`.${drawerStyles.drawer}[aria-label="Programme"]`)
+    let pane = renderPage(ScorePage, {programme: {...SCORE_PROGRAMME, engine: null}})
+      .querySelector("[data-setup-pane]")
     expect(page.state.keySignature.name()).toEqual("C")
-    expect(drawer.textContent).toContain("Re-import to follow the score key")
+    expect(pane.textContent).toContain("Re-import to follow the score key")
   })
 
   it("follows the score's key as the piece and its start measure change", async function() {
     let {piece} = await importMusicXMLPiece("key_change.musicxml", keyChangeScore(), store)
 
-    let el = renderScorePage()
-    click(buttonLabelled(el, "Programme"))
-
-    let drawer = el.querySelector(`.${drawerStyles.drawer}[aria-label="Programme"]`)
+    let el = renderPage(ScorePage, {programme: {...SCORE_PROGRAMME, engine: null}})
+    let pane = el.querySelector("[data-setup-pane]")
     let pickPiece = id => {
-      let select = drawer.querySelector("select")
+      let select = pane.querySelector("select")
       Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(select, id)
       flushSync(() => select.dispatchEvent(new Event("change", {bubbles: true})))
       flushSync(() => {})
@@ -1048,7 +1049,7 @@ describe("sight reading page", function() {
     expect(page.state.keySignature.name()).toEqual("F")
 
     // the E major section
-    typeNumber(drawer, "start measure", "3")
+    typeNumber(pane, "Start measure", "3")
     expect(page.state.keySignature.name()).toEqual("E")
 
     pickPiece("")
@@ -1067,43 +1068,38 @@ describe("sight reading page", function() {
     expect(page.state.keySignature.name()).toEqual("C")
   })
 
-  it("keeps the sheet music deck, measure range and hand in the score page's drawer", async function() {
+  // the score page's own UI (st/components/sight_reading/setup_pane) has
+  // its own specs (score_view_spec); this just checks the trainer never
+  // shows the exercises' clef/exercise/key settings for it
+  it("keeps the sheet music deck, measure range and hand in the score page's setup pane", async function() {
     let {piece} = await importMusicXMLPiece("salon_minuet.musicxml", minuetXML, store)
 
     window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
       piece: piece.id, startMeasure: 1, endMeasure: 2, hand: BOTH_HANDS,
     }))
 
-    let el = renderScorePage()
-    click(buttonLabelled(el, "Programme"))
-
-    let drawer = el.querySelector(`.${drawerStyles.drawer}[aria-label="Programme"]`)
-    let text = drawer.textContent
-    for (let label of ["piece", "start measure", "end measure", "hand", "Tempo", "Wait", "Scroll"]) {
+    let el = renderPage(ScorePage, {programme: {...SCORE_PROGRAMME, engine: null}})
+    let pane = el.querySelector("[data-setup-pane]")
+    let text = pane.textContent
+    for (let label of ["Piece", "Bars", "Hand", "Tempo", "Wait", "Scroll"]) {
       expect(text).toContain(label)
     }
     expect(text).toContain("Salon Minuet")
-    expect(text).toContain("both hands")
-    expect(buttonNamed(drawer, "Remove")).toBeDefined()
-    expect(buttonNamed(drawer, "Export library")).toBeDefined()
-    expect(buttonNamed(drawer, "Take your seat")).toBeDefined()
-    expect(drawer.querySelectorAll("input[type=file]").length).toEqual(3)
-    expect(["start measure", "end measure"].map(label => picker(drawer, label).value)).toEqual(["1", "2"])
+    expect(text).toContain("Both hands")
+    expect(buttonNamed(pane, "Remove")).toBeDefined()
+    expect(buttonNamed(pane, "Export library")).toBeDefined()
+    expect(pane.querySelectorAll("input[type=file]").length).toEqual(3)
 
-    // the score supplies the staves, clefs and key, so the drawer has none of
+    // the score supplies the staves, clefs and key, so the pane has none of
     // the exercises' clef, exercise or key settings
     expect(text).not.toContain("Clef")
     expect(text).not.toContain("Exercise")
-    expect(text).not.toContain("Key")
     expect(text).not.toContain("note range")
-    expect(buttonNamed(drawer, "Treble")).toBeUndefined()
-    expect(buttonNamed(drawer, "Grand")).toBeUndefined()
-    expect(buttonNamed(drawer, "B♭")).toBeUndefined()
-    expect(drawer.querySelector(`.${drawerStyles.exercise_list}`)).toBe(null)
-    expect(drawer.querySelector("a[href='/setup']")).toBe(null)
+    expect(buttonNamed(pane, "Treble")).toBeUndefined()
+    expect(buttonNamed(pane, "Grand")).toBeUndefined()
+    expect(buttonNamed(pane, "B♭")).toBeUndefined()
+    expect(pane.querySelector("a[href='/setup']")).toBe(null)
 
-    expect(el.querySelector("h1").textContent).toEqual("Salon Minuet measures 1–2, both hands")
-    expect(el.textContent).toContain("3 ♩ a bar · measures 1–2")
     expect(page.state.currentStaff.name).toEqual("grand")
   })
 
@@ -1159,14 +1155,11 @@ describe("sight reading page", function() {
     let {piece} = await importMusicXMLPiece("salon_octet.musicxml", octetXML, store)
 
     let el = renderScorePage()
-    click(buttonLabelled(el, "Programme"))
-
-    let drawer = el.querySelector(`.${drawerStyles.drawer}[aria-label="Programme"]`)
-    let select = drawer.querySelector("select")
-    Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(select, piece.id)
-    flushSync(() => select.dispatchEvent(new Event("change", {bubbles: true})))
-    flushSync(() => {})
-    click(buttonNamed(drawer, "Take your seat"))
+    // the setup pane (st/components/sight_reading/setup_pane) picks a piece
+    // through the piece input, not a drawer; this file is about the trainer
+    // it hands settings to, so the pick is made directly
+    let input = SHEET_MUSIC_GENERATOR.inputs.find(i => i.name == "piece")
+    flushSync(() => page.setGenerator(page.state.currentGenerator, input.pick(page.currentSettings(), piece.id).settings))
 
     // the opening four measures, both hands, on the grand staff
     expect(page.state.currentStaff.name).toEqual("grand")
@@ -1214,7 +1207,7 @@ describe("sight reading page", function() {
             piece: piece.id, startMeasure: 1, endMeasure: 8, hand: BOTH_HANDS, measuresPerCard: "all",
           }))
 
-          let el = renderPage(ScorePage, props)
+          let el = renderPage(ScorePage, {...props, programme: {...SCORE_PROGRAMME, ScoreView: null}})
           await waitFor(() => el.querySelector(`.${staffStyles.staff_notes}`) &&
             el.textContent.includes(note), "the app's staff")
 
@@ -1247,7 +1240,7 @@ describe("sight reading page", function() {
           piece: piece.id, startMeasure: 1, endMeasure: 1, hand: BOTH_HANDS, measuresPerCard: "all",
         }))
 
-        let el = renderPage(ScorePage, props)
+        let el = renderPage(ScorePage, {...props, programme: {...SCORE_PROGRAMME, ScoreView: null}})
         await waitFor(() => el.querySelector(`.${staffStyles.staff_notes}`) &&
           el.textContent.includes(note), "the app's staff")
 
@@ -1270,7 +1263,7 @@ describe("sight reading page", function() {
           piece: piece.id, startMeasure: 1, endMeasure: 1, hand: BOTH_HANDS, measuresPerCard: "all",
         }))
 
-        let el = renderPage(ScorePage, props)
+        let el = renderPage(ScorePage, {...props, programme: {...SCORE_PROGRAMME, ScoreView: null}})
         await waitFor(() => el.querySelector(`.${staffStyles.staff_notes}`) &&
           el.textContent.includes(note), "the app's staff")
 
@@ -1289,7 +1282,7 @@ describe("sight reading page", function() {
           piece: piece.id, startMeasure: 1, endMeasure: 1, hand: BOTH_HANDS, measuresPerCard: "all",
         }))
 
-        let el = renderPage(ScorePage, props)
+        let el = renderPage(ScorePage, {...props, programme: {...SCORE_PROGRAMME, ScoreView: null}})
         await waitFor(() => el.querySelector(`.${staffStyles.staff_notes}`) &&
           el.textContent.includes(note), "the app's staff")
 
@@ -1314,7 +1307,7 @@ describe("sight reading page", function() {
           order: IN_ORDER,
         }))
 
-        let el = renderPage(ScorePage, props)
+        let el = renderPage(ScorePage, {...props, programme: {...SCORE_PROGRAMME, ScoreView: null}})
         await waitFor(() => el.querySelector(`.${staffStyles.staff_notes}`) &&
           el.textContent.includes(note), "the app's staff")
 
@@ -2397,7 +2390,14 @@ describe("sight reading page", function() {
         piece: piece.id, startMeasure: 3, endMeasure: 4, hand: BOTH_HANDS, measuresPerCard: "2",
         introduce: SCORE_ORDER, ...settings,
       }))
-      let el = renderScorePage()
+      // the programme's own figures are the score-first page's setup pane
+      // now (st/components/sight_reading/setup_pane), so this keeps the
+      // real ScoreView, SessionRail and restPauses, only disabling the
+      // engine (as score_view_spec's own fixture-piece tests don't need to)
+      let el = renderScorePage({programme: {
+        ScoreView: SCORE_PROGRAMME.ScoreView, SessionRail: SCORE_PROGRAMME.SessionRail,
+        restPauses: true, scoreLayout: true,
+      }})
       // today's programme reads the log when a bar that can split is failing
       await page.state.notes?.generator?.ready
       flushSync(() => {})
@@ -2450,22 +2450,19 @@ describe("sight reading page", function() {
       span.children.length == 0 && span.textContent == "Tonight's programme")
     let caption = el => el.querySelector("[data-caption]")
 
-    it("is the default for a piece in study, prefaced by tonight's programme at rest", async function() {
+    it("is the default for a piece in study, prefaced by tonight's session pane at rest", async function() {
       let el = await renderProgramme()
+      let pane = () => el.querySelector("[data-setup-pane]")
 
       expect(page.state.notes.generator instanceof PlanGenerator).toBe(true)
-      expect(el.querySelector("h1").textContent).toContain("today's programme, both hands")
-      expect(plate(el)).toBeDefined()
-      expect(el.textContent).toContain("New bars on offer8")
-      expect(el.textContent).toContain("0 of 8 bars learned")
-      expect(plateStatus(el)).toEqual("At rest")
+      expect(pane().textContent).toContain("New8")
 
-      // the session length is a soft target the plate sets
-      click(buttonNamed(el, "10 min"))
+      // the session length is a soft target the setup pane sets
+      click(buttonNamed(pane(), "10 min"))
       await waitFor(() => store.practiceSettings().sessionMinutes == 10, "the target to be saved")
 
       click(buttonNamed(el, "Begin"))
-      expect(plate(el)).toBeUndefined()
+      expect(el.querySelector("[data-setup-pane]")).toBe(null)
       expect(plateStatus(el)).toEqual("New · bar 1")
       expect(el.textContent).toContain("measures 1–2")
     })
@@ -2482,19 +2479,19 @@ describe("sight reading page", function() {
       }],
     })
 
-    it("offers today's programme order on the plate and in the drawer for a flagged piece", async function() {
+    it("offers today's programme order on the setup pane for a flagged piece", async function() {
       let el = await renderProgramme({
         settings: {introduce: READ_FIRST}, seed: () => store.putAnnotation(flagRecordFor(piece)),
       })
+      let pane = () => el.querySelector("[data-setup-pane]")
 
-      expect(buttonNamed(el, "Read through").getAttribute("aria-pressed")).toEqual("true")
-      expect(el.textContent).toContain("To read through")
+      expect(buttonNamed(pane(), "Read through").getAttribute("aria-pressed")).toEqual("true")
 
       click(buttonNamed(el, "Begin"))
       expect(plateStatus(el)).toEqual("Read-through · bar 1")
 
-      click(buttonNamed(el, "Rest"))
-      click(buttonNamed(el, "In score order"))
+      click(buttonNamed(el, "End session"))
+      click(buttonNamed(pane(), "In score order"))
       expect(JSON.parse(window.localStorage.getItem(SHEET_MUSIC_STORAGE_KEY)).introduce)
         .toEqual("in score order")
 
@@ -2503,37 +2500,28 @@ describe("sight reading page", function() {
       // status still names the passage (introduction() marks it in every
       // order, see st/srs/planner)
       expect(plateStatus(el)).toEqual("New · bar 1 · hardest passage")
-      click(buttonNamed(el, "Rest"))
+      click(buttonNamed(el, "End session"))
 
-      click(buttonLabelled(el, "Programme"))
-      let drawer = el.querySelector(`.${drawerStyles.drawer}[aria-label="Programme"]`)
-      // the drawer's generic select pills show the raw stored value
-      // ("read through"), not the plate's own capitalized label
-      expect(buttonNamed(drawer, "read through")).toBeTruthy()
+      // the setup pane's pills show the choice the raw stored value selects
+      expect(buttonNamed(pane(), "In score order").getAttribute("aria-pressed")).toEqual("true")
 
-      click(buttonNamed(drawer, "free practice"))
-      drawer = el.querySelector(`.${drawerStyles.drawer}[aria-label="Programme"]`)
-      expect(buttonNamed(drawer, "read through")).toBeFalsy()
+      click(buttonNamed(pane(), "Free practice"))
+      expect(pane().textContent).not.toContain("Order")
     })
 
-    // the sheet-music UI polish: the rail, not the main column, carries the
-    // programme's plates at rest, and the wider score page trainer
-    it("carries the programme's plates in the rail, not the main column, at rest", async function() {
+    // the sheet-music UI polish: the setup pane, always on the right, holds
+    // the programme's figures at rest; the session rail replaces it in
+    // session (see score_view_spec and session_rail.jsx)
+    it("shows the programme's figures in the setup pane at rest, the session rail in session", async function() {
       let el = await renderProgramme()
 
       let root = el.querySelector(`.${pageStyles.sight_reading_page}`)
-      let rail = el.querySelector(`.${pageStyles.rail}`)
-      let main = el.querySelector(`.${pageStyles.trainer_main}`)
-
-      expect(root.classList.contains(pageStyles.wide_rail)).toBe(true)
-      expect(rail.contains(plate(el))).toBe(true)
-      expect(main.contains(plate(el))).toBe(false)
-      expect(main.firstElementChild.classList.contains(pageStyles.staff_plate)).toBe(true)
-      expect(engravingShown(rail)).toBe(false)
+      expect(root.classList.contains(pageStyles.score_layout)).toBe(true)
+      expect(el.querySelector("[data-setup-pane]")).not.toBe(null)
 
       click(buttonNamed(el, "Begin"))
-      expect(plate(el)).toBeUndefined()
-      expect(engravingShown(el.querySelector(`.${pageStyles.rail}`))).toBe(true)
+      expect(el.querySelector("[data-setup-pane]")).toBe(null)
+      expect(el.textContent).toContain("This session")
     })
 
     it("names each card and says when its measure comes back", async function() {
@@ -2578,7 +2566,7 @@ describe("sight reading page", function() {
       expect(caption(el)).toBe(null)
 
       // the next session opens on no card of the one before it
-      click(buttonNamed(el, "Begin"))
+      click(buttonNamed(el, "Resume"))
       flushSync(() => page.forceUpdate())
       expect(caption(el)).toBe(null)
     })
@@ -2626,12 +2614,12 @@ describe("sight reading page", function() {
       click(buttonNamed(el, "Begin"))
       expect(plateStatus(el)).toEqual("Programme complete · 8 bars rest until your next sitting")
 
-      // the next sitting: Begin plans again, without a timer of its own
+      // the next sitting: Resume plans again, without a timer of its own
       click(buttonNamed(el, "Rest"))
       jasmine.clock().tick(SITTING_GAP_MS + 60 * 1000)
       expect(page.state.notes.generator.currentCard()).toBe(null)
 
-      click(buttonNamed(el, "Begin"))
+      click(buttonNamed(el, "Resume"))
       expect(plateStatus(el)).toMatch(/^Once more · bar \d+$/)
       expect(page.state.notes.currentColumn().length).toBeGreaterThan(0)
       expect(page.state.notes.generator.currentCard().measures)
@@ -2660,7 +2648,8 @@ describe("sight reading page", function() {
 
       expect(page.state.notes.generator instanceof PlanGenerator).toBe(false)
       expect(plate(el)).toBeUndefined()
-      expect(el.querySelector("h1").textContent).toContain("measures 3–4, both hands")
+      expect(el.querySelector("[data-setup-pane]").textContent).toContain("Bars 3–4")
+      expect(el.querySelector("[data-setup-pane]").textContent).toContain("both hands")
       click(buttonNamed(el, "Begin"))
       expect(plateStatus(el)).toMatch(/^Next · /)
 
@@ -3021,7 +3010,7 @@ describe("sight reading page", function() {
         piece: piece.id, startMeasure: 2, endMeasure: 4, hand: BOTH_HANDS, measuresPerCard: "all",
       }))
 
-      let el = renderPage(ScorePage)
+      let el = renderPage(ScorePage, {programme: {...SCORE_PROGRAMME, ScoreView: null, restPauses: false}})
       await waitFor(() => el.querySelector(`[data-score-card] .${MARK_CLASSES.current}`),
         "the engine card")
 
@@ -4138,13 +4127,18 @@ describe("sight reading page", function() {
       window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
         piece: piece.id, startMeasure: 1, endMeasure: 8, hand: BOTH_HANDS, ...settings,
       }))
-      return renderPage(ScorePage, {programme: {...SCORE_PROGRAMME, engine: null}, acoustic: true})
+      return renderPage(ScorePage, {
+        programme: {...SCORE_PROGRAMME, engine: null, ScoreView: null, SessionRail: null, restPauses: false},
+        acoustic: true,
+      })
     }
 
     let rerenderAcoustic = acoustic => {
       flushSync(() => root.render(React.createElement(MemoryRouter, {},
         React.createElement(ScorePage, {
-          ref: p => page = p, programme: {...SCORE_PROGRAMME, engine: null}, acoustic,
+          ref: p => page = p,
+          programme: {...SCORE_PROGRAMME, engine: null, ScoreView: null, SessionRail: null, restPauses: false},
+          acoustic,
         }))))
       flushSync(() => {})
     }
@@ -4611,7 +4605,7 @@ describe("sight reading page", function() {
       window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
         piece: piece.id, startMeasure: 3, endMeasure: 4, hand: BOTH_HANDS, measuresPerCard: "2",
       }))
-      let el = renderPage(ScorePage, {programme: {...SCORE_PROGRAMME, engine: null}, acoustic: true})
+      let el = renderPage(ScorePage, {programme: {...SCORE_PROGRAMME, engine: null, ScoreView: null, SessionRail: null, restPauses: false}, acoustic: true})
       await page.state.notes?.generator?.ready
       flushSync(() => {})
 
@@ -4689,7 +4683,7 @@ describe("sight reading page", function() {
       window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
         piece: piece.id, startMeasure: 1, endMeasure: 8, hand: BOTH_HANDS, measuresPerCard: "2",
       }))
-      let el = renderPage(ScorePage, {programme: {...SCORE_PROGRAMME, engine: null}, acoustic: true})
+      let el = renderPage(ScorePage, {programme: {...SCORE_PROGRAMME, engine: null, ScoreView: null, SessionRail: null, restPauses: false}, acoustic: true})
       await page.state.notes?.generator?.ready
       flushSync(() => {})
 
