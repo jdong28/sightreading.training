@@ -96,6 +96,18 @@ describe("srs attempt", function() {
     expect([bar2.item.hits, bar2.item.elapsedMs]).toEqual([1, 500])
   })
 
+  it("appends a pass tuple to each single-bar item, none to the range item", function() {
+    play(pass, 3000)
+    play(pass, 3500)
+    play(pass, 4000)
+    play(pass, 4500)
+
+    let [card, bar1, bar2] = attemptsOf(pass)
+    expect(card.item.passes).toBeUndefined()
+    expect(bar1.item.passes).toEqual([[4500, 3, 3, EASY]])
+    expect(bar2.item.passes).toEqual([[4500, 1, 1, EASY]])
+  })
+
   it("grades each bar from its own columns, splitting the misses by the staff of the notes not held", function() {
     play(pass, 3000, {misses: [["G3"], ["G3", "G4"], ["G4"]]})
     play(pass, 3500)
@@ -416,6 +428,18 @@ describe("srs attempt", function() {
       expect(practice).toEqual([
         {pieceId: "p", hand: "both", startMeasure: 1, endMeasure: 1, hits: 0, misses: 0, played: true, at: 5000, elapsedMs: 3000},
       ])
+    })
+
+    it("appends a self pass tuple to every bar a Clean grade reaches, only the named bar for Where?", function() {
+      pass.selfGrade = {grade: GOOD}
+      let [, bar1, bar2] = selfAttemptsOf(pass, {at: 5000})
+      expect(bar1.item.passes).toEqual([[5000, null, null, GOOD]])
+      expect(bar2.item.passes).toEqual([[5000, null, null, GOOD]])
+
+      pass.selfGrade = {grade: HARD, bars: [2]}
+      let [, stumbledBar2] = selfAttemptsOf(pass, {at: 6000})
+      expect(stumbledBar2.id).toEqual("p:both:2-2")
+      expect(stumbledBar2.item.passes).toEqual([[6000, null, null, HARD]])
     })
 
     it("leaves out the elapsed time, and adds none, over SELF_PAUSE_MS", function() {

@@ -482,6 +482,8 @@ describe("measure cards", function() {
           ["p:both:0-1", AGAIN, 1],
           ["p:both:1-1", AGAIN, 1],
         ])
+        // a skipped column's bar is never clean, so its pass tuple isn't either
+        expect(store.item("p:both:1-1").passes).toEqual([[1000, 3, 2, AGAIN]])
       })
 
       it("counts every slip for the grade and a column missed once for the totals", async function() {

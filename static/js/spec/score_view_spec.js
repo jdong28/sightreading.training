@@ -12,6 +12,9 @@ import {setAppStore} from "st/storage"
 import {SHEET_MUSIC_STORAGE_KEY, BOTH_HANDS, FREE_PRACTICE, WHOLE_SECTION} from "st/data"
 import {SCORE_DRILL_STORAGE_KEY} from "st/generators"
 import {SCORE_VIEW_NO_SOURCE, SCORE_VIEW_FAILED} from "st/components/sight_reading/score_view"
+import viewStyles from "st/components/sight_reading/score_view.module.css"
+import {SELF_GRADE_DWELL_MS, SELF_GRADE_FLASH_MS} from "st/srs/self_grade"
+import {learnedness} from "st/bar_progress"
 import reviewStyles from "st/components/sight_reading/review_pane.module.css"
 import barStripStyles from "st/components/bar_strip.module.css"
 
@@ -67,6 +70,7 @@ let waitFor = async (test, {timeout=15000, message="the condition"}={}) => {
 
 describe("the score view at rest (st/components/sight_reading/score_view)", function() {
   let container, root, page, store, previousStore, savedStorage
+  let clockInstalled = false
   const STORAGE_KEYS = [SCORE_DRILL_STORAGE_KEY, SHEET_MUSIC_STORAGE_KEY]
 
   beforeEach(async function() {
@@ -85,6 +89,11 @@ describe("the score view at rest (st/components/sight_reading/score_view)", func
     if (container) {
       container.remove()
       container = null
+    }
+
+    if (clockInstalled) {
+      jasmine.clock().uninstall()
+      clockInstalled = false
     }
 
     setAppStore(previousStore)
@@ -115,6 +124,325 @@ describe("the score view at rest (st/components/sight_reading/score_view)", func
     flushSync(() => {})
     return container
   }
+
+  // the real fixture (tools/fingerings/tests/fixture/score.musicxml, the
+  // artboards' own piece: 16 bars, grand staff, C major, one flagged
+  // passage "bars 5-9 - Hardest"), mounted through the real ScorePage end
+  // to end: pagination, the bar pop-up, shade switching, the Begin/Rest/
+  // Resume/End session/Play on/Done state machine, learnedness and
+  // acoustic grading
+  describe("the fixture, mounted", function() {
+    let buttonNamed = (el, text) =>
+      [...el.querySelectorAll("button")].find(b => b.textContent.trim() == text)
+    let buttonLabelled = (el, label) => el.querySelector(`button[aria-label="${label}"]`)
+    let click = button => flushSync(() => button.click())
+    let statValue = (el, label) => {
+      let labelEl = [...el.querySelectorAll("div")].find(div =>
+        div.children.length == 0 && div.textContent == label)
+      return labelEl.nextElementSibling.textContent
+    }
+    let dialog = el => el.querySelector('[role="dialog"]')
+
+    let renderFixture = async (settings={}) => {
+      let musicXML = await (await fetch("/tools/fingerings/tests/fixture/score.musicxml")).text()
+      let {piece} = await importMusicXMLPiece("fixture.musicxml", musicXML, store)
+      window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+        piece: piece.id, hand: BOTH_HANDS, measuresPerCard: WHOLE_SECTION,
+        practice: FREE_PRACTICE, startMeasure: 1, endMeasure: 16, ...settings,
+      }))
+
+      container = document.createElement("div")
+      container.style.width = "1440px"
+      document.body.appendChild(container)
+      root = createRoot(container)
+      flushSync(() => {
+        root.render(React.createElement(MemoryRouter, {},
+          React.createElement(ScorePage, {ref: p => page = p, viewportHeight: 1240})))
+      })
+      flushSync(() => {})
+
+      await waitFor(() => container.querySelectorAll('button[aria-label^="Bar "]').length > 0,
+        {message: "the fixture's bars to draw"})
+      return {container, piece}
+    }
+
+    let playHead = () => {
+      for (let note of page.state.notes.currentColumn()) { flushSync(() => page.pressNote(note)) }
+      for (let note of page.state.notes.currentColumn()) { flushSync(() => page.releaseNote(note)) }
+    }
+
+    // a full, clean lap of the current card: one playHead per column, so
+    // the pass actually finishes and gets graded (one playHead alone only
+    // advances a single column)
+    let playCard = () => {
+      let columns = page.currentCard().card.columns.length
+      for (let i = 0; i < columns; i++) { playHead() }
+    }
+
+    it("shows the score view at mount: no engine card, no Programme pill, the setup pane, the title and page 1", async function() {
+      let {container: el} = await renderFixture()
+
+      expect(el.querySelector("[data-score-card]")).toBe(null)
+      expect(buttonLabelled(el, "Programme")).toBeFalsy()
+      expect(el.textContent).toContain("Tonight's")
+      expect(el.textContent).toContain("At rest")
+      expect(el.querySelector("h1").textContent).toEqual("Fixture the score")
+
+      // paginated into whole systems, the first page first, the last to
+      // bar 16 (the exact split is score_pages_spec.js's own, pixel-precise
+      // test; this only checks the component wires pagination up correctly)
+      let pageLabel = el.querySelector(`.${viewStyles.page_label}`).textContent
+      expect(pageLabel).toMatch(/^Page 1 of \d+ · bars? 1(–\d+)?$/)
+      let barsOnPage1 = el.querySelectorAll('button[aria-label^="Bar "]').length
+      expect(barsOnPage1).toBeGreaterThan(0)
+      expect(barsOnPage1).toBeLessThan(16)
+      expect(buttonNamed(el, "‹ Previous page").disabled).toBe(true)
+
+      click(buttonNamed(el, "Next page ›"))
+      expect(el.querySelector('button[aria-label="Bar 16"]')).toBeFalsy()
+      // keep clicking through to the last page, which always ends on bar 16
+      while (!buttonNamed(el, "Next page ›").disabled) { click(buttonNamed(el, "Next page ›")) }
+      expect(el.querySelector('button[aria-label="Bar 16"]')).toBeTruthy()
+    })
+
+    it("switches the shade's tints and legend, and offers This session only once a session has ended", async function() {
+      let {container: el} = await renderFixture()
+      let legend = () => el.querySelector(`.${viewStyles.legend}`)
+
+      expect(buttonNamed(el, "This session")).toBeUndefined()
+      expect(legend().textContent).toContain("Not played yet")
+
+      click(buttonNamed(el, "Score difficulty"))
+      expect(legend().textContent).toContain("Easier")
+      expect(legend().textContent).toContain("harder, from the score analysis")
+      expect(legend().textContent).toContain("Review the passages")
+
+      click(buttonNamed(el, "Off"))
+      expect(legend()).toBe(null)
+    })
+
+    it("opens a clicked bar's pop-up, names its flagged passage, and closes with Escape or ×", async function() {
+      let {container: el} = await renderFixture()
+
+      click(buttonLabelled(el, "Bar 5"))
+      let pop = dialog(el)
+      expect(pop.getAttribute("aria-label")).toEqual("Bar 5 stats")
+      expect(pop.textContent).toContain("Passage I · Hardest")
+
+      flushSync(() => document.body.dispatchEvent(new KeyboardEvent("keydown", {key: "Escape", bubbles: true})))
+      expect(dialog(el)).toBe(null)
+
+      click(buttonLabelled(el, "Bar 5"))
+      click(buttonLabelled(dialog(el), "Close bar stats"))
+      expect(dialog(el)).toBe(null)
+    })
+
+    it("Practise bar N sets free practice on that bar alone and begins", async function() {
+      let {container: el} = await renderFixture()
+
+      click(buttonLabelled(el, "Bar 5"))
+      click(buttonNamed(dialog(el), "Practise bar 5"))
+
+      expect(page.state.currentGeneratorSettings).toEqual(jasmine.objectContaining({
+        practice: FREE_PRACTICE, startMeasure: 5, endMeasure: 5, measuresPerCard: WHOLE_SECTION,
+      }))
+      expect(el.textContent).toContain("measure 5")
+    })
+
+    it("Begin replaces the score with the session", async function() {
+      let {container: el} = await renderFixture()
+      click(buttonNamed(el, "Begin"))
+
+      expect(el.querySelector("[data-score-card]")).not.toBe(null)
+      expect(el.textContent).not.toContain("Tonight's")
+      expect(el.textContent).toContain("This session")
+      expect(el.textContent).toContain("In session · Fixture")
+    })
+
+    it("Rest pauses in place; Resume keeps the same session going", async function() {
+      let {container: el} = await renderFixture()
+      click(buttonNamed(el, "Begin"))
+      let statsId = page.state.stats.id
+      playHead()
+      let notesBefore = statValue(el, "Notes read")
+
+      click(buttonNamed(el, "Rest"))
+      expect(el.textContent).toContain("At rest")
+      expect(dialog(el)).toBe(null)
+
+      flushSync(() => el.dispatchEvent(new KeyboardEvent("keydown", {key: " ", keyCode: 32, bubbles: true})))
+      expect(statValue(el, "Notes read")).toEqual(notesBefore)
+
+      click(buttonNamed(el, "Resume"))
+      expect(page.state.stats.id).toEqual(statsId)
+      playHead()
+      expect(Number(statValue(el, "Notes read"))).toBeGreaterThan(Number(notesBefore))
+    })
+
+    it("End session, running or paused, shows the strip with the last Accuracy and marks the bars played; Done clears it", async function() {
+      let {container: el} = await renderFixture()
+      click(buttonNamed(el, "Begin"))
+      playCard()
+      await page.state.notes.generator.finishing
+      let accuracy = statValue(el, "Accuracy")
+
+      click(buttonNamed(el, "End session"))
+      await waitFor(() => el.textContent.includes("Session ended"), {message: "the ended strip"})
+      expect(el.textContent).toContain(accuracy)
+      expect(buttonNamed(el, "This session").getAttribute("aria-pressed")).toEqual("true")
+      // a re-render along the way can briefly reload the engraving; wait
+      // for the score (and its tints) to be showing again
+      await waitFor(() => el.querySelector('button[aria-label^="Bar "]'), {message: "the score to redraw"})
+      expect(el.querySelectorAll(`.${viewStyles.label}`).length).toBeGreaterThan(0)
+
+      click(buttonNamed(el, "Done"))
+      expect(el.textContent).not.toContain("Session ended")
+      expect(buttonNamed(el, "Learnedness").getAttribute("aria-pressed")).toEqual("true")
+    })
+
+    it("End session from a pause also shows the strip", async function() {
+      let {container: el} = await renderFixture()
+      click(buttonNamed(el, "Begin"))
+      playHead()
+      click(buttonNamed(el, "Rest"))
+
+      click(buttonNamed(el, "End session"))
+      await waitFor(() => el.textContent.includes("Session ended"), {message: "the ended strip"})
+    })
+
+    it("Play on resumes the same session into view", async function() {
+      let {container: el} = await renderFixture()
+      click(buttonNamed(el, "Begin"))
+      let statsId = page.state.stats.id
+      playHead()
+      click(buttonNamed(el, "End session"))
+      await waitFor(() => buttonNamed(el, "Play on"), {message: "the ended strip"})
+
+      click(buttonNamed(el, "Play on"))
+      expect(el.querySelector("[data-score-card]")).not.toBe(null)
+      expect(page.state.stats.id).toEqual(statsId)
+    })
+
+    it("End session with nothing played shows no strip", async function() {
+      let {container: el} = await renderFixture()
+      click(buttonNamed(el, "Begin"))
+      click(buttonNamed(el, "End session"))
+
+      expect(el.textContent).not.toContain("Session ended")
+    })
+
+    it("labels a bar Learned after three clean passes, and counts it in Learned N /16", async function() {
+      let {container: el, piece} = await renderFixture({startMeasure: 1, endMeasure: 1})
+      click(buttonNamed(el, "Begin"))
+
+      for (let i = 0; i < 3; i++) {
+        playCard()
+        await page.state.notes.generator.finishing
+      }
+      click(buttonNamed(el, "End session"))
+      await waitFor(() => buttonNamed(el, "Done"), {message: "the ended strip"})
+      click(buttonNamed(el, "Done"))
+
+      expect(learnedness(store.item(`${piece.id}:both:1-1`))).toEqual(3)
+      // Done's shade reset (and any engine-source reload a re-render along
+      // the way triggers) settles asynchronously; wait for the score to be
+      // showing again rather than assert on a frame still mid-redraw
+      await waitFor(() => el.querySelector('button[aria-label^="Bar "]'), {message: "the score to redraw"})
+      let label = [...el.querySelectorAll(`.${viewStyles.label}`)].find(e => e.textContent == "Learned")
+      expect(label).toBeTruthy()
+
+      // "Learned N /16" is one of the programme figures, not shown in free
+      // practice: switch to see it counted there
+      click(buttonNamed(el, "Today's programme"))
+      expect(statValue(el, "Learned")).toEqual("1 /16")
+    })
+
+    // real time (three real SELF_GRADE_DWELL_MS + SELF_GRADE_FLASH_MS waits,
+    // 500ms each): past the default 5s test timeout, so it gets its own
+    it("acoustic: the Tempo group shows the acoustic note; grading Clean three times learns the bar", async function() {
+      let {container: el, piece} = await renderFixture({startMeasure: 1, endMeasure: 1})
+      flushSync(() => root.render(React.createElement(MemoryRouter, {},
+        React.createElement(ScorePage, {ref: p => page = p, viewportHeight: 1240, acoustic: true}))))
+      flushSync(() => {})
+
+      expect(el.textContent).toContain("Acoustic piano: each card waits for your grade.")
+
+      click(buttonNamed(el, "Begin"))
+      let clean = () => [...el.querySelectorAll("button")].find(b => b.textContent.includes("Clean"))
+      // real time, not a fake clock: SelfGradeRow reads Date.now() against
+      // its own mount time (shownAt) for the dwell, and ScoreView needs a
+      // real engine draw (renderFixture's own wait polls with a real
+      // setTimeout, which a fake clock installed from the start never fires)
+      let wait = ms => new Promise(resolve => setTimeout(resolve, ms))
+
+      for (let i = 0; i < 3; i++) {
+        await wait(SELF_GRADE_DWELL_MS)
+        click(clean())
+        await wait(SELF_GRADE_FLASH_MS)
+        await page.state.notes.generator.finishing
+        await page.state.notes.generator.studying
+      }
+
+      click(buttonNamed(el, "End session"))
+      await waitFor(() => buttonNamed(el, "Done"), {message: "the ended strip"})
+      expect(el.textContent).toMatch(/\d+ of \d+ passes clean/)
+      click(buttonNamed(el, "Done"))
+
+      expect(learnedness(store.item(`${piece.id}:both:1-1`))).toEqual(3)
+      // a re-render along the way can briefly reload the engraving; wait
+      // for the score to be showing again
+      await waitFor(() => el.querySelector('button[aria-label^="Bar "]'), {message: "the score to redraw"})
+      expect(el.textContent).toContain("Learned")
+    }, 15000)
+
+    it("has no horizontal overflow at 390px wide", async function() {
+      let {container: el} = await renderFixture()
+      el.style.width = "390px"
+      flushSync(() => {})
+
+      expect(el.scrollWidth).toBeLessThanOrEqual(el.clientWidth + 1)
+    })
+  })
+
+  // Pasted song notation, the piece select's first option (open question
+  // 4d): no engraved score, free practice only, but otherwise drills like
+  // any imported piece
+  describe("pasted song notation", function() {
+    let buttonNamed = (el, text) =>
+      [...el.querySelectorAll("button")].find(b => b.textContent.trim() == text)
+    let click = button => flushSync(() => button.click())
+
+    it("picking it shows the notation box, and typing a song replaces the import message and title", async function() {
+      let el = renderScorePage()
+      let pane = el.querySelector("aside")
+      let select = pane.querySelector("select")
+
+      expect(el.textContent).toContain("Import a MusicXML file in Tonight's session to see its score here.")
+
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(select, "")
+      flushSync(() => select.dispatchEvent(new Event("change", {bubbles: true})))
+
+      let textarea = pane.querySelector('textarea[aria-label="song notation"]')
+      expect(textarea).toBeTruthy()
+      expect(el.querySelector("h1").textContent).toContain("import a piece to begin")
+
+      let setValue = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set
+      setValue.call(textarea, "c4 d4 e4 f4")
+      flushSync(() => textarea.dispatchEvent(new Event("input", {bubbles: true})))
+
+      expect(el.querySelector("h1").textContent).toEqual("Pasted song notation")
+      expect(el.textContent).toContain(
+        "Pasted notation has no engraved score; it is drawn on the trainer's staff once you begin.")
+      // free practice only: no programme toggle, no "Due/New/Learned" figures
+      expect(el.textContent).not.toContain("Today's programme")
+      expect(el.textContent).not.toContain("Learned")
+
+      expect(buttonNamed(el, "Begin").disabled).toBe(false)
+      click(buttonNamed(el, "Begin"))
+      expect(el.querySelector("[data-score-card]")).toBe(null)
+      expect(page.state.notes.currentColumn()).toEqual(["C4"])
+    })
+  })
 
   // the score-first grid fallback (SCORE_VIEW_NO_SOURCE/FAILED): a piece
   // without a stored source, or an engraving failure, falls back to a bar

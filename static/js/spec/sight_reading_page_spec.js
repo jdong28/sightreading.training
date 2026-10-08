@@ -2507,6 +2507,23 @@ describe("sight reading page", function() {
       expect(buttonNamed(el, "Read through")).toBeFalsy()
     })
 
+    // the session log is built from setOnPass's own reports (st/measure_cards
+    // finishPass), so a read-through card's practice-alone pass carries
+    // readThrough into it, the same field the planner's introduction() sets
+    // on the deck (st/plan_cards PlanGenerator#startCard)
+    it("marks a read-through card's pass readThrough in the session log", async function() {
+      let el = await renderProgramme({settings: {introduce: READ_FIRST}})
+      click(buttonNamed(el, "Begin"))
+      expect(plateStatus(el)).toMatch(/^Read-through/)
+
+      playHead()
+      playHead()
+      await finished()
+
+      expect(page.state.sessionLog.length).toBeGreaterThan(0)
+      expect(page.state.sessionLog[0].readThrough).toBe(true)
+    })
+
     // the sheet-music UI polish: tonight's session, not the score itself,
     // carries the programme's figures and order at rest, replaced by this
     // session's rail once a session begins
