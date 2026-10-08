@@ -112,6 +112,13 @@ describe("score_pages", function() {
       expect(tops.every(t => t == tops[0])).toBe(true)
     })
 
+    it("numbers each bar's system on the page and how many the page holds", function() {
+      let page = {top: 0, bottom: 400, width: 644, measures: measuresOf(2, 4)}
+      let overlays = barOverlays(page)
+      expect(overlays.map(o => o.system)).toEqual([0, 0, 0, 0, 1, 1, 1, 1])
+      expect(overlays.every(o => o.systems == 2)).toBe(true)
+    })
+
     it("gives two overlays with the same number for a split bar", function() {
       let measures = [
         {index: 0, number: 1, box: {x: 0, y: 100, width: 50, height: 80}},

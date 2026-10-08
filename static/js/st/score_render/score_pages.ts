@@ -45,6 +45,11 @@ export interface BarOverlay {
   top: number
   width: number
   height: number
+  // the bar's system on this page, and how many systems the page holds,
+  // so a caller can tell a bar on the last system of a multi-system page
+  // (the bar pop-up opens above it)
+  system: number
+  systems: number
 }
 
 // one system number per measure (by index order), a new one whenever a
@@ -175,6 +180,8 @@ export function barOverlays(page: ScorePage): BarOverlay[] {
       width: measure.box.width / page.width * 100,
       top: top / pageHeight * 100,
       height: bandHeight / pageHeight * 100,
+      system: band ? band.system : 0,
+      systems: bands.length,
     }
   })
 }

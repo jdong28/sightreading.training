@@ -25,6 +25,7 @@ const realNow = Date.now.bind(Date)
 
 describe("score view (the score-first page at rest)", function() {
   let container, root, page, store, previousStore, savedStorage, fixtureXML
+  let savedInnerHeight
   const STORAGE_KEYS = [SCORE_DRILL_STORAGE_KEY, SHEET_MUSIC_STORAGE_KEY]
 
   beforeAll(async function() {
@@ -40,6 +41,14 @@ describe("score view (the score-first page at rest)", function() {
   })
 
   afterEach(function() {
+    if (savedInnerHeight !== undefined) {
+      if (savedInnerHeight) {
+        Object.defineProperty(window, "innerHeight", savedInnerHeight)
+      } else {
+        delete window.innerHeight
+      }
+      savedInnerHeight = undefined
+    }
     if (root) {
       flushSync(() => root.unmount())
       root = null
@@ -91,6 +100,15 @@ describe("score view (the score-first page at rest)", function() {
       if (realNow() - start > 15000) { throw new Error(`Timed out waiting for ${message}`) }
       await new Promise(resolve => realSetTimeout(resolve, 20))
     }
+  }
+
+  // the window height the page's resize handler reads (D5's budget)
+  let resizeWindowTo = height => {
+    if (savedInnerHeight === undefined) {
+      savedInnerHeight = Object.getOwnPropertyDescriptor(window, "innerHeight") || null
+    }
+    Object.defineProperty(window, "innerHeight", {value: height, configurable: true, writable: true})
+    flushSync(() => window.dispatchEvent(new Event("resize")))
   }
 
   let click = el => flushSync(() => el.click())
@@ -150,6 +168,10 @@ describe("score view (the score-first page at rest)", function() {
       expect(h1.textContent).toContain("Fixture")
       expect(h1.textContent).toContain("the score")
 
+      let eyebrow = [...el.querySelectorAll("div")]
+        .find(div => div.children.length == 0 && div.textContent.startsWith("Sheet music · "))
+      expect(eyebrow.textContent).toEqual("Sheet music · 16 bars · grand staff · C major")
+
       expect(pageLabel(el)).toEqual("Page 1 of 2 · bars 1–10")
       expect(barButtons(el).length).toEqual(10)
 
@@ -159,6 +181,28 @@ describe("score view (the score-first page at rest)", function() {
       click(buttonNamed(el, "Next page ›"))
       expect(pagerLabel(el)).toEqual("Page 2 of 2 · bars 11–16")
       expect(barButtons(el).length).toEqual(6)
+    })
+  })
+
+  describe("pagination", function() {
+    it("repaginates on window resize, keeping the page that holds the current page's first bar", async function() {
+      await importFixture()
+      let el = renderScorePage({viewportHeight: 900})
+      await awaitEngraved(el)
+      expect(pageLabel(el)).toEqual("Page 1 of 2 · bars 1–10")
+
+      click(buttonNamed(el, "Next page ›"))
+      expect(pageLabel(el)).toEqual("Page 2 of 2 · bars 11–16")
+
+      // shorter: a system a page, and the page shown is the one holding
+      // bar 11, the first bar of the page that was open (not page 2)
+      resizeWindowTo(700)
+      await waitFor(() => pageLabel(el) == "Page 3 of 4 · bars 11–15", "the shorter pagination")
+
+      // taller: three systems a page, bar 11 among the first of them
+      resizeWindowTo(1000)
+      await waitFor(() => pageLabel(el) == "Page 1 of 2 · bars 1–15", "the taller pagination")
+      expect(barButtons(el).length).toEqual(15)
     })
   })
 
@@ -213,6 +257,26 @@ describe("score view (the score-first page at rest)", function() {
       let settings = JSON.parse(window.localStorage.getItem(SHEET_MUSIC_STORAGE_KEY))
       expect([settings.startMeasure, settings.endMeasure, settings.measuresPerCard]).toEqual([5, 5, "all"])
       expect(settings.piece).toEqual(piece.id)
+    })
+  })
+
+  describe("the bar pop-up's anchor", function() {
+    it("opens below its bar, but above one on the last system of a multi-system page", async function() {
+      await importFixture()
+      let el = renderScorePage()
+      await awaitEngraved(el)
+
+      let tops = [...new Set(barButtons(el).map(b => parseFloat(b.style.top)))].sort((a, b) => a - b)
+      expect(tops.length).toBeGreaterThan(1)
+
+      click(buttonLabelled(el, "Bar 1"))
+      expect(dialog(el).style.top).not.toEqual("")
+      expect(dialog(el).style.bottom).toEqual("")
+
+      let lastSystem = barButtons(el).filter(b => parseFloat(b.style.top) == tops[tops.length - 1])
+      click(lastSystem[lastSystem.length - 1])
+      expect(dialog(el).style.bottom).not.toEqual("")
+      expect(dialog(el).style.top).toEqual("")
     })
   })
 
@@ -279,6 +343,31 @@ describe("score view (the score-first page at rest)", function() {
       click(buttonNamed(el, "Play on"))
       expect(el.querySelector("[data-score-card]")).not.toBe(null)
       expect(page.state.stats.id).toEqual(statsId)
+    })
+
+    it("the rail shows free practice's bars in place of the programme's target", async function() {
+      await importFixture()
+      let el = renderScorePage()
+      await awaitEngraved(el)
+
+      click(buttonNamed(el, "Begin"))
+      let aside = sessionRail(el).querySelector(`.${sessionRailStyles.clock_aside}`)
+      expect(aside.textContent).toEqual("bars 1–4")
+    })
+
+    it("the session plate counts the programme's cards", async function() {
+      let piece = await importFixture({startMeasure: 1, endMeasure: 1, measuresPerCard: "all"})
+      await store.putStudy({pieceId: piece.id, status: "learning", startedAt: Date.now()})
+      let el = renderScorePage()
+      await awaitEngraved(el)
+
+      let plateLabel = () => el.querySelector("[aria-live]").previousElementSibling.textContent
+
+      click(buttonNamed(el, "Begin"))
+      expect(plateLabel()).toContain(" · card 1")
+
+      await playWholeCard()
+      await waitFor(() => plateLabel().includes(" · card 2"), "the second card")
     })
 
     it("End session with nothing played shows no strip", async function() {

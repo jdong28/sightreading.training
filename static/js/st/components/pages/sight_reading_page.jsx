@@ -16,7 +16,7 @@ import styles from "./sight_reading_page.module.css"
 import staffStyles from "st/components/staff.module.css"
 import devMetricsStyles from "st/components/sight_reading/dev_metrics_panel.module.css"
 
-import {noteName, parseNote, displayNoteName, romanNumeral} from "st/music"
+import {noteName, parseNote, displayNoteName, romanNumeral, barsLabel} from "st/music"
 import {
   STAVES, GENERATORS, sheetMusicPiece, handTracks, handSetting, drilledRange, sectionDroppedPitches, RIGHT_HAND, LEFT_HAND,
   plannedPractice, orderOffered, programmePassages, FREE_PRACTICE,
@@ -232,6 +232,9 @@ export default class SightReadingPage extends React.Component {
       if (scale != this.state.scale) {
         this.setState({scale})
       }
+      if (window.innerHeight != this.state.viewportHeight) {
+        this.setState({viewportHeight: window.innerHeight})
+      }
     }
     this.setStaffWrapper = el => this.observeStaffWrapper(el)
     // the engine's card is the staff the slider moves, from where it is now
@@ -347,6 +350,9 @@ export default class SightReadingPage extends React.Component {
       keyboardOpen: false,
       settingsOpen: false,
       scale: staffScale(),
+      // the score view's pagination budget (D5), the window's own height
+      // from the resize handler on
+      viewportHeight: props.viewportHeight,
       // the width the staff wrapper gives the staff, measured once mounted
       staffWidth: null,
       stats: this.newStats(),
@@ -2001,6 +2007,7 @@ export default class SightReadingPage extends React.Component {
       }}
       generator={this.currentNotesGenerator()}
       currentStaff={this.state.currentStaff}
+      keySignature={this.state.keySignature}
       staves={STAVES}
       setStaff={this._setStaff ||= this.setStaff.bind(this)}
       acoustic={this.selfGraded()}
@@ -2020,7 +2027,7 @@ export default class SightReadingPage extends React.Component {
       engine={this.programme.engine}
       loadEngines={this.props.loadEngines}
       source={this.state.engineSource}
-      viewportHeight={this.props.viewportHeight}
+      viewportHeight={this.state.viewportHeight}
     />
   }
 
@@ -2240,7 +2247,9 @@ export default class SightReadingPage extends React.Component {
       let generator = this.currentNotesGenerator()
       let measures = generator && generator.cardLabel && card ? generator.cardLabel() :
         cardLabel(card, number, section)
-      return beats ? `${beats} ♩ a bar · ${measures}` : measures
+      let label = beats ? `${beats} ♩ a bar · ${measures}` : measures
+      return plannedPractice(this.currentSettings()) ?
+        `${label} · card ${this.state.sessionLog.length + 1}` : label
     }
 
     let staff = this.state.currentStaff
@@ -2647,6 +2656,7 @@ export default class SightReadingPage extends React.Component {
       standMeasures={standMeasures}
       upNext={upNext}
       asideLabel={asideLabel}
+      sectionLabel={planned ? null : barsLabel(settings.startMeasure, settings.endMeasure)}
       hardestFlag={hardestFlag} />
   }
 

@@ -41,6 +41,8 @@ export class SessionRail extends React.Component {
     standMeasures: types.array,
     upNext: types.array,
     asideLabel: types.string,
+    // free practice's bars, shown in place of the programme's target
+    sectionLabel: types.string,
     hardestFlag: types.object,
   }
 
@@ -54,7 +56,9 @@ export class SessionRail extends React.Component {
       <div className={styles.clock_row}>
         <span className={styles.clock_value}>{formatElapsed(elapsedSeconds)}</span>
         {target ? <span className={styles.clock_target}>of {target} min</span> : null}
-        <span className={styles.clock_aside}>{playingOn ? "playing on" : "then play on"}</span>
+        <span className={styles.clock_aside}>
+          {target ? (playingOn ? "playing on" : "then play on") : this.props.sectionLabel}
+        </span>
       </div>
       {target ? <div className={styles.track}>
         <div className={styles.fill} style={{width: `${Math.round(fraction * 100)}%`}} />

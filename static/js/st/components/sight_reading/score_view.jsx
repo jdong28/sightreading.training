@@ -21,6 +21,8 @@ import {learnedness, sessionMarks, endedSummary} from "st/bar_progress"
 import {itemId} from "st/srs/records"
 import {itemHand as settingsItemHand} from "st/data"
 import {measureNumberList, measureNumberRange} from "st/song_sections"
+import {pageOfBar} from "st/score_render/score_pages"
+import {keyLabel} from "st/components/sight_reading/settings_panel"
 import {pieceSong, ensureAnnotation} from "st/sheet_music_deck"
 import {sheetMusicPiece} from "st/data"
 import {getAppStore} from "st/storage"
@@ -56,6 +58,8 @@ export class ScoreView extends React.Component {
     setSettings: types.func.isRequired,
     generator: types.object,
     currentStaff: types.object,
+    // the key the trainer draws the piece in (D2's eyebrow)
+    keySignature: types.object.isRequired,
     staves: types.array,
     setStaff: types.func,
     acoustic: types.bool,
@@ -377,7 +381,8 @@ export class ScoreView extends React.Component {
       <div className={styles.title_row}>
         <TitleBlock
           eyebrow={`Sheet music · ${numbers.length} ${numbers.length == 1 ? "bar" : "bars"} · ${
-            this.props.currentStaff ? this.props.currentStaff.name : "grand"} staff`}
+            this.props.currentStaff ? this.props.currentStaff.name : "grand"} staff · ${
+            keyLabel(this.props.keySignature)} major`}
           title={piece.title}
           italic="the score" />
         <div className={styles.title_note}>Click any bar for its stats</div>
@@ -397,9 +402,15 @@ export class ScoreView extends React.Component {
           loadEngines={this.props.loadEngines}
           viewportHeight={this.props.viewportHeight}
           page={this.state.page}
-          onPages={pages => this.setState(state => ({
-            pages, page: Math.max(0, Math.min(state.page, pages.length - 1)),
-          }))}
+          onPages={pages => this.setState(state => {
+            let shown = state.pages[state.page]
+            let first = shown && shown.measures[0]
+            return {
+              pages,
+              page: first ? pageOfBar(pages, first.number) :
+                Math.max(0, Math.min(state.page, pages.length - 1)),
+            }
+          })}
           decorate={n => decorations.get(n) || {}}
           selected={this.state.selectedBar}
           onBar={n => this.selectBar(n)}
@@ -415,9 +426,10 @@ export class ScoreView extends React.Component {
             })
 
             let left = overlay.left + overlay.width / 2 < 50
+            let above = overlay.systems > 1 && overlay.system == overlay.systems - 1
             let style = {
               ...(left ? {left: `${overlay.left}%`} : {right: `${100 - (overlay.left + overlay.width)}%`}),
-              top: `${overlay.top + overlay.height}%`,
+              ...(above ? {bottom: `${100 - overlay.top}%`} : {top: `${overlay.top + overlay.height}%`}),
             }
 
             return <BarPopup

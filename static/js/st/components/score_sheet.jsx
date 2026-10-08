@@ -165,6 +165,7 @@ export class ScoreSheet extends React.Component {
       this.setState({result, drawing: false}, () => {
         let into = this.plateRef.current
         if (into) { into.replaceChildren(result.svg) }
+        this.drawnSize = naturalSize(result.svg)
         this.recomputePages()
       })
     }, error => {
@@ -174,11 +175,12 @@ export class ScoreSheet extends React.Component {
     })
   }
 
+  // paginates the drawing measured in draw(), before showPage crops it
   recomputePages() {
     let {result} = this.state
-    if (!result || !Array.isArray(result.measures)) { return }
+    if (!result || !Array.isArray(result.measures) || !this.drawnSize) { return }
 
-    let {width, height} = naturalSize(result.svg)
+    let {width, height} = this.drawnSize
     if (!width || !height) { return }
 
     let displayed = this.state.boxWidth || width
