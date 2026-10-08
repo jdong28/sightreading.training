@@ -1,0 +1,351 @@
+/* The score-first score page at rest (§D1-D7, D11) */
+
+.title_row {
+    display: flex;
+    align-items: flex-end;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-bottom: 18px;
+}
+
+.title_block {
+    min-width: 0;
+}
+
+.eyebrow {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .26em;
+    text-transform: uppercase;
+    color: var(--salon-ink-muted);
+    margin-bottom: 8px;
+}
+
+.heading {
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: 38px;
+    font-weight: 400;
+    line-height: 1.04;
+    letter-spacing: -.01em;
+
+    @media (max-width: 600px) {
+        font-size: 30px;
+    }
+}
+
+.heading_italic {
+    font-style: italic;
+}
+
+.title_note {
+    margin-left: auto;
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 15px;
+    color: var(--salon-ink-soft);
+}
+
+.columns {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 22px;
+    align-items: flex-start;
+}
+
+.score_column {
+    flex: 999 1 640px;
+    min-width: 0;
+}
+
+.setup_column {
+    flex: 1 1 340px;
+    max-width: 420px;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.ended_strip {
+    display: flex;
+    align-items: center;
+    gap: 14px 22px;
+    flex-wrap: wrap;
+    background: var(--salon-paper);
+    border: 1px solid var(--salon-rule-strong);
+    border-top: var(--salon-double-rule);
+    padding: 12px 18px;
+    margin-bottom: 16px;
+}
+
+.ended_left {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.ended_eyebrow {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--salon-ink-muted);
+}
+
+.ended_headline {
+    font-family: var(--font-display);
+    font-size: 30px;
+    line-height: 1;
+    color: var(--salon-ink);
+}
+
+.ended_headline_italic {
+    font-size: 16px;
+    font-style: italic;
+    color: var(--salon-ink-soft);
+}
+
+.ended_detail {
+    flex: 1 1 360px;
+    min-width: 0;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--salon-ink-soft);
+}
+
+.ended_actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-left: auto;
+}
+
+.score_plate {
+    position: relative;
+    padding: 18px 26px 22px;
+
+    @media (max-width: 600px) {
+        padding: 14px 12px 16px;
+    }
+}
+
+.toolbar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding-bottom: 10px;
+    border-bottom: var(--salon-double-rule);
+}
+
+.page_label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .2em;
+    text-transform: uppercase;
+    color: var(--salon-ink-muted);
+}
+
+.shade_group {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.shade_label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--salon-ink-muted);
+    margin-right: 2px;
+}
+
+.shade_pill.shade_pill {
+    padding: 6px 12px;
+    font-size: 12px;
+}
+
+.page_wrap {
+    display: flex;
+    justify-content: center;
+    padding: 16px 0 4px;
+    position: relative;
+
+    &.loading {
+        min-height: 300px;
+        opacity: .55;
+    }
+}
+
+.grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 8px 0;
+}
+
+.grid_cell_wrap {
+    position: relative;
+}
+
+.grid_cell {
+    width: 44px;
+    height: 44px;
+    box-sizing: border-box;
+    border: 1px solid var(--salon-rule);
+    background: var(--salon-paper);
+    font-family: var(--font-display);
+    font-size: 14px;
+    cursor: pointer;
+
+    &.selected {
+        border: 2px solid var(--salon-oxblood);
+        background: var(--salon-selected-tint);
+    }
+}
+
+.label {
+    position: absolute;
+    top: -8px;
+    left: 0;
+    transform: translateY(-100%);
+    font-size: 10px;
+    font-weight: 700;
+    padding: 1px 4px;
+    border: 1px solid var(--salon-rule-strong);
+    background: var(--salon-paper);
+    color: var(--salon-ghost-ink);
+    white-space: nowrap;
+
+    &.label_learned {
+        border-color: var(--salon-gilt-deep);
+    }
+}
+
+.legend {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+    font-size: 12px;
+    color: var(--salon-ink-soft);
+    padding-top: 8px;
+}
+
+.legend_item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.swatch {
+    display: block;
+    width: 14px;
+    height: 14px;
+    border: 1px solid;
+    box-sizing: border-box;
+}
+
+.ramp {
+    display: inline-flex;
+    gap: 2px;
+    margin: 0 6px;
+    vertical-align: middle;
+
+    i {
+        display: inline-block;
+        width: 12px;
+        height: 12px;
+    }
+}
+
+.review_link {
+    background: none;
+    border: none;
+    padding: 0;
+    font: inherit;
+    color: var(--salon-oxblood);
+    cursor: pointer;
+
+    &:hover {
+        color: var(--salon-oxblood-dark);
+    }
+}
+
+.pager {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    padding-top: 16px;
+    margin-top: 10px;
+    border-top: var(--salon-hairline);
+}
+
+.pager_pill.pager_pill {
+    min-height: 44px;
+    padding: 0 20px;
+}
+
+.pager_label {
+    font-family: var(--font-display);
+    font-size: 17px;
+    min-width: 110px;
+    text-align: center;
+}
+
+.pager_num {
+    font-style: italic;
+}
+
+/* colours for score_sheet's generic .bar_tag (score_sheet.module.css),
+   applied alongside it via classNames */
+.tag_oxblood {
+    color: var(--salon-oxblood);
+    border-color: var(--salon-oxblood);
+}
+
+.tag_gilt {
+    color: var(--salon-gilt-ink);
+    border-color: var(--salon-gilt);
+}
+
+.tag_muted {
+    color: var(--salon-ink-muted);
+    border-color: var(--salon-rule-strong);
+}
+
+.tag_section {
+    color: var(--salon-gilt-ink);
+    border-color: var(--salon-gilt-ink);
+}
+
+/* colours for score_sheet's generic .bar_label */
+.label_clean {
+    background: var(--salon-heat-tint-1);
+    border-color: var(--salon-gilt);
+    color: var(--salon-ghost-ink);
+}
+
+.label_near {
+    background: var(--salon-paper);
+    border-color: var(--salon-rule-strong);
+    color: var(--salon-ghost-ink);
+}
+
+.label_trouble {
+    background: var(--salon-weak-ground);
+    border-color: var(--salon-oxblood);
+    color: var(--salon-oxblood);
+}
+
+.engine_note {
+    margin: 10px 0 0;
+    font-style: italic;
+    font-size: 13px;
+    color: var(--salon-ink-muted);
+}

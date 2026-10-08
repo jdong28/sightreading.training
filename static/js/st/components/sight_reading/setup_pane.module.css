@@ -1,0 +1,302 @@
+/* "Tonight's session", the score-first score page's setup pane (§D7) */
+
+.pane {
+    padding: 20px 22px 22px;
+}
+
+.header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    padding-bottom: 11px;
+    border-bottom: var(--salon-double-rule);
+}
+
+.title {
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: 24px;
+    font-weight: 400;
+}
+
+.title_italic {
+    font-style: italic;
+}
+
+.aside {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .18em;
+    text-transform: uppercase;
+    color: var(--salon-ink-muted);
+}
+
+.group {
+    padding: 14px 0;
+    border-bottom: var(--salon-hairline);
+    display: flex;
+    flex-direction: column;
+    gap: 11px;
+}
+
+.group_label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .2em;
+    text-transform: uppercase;
+    color: var(--salon-ink-muted);
+}
+
+.subgroup {
+    display: flex;
+    flex-direction: column;
+    gap: 11px;
+}
+
+.sub {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+}
+
+.sub_label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--salon-ink-muted);
+}
+
+.hint {
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--salon-ink-muted);
+}
+
+.input_notice, .input_error {
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+.input_error {
+    color: var(--salon-oxblood);
+}
+
+.pills {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.small_pill.small_pill {
+    padding: 7px 13px;
+    font-size: 12px;
+}
+
+.piece_body {
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+    padding-top: 4px;
+}
+
+.piece_row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.piece_select {
+    position: relative;
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border: 1px solid var(--salon-rule);
+    background: var(--salon-paper);
+    padding: 9px 12px;
+    font-family: var(--font-display);
+    font-size: 16px;
+    cursor: pointer;
+}
+
+.native_select {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
+}
+
+.remove.remove {
+    background: transparent;
+    border: 1px solid var(--salon-rule);
+    color: var(--salon-ghost-ink);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    padding: 9px 14px;
+}
+
+.links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+    font-size: 12px;
+}
+
+.file_link {
+    position: relative;
+    color: var(--salon-oxblood);
+    cursor: pointer;
+
+    input {
+        position: absolute;
+        inset: 0;
+        opacity: 0;
+        width: 100%;
+        cursor: pointer;
+    }
+}
+
+.figures {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.figure {
+    background: var(--salon-paper-warm);
+    border: var(--salon-hairline);
+    border-top: var(--salon-double-rule);
+    padding: 8px 10px;
+}
+
+.figure_label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--salon-ink-muted);
+}
+
+.figure_value {
+    font-family: var(--font-display);
+    font-size: 22px;
+    line-height: 1.1;
+}
+
+.figure_detail {
+    font-size: 14px;
+    color: var(--salon-ink-muted);
+}
+
+.suggestion {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    flex-wrap: wrap;
+    font-size: 12px;
+}
+
+.section_row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.of_last {
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 14px;
+    color: var(--salon-ink-soft);
+}
+
+.tempo_header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+}
+
+.tempo_value {
+    font-family: var(--font-display);
+    font-size: 19px;
+}
+
+.speed_row {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 12px;
+    color: var(--salon-ink-soft);
+
+    input[type="range"] {
+        width: 100%;
+        accent-color: var(--salon-gilt);
+    }
+}
+
+.speed_value {
+    font-family: var(--font-display);
+    font-size: 15px;
+}
+
+.speed_legend {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    color: var(--salon-ink-muted);
+}
+
+.keep_row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+
+    .hint {
+        flex: 1;
+        min-width: 150px;
+    }
+}
+
+.footer {
+    margin-top: 12px;
+    padding-top: 14px;
+    border-top: var(--salon-double-rule);
+}
+
+.begin_line {
+    margin: 0 0 12px;
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 15px;
+    line-height: 1.45;
+    color: var(--salon-ink-soft);
+    text-align: center;
+    min-height: 1.45em;
+}
+
+.begin.begin {
+    width: 100%;
+    min-height: 48px;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+}
+
+.engines_link {
+    text-align: center;
+    margin-top: 10px;
+    font-size: 12px;
+
+    a {
+        color: var(--salon-nav-ink);
+    }
+}
