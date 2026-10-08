@@ -237,7 +237,9 @@ export class ScoreSheet extends React.Component {
               borderTopColor: info.topBorder || undefined,
             }}
             onClick={() => this.props.onBar && this.props.onBar(overlay.number)} />
-          {label && <span className={classNames(styles.bar_label, label.className)} style={boxStyle}>
+          {label && <span
+            className={classNames(styles.bar_label, label.className)}
+            style={{left: boxStyle.left, top: boxStyle.top}}>
             {label.text}
           </span>}
         </React.Fragment>
