@@ -80,7 +80,7 @@ export class ScoreView extends React.Component {
       // ScoreView with `ended` already set: componentDidUpdate's own
       // ended->shade switch never fires for that first render, so the
       // initial shade must already read props.ended
-      selectedBar: null, page: 0, pageCount: 1, shade: props.ended ? "session" : "learnedness",
+      selectedBar: null, page: 0, pageCount: 1, pageRanges: [], shade: props.ended ? "session" : "learnedness",
       sheetFailed: false, passageOpen: false, passageSelectedId: null, reviewOpen: false, reviewFlagId: null,
     }
   }
@@ -328,10 +328,13 @@ export class ScoreView extends React.Component {
     let failed = (this.props.source && this.props.source.status == "failed") || this.state.sheetFailed
     let selected = this.state.selectedBar
 
+    let range = this.state.pageRanges[this.state.page]
+
     return <>
       <div className={styles.toolbar}>
         <span className={styles.page_indicator}>
           Page {this.state.page + 1} of {this.state.pageCount}
+          {range ? ` · ${barsLabel(range.first, range.last)}` : ""}
         </span>
         <div className={styles.shade_group} role="group" aria-label="Shade bars by">
           <span className={styles.shade_label}>Shade</span>
@@ -366,7 +369,7 @@ export class ScoreView extends React.Component {
         toMeasure={numbers[numbers.length - 1]}
         viewportHeight={this.props.viewportHeight}
         page={this.state.page}
-        onPages={pageCount => this.setState({pageCount})}
+        onPages={(pageCount, pageRanges) => this.setState({pageCount, pageRanges})}
         selected={selected}
         onBar={this.openBar}
         overlaysByIndex={this.overlaysByIndex(song)}

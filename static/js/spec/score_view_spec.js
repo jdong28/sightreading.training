@@ -7,9 +7,9 @@ import ScorePage, {SCORE_PROGRAMME} from "st/components/pages/score_page"
 import {ScoreView, SCORE_VIEW_NO_SOURCE, SCORE_VIEW_FAILED} from "st/components/sight_reading/score_view"
 import {importMusicXMLPiece} from "st/sheet_music_deck"
 import {setAppStore} from "st/storage"
-import {SHEET_MUSIC_STORAGE_KEY, BOTH_HANDS} from "st/data"
+import {SHEET_MUSIC_STORAGE_KEY, BOTH_HANDS, PROGRAMME_PRACTICE} from "st/data"
 
-import {openTestStore, reverieOpening} from "spec/helpers"
+import {openTestStore, reverieOpening, fixtureScore} from "spec/helpers"
 
 describe("ScoreView (the score-first page's at-rest view)", function() {
   let container, root, page, store, previousStore, savedStorage
@@ -138,6 +138,76 @@ describe("ScoreView (the score-first page's at-rest view)", function() {
     expect(el.querySelectorAll("[role=dialog]").length).toEqual(1)
   })
 
+  it("names the current page's own bar range beside the page indicator", async function() {
+    await drillPiece(reverieOpening())
+    let el = renderScorePage()
+    await waitFor(() => barButton(1))
+
+    let pageIndicator = () => [...el.querySelectorAll('[class*="page_indicator"]')][0].textContent
+    expect(pageIndicator()).toEqual("Page 1 of 1 · bars 1–4")
+  })
+
+  // the exact page split ("bars 1-15" then "bar 16") the plan measured
+  // depends on the real app's own rendered column width, which a container
+  // sized by hand in a spec doesn't reproduce bit-for-bit; this checks the
+  // pagination machinery actually paginates the real fixture correctly
+  // (every bar reachable, in order, Previous/Next wired up) rather than
+  // pinning the split itself -- score_pages_spec.js's real-engine test
+  // already proves scorePages() gives that exact split at the plan's own
+  // measured width and budget
+  it("paginates the real Fixture piece across pages, covering every bar once", async function() {
+    await drillPiece(fixtureScore())
+    let el = renderScorePage()
+    await waitFor(() => barButton(1), {timeout: 10000})
+
+    expect(el.querySelector("h1").textContent).toEqual("Fixture the score")
+    expect(el.textContent).toContain("16 bars")
+
+    let pageIndicator = () => [...el.querySelectorAll('[class*="page_indicator"]')][0].textContent
+    await waitFor(() => /^Page 1 of \d+ · bars? /.test(pageIndicator()), {timeout: 10000})
+
+    let pageCount = Number(pageIndicator().match(/of (\d+)/)[1])
+    let barsShown = () => [...el.querySelectorAll('button[aria-label^="Bar "]')]
+      .map(b => Number(b.getAttribute("aria-label").replace("Bar ", "")))
+
+    let next = () => [...el.querySelectorAll("button")].find(b => b.textContent.trim() == "Next page ›")
+    let previous = () => [...el.querySelectorAll("button")].find(b => b.textContent.trim() == "‹ Previous page")
+
+    expect(previous().disabled).toBe(true)
+
+    let seen = []
+    for (let p = 1; p <= pageCount; p++) {
+      expect(pageIndicator()).toEqual(`Page ${p} of ${pageCount}` +
+        (barsShown().length == 1 ? ` · bar ${barsShown()[0]}` :
+          ` · bars ${barsShown()[0]}–${barsShown()[barsShown().length - 1]}`))
+      seen.push(...barsShown())
+      if (p < pageCount) { flushSync(() => next().click()) }
+    }
+    expect(next().disabled).toBe(true)
+    expect(seen).toEqual(Array.from({length: 16}, (_, idx) => idx + 1))
+  }, 30000)
+
+  it("recomputes pagination, without redrawing, when the viewport's own height changes", async function() {
+    await drillPiece(fixtureScore())
+    let el = renderScorePage()
+    await waitFor(() => barButton(1), {timeout: 10000})
+
+    let pageIndicator = () => [...el.querySelectorAll('[class*="page_indicator"]')][0].textContent
+    await waitFor(() => /^Page 1 of \d+/.test(pageIndicator()), {timeout: 10000})
+    let before = Number(pageIndicator().match(/of (\d+)/)[1])
+
+    // a much shorter viewport budgets far less height a page, so strictly
+    // more pages are needed for the same, unredrawn svg
+    flushSync(() => {
+      root.render(React.createElement(MemoryRouter, {},
+        React.createElement(ScorePage, {ref: p => page = p, programme: SCORE_PROGRAMME, viewportHeight: 400})))
+    })
+    flushSync(() => {})
+
+    await waitFor(() => Number(pageIndicator().match(/of (\d+)/)[1]) > before, {timeout: 10000})
+    expect(Number(pageIndicator().match(/of (\d+)/)[1])).toBeGreaterThan(before)
+  }, 30000)
+
   it("Practise bar sets free practice on that bar alone and begins the session", async function() {
     await drillPiece(reverieOpening(), {startMeasure: 1, endMeasure: 4})
     renderScorePage()
@@ -192,6 +262,51 @@ describe("ScoreView (the score-first page's at-rest view)", function() {
       ["This session", "Learnedness", "Score difficulty", "Off"].includes(b.textContent.trim()))
     let selected = () => shadeButtons().find(b => b.getAttribute("aria-pressed") == "true").textContent.trim()
     expect(selected()).toEqual("This session")
+  })
+
+  it("reads the setup pane's Learned figure from learnedness, not the scheduler's own graduation count", async function() {
+    // bar 1 has three clean passes (learnedness 3) but its scheduler state
+    // never reached "review" (AGENTS.md's "three laps within 30s" core
+    // case, where only the first lap is graded): the generator's own
+    // summary().learned, the scheduler's count, is 0 here on purpose, to
+    // prove the figure reads learnedCount(store items) and not this value
+    let piece = await drillPiece(reverieOpening())
+    let id = `${piece.id}:both:1-1`
+    let at = Date.now()
+    await store.recordAttempt({
+      item: {
+        id, pieceId: piece.id, hand: "both", startMeasure: 1, endMeasure: 1,
+        level: "bar", state: "learning", step: 0, due: at + 99999, last: at, s: 1, d: 5,
+        reps: 1, lapses: 0, streak: 1, lastGrade: 3, hits: 4, misses: 0, attempts: 3,
+        lastPracticed: at, elapsedMs: 3000, algo: 1, createdAt: at,
+        recent: [[at, 4, 4, 3]], passes: [[at, 4, 4, 3], [at, 4, 4, 3], [at, 4, 4, 3]],
+      },
+      review: {
+        itemId: id, pieceId: piece.id, at, kind: "attempt", grade: 3, was: "new",
+        columns: 4, clean: 4, misses: 0, stuck: 0, skipped: 0, hesitations: 0, mode: "wait", algo: 1,
+      },
+    })
+
+    let noop = () => {}
+    let liveGenerator = {
+      summary: () => ({due: 0, dueMinutes: 0, newMeasures: 3, toRead: 0, targetMinutes: 20, learned: 0, measures: 4}),
+    }
+
+    flushSync(() => {
+      container = document.createElement("div")
+      document.body.appendChild(container)
+      root = createRoot(container)
+      root.render(React.createElement(ScoreView, {
+        settings: {piece: piece.id, hand: BOTH_HANDS, practice: PROGRAMME_PRACTICE}, setSettings: noop,
+        begin: noop, playOn: noop, dismissEnded: noop, loadEngines: noop, liveGenerator, store,
+        currentStaff: {name: "grand", range: ["C2", "C6"], mode: "notes"},
+        keySignature: {name: () => "C"},
+      }))
+    })
+    flushSync(() => {})
+
+    let figures = () => [...container.querySelectorAll('[class*="figure_value"]')].map(f => f.textContent)
+    expect(figures()).toEqual(["0", "3", "1 /4"])
   })
 
   it("shows a bar grid, not the engraved score, for a piece without a stored source", async function() {

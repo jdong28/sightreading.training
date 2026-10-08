@@ -40,7 +40,9 @@ export class ScoreSheet extends React.Component {
     // puppeteer's window is a fixed small size
     viewportHeight: types.number,
     page: types.number, // the page index to show, clamped internally
-    onPages: types.func, // called with the page count whenever it changes
+    // called with (pageCount, ranges) whenever pagination is (re)computed;
+    // ranges[i] is {first, last}, the printed bar numbers of page i
+    onPages: types.func,
     selected: types.number, // the selected bar's printed number, or null
     onBar: types.func, // (number) => void
     // the overlay fill/label for each bar position, keyed by measure index
@@ -75,10 +77,18 @@ export class ScoreSheet extends React.Component {
   }
 
   componentDidUpdate(prevProps, prevState) {
-    if (prevProps.musicXML != this.props.musicXML || prevProps.engine != this.props.engine ||
-        prevProps.fromMeasure != this.props.fromMeasure || prevProps.toMeasure != this.props.toMeasure ||
-        this.engraveWidth(prevState.width) != this.engraveWidth(this.state.width)) {
+    let needsRedraw = prevProps.musicXML != this.props.musicXML || prevProps.engine != this.props.engine ||
+      prevProps.fromMeasure != this.props.fromMeasure || prevProps.toMeasure != this.props.toMeasure ||
+      this.engraveWidth(prevState.width) != this.engraveWidth(this.state.width)
+
+    if (needsRedraw) {
       this.draw()
+    } else if (this.state.result &&
+        (this.state.width != prevState.width || this.props.viewportHeight != prevProps.viewportHeight)) {
+      // the budget's own inputs moved (a resize that doesn't cross the
+      // engrave-width floor, or the viewport's own height changing) without
+      // the drawn svg needing to change: recompute pages rather than redraw
+      this.setState({pages: this.pagesOf(this.state.result)})
     }
 
     if (this.props.page != prevProps.page || this.state.pages != prevState.pages) {
@@ -86,8 +96,10 @@ export class ScoreSheet extends React.Component {
     }
 
     let pages = this.state.pages
-    if (pages && (!prevState.pages || prevState.pages.length != pages.length) && this.props.onPages) {
-      this.props.onPages(pages.length)
+    if (pages && pages != prevState.pages && this.props.onPages) {
+      this.props.onPages(pages.length, pages.map(page => ({
+        first: page.measures[0].number, last: page.measures[page.measures.length - 1].number,
+      })))
     }
   }
 

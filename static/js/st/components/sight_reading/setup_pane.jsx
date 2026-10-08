@@ -16,13 +16,16 @@ import {getAppStore} from "st/storage"
 import {barsLabel} from "st/music"
 import {LEVEL_WORDS} from "st/difficulty/index"
 import {scoreEnginesPath} from "st/score_render/route"
+import {learnedCount} from "st/bar_progress"
+import {pieceSong} from "st/sheet_music_deck"
+import {measureNumberList} from "st/song_sections"
 import {
   mostOverduePiece, pulledPassage, READ_FIRST, HARDEST_FIRST, SCORE_ORDER,
 } from "st/srs/planner"
 import {
   SHEET_MUSIC_GENERATOR, sheetMusicPiece, introductionOrder, orderOffered, programmePassages,
   plannedPractice, programmeOffered, sheetMusicSection, sheetMusicSectionRange, planCardMeasures,
-  BOTH_HANDS, RIGHT_HAND, LEFT_HAND, WHOLE_SECTION,
+  BOTH_HANDS, RIGHT_HAND, LEFT_HAND, WHOLE_SECTION, itemHand,
 } from "st/data"
 
 import styles from "./setup_pane.module.css"
@@ -185,9 +188,24 @@ export class SetupPane extends React.Component {
     </div>
   }
 
+  // the piece's own bars learned under the setup hand (C5, st/bar_progress):
+  // independent of the scheduler's own "learned" (planSummary's graduation
+  // count, which summary.learned/measures below never use for this reason)
+  learnedFigure() {
+    let piece = sheetMusicPiece(this.props.settings)
+    if (!piece) { return null }
+
+    let song = pieceSong(piece)
+    let numbers = measureNumberList(song)
+    let hand = itemHand(this.props.settings.hand || "both hands")
+    let count = learnedCount(this.getStore().items(piece.id), numbers, hand)
+    return {learned: count, measures: numbers.length}
+  }
+
   renderProgrammeFigures() {
     let liveGenerator = this.props.liveGenerator
     let summary = liveGenerator && liveGenerator.summary ? liveGenerator.summary() : null
+    let learned = this.learnedFigure()
 
     return <div className={styles.figures}>
       <div className={styles.figure}>
@@ -201,8 +219,8 @@ export class SetupPane extends React.Component {
       <div className={styles.figure}>
         <div className={styles.figure_label}>Learned</div>
         <div className={styles.figure_value}>
-          {summary ? summary.learned : "—"}
-          {summary ? <span className={styles.figure_detail}> /{summary.measures}</span> : null}
+          {learned ? learned.learned : "—"}
+          {learned ? <span className={styles.figure_detail}> /{learned.measures}</span> : null}
         </div>
       </div>
     </div>
