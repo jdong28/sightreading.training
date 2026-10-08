@@ -20,6 +20,7 @@ import {joinCard, markCard} from "st/score_render/card_join"
 import {scrollTrack, scrollAdvance, scrollOffset} from "st/score_render/card_scroll"
 import {placeBadges} from "st/score_render/card_badges"
 import {shadeBands} from "st/score_render/card_shade"
+import {barAt} from "st/score_render/card_hit"
 
 import styles from "./score_card.module.css"
 
@@ -129,6 +130,9 @@ export class ScoreCard extends React.Component {
     shades: types.array,
     // called with a shade's id when its band or label is clicked
     onShade: types.func,
+    // called with the printed bar number of a bar of the drawn card
+    // clicked; ignored on an overview, whose clicks belong to its shades
+    onBar: types.func,
   }
 
   static defaultProps = {
@@ -149,6 +153,25 @@ export class ScoreCard extends React.Component {
     this.drawCount = 0
     // systems kept drawn, most recently used first: {key, musicXML, svg, result}
     this.systemCache = []
+    this.onBarClick = this.onBarClick.bind(this)
+  }
+
+  // Reports the bar a click on the drawn card landed on (st/score_render/
+  // card_hit). Reads this.props and this.result at click time, which covers
+  // a cached system re-attached without a redraw, the translated scroll-mode
+  // strip, and a card mid-draw (this.result is null then)
+  onBarClick(e) {
+    if (!this.props.onBar || this.props.overview || !this.result) { return }
+
+    let svg = this.result.svg
+    let rect = svg.getBoundingClientRect()
+    let {width, height} = naturalSize(svg)
+    if (!rect.width || !rect.height || !width || !height) { return }
+
+    let x = (e.clientX - rect.left) * width / rect.width
+    let y = (e.clientY - rect.top) * height / rect.height
+    let number = barAt(this.result.measures, x, y)
+    if (number != null) { this.props.onBar(number) }
   }
 
   componentDidMount() {
@@ -486,11 +509,16 @@ export class ScoreCard extends React.Component {
     }
 
     let rootProps = this.props.overview ? {"data-score-overview": true} : {"data-score-card": true}
+    let clickable = this.props.onBar && !this.props.overview
 
     return <div
       ref={this.rootRef}
-      className={classNames(styles.score_card, {[styles.drawing]: this.state.drawing})}
+      className={classNames(styles.score_card, {
+        [styles.drawing]: this.state.drawing,
+        [styles.bars_clickable]: clickable,
+      })}
       {...rootProps}
+      onClick={clickable ? this.onBarClick : undefined}
       aria-busy={this.state.drawing}>
       {plate}
       {this.renderBadges()}
