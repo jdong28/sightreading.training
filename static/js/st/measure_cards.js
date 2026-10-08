@@ -22,9 +22,9 @@ import {addNoteListener} from "st/note_stats"
 import {getAppStore} from "st/storage"
 import {
   AttemptPass, passAttempts, passPractice, passPace, passRanges, columnClefs,
-  selfAttempts, selfPractice,
+  selfAttempts, selfPractice, barPasses, passGrading,
 } from "st/srs/attempt"
-import {AGAIN, HARD} from "st/srs/grade"
+import {AGAIN, HARD, gradeAttempt} from "st/srs/grade"
 import {itemId} from "st/srs/records"
 import {practiceWeight} from "st/srs/schedule"
 import {onScheduleMeasures} from "st/srs/planner"
@@ -328,6 +328,8 @@ export class MeasureCardGenerator {
     this.drill = () => ({mode: "wait"})
     // the pass finished last, which the caption and the receipt read
     this.lastPass = null
+    // told of each finished pass, see setOnPass
+    this.onPass = null
     // the looping card's graded laps this sitting, which a self-graded
     // receipt's "Pass n" reads (see selfGrade, takePractice)
     this.lap = 0
@@ -359,6 +361,16 @@ export class MeasureCardGenerator {
    */
   setDrill(drill) {
     this.drill = drill
+  }
+
+  /**
+   * @param {function(Object)} fn told once per finished pass (never an
+   * abandoned one, see takePractice): {at, startMeasure, endMeasure, hand,
+   * readThrough, self, grade, bars}, bars from barPasses (st/srs/attempt),
+   * the same report the session log on the score page keeps
+   */
+  setOnPass(fn) {
+    this.onPass = fn
   }
 
   startCard(time=null) {
@@ -632,13 +644,31 @@ export class MeasureCardGenerator {
     let written = {...this.writtenUnder(), at}
     pass.written = written
 
-    // after the passes before it, whose items say which measures are on schedule
+    // after the passes before it, whose items say which measures are on
+    // schedule; also waits for the last column's hit to be counted (see
+    // notePlayed), which happens right after this task, so a report or
+    // grade taken here never sees it unstruck
     this.finishing = Promise.resolve(this.finishing).then(() => {
       let store = this.deck.getStore()
       pass.found = Object.fromEntries(passRanges(pass.card).map(({startMeasure, endMeasure}) => {
         let id = itemId({pieceId: written.pieceId, hand: written.hand, startMeasure, endMeasure})
         return [id, store.item(id)]
       }))
+
+      if (this.onPass) {
+        let grade = pass.selfGrade ? pass.selfGrade.grade :
+          gradeAttempt(passGrading(pass).columns, {mode: passGrading(pass).mode}).grade
+        this.onPass({
+          at,
+          startMeasure: pass.card.startMeasure,
+          endMeasure: pass.card.endMeasure,
+          hand: written.hand,
+          readThrough: !!pass.readThrough,
+          self: !!pass.selfGrade,
+          grade,
+          bars: barPasses(pass),
+        })
+      }
 
       let {attempts, practice} = this.passRecords(pass, {...written, sessionId: this.sessionId})
 
@@ -675,9 +705,15 @@ export class MeasureCardGenerator {
     }
 
     let practiceOnly = this.practiceOnly(pass, opts)
+    let barReports = barPasses(pass)
     return {
       attempts: attempts.filter(({id}) => !practiceOnly.includes(id)),
-      practice: passPractice(pass, opts).filter(stint => practiceOnly.includes(itemId(stint))),
+      practice: passPractice(pass, opts)
+        .filter(stint => practiceOnly.includes(itemId(stint)))
+        .map(stint => {
+          let report = barReports.find(bar => bar.measure == stint.startMeasure)
+          return report ? {...stint, pass: [report.columns, report.clean, null]} : stint
+        }),
     }
   }
 

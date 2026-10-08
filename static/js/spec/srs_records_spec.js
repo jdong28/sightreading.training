@@ -7,9 +7,9 @@ import {DECK_MIGRATION_MARKER, LIBRARY_FORMAT, LIBRARY_VERSION, DB_VERSION} from
 
 import {
   itemId, newItem, itemFromSectionStats, legacyReview, itemWithPractice, validItem,
-  validReview, SELF_ASPECTS
+  validReview, SELF_ASPECTS, withPass, PASS_HISTORY,
 } from "st/srs/records"
-import {applyGrade} from "st/srs/schedule"
+import {applyGrade, replay} from "st/srs/schedule"
 
 import {openTestStore, TEST_DB_NAME} from "spec/helpers"
 
@@ -242,6 +242,71 @@ describe("spaced repetition records", function() {
       // scaffold's own pass
       let again = itemWithPractice(marked, {hits: 1, misses: 0, at: 3000})
       expect(again.deliberate).toBe(true)
+    })
+
+    it("appends a pass entry when pass is given, and nothing when it isn't", function() {
+      let item = newItem({pieceId: "p", startMeasure: 1, endMeasure: 1}, 10)
+      let withPassEntry = itemWithPractice(item, {hits: 4, misses: 0, at: 2000, pass: [4, 4, null]})
+      expect(withPassEntry.passes).toEqual([[2000, 4, 4, null]])
+
+      let withoutPass = itemWithPractice(item, {hits: 4, misses: 0, at: 2000})
+      expect(withoutPass.passes).toBeUndefined()
+    })
+  })
+
+  describe("withPass", function() {
+    it("seeds from recent on an item without passes yet, then appends, capped at PASS_HISTORY", function() {
+      let base = newItem({pieceId: "p", startMeasure: 5, endMeasure: 5}, 10)
+      let withRecent = {...base, recent: [[100, 4, 4, 3], [200, 4, 3, 2]]}
+      expect(withPass(withRecent, [300, 4, 4, 3])).toEqual([[100, 4, 4, 3], [200, 4, 3, 2], [300, 4, 4, 3]])
+
+      let withPasses = {...base, passes: [[100, 4, 4, 3]]}
+      expect(withPass(withPasses, [200, 4, 4, 3])).toEqual([[100, 4, 4, 3], [200, 4, 4, 3]])
+
+      let full = {...base, passes: Array.from({length: PASS_HISTORY}, (_, i) => [i, 4, 4, 3])}
+      let grown = withPass(full, [PASS_HISTORY, 4, 4, 3])
+      expect(grown.length).toEqual(PASS_HISTORY)
+      expect(grown[0]).toEqual([1, 4, 4, 3])
+      expect(grown[grown.length - 1]).toEqual([PASS_HISTORY, 4, 4, 3])
+    })
+  })
+
+  describe("validItem: passes", function() {
+    it("accepts a valid passes array and rejects malformed entries", function() {
+      let item = newItem({pieceId: "p", startMeasure: 1, endMeasure: 1}, 10)
+      let ok = {...item, passes: [[1, 4, 4, 3], [2, 4, 3, null], [3, null, null, 2]]}
+      expect(validItem(ok)).toBe(true)
+
+      let tooMany = {...item, passes: Array.from({length: PASS_HISTORY + 1}, (_, i) => [i, 4, 4, 3])}
+      expect(validItem(tooMany)).toBe(false)
+
+      expect(validItem({...item, passes: [[1, 4, 5, 3]]})).toBe(false) // clean > columns
+      expect(validItem({...item, passes: [[1, 4, 4]]})).toBe(false) // length 3
+      expect(validItem({...item, passes: [[1, null, 4, 3]]})).toBe(false) // mixed null
+    })
+  })
+
+  describe("passes survive scheduling and library round trips", function() {
+    it("keeps passes through replay, which only rebuilds the schedule", function() {
+      let item = {...newItem({pieceId: "p", startMeasure: 1, endMeasure: 1}, 10), passes: [[100, 4, 4, 3]]}
+      let rebuilt = replay([attempt("p", 1, 1, 500)], {item})
+      expect(rebuilt.passes).toEqual([[100, 4, 4, 3]])
+    })
+
+    it("round trips passes through a library export and import", async function() {
+      let store = await open()
+      await store.putPiece(pieceData("a", "First", 1000))
+      await store.recordAttempt({
+        item: {...practicedItem("a", 1, 1, 1000), passes: [[1000, 4, 3, 3]]},
+        review: attempt("a", 1, 1, 1000),
+      })
+
+      let file = await exportLibraryFile(store)
+      await store.close()
+      let other = await open()
+      await importLibraryFile(file.text, other)
+
+      expect(other.item("a:both:1-1").passes).toEqual([[1000, 4, 3, 3]])
     })
   })
 

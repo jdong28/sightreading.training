@@ -332,6 +332,37 @@ export function passPace(pass) {
 }
 
 /**
+ * The per-bar passes a finished pass makes, each graded from its own
+ * columns alone, never from the item it will be stored under (firstSight
+ * and usualPace, which only the stored review reads, see gradeRange): what
+ * ItemRecord#passes keeps for a single-bar range (see withPass in
+ * st/srs/records), and what the session log (MeasureCardGenerator#setOnPass)
+ * reports live. A self-graded pass carries the one grade on every bar the
+ * grade reached (pass.selfGrade.bars, every bar of the card by default),
+ * with columns and clean null, as a self pass counts none.
+ * @param {AttemptPass} pass complete
+ * @returns {{measure: number, columns: number|null, clean: number|null, grade: number}[]}
+ */
+export function barPasses(pass) {
+  if (pass.selfGrade) {
+    let {grade, bars} = pass.selfGrade
+    let selectedBars = bars ?? pass.card.measures
+    return passRanges(pass.card)
+      .filter(range => !range.bars && selectedBars.includes(range.startMeasure))
+      .map(range => ({measure: range.startMeasure, columns: null, clean: null, grade}))
+  }
+
+  if (!pass.drill) { return [] }
+
+  let {mode, columns} = passGrading(pass)
+  return passRanges(pass.card).filter(range => !range.bars).map(range => {
+    let barColumns = range.indices.map(idx => columns[idx])
+    let graded = gradeAttempt(barColumns, {mode})
+    return {measure: range.startMeasure, columns: graded.columns, clean: graded.clean, grade: graded.grade}
+  })
+}
+
+/**
  * What the grade of a pass played through reads (see passAttempts): the
  * drill it was played in, each of its columns as the grade reads it, the
  * pace hesitations are judged by (the whole card's, for each of its ranges)
@@ -387,6 +418,7 @@ export function passAttempts(pass, {pieceId, hand, at=pass.lastAt, sessionId, de
 
   let grading = passGrading(pass)
   let {mode, speed, columns: cardColumns} = grading
+  let barReports = barPasses(pass)
 
   return grading.ranges.map(({startMeasure, endMeasure, indices, bars}) => {
     let range = {pieceId, hand, startMeasure, endMeasure}
@@ -397,7 +429,11 @@ export function passAttempts(pass, {pieceId, hand, at=pass.lastAt, sessionId, de
       let collected = indices.map(idx => pass.columns[idx])
       let totals = totalsOf(collected)
 
-      let record = itemWithPractice(current, {...totals, at, deliberate})
+      let barReport = !bars && barReports.find(report => report.measure == startMeasure)
+      let record = itemWithPractice(current, {
+        ...totals, at, deliberate,
+        ...(barReport ? {pass: [barReport.columns, barReport.clean, barReport.grade]} : {}),
+      })
       record.recent = [...current.recent, [at, graded.columns, graded.clean, graded.grade]]
         .slice(-RECENT_ATTEMPTS)
       if (graded.pace != null && !graded.slips && !graded.skipped) {
@@ -512,18 +548,23 @@ export function selfAttempts(pass, {pieceId, hand, at=pass.lastAt, sessionId, de
   let {grade, slipped} = pass.selfGrade
   let selectedBars = pass.selfGrade.bars ?? pass.card.measures
   let total = selfElapsed(pass, at)
+  let barReports = barPasses(pass)
 
   return passRanges(pass.card)
     .filter(range => range.bars || selectedBars.includes(range.startMeasure))
     .map(range => {
       let itemRange = {pieceId, hand, startMeasure: range.startMeasure, endMeasure: range.endMeasure}
       let elapsedMs = selfElapsedOf(pass, range, total)
+      let barReport = !range.bars && barReports.find(report => report.measure == range.startMeasure)
 
       let build = stored => {
         let current = stored || newItem(itemRange, at)
         let firstSight = !current || current.attempts == 0 && !current.recent.length
 
-        let record = itemWithPractice(current, {hits: 0, misses: 0, at, elapsedMs, played: true, deliberate})
+        let record = itemWithPractice(current, {
+          hits: 0, misses: 0, at, elapsedMs, played: true, deliberate,
+          ...(barReport ? {pass: [barReport.columns, barReport.clean, barReport.grade]} : {}),
+        })
         record.recent = [...current.recent, [at, null, null, grade]].slice(-RECENT_ATTEMPTS)
 
         let review = {
@@ -566,6 +607,7 @@ export function selfAttempts(pass, {pieceId, hand, at=pass.lastAt, sessionId, de
 export function selfPractice(pass, {pieceId, hand, at=pass.lastAt, also, deliberate}={}) {
   if (!pass.selfGrade) { return [] }
 
+  let {grade} = pass.selfGrade
   let selectedBars = pass.selfGrade.bars ?? pass.card.measures
   let total = selfElapsed(pass, at)
 
@@ -577,12 +619,15 @@ export function selfPractice(pass, {pieceId, hand, at=pass.lastAt, also, deliber
     })
     .map(range => {
       let elapsedMs = selfElapsedOf(pass, range, total)
+      let id = itemId({pieceId, hand, startMeasure: range.startMeasure, endMeasure: range.endMeasure})
+      let demoted = !range.bars && !!also && also.includes(id)
       return {
         pieceId, hand,
         startMeasure: range.startMeasure, endMeasure: range.endMeasure,
         hits: 0, misses: 0, played: true, at,
         ...(deliberate ? {deliberate} : {}),
         ...(elapsedMs !== undefined ? {elapsedMs} : {}),
+        ...(demoted ? {pass: [null, null, grade]} : {}),
       }
     })
 }

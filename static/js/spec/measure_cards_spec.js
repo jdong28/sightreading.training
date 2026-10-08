@@ -790,6 +790,127 @@ describe("measure cards", function() {
         ])
       })
 
+      describe("pass history and setOnPass", function() {
+        // a hesitation (a column's latency, not the time on it) grades a
+        // clean first-sight pass GOOD rather than EASY, which would
+        // graduate the item off the ladder at once (applyGrade's fresh
+        // branch); GOOD puts it on the ladder, due well past this test's laps
+        let hesitant = {latency: 2000, spread: 0, early: 0, heldCredit: 0, late: null}
+
+        it("the core case: three clean laps of a single bar within 30s write one review and three clean pass entries", async function() {
+          let deck = new MeasureCardDeck(measureCards([pickupMeasures()[1]], 1), {
+            pieceId: "p", order: IN_ORDER, store,
+          })
+          let generator = track(new MeasureCardGenerator(deck, {now: () => time}))
+          let notes = new NoteList([], {generator})
+          notes.fillBuffer(6)
+          let stats = new NoteStats()
+
+          time = 1000
+          notes = hit(notes, stats)
+          time = 1500
+          notes = hit(notes, stats, hesitant)
+          time = 2000
+          notes = hit(notes, stats)
+          await generator.finishing
+          expect(store.item("p:both:1-1").state).toEqual("learning")
+
+          let playCleanLap = () => {
+            notes = hit(notes, stats)
+            notes = hit(notes, stats)
+            notes = hit(notes, stats)
+          }
+
+          time += 1000
+          playCleanLap()
+          time += 1000
+          playCleanLap()
+          await generator.finishing
+
+          let reviews = await store.reviews({pieceId: "p"})
+          expect(reviews.length).toEqual(1)
+          expect(reviews[0].itemId).toEqual("p:both:1-1")
+
+          let item = store.item("p:both:1-1")
+          expect(item.attempts).toEqual(3)
+          expect(item.passes.length).toEqual(3)
+          expect(item.passes.every(([, columns, clean]) => columns === clean && columns === 3)).toBe(true)
+        })
+
+        it("makes a non-clean pass entry when an off-schedule lap fails, which still grades it (not demoted)", async function() {
+          let deck = new MeasureCardDeck(measureCards([pickupMeasures()[1]], 1), {
+            pieceId: "p", order: IN_ORDER, store,
+          })
+          let generator = track(new MeasureCardGenerator(deck, {now: () => time}))
+          let notes = new NoteList([], {generator})
+          notes.fillBuffer(6)
+          let stats = new NoteStats()
+
+          time = 1000
+          notes = hit(notes, stats)
+          time = 1500
+          notes = hit(notes, stats, hesitant)
+          time = 2000
+          notes = hit(notes, stats)
+          await generator.finishing
+          expect(store.item("p:both:1-1").state).toEqual("learning")
+
+          // off schedule, but a slip fails it: still graded as a review
+          time = 2500
+          notes = hit(notes, stats)
+          stats.missNotes(["A4"])
+          stats.slipNotes(["A4"])
+          notes = hit(notes, stats)
+          notes = hit(notes, stats)
+          await generator.finishing
+
+          let reviews = await store.reviews({pieceId: "p"})
+          expect(reviews.length).toEqual(2)
+
+          let item = store.item("p:both:1-1")
+          expect(item.passes.length).toEqual(2)
+          expect(item.passes[1][1]).toBeGreaterThan(item.passes[1][2])
+        })
+
+        it("calls setOnPass once per finished pass with per-bar reports", async function() {
+          let {generator, notes} = generatorFor()
+          let stats = new NoteStats()
+          let reports = []
+          generator.setOnPass(report => reports.push(report))
+
+          time = 1000
+          notes = hit(notes, stats)
+          time = 1500
+          notes = hit(notes, stats)
+          time = 2000
+          notes = hit(notes, stats)
+          time = 2500
+          notes = hit(notes, stats)
+          await generator.finishing
+
+          expect(reports.length).toEqual(1)
+          let [report] = reports
+          expect([report.startMeasure, report.endMeasure, report.hand, report.readThrough, report.self])
+            .toEqual([0, 1, "both", false, false])
+          expect(report.bars.map(b => [b.measure, b.columns, b.clean])).toEqual([[0, 1, 1], [1, 3, 3]])
+        })
+
+        it("never calls setOnPass for an abandoned pass", async function() {
+          let {generator, notes} = generatorFor()
+          let stats = new NoteStats()
+          let reports = []
+          generator.setOnPass(report => reports.push(report))
+
+          time = 1000
+          notes = hit(notes, stats)
+          time = 1500
+          generator.takePractice()
+          await generator.finishing
+
+          expect(reports.length).toEqual(0)
+        })
+      })
+
       // acoustic mode: the player grades the pass themself (st/srs/self_grade)
       describe("self-graded passes", function() {
         it("writes the self reviews through the store and advances the deck", async function() {

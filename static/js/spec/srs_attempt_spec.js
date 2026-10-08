@@ -1,5 +1,6 @@
 import {
   AttemptPass, passAttempts, passPractice, passPace, columnClefs, PAUSE_MS, selfAttempts, selfPractice,
+  barPasses,
 } from "st/srs/attempt"
 import {sectionCard} from "st/measure_cards"
 import {newItem, validItem, validReview} from "st/srs/records"
@@ -381,6 +382,48 @@ describe("srs attempt", function() {
 
   // acoustic mode: the player grades the pass themself (st/srs/self_grade),
   // in place of detection
+  describe("pass history (ItemRecord.passes)", function() {
+    it("appends a pass entry to each single-bar item from a graded pass, and none to the card's own range", function() {
+      play(pass, 3000)
+      play(pass, 3500)
+      play(pass, 4000)
+      play(pass, 4500)
+
+      let [card, bar1, bar2] = attemptsOf(pass)
+      expect(card.item.passes).toBeUndefined()
+      expect(bar1.item.passes.length).toEqual(1)
+      expect(bar1.item.passes[0].slice(0, 3)).toEqual([4500, 3, 3])
+      expect(bar2.item.passes).toEqual([[4500, 1, 1, EASY]])
+    })
+
+    it("makes a non-clean entry when a column is missed, even though the card still grades", function() {
+      play(pass, 3000)
+      play(pass, 3500, {misses: [["A4"]], counted: true})
+      play(pass, 4000)
+      play(pass, 4500)
+
+      let [, bar1] = attemptsOf(pass)
+      let [, columns, clean] = bar1.item.passes[0]
+      expect(clean).toBeLessThan(columns)
+    })
+
+    it("gives barPasses one entry per bar, from the pass alone", function() {
+      play(pass, 3000)
+      play(pass, 3500)
+      play(pass, 4000)
+      play(pass, 4500)
+
+      expect(barPasses(pass)).toEqual([
+        {measure: 1, columns: 3, clean: 3, grade: jasmine.any(Number)},
+        {measure: 2, columns: 1, clean: 1, grade: EASY},
+      ])
+    })
+
+    it("gives no bar passes for a pass with no drill set, or before it is complete", function() {
+      expect(barPasses(new AttemptPass(twoBars(), {startedAt: 1000}))).toEqual([])
+    })
+  })
+
   describe("self-graded passes", function() {
     let selfAttemptsOf = (p, opts={}) => selfAttempts(p, {pieceId: "p", hand: "both", ...opts})
       .map(({id, build}) => ({id, ...build((opts.items || noItems)(id))}))
@@ -444,6 +487,31 @@ describe("srs attempt", function() {
 
       let unmarkedPractice = selfPractice(pass, {pieceId: "p", hand: "lower", at: 5000})
       expect(unmarkedPractice.every(stint => stint.deliberate === undefined)).toBe(true)
+    })
+
+    it("appends a pass entry to every bar the grade reached, and only those", function() {
+      pass.selfGrade = {grade: GOOD}
+      let [, bar1, bar2] = selfAttemptsOf(pass, {at: 5000})
+      expect(bar1.item.passes).toEqual([[5000, null, null, GOOD]])
+      expect(bar2.item.passes).toEqual([[5000, null, null, GOOD]])
+
+      let other = new AttemptPass(twoBars(), {startedAt: 1000})
+      other.drill = {mode: "self"}
+      other.selfGrade = {grade: HARD, bars: [2]}
+      let [, bar2Only] = selfAttemptsOf(other, {at: 5000})
+      expect(bar2Only.id).toEqual("p:both:2-2")
+      expect(bar2Only.item.passes).toEqual([[5000, null, null, HARD]])
+    })
+
+    it("carries the self grade onto a demoted practice stint's pass entry, via selfPractice's also", function() {
+      pass.selfGrade = {grade: HARD, bars: [2]}
+      let practice = selfPractice(pass, {pieceId: "p", hand: "both", at: 5000, also: ["p:both:1-1"]})
+      let bar1 = practice.find(stint => stint.startMeasure == 1 && stint.endMeasure == 1)
+      expect(bar1.pass).toEqual([null, null, HARD])
+
+      let withoutAlso = selfPractice(pass, {pieceId: "p", hand: "both", at: 5000})
+      let bar1NoAlso = withoutAlso.find(stint => stint.startMeasure == 1 && stint.endMeasure == 1)
+      expect(bar1NoAlso.pass).toBeUndefined()
     })
   })
 })

@@ -538,6 +538,17 @@ describe("local store", function() {
       ])
     })
 
+    it("appends a pass entry when recordSectionPractice is given one, and nothing without it", async function() {
+      let store = await open()
+      await store.recordSectionPractice({
+        pieceId: "a", startMeasure: 1, endMeasure: 1, hits: 4, misses: 0, at: 1000, pass: [4, 4, null],
+      })
+      expect(store.item("a:both:1-1").passes).toEqual([[1000, 4, 4, null]])
+
+      await store.recordSectionPractice({pieceId: "a", startMeasure: 1, endMeasure: 1, hits: 4, misses: 0, at: 2000})
+      expect(store.item("a:both:1-1").passes).toEqual([[1000, 4, 4, null]])
+    })
+
     it("runs writes in order without losing concurrent updates", async function() {
       let store = await open()
       let practice = {pieceId: "a", startMeasure: 1, endMeasure: 4, hits: 1, misses: 0}
