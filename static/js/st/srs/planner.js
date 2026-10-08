@@ -896,6 +896,93 @@ export function planNext(input) {
 }
 
 /**
+ * A preview of the queue's next entries, for the session rail's "Up next"
+ * (D9): candidates(state, {avoid:true}) in order, falling back exactly as
+ * planNext does (avoid:false, then the piece's first new measure if nothing
+ * else), without the entry on the stand (input.previous) and deduped by
+ * measure, the first count kept. Pure: input is never mutated. This is only
+ * a preview -- the queue is replanned after every card, so a later card may
+ * differ from what this showed.
+ * @param {PlanInput} input
+ * @param {number} count
+ * @returns {PlanEntry[]}
+ */
+export function planUpcoming(input, count) {
+  let state = planState(input)
+
+  let list = candidates(state, {avoid: true})
+  if (!list.length) {
+    list = candidates(state, {avoid: false})
+  }
+
+  let allResting = state.resting.size > 0 && !state.awake.length
+  let [first] = state.offerable
+  if (!list.length && first != null && !allResting) {
+    list = [{reason: NEW, slot: newSlot(state, first, introHand(state, first))}]
+  }
+
+  let seenMeasures = new Set()
+  let entries = []
+  for (let candidate of list) {
+    if (entries.length >= count) { break }
+
+    let {slot} = candidate
+    if (slot.id == input.previous) { continue }
+    if (seenMeasures.has(slot.measure)) { continue }
+    seenMeasures.add(slot.measure)
+
+    entries.push({
+      reason: candidate.reason, measure: slot.measure, itemId: slot.id, item: slot.item || null, hand: slot.hand,
+    })
+  }
+
+  return entries
+}
+
+/**
+ * The words of an "Up next" row (D9): the entry's reason in plain words,
+ * plus a flagged passage bar's role for a NEW entry, plus the hand for one
+ * played alone. Distinct from entryStatus's session-line words: RETRY reads
+ * "Again, in a moment" rather than sharing LADDER/WAIT's "Once more".
+ * @param {PlanEntry} entry
+ * @param {PassageRole} [passage] the entry's bar's role, see PlanDeck#passageOf
+ * @returns {string}
+ */
+export function upNextWords(entry, passage=null) {
+  let parts
+
+  switch (entry.reason) {
+    case NEW: {
+      parts = ["New"]
+      let words = passageWords(passage)
+      if (words) { parts.push(words) }
+      break
+    }
+    case RETRY:
+      parts = ["Again, in a moment"]
+      break
+    case REVIEW:
+    case EARLY:
+      parts = ["Review"]
+      break
+    case RUN_THROUGH:
+      parts = ["Run-through"]
+      break
+    case READ_THROUGH:
+      parts = ["Read-through"]
+      break
+    default:
+      parts = ["Once more"]
+  }
+
+  if (entry.hand != "both") {
+    parts.push(HAND_WORDS[entry.hand] || entry.hand)
+  }
+
+  return parts.join(" · ")
+}
+
+/**
  * What the programme holds for the piece before a session: the reviews due
  * and about how long they take, the new measures on offer, the bars still to
  * read through (0 outside a read-through), the target, and the measures

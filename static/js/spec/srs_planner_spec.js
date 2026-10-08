@@ -1,7 +1,8 @@
 import MersenneTwister from "mersennetwister"
 
 import {
-  planNext, planState, planSummary, studyStatus, anchoredCard, onScheduleMeasures, mostOverduePiece,
+  planNext, planState, planSummary, planUpcoming, upNextWords, studyStatus, anchoredCard,
+  onScheduleMeasures, mostOverduePiece,
   inStudy, entryStatus, entryCaption, cardCaption, blamedStaves, introduction, passagesForHand,
   pulledPassage, PASSAGE_LEVEL,
   RETRY, LADDER, REVIEW, NEW, EARLY, RUN_THROUGH, WAIT, READ_THROUGH, LADDER_CAP, IDLE_LADDER_CAP,
@@ -427,6 +428,68 @@ describe("today's programme planner", function() {
         .toEqual("1 bar left to read through")
       expect(cardCaption({reason: READ_THROUGH, measure: 1}, null, state(0)))
         .toEqual("read-through done · new bars next")
+    })
+  })
+
+  describe("up next preview", function() {
+    it("previews planNext's own first entry without duplicate measures", function() {
+      let rung = onLadder(1, {due: NOW - 1000, last: NOW - DAY})
+      let due = inReview(2, {due: NOW - DAY})
+      let early = inReview(4, {due: NOW + 5 * DAY, last: NOW - 3 * DAY})
+      let today = inReview(5, {due: NOW + 3 * DAY, last: NOW - 60 * MINUTE})
+      let rest = [3, 6, 7, 8].map(m => inReview(m, {due: NOW + 9 * DAY, last: NOW - 50 * MINUTE + m}))
+      let input = {pieceId: "p", items: [rung, due, early, today, ...rest], measures: MEASURES, now: NOW}
+
+      let upcoming = planUpcoming(input, 4)
+      expect(upcoming[0]).toEqual(jasmine.objectContaining({reason: LADDER, measure: 1}))
+      expect(upcoming.length).toBeLessThanOrEqual(4)
+      expect(new Set(upcoming.map(entry => entry.measure)).size).toEqual(upcoming.length)
+    })
+
+    it("drops the entry on the stand, even when the piece has nothing else to offer", function() {
+      let justPlayed = onLadder(1, {due: NOW - 1000, last: NOW - 20 * 1000})
+      let input = {pieceId: "p", items: [justPlayed], measures: [1], now: NOW, previous: justPlayed.id}
+
+      expect(planNext(input).entry).toEqual(jasmine.objectContaining({measure: 1}))
+      expect(planUpcoming(input, 3)).toEqual([])
+    })
+
+    it("never mutates its input", function() {
+      let items = [onLadder(1, {due: NOW - 1000}), inReview(2, {due: NOW - DAY})]
+      let input = {pieceId: "p", items, measures: MEASURES, now: NOW}
+      let before = JSON.parse(JSON.stringify(input))
+
+      planUpcoming(input, 5)
+
+      expect(JSON.parse(JSON.stringify(input))).toEqual(before)
+    })
+  })
+
+  describe("up next words", function() {
+    it("names each reason, a new bar's passage role, and a hand played alone", function() {
+      let entry = (reason, hand="both") => ({reason, measure: 11, hand})
+
+      expect(upNextWords(entry(NEW))).toEqual("New")
+      expect(upNextWords(entry(RETRY))).toEqual("Again, in a moment")
+      expect(upNextWords(entry(REVIEW))).toEqual("Review")
+      expect(upNextWords(entry(EARLY))).toEqual("Review")
+      expect(upNextWords(entry(RUN_THROUGH))).toEqual("Run-through")
+      expect(upNextWords(entry(READ_THROUGH))).toEqual("Read-through")
+      expect(upNextWords(entry(LADDER))).toEqual("Once more")
+      expect(upNextWords(entry(WAIT))).toEqual("Once more")
+
+      expect(upNextWords(entry(NEW, "upper"))).toEqual("New · right hand")
+      expect(upNextWords(entry(READ_THROUGH, "lower"))).toEqual("Read-through · left hand")
+
+      expect(upNextWords(entry(NEW), {role: "passage", start: 68, end: 73, level: 3}))
+        .toEqual("New · hardest passage")
+      expect(upNextWords(entry(NEW), {role: "lead-in", start: 68, end: 73, level: 3}))
+        .toEqual("New · lead-in to bars 68–73")
+      expect(upNextWords(entry(NEW), {role: "repeat", start: 11, end: 12, level: 2}))
+        .toEqual("New · repeats bars 11–12")
+      // a passage role is only read for a NEW entry
+      expect(upNextWords(entry(REVIEW), {role: "passage", start: 68, end: 73, level: 3}))
+        .toEqual("Review")
     })
   })
 
@@ -1355,6 +1418,43 @@ describe("today's programme on the staff", function() {
     expect(generator.cardLabel()).toEqual("measures 0–1")
     expect(generator.statusLine()).toEqual("New · bar 0")
     expect(generator.caption()).toBe(null)
+  })
+
+  it("previews the session rail's up next rows over the real deck, excluding the card on the stand", async function() {
+    let measures = Array.from({length: 20}, (_, idx) => ({number: idx + 1, columns: [["C4"]]}))
+    let seed = (measure, state, due) => {
+      let id = itemId({pieceId: piece.id, hand: "both", startMeasure: measure, endMeasure: measure})
+      return store.recordAttempt({
+        item: {
+          id, pieceId: piece.id, hand: "both", startMeasure: measure, endMeasure: measure,
+          level: "bar", state, step: 0, due, last: due - DAY, s: 5, d: 5,
+          reps: 3, lapses: 0, streak: 3, lastGrade: GOOD, hits: 3, misses: 0, attempts: 3,
+          lastPracticed: due - DAY, elapsedMs: 3000, algo: 1, createdAt: due - 10 * DAY,
+          recent: [2, 1, 0].map(n => [due - DAY - n * MINUTE, 4, 4, GOOD]),
+        },
+        review: {
+          itemId: id, pieceId: piece.id, at: due - DAY, kind: "attempt", grade: GOOD, was: state,
+          columns: 1, clean: 1, misses: 0, stuck: 0, skipped: 0, hesitations: 0, mode: "wait", algo: 1,
+        },
+      })
+    }
+
+    await seed(1, "learning", time - MINUTE)
+    await seed(2, "review", time - DAY)
+    await seed(3, "review", time - 2 * DAY)
+
+    let deck = new PlanDeck(measures, {pieceId: piece.id, cardMeasures: 1, store, now: () => time})
+    let generator = new PlanGenerator(deck, {now: () => time})
+    generators.push(generator)
+
+    expect(deck.entry).toEqual(jasmine.objectContaining({measure: 1}))
+
+    let upcoming = generator.upNext(3)
+    expect(upcoming).toEqual(deck.upNext(3))
+    expect(upcoming.length).toBeGreaterThan(0)
+    expect(upcoming.map(entry => entry.measure)).not.toContain(1)
+    expect(new Set(upcoming.map(entry => entry.measure)).size).toEqual(upcoming.length)
+    expect(upcoming.every(entry => "passage" in entry)).toBe(true)
   })
 
   it("plans the next card from the attempt just played, and says when it returns", async function() {

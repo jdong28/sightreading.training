@@ -2537,6 +2537,8 @@ export default class SightReadingPage extends React.Component {
           sessionLog={this.state.sessionLog}
           settings={this.currentSettings()}
           elapsedSeconds={this.elapsedSeconds()}
+          liveGenerator={this.currentNotesGenerator()}
+          acoustic={this.selfGraded()}
         />
       </aside>
     }

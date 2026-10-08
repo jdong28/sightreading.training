@@ -33,7 +33,7 @@ import {itemId, newItem, itemWithPractice} from "st/srs/records"
 import {scheduledAttempt} from "st/srs/schedule"
 import {passAttempts, selfAttempts} from "st/srs/attempt"
 import {
-  planNext, planState, planSummary, studyStatus, anchoredCard, introduction,
+  planNext, planState, planSummary, planUpcoming, studyStatus, anchoredCard, introduction,
   entryStatus, cardCaption, entryCaption, WAIT, READ_THROUGH, SCORE_ORDER,
 } from "st/srs/planner"
 
@@ -306,6 +306,19 @@ export class PlanDeck {
   studyStatus() {
     return studyStatus(this.planInput())
   }
+
+  /**
+   * A preview of the queue's next entries, for the session rail's "Up next"
+   * (D9), excluding the card on the stand; see planUpcoming
+   * @param {number} count
+   * @returns {Object[]} planUpcoming's entries, each with the bar's passage
+   * role attached (passageOf), for upNextWords
+   */
+  upNext(count) {
+    let previous = this.entry ? this.entry.itemId : null
+    return planUpcoming({...this.planInput(), previous}, count)
+      .map(entry => ({...entry, passage: this.passageOf(entry.measure)}))
+  }
 }
 
 // Plays the plan deck's cards. On top of the measure card generator it names
@@ -469,6 +482,11 @@ export class PlanGenerator extends MeasureCardGenerator {
   /** @returns {Object} what the programme holds, see planSummary */
   summary() {
     return this.deck.summary()
+  }
+
+  /** @returns {Object[]} the session rail's "Up next" rows, see PlanDeck#upNext */
+  upNext(count) {
+    return this.deck.upNext(count)
   }
 
   // the planner is told how the pass went before it plans the next card:
