@@ -266,6 +266,45 @@ describe("measure cards", function() {
       deck.advance()
       expect(deck.card.measures).toEqual([0, 1])
     })
+
+    describe("upNext", function() {
+      it("previews the deck's own next cards, in order, numbered from 1", function() {
+        let deck = new MeasureCardDeck(measureCards(pickupMeasures(), 1), {
+          pieceId: "p", order: IN_ORDER, store: emptyStore,
+        })
+
+        expect(deck.card.measures).toEqual([0])
+        expect(deck.upNext(5)).toEqual([
+          {measures: [1], number: 2},
+          {measures: [2], number: 3},
+        ])
+        expect(deck.upNext(1)).toEqual([{measures: [1], number: 2}])
+      })
+
+      it("has nothing to preview in random order", function() {
+        let deck = new MeasureCardDeck(measureCards(pickupMeasures(), 1), {
+          pieceId: "p", order: RANDOM_ORDER,
+          store: {...emptyStore, items: () => [], schedulerSettings: () => DEFAULT_SCHEDULER_SETTINGS},
+        })
+        expect(deck.upNext(5)).toEqual([])
+      })
+
+      it("has nothing to preview with a single playable card", function() {
+        let deck = new MeasureCardDeck(measureCards(pickupMeasures(), 3), {
+          pieceId: "p", order: IN_ORDER, store: emptyStore,
+        })
+        expect(deck.playableCount).toEqual(1)
+        expect(deck.upNext(5)).toEqual([])
+      })
+
+      it("is the same preview through the generator", function() {
+        let deck = new MeasureCardDeck(measureCards(pickupMeasures(), 1), {
+          pieceId: "p", order: IN_ORDER, store: emptyStore,
+        })
+        let generator = new MeasureCardGenerator(deck)
+        expect(generator.upNext(5)).toEqual(deck.upNext(5))
+      })
+    })
   })
 
   describe("pace caption", function() {

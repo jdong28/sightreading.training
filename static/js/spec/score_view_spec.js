@@ -183,7 +183,7 @@ describe("ScoreView (the score-first page's at-rest view)", function() {
       root = createRoot(container)
       root.render(React.createElement(ScoreView, {
         settings: {piece: piece.id, hand: BOTH_HANDS}, setSettings: noop,
-        begin: noop, playOn: noop, dismissEnded: noop, ended,
+        begin: noop, playOn: noop, dismissEnded: noop, ended, loadEngines: noop,
       }))
     })
     flushSync(() => {})

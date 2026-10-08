@@ -15,7 +15,6 @@ import {flagsInForce} from "st/difficulty/records"
 import {pieceSong} from "st/sheet_music_deck"
 import {sheetMusicPiece, PROGRAMME_PRACTICE, introductionOrder, orderOffered} from "st/data"
 import {upNextWords, READ_FIRST, HARDEST_FIRST, SCORE_ORDER} from "st/srs/planner"
-import {RANDOM_ORDER} from "st/measure_cards"
 import {SELF_GRADES} from "st/srs/self_grade"
 import {TROUBLE_BELOW} from "st/bar_progress"
 
@@ -91,26 +90,17 @@ export class SessionRail extends React.Component {
       }))
     }
 
-    let deck = liveGenerator.deck
-    if (!deck || deck.order == RANDOM_ORDER || deck.cards.length <= 1) { return [] }
+    let entries = liveGenerator.upNext ? liveGenerator.upNext(3) : []
+    if (!entries.length) { return [] }
 
-    let rows = []
-    for (let offset = 1; offset <= 3; offset += 1) {
-      let idx = deck.index == null ? null : deck.index + offset
-      if (idx == null || idx >= deck.cards.length) { break }
-
-      let card = deck.cards[idx]
-      if (!card.columns.length) { continue }
-
-      rows.push({
-        key: idx,
-        left: barsHeading(card.measures[0], card.measures[card.measures.length - 1]),
-        right: `Card ${idx + 1} of ${deck.cards.length}`,
-        measures: card.measures,
-        flagged: false,
-      })
-    }
-    return rows
+    let total = liveGenerator.deck ? liveGenerator.deck.cards.length : entries.length
+    return entries.map(entry => ({
+      key: entry.number,
+      left: barsHeading(entry.measures[0], entry.measures[entry.measures.length - 1]),
+      right: `Card ${entry.number} of ${total}`,
+      measures: entry.measures,
+      flagged: false,
+    }))
   }
 
   // the bars a pass in the log touched, for the piece-position grid's

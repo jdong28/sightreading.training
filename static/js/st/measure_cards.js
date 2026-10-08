@@ -301,6 +301,28 @@ export class MeasureCardDeck {
       order: this.order, weights, random: this.random,
     })
   }
+
+  /**
+   * A preview of the deck's next cards, in order, for the session rail's
+   * "Up next" (D9): up to count cards after the one showing, each with its
+   * own number (currentCardNumber's own 1-based scheme). Empty for a deck
+   * walked in random order, or with one playable card (the whole section as
+   * one card), where there is nothing to preview. Pure: never advances the
+   * deck.
+   * @param {number} count
+   * @returns {{measures: number[], number: number}[]}
+   */
+  upNext(count) {
+    if (this.order == RANDOM_ORDER || this.playableCount <= 1) { return [] }
+
+    let entries = []
+    for (let idx = (this.index ?? -1) + 1; idx < this.cards.length && entries.length < count; idx++) {
+      let card = this.cards[idx]
+      if (!card.columns.length) { continue }
+      entries.push({measures: card.measures, number: idx + 1})
+    }
+    return entries
+  }
 }
 
 // the generator whose columns are on the staff, told about hits and misses
@@ -401,6 +423,11 @@ export class MeasureCardGenerator {
   /** @returns {MeasureCard|null} the card at the head of the staff */
   currentCard() {
     return this.deck.card
+  }
+
+  /** @returns {Object[]} the session rail's "Up next" rows, see MeasureCardDeck#upNext */
+  upNext(count) {
+    return this.deck.upNext(count)
   }
 
   /**
