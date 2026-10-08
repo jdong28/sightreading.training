@@ -78,6 +78,10 @@ In today's programme, a piece with flagged passages is read through once first, 
 
 **Review** opens the review on the right, where an instructor decides what stands: **Accept**, **Edit** or **Dismiss** each flag, and **Restore** a dismissed one. **Add a passage**, under **Mark a passage**, marks a passage the analysis missed: drag across the strip, or tap its first bar then its last, then fill in the bars, why it is hard and how to practise it. A rename stays alongside the analysis's own name, which **Use that name** brings back; nothing here is ever overwritten by a later analysis. A passage can also be ticked **Start this passage hands separately** in today's programme, right hand first for one of both hands, until the hand holds — otherwise only a bar that fails on one hand goes hands apart, as it always has. **Your trouble spots**, from your own practice records, are listed under the glance and in the review as suggestions only; **Flag these bars** turns one into a flag waiting in the review. The whole decision log can be sent to a student as a **flags file** (**Export flags file**, under **Send to your student**), which **Open a flags file** reads back in on either side, re-anchoring every decision to the bars as they are now — a pickup gained or lost, a passage written out instead of repeated, or a few corrected notes don't lose it. The deck's own **Open flags file** opens one straight onto the piece it matches, or the closest one in the deck.
 
+### How you're doing on a bar
+
+At rest, click a bar of the score to see, at the top of the right column, how often and when you played it, your last grades and your accuracy, from both keyboard and acoustic practice.
+
 ### Practising on an acoustic piano
 
 If you play an acoustic piano, there is nothing for the app to listen to. Open the device setup from the instrument button in the header and pick **Acoustic piano** under **Instrument**. The sheet music page then stops detecting notes, while the Staff exercises keep listening as before: play the card on the screen, then grade the pass yourself with the row under the staff, by tapping it or with keys **1**–**4**:

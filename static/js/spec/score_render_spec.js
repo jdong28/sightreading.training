@@ -4,6 +4,7 @@ import {flushSync} from "react-dom"
 
 import {loadScoreEngines, enginesURL} from "st/score_render/load"
 import {shadeBands} from "st/score_render/card_shade"
+import {barAt} from "st/score_render/card_hit"
 import {
   ScoreEnginesPage, MISSING_SOURCE_MESSAGE, ENGINE_ORDER,
 } from "st/components/pages/score_engines_page"
@@ -381,6 +382,47 @@ describe("shadeBands", function() {
 
   it("skips a shade matching no drawn measure", function() {
     expect(shadeBands(measures, [{id: "z", from: 20, to: 21, level: 1, on: true, label: "Z"}])).toEqual([])
+  })
+})
+
+describe("barAt", function() {
+  // the same fixture as shadeBands above: two systems of 4 bars each
+  // (numbers 1-4 on y=100, 5-8 on y=300), 50px apart
+  let measures = Array.from({length: 8}, (_, idx) => ({
+    index: idx,
+    number: idx + 1,
+    box: {x: (idx % 4) * 50, y: idx < 4 ? 100 : 300, width: 50, height: 80},
+  }))
+
+  it("gives the bar of a point inside its box", function() {
+    expect(barAt(measures, 75, 140)).toEqual(2)
+    expect(barAt(measures, 25, 140)).toEqual(1)
+    expect(barAt(measures, 175, 340)).toEqual(8)
+  })
+
+  it("gives the bar on the left of a shared barline", function() {
+    expect(barAt(measures, 50, 140)).toEqual(1)
+  })
+
+  it("gives the system's bar within one box height above it, nothing beyond that", function() {
+    expect(barAt(measures, 75, 30)).toEqual(2) // 70px above
+    expect(barAt(measures, 75, 15)).toEqual(null) // 85px above
+  })
+
+  it("gives the nearer system's bar between two systems", function() {
+    expect(barAt(measures, 75, 230)).toEqual(2)
+    expect(barAt(measures, 75, 270)).toEqual(6)
+  })
+
+  it("gives nothing left or right of every box, or with no measures", function() {
+    expect(barAt(measures, -5, 140)).toEqual(null)
+    expect(barAt(measures, 205, 140)).toEqual(null)
+    expect(barAt([], 75, 140)).toEqual(null)
+  })
+
+  it("gives a split bar's number at its own later position", function() {
+    let split = [...measures, {index: 8, number: 4, box: {x: 200, y: 300, width: 50, height: 80}}]
+    expect(barAt(split, 225, 340)).toEqual(4)
   })
 })
 
