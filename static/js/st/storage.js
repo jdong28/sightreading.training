@@ -1171,6 +1171,10 @@ export class LocalStore {
    * recorded none (st/srs/attempt)
    * @param {boolean} [practice.deliberate] a hand alone played by the
    * player's choice, which marks its item (ItemRecord#deliberate)
+   * @param {Array} [practice.pass] a single-bar range's pass tuple
+   * ([columns, clean, grade|null]) for the item's passes history (see
+   * ItemRecord#passes, itemWithPractice), eg. a bar demoted from an attempt
+   * to practice by the off-schedule rule (st/measure_cards#passRecords)
    * @returns {Promise<SectionStatsRecord>} the section stats of the range
    */
   recordSectionPractice(practice) {
@@ -1184,10 +1188,10 @@ export class LocalStore {
   }
 
   // the item of the practiced range with the practice added
-  practicedItem({pieceId, hand="both", startMeasure, endMeasure, hits, misses, at=Date.now(), elapsedMs, played, deliberate}) {
+  practicedItem({pieceId, hand="both", startMeasure, endMeasure, hits, misses, at=Date.now(), elapsedMs, played, deliberate, pass}) {
     let range = {pieceId, hand, startMeasure, endMeasure}
     let current = this.item(itemId(range)) || newItem(range, at)
-    let item = itemWithPractice(current, {hits, misses, at, elapsedMs, played, deliberate})
+    let item = itemWithPractice(current, {hits, misses, at, elapsedMs, played, deliberate, pass})
 
     if (!validItem(item)) {
       throw new Error("Not a valid section practice")

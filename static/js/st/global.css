@@ -36,6 +36,25 @@
     --salon-ghost-ink: #3d3629;
     --salon-nav-ink: #544e3e;
 
+    /* the score-first sheet music page (docs/design/salon-de-chopin.md §6) */
+    --salon-gilt-deep: #7a5326;
+    --salon-gilt-mid: #b89a63;
+    --salon-pip-rule: #a8956f;
+    --salon-gilt-ink: #8a6a36;
+    --salon-ink-faint: #8f8676;
+    --salon-learn-0: rgba(168, 130, 74, .07);
+    --salon-learn-1: rgba(168, 130, 74, .17);
+    --salon-learn-2: rgba(168, 130, 74, .29);
+    --salon-learn-3: rgba(168, 130, 74, .44);
+    --salon-mark-clean: rgba(201, 180, 140, .42);
+    --salon-mark-near: rgba(238, 227, 207, .75);
+    --salon-mark-trouble: rgba(220, 160, 150, .34);
+    --salon-heat-tint-1: rgba(230, 214, 184, .55);
+    --salon-heat-tint-2: rgba(213, 187, 140, .45);
+    --salon-heat-tint-3: rgba(185, 138, 92, .32);
+    --salon-heat-tint-4: rgba(125, 44, 44, .20);
+    --salon-selected-tint: rgba(125, 44, 44, .10);
+
     --salon-double-rule: 3px double var(--salon-rule-strong);
     --salon-hairline: 1px solid var(--salon-rule-light);
 

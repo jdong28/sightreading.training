@@ -149,27 +149,13 @@ Main: `max-width: 1060px`, `grid-template-columns: minmax(0,1fr) 260px`, `gap: 2
 Session is **endless** — it runs until the user presses Rest; there is no note or time target.
 `accuracy = readCount / (readCount + misses)`.
 
-**Implementation note (sheet music page):** on `/sheet-music`, the rail at rest carries the
-programme's own plates (a clicked bar's own stats, "Tonight's programme" and the piece's flagged
-passages) in place of the engraving, so the card being practised stays on screen without scrolling;
-clicking a bar of the trainer's own score card, at rest, opens its stats at the head of the rail —
-how often and when it was played, its last few grades, note accuracy, and the trouble-spot sentence,
-one row per hand, from both MIDI and acoustic practice alike; the engraving stays
-whenever those plates have nothing to show (no piece picked, pasted notation, a piece with nothing
-flagged and nothing left in the review), which the stylesheet decides from the empty slot. The score
-page's trainer is wider than the default (`max-width: 1240px`) and its rail is
-`clamp(260px, 26vw, 340px)` rather than the fixed 260px. The flagged passages' shaded score opens on
-demand in a right-hand pane, drawn only while it is open. The pane is its own scroller and the score
-is the tall thing in it, so the passage's detail — with the "tap a shaded passage" legend as its
-last line — stays out of that scroll: it sticks below the pane's header beside the score, and stacks
-above it in a pane too narrow for two columns. Every side pane pins its header, so the title and the
-close button stay on screen however far the pane has scrolled. A third right pane, "Review the
-passages," holds the instructor's review (accept, edit, dismiss, restore, mark a passage, the
-hands-separately tick, trouble spots, and the flags file); only one right pane is ever open at a
-time, so opening it closes the shaded score pane and the other way round. The rail's plate itself
-now stays up — a compact glance, the engraving otherwise untouched — whenever the review still holds
-something even with no flag in force: a dismissal, a flag the fingerprint can't place without
-checking, or a trouble-spot suggestion, not only when the analysis flagged something.
+**Implementation note (sheet music page):** `/sheet-music` no longer uses this screen's own left
+drawer, right rail or Begin/Rest transport at rest — see §6, "Sheet music, score first", for its
+current design (the score itself replacing the trainer's grid at rest, a "Tonight's session" setup
+pane in place of the drawer, Rest pausing in place rather than ending). This screen's trainer
+(drawer, staff plate, transport, stat cards, right rail, feedback states, keyboard footer) still
+describes `/sheet-music` once a session is running, and every other page that shares the trainer
+(the exercises page above all).
 
 ### 4. Session summary — `screens/salon-summary/SalonSummary.dc.html`
 
@@ -196,10 +182,10 @@ self-graded practice), the three live acoustic cards Elapsed/Passes/Clean. The c
 to each trouble row is its miss count. "Practise these notes" switches the trainer to Random
 notes focused on the weak rows alone, the ones drawn in oxblood
 (`SightReadingPage#practiseNotes`), and is hidden when nothing shown is weak or on a page whose
-generator can't take a seed (the sheet music generator, so the score page never shows it). "New
-programme" is a link to `/setup` on the exercises page, and on the score page closes the card and
-opens its own drawer instead. "See all progress →" links to `/stats` until the progress screen
-(a later step) replaces it.
+generator can't take a seed (the sheet music generator). "New programme" is a link to `/setup` on
+the exercises page. "See all progress →" links to `/stats` until the progress screen (a later step)
+replaces it. This card is never shown on the sheet music page (§6): a restPauses page ends a
+session to the score itself, with its own ended strip, instead.
 
 ### 5. Progress — `screens/salon-progress/SalonProgress.dc.html`
 
@@ -237,6 +223,94 @@ note merges every spelling of a pitch class (`parseNoteOffset`) before taking a 
 hit and a miss of the same note can arrive under different spellings. A backend account
 (`currentUser`) still sees the existing "Daily stats" page, unchanged; the route choice is
 `statsPageFor` in `st/components/pages/stats.jsx`.
+
+### 6. Sheet music, score first — Claude Design canvas "Score-First Sheet Music Page"
+(`https://claude.ai/artifact/CXadj5P7neXEb6sFQ4WRNy`, version `1791445219-6dee`, "the settled
+design")
+
+**Purpose:** rebuild `/sheet-music` so the piece's own engraved score, not a drawer, is the page:
+at rest the score replaces the trainer's grid entirely, beside a setup pane that replaces the old
+Programme drawer and rail plates (§3's implementation note). In session the score gives way to the
+usual card, transport and stat cards, with a session-progress rail in place of the default one.
+Ending a session returns to the score with a strip marking what was just played. The canvas is four
+artboards in flow order (`Main`, `BarStats`, `Session`, `SessionEnded`); the fixture piece is
+`tools/fingerings/tests/fixture/score.musicxml` (16 bars, grand staff, C major), and every number
+shown is sample data.
+
+**Owner's build notes** (the canvas's own `notes.build` sticky, verbatim):
+1. One layout throughout: score on the left, session setup pane always on the right.
+2. Learnedness: a clean pass is 100% accuracy. Three clean passes in a row = learned; a miss resets
+   the count. Bars are tinted in four gold steps (0, 1, 2, 3 clean passes) with a small label above
+   each played bar. Unplayed bars have no tint.
+3. Clicking a bar opens a pop-up anchored to that bar (latest, best, accuracy for each time played,
+   progress to learned, Practise). The setup pane does not change.
+4. In a session, Rest only pauses. End session is a separate button and returns to the score view.
+5. After End session, a strip above the score shows the session accuracy, and each bar played is
+   tinted and labelled with its accuracy. Done dismisses it back to the learnedness view. There is
+   no full-screen summary.
+6. Placeholders to confirm: the 80% line between "nearly" and "trouble", and every number shown.
+
+**Score** (`Main.dc.html`, `components/score_sheet.jsx` + `components/sight_reading/score_view.jsx`):
+an engraving engine (OSMD by default) draws the whole piece once at the plate's width, cut into
+pages of whole systems that fit the viewport (`score_render/score_pages.ts`); Previous/Next page
+buttons below. A bar overlay button sits over every printed measure for the tint, label and click.
+The toolbar reads "Page *n* of *m* · bars *a*–*b*" and carries the shade group: Learnedness (the
+default), Score difficulty, Off, plus This session once a session has ended (see SessionEnded
+below). A legend beneath explains the active shade; under Score difficulty it also carries "Review
+the passages", opening the `ReviewPane` the owner already reviews proposed difficulty flags in.
+Without a stored source, or if the engine fails to draw, the plate falls back to a grid of one
+44px-square button per bar, tinted and labelled the same way, with a note explaining why
+(`SCORE_VIEW_NO_SOURCE` / `SCORE_VIEW_FAILED`).
+
+**Learnedness** (build note 2): a bar's learnedness is its pass history under the setup pane's hand,
+oldest first — the count of clean passes at the end of it, stopping at the first pass that isn't
+clean, capped at 3 (`st/bar_progress.js`'s `learnedness`, read from `ItemRecord.passes`, independent
+of the FSRS scheduler's own graduated state). 0/1/2 are labelled "0 of 3"/"1 of 3"/"2 of 3" in the
+`--salon-learn-0/1/2` tints; 3 is "Learned" in `--salon-learn-3`. An unplayed bar gets neither tint
+nor label.
+
+**Bar pop-up** (`BarStats.dc.html`, `components/sight_reading/bar_popup.jsx`, build note 3):
+clicking a bar selects it (an oxblood frame and `--salon-selected-tint` fill) and opens a pop-up
+anchored to it — left or right of the bar by which half of the page it's in, below it or above it
+when its system is the page's last of two or more — showing, one row per hand: how many times
+played, when last, the recent-grades sentence, and accuracy or the acoustic "N of M clean"
+equivalent, plus a "Practise bar *n*" pill that sets the section to that bar alone and begins. ×, a
+click elsewhere, Escape or turning the page closes it. The setup pane is unchanged while it's open.
+
+**Setup pane, "Tonight's session"** (`components/sight_reading/setup_pane.jsx`): replaces the old
+Programme drawer and rail plates, always in the right column at rest (there is no drawer and no
+Programme pill: `Drawer: null`). Groups, in order: Piece (the piece select, Remove, the import/
+export/library/flags links, moved unchanged from the old drawer's deck handlers), Session (the
+Today's programme / Free practice pills; the programme's Due/New/Learned figures and order picks,
+or free practice's section and card-order picks), Cards (Hand, Bars per card) and Tempo (Wait/
+Scroll, speed, Keep tempo); a footer states the session in one italic line and begins it. Settings
+apply as they're picked; there is no separate apply step.
+
+**Session** (`Session.dc.html`, build note 4): Begin clears the strip and the session log and shows
+the trainer's own card, transport and stat cards, with a `SessionRail` ("This session") beside it in
+place of the default rail — the session's clock and progress through the piece, the programme's "Up
+next" (or free practice's next few cards), and "This evening"'s last few passes. Rest pauses in
+place rather than ending: the clock stops, the card waits where it is, and a banner offers Resume or
+End session; Resume continues the same pass from the same point. Hotkeys Space and 1–4 are ignored
+while the page shows the score (`state.view == "score"`), never while a session is paused or
+running.
+
+**Session ended** (`SessionEnded.dc.html`, build note 5): End session (running or paused) returns to
+the score with a strip above it — the session's accuracy (or, for a sitting with nothing detected,
+its clean-passes figure), a comparison with the last session on the same piece, and how long and how
+many bars were played — plus Play on (resumes, the time since End session counted as paused) and
+Done (dismisses the strip alone). Every bar played that session is tinted and labelled by its
+accuracy under the This session shade (`--salon-mark-clean/near/trouble`; the 80% line between
+"nearly" and "trouble" per build note 6's placeholder), which the toolbar offers only while `ended`
+is set. There is no full-screen summary dialog on this page (§4's implementation note): a restPauses
+page like this one never opens `SessionSummary`.
+
+**New tokens** (`static/js/st/global.css`, alongside the existing palette): `--salon-gilt-deep`,
+`--salon-gilt-mid`, `--salon-pip-rule`, `--salon-gilt-ink` and `--salon-ink-faint` for the setup
+pane and bar labels; `--salon-learn-0/1/2/3` for the learnedness tints and `--salon-mark-clean/
+near/trouble` for the session shade, both described above; `--salon-heat-tint-1..4` for the Score
+difficulty shade (reusing the existing heat ramp's steps as translucent fills over the engraving);
+`--salon-selected-tint` for a clicked bar's fill.
 
 ## Interactions & behaviour
 

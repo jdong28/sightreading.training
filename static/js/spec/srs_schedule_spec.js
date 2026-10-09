@@ -416,6 +416,16 @@ describe("spaced repetition scheduler", function() {
       expect(scheduleFields).toEqual(unmarked)
     })
 
+    it("keeps an item's passes through replay, untouched by the schedule", function() {
+      let id = "p:both:3-3"
+      let passes = [[now - MINUTE, 4, 4, GOOD], [now, 4, 3, HARD]]
+      let log = [{itemId: id, at: now, pieceId: "p", kind: "attempt", grade: GOOD, was: "new",
+        columns: 4, clean: 4, misses: 0, stuck: 0, skipped: 0, hesitations: 0, mode: "wait", algo: 1}]
+
+      let replayed = replay(log, {item: {...bar(), id, passes}})
+      expect(replayed.passes).toEqual(passes)
+    })
+
     it("counts a self entry's share missed from its grade alone, a detected entry as before", function() {
       let selfEntry = grade => ({...bar(), recent: [[now, null, null, grade]]})
       expect(recentMissRate(selfEntry(AGAIN), now)).toBeCloseTo(1, 9)

@@ -33,27 +33,42 @@
         }
     }
 
-    /* the score page: a wider trainer and rail, so its plates (moved into
-       the rail) fit without pushing the card below the fold. Both
-       overrides are restated here, at the same specificity as .fullscreen's
-       and .trainer_grid's own media rule but with an extra class, so this
-       block still loses to fullscreen collapsing to one column and to the
-       narrow-viewport stack */
-    &.wide_rail {
+    /* the score-first score page's frame (design §D1): a wider trainer,
+       and flex columns (999 1 640px / 1 1 340px) in place of the grid, in
+       both the score view and the session view, so their rails share one
+       layout. Restated here, at the same specificity as .fullscreen's own
+       rule but with an extra class, so this block still loses to fullscreen
+       collapsing to one column */
+    &.score_layout {
         .trainer {
-            max-width: 1240px;
-        }
+            max-width: 1400px;
+            padding: 22px 34px 48px;
 
-        .trainer_grid {
-            grid-template-columns: minmax(0, 1fr) clamp(260px, 26vw, 340px);
-
-            @media (max-width: 860px) {
-                grid-template-columns: minmax(0, 1fr);
+            @media (max-width: 600px) {
+                padding: 20px 16px 24px;
             }
         }
 
+        .trainer_grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 22px;
+            align-items: flex-start;
+        }
+
+        .trainer_main {
+            flex: 999 1 640px;
+            min-width: 0;
+        }
+
+        .rail {
+            flex: 1 1 340px;
+            max-width: 420px;
+            min-width: 0;
+        }
+
         &.fullscreen .trainer_grid {
-            grid-template-columns: minmax(0, 1fr);
+            display: block;
         }
     }
 
@@ -196,6 +211,47 @@
     margin: 0;
     padding: 0 0 0 12px;
     background: transparent;
+    transition: opacity .2s ease;
+
+    /* restPauses pages (the score page), while paused (design §D8) */
+    &.paused {
+        opacity: .55;
+    }
+}
+
+/* the "At rest" banner inside the staff plate, below the card, on a
+   restPauses page while paused (design §D8) */
+.paused_banner {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    background: var(--salon-paper-warm);
+    border: var(--salon-hairline);
+    border-top: var(--salon-double-rule);
+    padding: 12px 16px;
+    margin-top: 14px;
+}
+
+.paused_text {
+    flex: 1;
+    min-width: 200px;
+    margin: 0;
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 16px;
+    color: var(--salon-ink-soft);
+}
+
+.resume_pill.resume_pill {
+    min-height: 40px;
+}
+
+.end_session_pill.end_session_pill {
+    padding: 0 20px;
+    background: var(--salon-paper);
+    border: 1px solid var(--salon-oxblood);
+    color: var(--salon-oxblood);
 }
 
 .plate_note {
@@ -271,25 +327,6 @@
     flex-direction: column;
     gap: 18px;
     min-width: 0;
-}
-
-/* the head of the rail: the programme's own plates (see the score page's
-   Rail), which replace the engraving below only while they draw something.
-   A Rail whose plates all render nothing leaves this empty, and knows
-   nothing of the fallback */
-.rail_top {
-    display: flex;
-    flex-direction: column;
-    gap: 18px;
-    min-width: 0;
-}
-
-.rail_top:empty {
-    display: none;
-}
-
-.rail_top:not(:empty) + .engraving {
-    display: none;
 }
 
 .engraving {

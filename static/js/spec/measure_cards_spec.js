@@ -482,6 +482,8 @@ describe("measure cards", function() {
           ["p:both:0-1", AGAIN, 1],
           ["p:both:1-1", AGAIN, 1],
         ])
+        // a skipped column's bar is never clean, so its pass tuple isn't either
+        expect(store.item("p:both:1-1").passes).toEqual([[1000, 3, 2, AGAIN]])
       })
 
       it("counts every slip for the grade and a column missed once for the totals", async function() {
@@ -562,6 +564,51 @@ describe("measure cards", function() {
         let items = store.items("p")
         expect(items.find(item => item.id == "p:both:0-2").recent.map(entry => entry[0])).toEqual([2500, 5000])
         expect(items.find(item => item.id == "p:both:0-0").hits).toEqual(2)
+      })
+
+      it("tells setOnPass's listener about a finished pass's bars, never an abandoned one", async function() {
+        let deck = new MeasureCardDeck(measureCards(pickupMeasures(), 3), {
+          pieceId: "p", order: IN_ORDER, store,
+        })
+        let generator = track(new MeasureCardGenerator(deck, {now: () => time}))
+        let notes = new NoteList([], {generator})
+        notes.fillBuffer(6)
+        let stats = new NoteStats()
+
+        let reported = []
+        generator.setOnPass(report => reported.push(report))
+
+        time = 500
+        notes = hit(notes, stats)
+        // abandoned part way through: never reported, nor is the continued
+        // remainder that finishes the rest of this same card (neither is
+        // ever graded)
+        generator.takePractice()
+
+        for (let t of [1000, 1500, 2000, 2500]) {
+          time = t
+          notes = hit(notes, stats)
+        }
+        await generator.finishing
+        expect(reported.length).toEqual(0)
+
+        // the card loops (its one card covers the whole pool): a fresh pass
+        // played clean from its first column is reported
+        for (let t of [3000, 3500, 4000, 4500, 5000]) {
+          time = t
+          notes = hit(notes, stats)
+        }
+        await generator.finishing
+
+        expect(reported.length).toEqual(1)
+        expect(reported[0]).toEqual({
+          at: 5000, startMeasure: 0, endMeasure: 2, hand: "both", readThrough: false, self: false, grade: EASY,
+          bars: [
+            {measure: 0, columns: 1, clean: 1, grade: EASY},
+            {measure: 1, columns: 3, clean: 3, grade: EASY},
+            {measure: 2, columns: 1, clean: 1, grade: EASY},
+          ],
+        })
       })
 
       // D4(c): the trainer's "Keep tempo" setting, like a change of mode
@@ -664,10 +711,19 @@ describe("measure cards", function() {
           state: "learning", step: 1, due: rung.due, reps: rung.reps, hits: rung.hits + 6, lastPracticed: time,
         }))
 
+        // the core case (score-first design §C6): three clean laps, one
+        // review, but three clean entries in the bar's passes history (the
+        // off-schedule ones demoted to practice, with no grade of their own)
+        expect(bar().passes).toEqual([[2000, 3, 3, GOOD], [22000, 3, 3, null], [42000, 3, 3, null]])
+        expect(bar().passes.every(([, columns, clean]) => clean == columns)).toBe(true)
+
         // a failed pass is graded, back to the first rung
         await lap(60 * 1000, {slip: true})
         expect(await barGrades()).toEqual([GOOD, AGAIN])
         expect([bar().state, bar().step]).toEqual(["learning", 0])
+
+        // the miss resets the clean streak: a non-clean entry appended
+        expect(bar().passes[3]).toEqual([62000, 3, 2, AGAIN])
 
         // and the pass its rung comes due is graded
         await lap(bar().due + 1000)

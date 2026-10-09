@@ -1,0 +1,163 @@
+/* The passage pane (score-first design §F), moved from passages_plate.module
+   .css: a flagged passage's detail and the flagged list, stacked */
+
+.body {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+}
+
+.compact_plate {
+    min-width: 0;
+}
+
+.level_label {
+    &.level_1 { color: var(--salon-ink-muted); }
+    &.level_2 { color: var(--salon-gilt); }
+    &.level_3 { color: var(--salon-oxblood); }
+}
+
+.flag_title {
+    font-family: var(--font-display);
+    font-size: 22px;
+    font-style: italic;
+    margin: 0 0 2px;
+    color: var(--salon-ink);
+}
+
+.flag_sub {
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 15px;
+    color: var(--salon-ink-soft);
+    margin-bottom: 14px;
+}
+
+.given_title, .moved_note {
+    font-size: 12px;
+    color: var(--salon-ink-muted);
+    margin: -10px 0 10px;
+}
+
+.status_mark {
+    font-family: var(--font-ui);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .04em;
+    color: var(--salon-gilt);
+    margin: -10px 0 10px;
+}
+
+.reasons {
+    list-style: none;
+    margin: 0 0 14px;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    font-size: 14px;
+    color: var(--salon-ink);
+}
+
+.source_chip {
+    display: inline-block;
+    font-family: var(--font-ui);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--salon-ink-muted);
+    border: 1px solid var(--salon-rule);
+    border-radius: 2px;
+    padding: 1px 5px;
+    margin-right: 8px;
+    vertical-align: middle;
+}
+
+.tip {
+    background: var(--salon-paper-warm);
+    border: var(--salon-hairline);
+    border-radius: 2px;
+    padding: 10px 12px;
+    margin-bottom: 16px;
+
+    p {
+        margin: 2px 0 0;
+        font-size: 13px;
+        color: var(--salon-ink-soft);
+    }
+}
+
+.tip_label {
+    font-family: var(--font-ui);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .15em;
+    text-transform: uppercase;
+    color: var(--salon-ink-muted);
+}
+
+.actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.small_pill {
+    font-size: 12px;
+    padding: 7px 14px;
+}
+
+.flag_list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+
+    li {
+        border-bottom: var(--salon-hairline);
+
+        &:last-child { border-bottom: none; }
+
+        &.on button {
+            color: var(--salon-oxblood);
+        }
+    }
+
+    button {
+        display: flex;
+        align-items: baseline;
+        gap: 10px;
+        width: 100%;
+        background: none;
+        border: none;
+        padding: 9px 2px;
+        font-family: var(--font-ui);
+        font-size: 13px;
+        color: var(--salon-ink);
+        cursor: pointer;
+        text-align: left;
+
+        &:hover { color: var(--salon-oxblood); }
+    }
+}
+
+.list_num {
+    font-family: var(--font-display);
+    font-style: italic;
+    min-width: 1.6em;
+
+    &.level_1 { color: var(--salon-ink-muted); }
+    &.level_2 { color: var(--salon-gilt); }
+    &.level_3 { color: var(--salon-oxblood); }
+}
+
+.list_title {
+    flex: 1;
+}
+
+.list_bars {
+    color: var(--salon-ink-muted);
+    font-size: 12px;
+}

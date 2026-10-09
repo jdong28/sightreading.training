@@ -7,7 +7,7 @@ import {DECK_MIGRATION_MARKER, LIBRARY_FORMAT, LIBRARY_VERSION, DB_VERSION} from
 
 import {
   itemId, newItem, itemFromSectionStats, legacyReview, itemWithPractice, validItem,
-  validReview, SELF_ASPECTS
+  validReview, SELF_ASPECTS, withPass, PASS_HISTORY
 } from "st/srs/records"
 import {applyGrade} from "st/srs/schedule"
 
@@ -242,6 +242,54 @@ describe("spaced repetition records", function() {
       // scaffold's own pass
       let again = itemWithPractice(marked, {hits: 1, misses: 0, at: 3000})
       expect(again.deliberate).toBe(true)
+    })
+
+    it("appends a pass tuple to passes, seeded from recent on the first write", function() {
+      let item = {
+        ...newItem({pieceId: "p", startMeasure: 1, endMeasure: 1}, 10),
+        recent: [[1, 4, 4, 3], [2, 4, 3, 2]],
+      }
+
+      let written = itemWithPractice(item, {hits: 4, misses: 0, at: 3000, pass: [4, 4, null]})
+      expect(written.passes).toEqual([[1, 4, 4, 3], [2, 4, 3, 2], [3000, 4, 4, null]])
+
+      // the next write appends to passes, not recent again
+      let again = itemWithPractice(written, {hits: 0, misses: 0, at: 4000, played: true, pass: [null, null, 3]})
+      expect(again.passes).toEqual([[1, 4, 4, 3], [2, 4, 3, 2], [3000, 4, 4, null], [4000, null, null, 3]])
+
+      // without pass, nothing is added
+      let untouched = itemWithPractice(written, {hits: 1, misses: 0, at: 5000})
+      expect(untouched.passes).toEqual(written.passes)
+    })
+  })
+
+  describe("withPass", function() {
+    it("seeds from recent on the first write and caps at PASS_HISTORY, oldest dropped", function() {
+      expect(PASS_HISTORY).toEqual(8)
+
+      let recent = [[1, 4, 4, 3], [2, 4, 3, 2], [3, 4, 4, 3]]
+      let fresh = {recent}
+      expect(withPass(fresh, [4, 4, 4, 3])).toEqual([...recent, [4, 4, 4, 3]])
+
+      let seeded = {passes: withPass(fresh, [4, 4, 4, 3])}
+      let full = {passes: Array.from({length: PASS_HISTORY}, (_, i) => [i, 4, 4, 3])}
+      expect(withPass(full, [100, 4, 4, 3]).length).toEqual(PASS_HISTORY)
+      expect(withPass(full, [100, 4, 4, 3])[0]).toEqual([1, 4, 4, 3])
+      expect(withPass(full, [100, 4, 4, 3])[PASS_HISTORY - 1]).toEqual([100, 4, 4, 3])
+    })
+
+    it("accepts a valid passes field, rejecting a 9th entry, bad counts or shape", function() {
+      let item = newItem({pieceId: "p", startMeasure: 1, endMeasure: 1}, 10)
+      let base = {...item, passes: [[1, 4, 4, 3], [2, 4, 3, null], [3, null, null, 2]]}
+      expect(validItem(base)).toBe(true)
+
+      let nine = {...item, passes: Array.from({length: 9}, (_, i) => [i, 4, 4, 3])}
+      expect(validItem(nine)).toBe(false)
+
+      expect(validItem({...item, passes: [[1, 3, 4, 3]]})).toBe(false) // clean > columns
+      expect(validItem({...item, passes: [[1, 4, 4]]})).toBe(false) // length 3
+      expect(validItem({...item, passes: [[1, null, 4, 3]]})).toBe(false)
+      expect(validItem({...item, passes: [[1, 4, 4, 5]]})).toBe(false)
     })
   })
 
@@ -649,6 +697,20 @@ describe("spaced repetition records", function() {
       expect(again.report.addedStudies).toEqual(0)
       expect(reopened.items()).toEqual(data.items)
       expect((await storedReviews(reopened)).length).toEqual(2)
+    })
+
+    it("round trips an item's passes history through a library export and import", async function() {
+      let store = await open()
+      await store.putPiece(pieceData("a", "First", 1000))
+      let withPasses = {...practicedItem("a", 1, 1, 1000), passes: [[500, 4, 4, null], [1000, 4, 3, 3]]}
+      await store.recordAttempt({item: withPasses, review: attempt("a", 1, 1, 1000)})
+
+      let file = await exportLibraryFile(store)
+      expect(JSON.parse(file.text).items[0].passes).toEqual(withPasses.passes)
+
+      let other = await open()
+      await importLibraryFile(file.text, other)
+      expect(other.item("a:both:1-1").passes).toEqual(withPasses.passes)
     })
 
     it("merges two libraries: a union of reviews, the more recently practiced item, under the stored piece's id", async function() {

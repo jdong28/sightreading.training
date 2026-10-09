@@ -3,7 +3,7 @@ import MersenneTwister from "mersennetwister"
 import {
   planNext, planState, planSummary, studyStatus, anchoredCard, onScheduleMeasures, mostOverduePiece,
   inStudy, entryStatus, entryCaption, cardCaption, blamedStaves, introduction, passagesForHand,
-  pulledPassage, PASSAGE_LEVEL,
+  pulledPassage, planUpcoming, upNextWords, PASSAGE_LEVEL,
   RETRY, LADDER, REVIEW, NEW, EARLY, RUN_THROUGH, WAIT, READ_THROUGH, LADDER_CAP, IDLE_LADDER_CAP,
   SITTING_GAP_MS, READ_FIRST, HARDEST_FIRST, SCORE_ORDER,
 } from "st/srs/planner"
@@ -1250,6 +1250,54 @@ describe("today's programme planner", function() {
       expect(inStudy(null)).toBe(false)
       expect(inStudy({pieceId: "p", status: "learning", startedAt: 0})).toBe(true)
       expect(inStudy({pieceId: "p", status: "shelved", startedAt: 0})).toBe(false)
+    })
+  })
+
+  describe("the up next preview", function() {
+    it("previews planNext's own entry order, deduped by measure, without the entry on the stand", function() {
+      // last well outside the sitting gap, so the rung isn't also the
+      // measure just played (which avoid already excludes)
+      let rung = onLadder(1, {due: NOW, last: NOW - 30 * MINUTE})
+      let input = Object.freeze({
+        pieceId: "p", items: Object.freeze([rung]), measures: Object.freeze([1, 2, 3, 4, 5]), now: NOW,
+      })
+
+      expect(planUpcoming(input, 2).map(e => [e.reason, e.measure])).toEqual([[LADDER, 1], [NEW, 2]])
+
+      // the rung's own entry (the ladder slot, and its duplicate in the
+      // waiting list) is dropped once it is the entry on the stand
+      let withPrevious = {...input, previous: rung.id}
+      expect(planUpcoming(withPrevious, 2).map(e => e.measure)).not.toContain(1)
+    })
+
+    it("never mutates its input", function() {
+      let input = Object.freeze({
+        pieceId: "p",
+        items: Object.freeze([onLadder(1, {due: NOW}), inReview(2, {due: NOW + 9 * DAY})]),
+        measures: Object.freeze([1, 2, 3, 4, 5]),
+        now: NOW,
+      })
+
+      expect(() => planUpcoming(input, 3)).not.toThrow()
+    })
+
+    it("gives each reason's words, the bar's passage role for a new one, and a hand alone appended", function() {
+      let entry = (reason, measure, hand="both") => ({reason, measure, itemId: "x", item: null, hand})
+
+      expect(upNextWords(entry(NEW, 5))).toEqual("New")
+      expect(upNextWords(entry(NEW, 5), {role: "passage", level: 3})).toEqual("New · hardest passage")
+      expect(upNextWords(entry(NEW, 5), {role: "passage", level: 2})).toEqual("New · hard passage")
+      expect(upNextWords(entry(NEW, 5), {role: "lead-in", start: 5, end: 9})).toEqual("New · lead-in to bars 5–9")
+      expect(upNextWords(entry(NEW, 6), {role: "repeat", start: 5, end: 9})).toEqual("New · repeats bars 5–9")
+      expect(upNextWords(entry(RETRY, 3))).toEqual("Again, in a moment")
+      expect(upNextWords(entry(LADDER, 3))).toEqual("Once more")
+      expect(upNextWords(entry(WAIT, 3))).toEqual("Once more")
+      expect(upNextWords(entry(REVIEW, 3))).toEqual("Review")
+      expect(upNextWords(entry(EARLY, 3))).toEqual("Review")
+      expect(upNextWords(entry(RUN_THROUGH, 3))).toEqual("Run-through")
+      expect(upNextWords(entry(READ_THROUGH, 3))).toEqual("Read-through")
+      expect(upNextWords(entry(NEW, 6, "upper"))).toEqual("New · right hand")
+      expect(upNextWords(entry(WAIT, 6, "lower"))).toEqual("Once more · left hand")
     })
   })
 })

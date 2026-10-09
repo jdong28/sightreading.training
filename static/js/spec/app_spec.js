@@ -115,16 +115,18 @@ describe("app routing", function() {
       return svg ? [...svg.querySelectorAll(".staffLine")] : []
     }
 
-    let drawerText = el => el.querySelector(`.${drawerStyles.drawer}[aria-label="Programme"]`).textContent
     let activeNav = el => [...el.querySelectorAll("nav a.active")].map(a => a.textContent)
+    let drawerText = el => el.querySelector(`.${drawerStyles.drawer}[aria-label="Programme"]`).textContent
 
     it("renders the score page at /sheet-music", function() {
       let el = renderApp("/sheet-music")
 
       expect(document.title).toEqual("Sheet music | Sight Reading Trainer")
       expect(activeNav(el)).toEqual(["Sheet music"])
-      expect(drawerText(el)).toContain("Import MusicXML")
-      expect(drawerText(el)).not.toContain("Clef")
+      // tonight's session (the setup pane) replaces the Programme drawer
+      let pane = el.querySelector("aside")
+      expect(pane.textContent).toContain("Import MusicXML")
+      expect(pane.textContent).not.toContain("Clef")
     })
 
     it("renders the engraving engines page at /score-engines, kept out of the navigation", function() {
@@ -136,20 +138,20 @@ describe("app routing", function() {
       expect([...el.querySelectorAll("nav a")].map(a => a.getAttribute("href"))).not.toContain("/score-engines")
     })
 
-    it("links the score page's drawer to the engraving engines page", function() {
+    it("links the score page's setup pane to the engraving engines page", function() {
       let el = renderApp("/sheet-music")
-      let link = [...el.querySelectorAll(`.${drawerStyles.drawer} a`)]
-        .find(a => a.textContent == "Compare engraving engines")
+      let pane = el.querySelector("aside")
+      let link = [...pane.querySelectorAll("a")].find(a => a.textContent == "Compare engraving engines")
       expect(link).toBeDefined()
       expect(link.getAttribute("href")).toMatch(/^\/score-engines/)
     })
 
-    it("imports a compressed .mxl file picked in the score page's deck, and picks it", async function() {
+    it("imports a compressed .mxl file picked in the score page's setup pane, and picks it", async function() {
       let el = renderApp("/sheet-music")
-      let drawer = el.querySelector(`.${drawerStyles.drawer}[aria-label="Programme"]`)
+      let pane = el.querySelector("aside")
 
-      let fileInput = drawer.querySelector(`.${drawerStyles.file_input} > input[type=file]`)
-      expect(fileInput.accept.split(",")).toContain(".mxl")
+      let fileInput = [...pane.querySelectorAll("input[type=file]")].find(input => input.accept.includes(".mxl"))
+      expect(fileInput).toBeDefined()
 
       Object.defineProperty(fileInput, "files", {
         value: [new File([littleWaltzMXL()], "little_waltz.mxl")],
@@ -157,22 +159,22 @@ describe("app routing", function() {
       })
       flushSync(() => fileInput.dispatchEvent(new Event("change", {bubbles: true})))
 
-      for (let tries = 0; tries < 100 && !drawer.textContent.includes("is in the deck"); tries++) {
+      for (let tries = 0; tries < 100 && !pane.textContent.includes("is in the deck"); tries++) {
         await new Promise(resolve => setTimeout(resolve, 10))
       }
 
-      expect(drawer.textContent).toContain("\"little waltz\" is in the deck")
+      expect(pane.textContent).toContain("\"little waltz\" is in the deck")
       let [piece] = store.pieces()
       expect(piece.title).toEqual("little waltz")
-      expect(drawer.querySelector(`.${drawerStyles.deck_row} select`).value).toEqual(piece.id)
+      expect(pane.querySelector("select").value).toEqual(piece.id)
       expect(await pieceSource(piece.id, store)).toEqual(LITTLE_WALTZ_XML)
     })
 
-    it("answers a PDF picked in the score page's deck with the conversion steps and adds no piece", async function() {
+    it("answers a PDF picked in the score page's setup pane with the conversion steps and adds no piece", async function() {
       let el = renderApp("/sheet-music")
-      let drawer = el.querySelector(`.${drawerStyles.drawer}[aria-label="Programme"]`)
-      let fileInput = drawer.querySelector(`.${drawerStyles.file_input} > input[type=file]`)
-      expect(fileInput.accept.split(",")).toContain(".pdf")
+      let pane = el.querySelector("aside")
+      let fileInput = [...pane.querySelectorAll("input[type=file]")].find(input => input.accept.includes(".pdf"))
+      expect(fileInput).toBeDefined()
 
       Object.defineProperty(fileInput, "files", {
         value: [new File(["%PDF-1.4"], "nocturne.pdf", {type: "application/pdf"})],
@@ -181,13 +183,13 @@ describe("app routing", function() {
       flushSync(() => fileInput.dispatchEvent(new Event("change", {bubbles: true})))
       flushSync(() => {})
 
-      let text = drawer.textContent
+      let text = pane.textContent
       expect(text).toContain("PDFs need converting first")
       expect(text).toContain("nocturne.pdf")
       expect(text).toContain("Audiveris")
       expect(text).toContain("MuseScore Studio")
       expect(text).toContain("keeps the piece's stats")
-      expect([...drawer.querySelectorAll("a")].map(a => a.getAttribute("href")))
+      expect([...pane.querySelectorAll("a")].map(a => a.getAttribute("href")))
         .toContain("https://audiveris.github.io/audiveris/")
       expect(text).not.toContain("Importing nocturne.pdf")
       expect(store.pieces()).toEqual([])
@@ -199,19 +201,19 @@ describe("app routing", function() {
       })
       flushSync(() => fileInput.dispatchEvent(new Event("change", {bubbles: true})))
 
-      for (let tries = 0; tries < 100 && !drawer.textContent.includes("is in the deck"); tries++) {
+      for (let tries = 0; tries < 100 && !pane.textContent.includes("is in the deck"); tries++) {
         await new Promise(resolve => setTimeout(resolve, 10))
       }
 
-      expect(drawer.textContent).toContain("\"little waltz\" is in the deck")
-      expect(drawer.textContent).not.toContain("PDFs need converting first")
+      expect(pane.textContent).toContain("\"little waltz\" is in the deck")
+      expect(pane.textContent).not.toContain("PDFs need converting first")
       expect(store.pieces().length).toEqual(1)
     })
 
     it("answers a PDF with no file name with the conversion steps too", function() {
       let el = renderApp("/sheet-music")
-      let drawer = el.querySelector(`.${drawerStyles.drawer}[aria-label="Programme"]`)
-      let fileInput = drawer.querySelector(`.${drawerStyles.file_input} > input[type=file]`)
+      let pane = el.querySelector("aside")
+      let fileInput = [...pane.querySelectorAll("input[type=file]")].find(input => input.accept.includes(".pdf"))
 
       Object.defineProperty(fileInput, "files", {
         value: [new File(["%PDF-1.4"], "", {type: "application/pdf"})],
@@ -220,8 +222,8 @@ describe("app routing", function() {
       flushSync(() => fileInput.dispatchEvent(new Event("change", {bubbles: true})))
       flushSync(() => {})
 
-      expect(drawer.textContent).toContain("PDFs need converting first")
-      expect(drawer.textContent).toContain("keeps the piece's stats")
+      expect(pane.textContent).toContain("PDFs need converting first")
+      expect(pane.textContent).toContain("keeps the piece's stats")
       expect(store.pieces()).toEqual([])
     })
 

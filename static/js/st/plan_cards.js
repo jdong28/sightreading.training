@@ -34,7 +34,8 @@ import {scheduledAttempt} from "st/srs/schedule"
 import {passAttempts, selfAttempts} from "st/srs/attempt"
 import {
   planNext, planState, planSummary, studyStatus, anchoredCard, introduction,
-  entryStatus, cardCaption, entryCaption, WAIT, READ_THROUGH, SCORE_ORDER,
+  entryStatus, cardCaption, entryCaption, planUpcoming, upNextWords,
+  WAIT, READ_THROUGH, SCORE_ORDER,
 } from "st/srs/planner"
 
 // keeps the later of each item's graded reviews
@@ -469,6 +470,20 @@ export class PlanGenerator extends MeasureCardGenerator {
   /** @returns {Object} what the programme holds, see planSummary */
   summary() {
     return this.deck.summary()
+  }
+
+  /**
+   * The programme's next few bars, a preview (see planUpcoming in
+   * st/srs/planner): nothing is stored, and the queue is replanned after
+   * every card, so this can change by the next card.
+   * @param {number} count
+   * @returns {{measure: number, words: string}[]} words from upNextWords,
+   * the bar's passage role (st/srs/planner introduction()) read for a NEW entry
+   */
+  upNext(count) {
+    let previous = this.deck.entry ? this.deck.entry.itemId : null
+    return planUpcoming({...this.deck.planInput(), previous}, count).map(entry =>
+      ({measure: entry.measure, words: upNextWords(entry, this.deck.passageOf(entry.measure))}))
   }
 
   // the planner is told how the pass went before it plans the next card:

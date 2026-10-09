@@ -32,6 +32,9 @@ export const STUDY_STATUSES = ["learning", "maintaining", "shelved"]
 // how many attempts an item keeps in recent
 export const RECENT_ATTEMPTS = 5
 
+// how many passes a single-bar item keeps in passes, see withPass
+export const PASS_HISTORY = 8
+
 /**
  * One measure range of a piece under one hand setting, created the first time
  * it is practiced (or, later, activated by the scheduler). Items practiced
@@ -65,6 +68,16 @@ export const RECENT_ATTEMPTS = 5
  * @property {Array[]} recent the last RECENT_ATTEMPTS attempts, oldest first,
  * as [at, columns, clean, grade]; columns and clean are null on a self-graded
  * attempt, which counted none (see recentMissRate in st/srs/schedule)
+ * @property {Array[]} [passes] single-bar items only (startMeasure ==
+ * endMeasure, no beats): the last PASS_HISTORY passes at the bar, oldest
+ * first, as [at, columns, clean, grade]. Unlike recent, a pass written as
+ * practice alone (off schedule, read-through, resting) is still kept here,
+ * with grade null, so st/bar_progress's learnedness ("three clean passes in
+ * a row") is exact; a self-graded pass has no columns or clean (both null)
+ * and its own grade in their place. Written only through withPass, seeded
+ * from recent on an item's first write with the field; an item without it
+ * reads as if passes == recent. Read only by st/bar_progress, never by the
+ * scheduler or planner
  * @property {number} [paceMs] the item's usual pace, ms per notated beat (per
  * column without the score's rhythm), a running mean over its clean wait mode
  * attempts (see attemptPace in st/srs/grade)
@@ -166,6 +179,14 @@ const isPositive = n => typeof n == "number" && Number.isFinite(n) && n > 0
 const optional = (value, test) => value === undefined || test(value)
 const oneOf = list => value => list.includes(value)
 
+// a passes entry: [at, columns, clean, grade], a detected pass's columns and
+// clean paired with clean <= columns and a grade that is null (practice) or
+// 1-4, or a self-graded pass's columns and clean both null with a grade 1-4
+const validPassEntry = entry => Array.isArray(entry) && entry.length == 4 && isTime(entry[0]) &&
+  ((isCount(entry[1]) && isCount(entry[2]) && entry[2] <= entry[1] &&
+      (entry[3] === null || oneOf([1, 2, 3, 4])(entry[3]))) ||
+    (entry[1] === null && entry[2] === null && oneOf([1, 2, 3, 4])(entry[3])))
+
 const isRange = range => Array.isArray(range) && range.length == 2 &&
   range.every(n => typeof n == "number" && Number.isFinite(n)) && range[0] <= range[1]
 
@@ -203,6 +224,8 @@ export function validItem(item) {
     isTime(item.lastPracticed) && optional(item.elapsedMs, isCount) &&
     Array.isArray(item.recent) && item.recent.length <= RECENT_ATTEMPTS &&
     item.recent.every(entry => Array.isArray(entry) && entry.length == 4) &&
+    optional(item.passes, passes => Array.isArray(passes) && passes.length <= PASS_HISTORY &&
+      passes.every(validPassEntry)) &&
     optional(item.paceMs, isTime) && optional(item.contentKey, key => typeof key == "string") &&
     isCount(item.algo) && isTime(item.createdAt) &&
     optional(item.deliberate, value => value === true)
@@ -354,17 +377,33 @@ export function legacyReview(stats) {
 }
 
 /**
+ * The passes history a single-bar item's next write carries: entry appended
+ * to the item's passes, seeded from recent on the first write that adds the
+ * field, capped at PASS_HISTORY with the oldest dropped.
+ * @param {ItemRecord} item the item before the pass, as stored
+ * @param {Array} entry [at, columns, clean, grade], see ItemRecord#passes
+ * @returns {Array[]}
+ */
+export function withPass(item, entry) {
+  let base = item.passes ?? item.recent
+  return [...base, entry].slice(-PASS_HISTORY)
+}
+
+/**
  * An item with one practice stint on it added to its totals, as section
  * stats were added up before items.
  * @param {ItemRecord} item
- * @param {{hits: number, misses: number, at: number, elapsedMs?: number, played?: boolean, deliberate?: boolean}} practice
+ * @param {{hits: number, misses: number, at: number, elapsedMs?: number, played?: boolean, deliberate?: boolean, pass?: Array}} practice
  * played forces the attempt count even without hits or misses, for a
  * self-graded stint that played notes but recorded none (see st/srs/attempt);
  * deliberate marks a hand-alone item the player chose to practise, see
- * ItemRecord
+ * ItemRecord; pass is [columns, clean, grade|null] for a single-bar range
+ * demoted to practice (st/measure_cards#passRecords), appended to the item's
+ * passes history (see withPass) with grade null for a detected pass, kept
+ * for a self-graded one
  * @returns {ItemRecord}
  */
-export function itemWithPractice(item, {hits, misses, at, elapsedMs, played, deliberate}) {
+export function itemWithPractice(item, {hits, misses, at, elapsedMs, played, deliberate, pass}) {
   let record = {
     ...item,
     hits: item.hits + hits,
@@ -380,6 +419,10 @@ export function itemWithPractice(item, {hits, misses, at, elapsedMs, played, del
 
   if (deliberate && item.hand != "both") {
     record.deliberate = true
+  }
+
+  if (pass) {
+    record.passes = withPass(item, [at, ...pass])
   }
 
   return record

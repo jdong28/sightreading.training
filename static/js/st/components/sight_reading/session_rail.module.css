@@ -1,0 +1,256 @@
+/* "This session", the score-first score page's rail in session (§D9) */
+
+.rail {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    min-width: 0;
+}
+
+.plate {
+    padding: 20px 22px 22px;
+}
+
+.header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    padding-bottom: 11px;
+    border-bottom: var(--salon-double-rule);
+}
+
+.title {
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: 24px;
+    font-weight: 400;
+}
+
+.title_italic {
+    font-style: italic;
+}
+
+.aside {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .18em;
+    text-transform: uppercase;
+    color: var(--salon-ink-muted);
+}
+
+.clock_group {
+    padding: 14px 0 12px;
+    border-bottom: var(--salon-hairline);
+}
+
+.clock_row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 8px;
+    gap: 8px;
+}
+
+.clock {
+    font-family: var(--font-display);
+    font-size: 20px;
+}
+
+.clock_target {
+    font-size: 14px;
+    font-style: italic;
+    color: var(--salon-ink-muted);
+}
+
+.clock_note {
+    font-size: 12px;
+    color: var(--salon-ink-muted);
+    white-space: nowrap;
+}
+
+.track {
+    height: 5px;
+    background: var(--salon-track);
+    position: relative;
+}
+
+.fill {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    background: var(--salon-gilt);
+}
+
+.map_group {
+    padding: 14px 0 4px;
+}
+
+.sub_label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--salon-ink-muted);
+    margin-bottom: 9px;
+}
+
+.grid {
+    display: grid;
+    gap: 3px;
+}
+
+.cell {
+    display: block;
+    height: 22px;
+    box-sizing: border-box;
+    background: var(--salon-paper);
+    border: 1px solid var(--salon-rule-light);
+
+    &.played {
+        background: var(--salon-bar-fill);
+        border-color: var(--salon-gilt-light);
+    }
+
+    &.on_stand {
+        background: var(--salon-paper);
+        border: 2px solid var(--salon-oxblood);
+    }
+
+    &.coming_up {
+        background: var(--salon-paper-warm);
+        border: 1px dashed var(--salon-gilt);
+    }
+}
+
+.ticks {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    color: var(--salon-ink-muted);
+    margin-top: 4px;
+}
+
+.legend {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    font-size: 12px;
+    color: var(--salon-ink-soft);
+    margin-top: 8px;
+}
+
+.swatch {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    margin-right: 5px;
+    vertical-align: middle;
+    box-sizing: border-box;
+
+    &.played {
+        background: var(--salon-bar-fill);
+        border: 1px solid var(--salon-gilt-light);
+    }
+
+    &.on_stand {
+        background: var(--salon-paper);
+        border: 2px solid var(--salon-oxblood);
+    }
+
+    &.coming_up {
+        background: var(--salon-paper-warm);
+        border: 1px dashed var(--salon-gilt);
+    }
+}
+
+.up_next_list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.up_next_row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 8px;
+    border-bottom: var(--salon-hairline);
+    padding: 8px 0;
+    font-size: 13px;
+
+    &:last-child {
+        border-bottom: 0;
+    }
+
+    &.strong .up_next_words {
+        color: var(--salon-oxblood);
+        font-weight: 700;
+    }
+}
+
+.up_next_bar {
+    font-family: var(--font-display);
+    font-size: 16px;
+}
+
+.up_next_words {
+    font-size: 12px;
+    color: var(--salon-ink-muted);
+    text-align: right;
+}
+
+.evening {
+    background: var(--salon-paper);
+    border: 1px solid var(--salon-rule-light);
+    padding: 16px 20px;
+}
+
+.evening_list {
+    list-style: none;
+    margin: 4px 0 0;
+    padding: 0;
+}
+
+.evening_row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 0;
+    border-bottom: var(--salon-hairline);
+
+    &:last-child {
+        border-bottom: 0;
+        padding-bottom: 0;
+    }
+}
+
+.numeral {
+    min-width: 26px;
+    font-family: var(--font-display);
+    font-size: 15px;
+    color: var(--salon-oxblood);
+}
+
+.evening_text {
+    flex: 1;
+    font-size: 13px;
+}
+
+.evening_detail {
+    font-size: 12px;
+    color: var(--salon-ink-muted);
+
+    &.weak {
+        color: var(--salon-oxblood);
+        font-weight: 700;
+    }
+}
+
+.evening_empty {
+    margin: 14px 0 0;
+    font-family: var(--font-display);
+    font-size: 14px;
+    font-style: italic;
+    color: var(--salon-ink-soft);
+}

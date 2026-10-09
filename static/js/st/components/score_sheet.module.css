@@ -1,0 +1,99 @@
+/* The score-first score page's engraving: the whole piece, paginated. Salon
+   recolouring mirrors score_card.module.css's .plate, but at width:100%
+   rather than max-width, since this is the page itself, not a card beside
+   detection marks */
+
+.sheet {
+    position: relative;
+    width: 100%;
+}
+
+.plate_box {
+    position: relative;
+    width: 100%;
+    max-width: 880px;
+    margin: 0 auto;
+    transition: opacity .2s ease;
+
+    &.drawing {
+        opacity: .55;
+    }
+}
+
+.plate {
+    :global(svg) {
+        display: block;
+        width: 100%;
+        height: auto;
+    }
+
+    /* the engine's own page background would cover the plate */
+    :global(svg > rect:first-child) {
+        fill: transparent;
+    }
+
+    :global(svg [fill]:not([fill="none"]):not([fill="transparent"])) {
+        fill: var(--salon-ink);
+    }
+
+    :global(svg [stroke]:not([stroke="none"]):not([stroke="transparent"])) {
+        stroke: var(--salon-ink);
+    }
+
+    :global(svg) {
+        color: var(--salon-ink);
+    }
+
+    :global(g.label), :global(g.labelAbbr) {
+        display: none;
+    }
+}
+
+.bar_overlay {
+    position: absolute;
+    box-sizing: border-box;
+    padding: 0;
+    margin: 0;
+    border: 1px solid transparent;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    mix-blend-mode: multiply;
+    cursor: pointer;
+
+    &.selected {
+        background: var(--salon-selected-tint);
+        border: 2px solid var(--salon-oxblood);
+        mix-blend-mode: normal;
+    }
+}
+
+.bar_label {
+    position: absolute;
+    transform: translateY(-100%);
+    display: flex;
+    align-items: flex-start;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1.3;
+    padding: 1px 6px;
+    border: 1px solid var(--salon-rule-strong);
+    background: var(--salon-paper);
+    color: var(--salon-ghost-ink);
+    white-space: nowrap;
+    pointer-events: none;
+}
+
+.bar_tag {
+    position: absolute;
+    transform: translateY(-200%);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    padding: 1px 6px;
+    border: 1px solid currentColor;
+    background: var(--salon-paper);
+    white-space: nowrap;
+    cursor: pointer;
+}

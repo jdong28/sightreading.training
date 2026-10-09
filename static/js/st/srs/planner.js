@@ -896,6 +896,73 @@ export function planNext(input) {
 }
 
 /**
+ * A preview of the queue's next few entries (score-first design §D9's "Up
+ * next"), without the entry on the stand: candidates(state, {avoid: true}),
+ * falling back to candidates(state, {avoid: false}) exactly as planNext
+ * does, with the entry whose item id is input.previous dropped too (a
+ * retry's own id, which avoid alone doesn't filter), deduped by measure,
+ * the first count. Pure: nothing is stored, and the queue is replanned
+ * after every card, so this is only ever a preview.
+ * @param {PlanInput} input
+ * @param {number} count
+ * @returns {PlanEntry[]}
+ */
+export function planUpcoming(input, count) {
+  let state = planState(input)
+  let list = candidates(state, {avoid: true})
+  if (!list.length) {
+    list = candidates(state, {avoid: false})
+  }
+
+  let seen = new Set()
+  let upcoming = []
+  for (let {reason, slot} of list) {
+    if (slot.id == input.previous || seen.has(slot.measure)) { continue }
+    seen.add(slot.measure)
+    upcoming.push({reason, measure: slot.measure, itemId: slot.id, item: slot.item || null, hand: slot.hand})
+    if (upcoming.length >= count) { break }
+  }
+
+  return upcoming
+}
+
+// a passage role's words with a leading " · ", or "" without one
+function roleSuffix(passage) {
+  let words = passageWords(passage)
+  return words ? ` · ${words}` : ""
+}
+
+/**
+ * The session rail's "Up next" words for a preview entry (see planUpcoming):
+ * "New" (plus the bar's passage role, see passageWords), "Again, in a
+ * moment" (RETRY), "Once more" (LADDER/WAIT), "Review" (REVIEW/EARLY),
+ * "Run-through" (RUN_THROUGH) or "Read-through" (READ_THROUGH), with
+ * " · right hand" or " · left hand" appended for a hand alone.
+ * @param {PlanEntry} entry
+ * @param {PassageRole} [passage] the entry's bar's role (see
+ * PlanDeck#passageOf), read only for a NEW entry
+ * @returns {string}
+ */
+export function upNextWords(entry, passage=null) {
+  let words
+  switch (entry.reason) {
+    case NEW: words = `New${roleSuffix(passage)}`; break
+    case RETRY: words = "Again, in a moment"; break
+    case LADDER:
+    case WAIT: words = "Once more"; break
+    case REVIEW:
+    case EARLY: words = "Review"; break
+    case RUN_THROUGH: words = "Run-through"; break
+    case READ_THROUGH: words = "Read-through"; break
+    default: words = "Once more"
+  }
+
+  if (entry.hand == "upper") { return `${words} · right hand` }
+  if (entry.hand == "lower") { return `${words} · left hand` }
+  return words
+}
+
+/**
  * What the programme holds for the piece before a session: the reviews due
  * and about how long they take, the new measures on offer, the bars still to
  * read through (0 outside a read-through), the target, and the measures

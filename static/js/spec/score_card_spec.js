@@ -21,7 +21,6 @@ import {parseNote} from "st/music"
 import {setAppStore} from "st/storage"
 import {SCORE_DRILL_STORAGE_KEY} from "st/generators"
 import staffStyles from "st/components/staff.module.css"
-import drawerStyles from "st/components/sight_reading/programme_drawer.module.css"
 import scoreCardStyles from "st/components/score_card.module.css"
 
 import {openTestStore, reverieOpening, pickupScore, noteXML} from "spec/helpers"
@@ -678,14 +677,20 @@ describe("score page engine card", function() {
     }
   })
 
-  let renderScorePage = (props={}) => {
+  // ScoreView unset, as sight_reading_page.jsx's own doc comment says, so
+  // these specs reach the trainer's engine card directly, not the
+  // score-first view (which these engine mocks, missing measures, can't
+  // paginate)
+  let renderScorePage = ({programme, ...props}={}) => {
     container = document.createElement("div")
     container.style.width = "1100px"
     document.body.appendChild(container)
     root = createRoot(container)
     flushSync(() => {
       root.render(React.createElement(MemoryRouter, {},
-        React.createElement(ScorePage, {ref: p => page = p, ...props})))
+        React.createElement(ScorePage, {
+          ref: p => page = p, programme: {...SCORE_PROGRAMME, ...programme, ScoreView: null}, ...props,
+        })))
     })
     flushSync(() => {})
     return container
@@ -864,28 +869,17 @@ describe("score page engine card", function() {
     expect(el.textContent).toContain("measures 1–4")
   })
 
-  // the programme drawer, opened
-  let openDrawer = el => {
-    flushSync(() => el.querySelector("button[aria-label=\"Programme\"]").click())
-    return el.querySelector(`.${drawerStyles.drawer}[aria-label="Programme"]`)
-  }
-
-  let perCardPicker = drawer => drawer.querySelector("[role=\"spinbutton\"][aria-label=\"measures per card\"]")
-
   it("picks a card size up to the whole section for the score's cards, in scroll mode too", async function() {
     await drillPiece(reverieOpening(), {startMeasure: 1, endMeasure: 4, measuresPerCard: "2"})
     let el = renderScorePage()
     await cardDrawn()
 
-    let drawer = openDrawer(el)
-    let input = perCardPicker(drawer)
-    expect(input.getAttribute("aria-valuemax")).toEqual("4")
-    expect(drawer.textContent).toContain("of 4")
-    expect(drawer.textContent).not.toContain("Cards stop")
-
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(input, "4")
-    flushSync(() => input.dispatchEvent(new Event("input", {bubbles: true})))
-    flushSync(() => input.dispatchEvent(new KeyboardEvent("keydown", {key: "Enter", bubbles: true})))
+    // tonight's session (the setup pane) picks the card size now, not a
+    // drawer; this render bypasses ScoreView (see renderScorePage's doc
+    // comment), so drive the setting directly as other specs here do
+    flushSync(() => page.setGenerator(page.state.currentGenerator, {
+      ...page.state.currentGeneratorSettings, measuresPerCard: 4,
+    }))
     flushSync(() => {})
 
     expect(page.state.currentGeneratorSettings.measuresPerCard).toEqual(4)
@@ -896,9 +890,7 @@ describe("score page engine card", function() {
     // and keeps it in scroll mode
     flushSync(() => page.setMode("scroll"))
     flushSync(() => {})
-    expect(perCardPicker(drawer).getAttribute("aria-valuemax")).toEqual("4")
-    expect(perCardPicker(drawer).value).toEqual("4")
-    expect(drawer.textContent).not.toContain("Cards stop")
+    expect(page.state.currentGeneratorSettings.measuresPerCard).toEqual(4)
     expect(page.currentCard().card.measures).toEqual([1, 2, 3, 4])
   })
 
@@ -1153,8 +1145,6 @@ describe("score page engine card", function() {
     // the same card, which the card size says, and why it is drawn this way
     let {card} = page.currentCard()
     expect(card.measures).toEqual([1, 2, 3, 4])
-    let drawer = openDrawer(el)
-    expect(perCardPicker(drawer).getAttribute("aria-valuemax")).toEqual("4")
     expect(el.textContent).toContain(FAILED_ENGINE_SOURCE)
   })
 
@@ -1665,199 +1655,6 @@ describe("score page engine card", function() {
 
   it("is the score page's own programme", function() {
     expect(SCORE_PROGRAMME.engine).toEqual("osmd")
-  })
-
-  // a clicked bar's own stats (st/bar_stats), at the head of the rail, at
-  // rest: see BarStatsPlate in st/components/sight_reading/bar_stats_plate
-  describe("a clicked bar's stats", function() {
-    let waitForEngineCard = () => waitFor(() => page.staff && page.staff.result,
-      {message: "the engine card to draw"})
-
-    // clicks a measure's box centre on the trainer's own ScoreCard, the
-    // same mapping as ScoreCard#onBarClick does the other way
-    let clickBar = number => {
-      let card = page.staff
-      let measure = card.result.measures.find(m => m.number == number)
-      let svg = card.result.svg
-      let rect = svg.getBoundingClientRect()
-      let width = svg.width.baseVal.value
-      let height = svg.height.baseVal.value
-      let clientX = rect.left + (measure.box.x + measure.box.width / 2) * rect.width / width
-      let clientY = rect.top + (measure.box.y + measure.box.height / 2) * rect.height / height
-      flushSync(() => svg.dispatchEvent(new MouseEvent("click", {bubbles: true, clientX, clientY})))
-    }
-
-    // a point below every drawn bar
-    let clickBelowEveryBar = () => {
-      let card = page.staff
-      let svg = card.result.svg
-      let bottom = Math.max(...card.result.measures.map(m => m.box.y + m.box.height))
-      let firstBox = card.result.measures[0].box
-      let rect = svg.getBoundingClientRect()
-      let width = svg.width.baseVal.value
-      let height = svg.height.baseVal.value
-      let clientX = rect.left + (firstBox.x + 1) * rect.width / width
-      let clientY = rect.top + (bottom + 3 * firstBox.height) * rect.height / height
-      flushSync(() => svg.dispatchEvent(new MouseEvent("click", {bubbles: true, clientX, clientY})))
-    }
-
-    let barPlate = () => container.querySelector("[data-bar-stats]")
-
-    // a bar played and graded, modelled on recordTroubleBar
-    // (passages_plate_spec.js): one real write through the store, never the
-    // app's own gameplay
-    let writeBarItem = (piece, {
-      measure, hand = "both", attempts, hits = 0, misses = 0, lastPracticed, recent, mode = "wait",
-    }) => {
-      let now = Date.now()
-      let barId = `${piece.id}:${hand}:${measure}-${measure}`
-      let [, , , grade] = recent[recent.length - 1]
-      let review = mode == "self" ?
-        {itemId: barId, pieceId: piece.id, at: now, kind: "attempt", mode: "self", grade, was: "new"} :
-        {
-          itemId: barId, pieceId: piece.id, at: now, kind: "attempt", grade, was: "learning",
-          columns: 3, clean: grade >= 3 ? 3 : 0, misses: grade >= 3 ? 0 : 1, stuck: 0, skipped: 0,
-          hesitations: 0, mode: "wait", algo: 1,
-        }
-
-      return store.recordAttempt({
-        item: {
-          id: barId, pieceId: piece.id, hand, startMeasure: measure, endMeasure: measure,
-          level: "bar", state: "learning", step: 0, due: now, last: now, s: 1, d: 5,
-          reps: recent.length, lapses: 0, streak: 0, hits, misses, attempts,
-          lastPracticed, elapsedMs: 0, algo: 1, createdAt: now - 1000, recent,
-        },
-        review,
-      })
-    }
-
-    it("shows a bar never played at the head of the rail", async function() {
-      await drillPiece(reverieOpening(), {startMeasure: 2, endMeasure: 4})
-      renderScorePage()
-      await waitForEngineCard()
-
-      clickBar(3)
-      expect(barPlate().textContent).toContain("Bar 3")
-      expect(barPlate().textContent).toContain("No practice recorded for bar 3 yet.")
-
-      // the first plate inside the rail's head, before "The piece at a
-      // glance" (passages_plate), if that plate renders at all
-      let nodes = [...container.querySelectorAll("[data-bar-stats], [data-passages-plate]")]
-      if (nodes.length > 1) {
-        expect(nodes[0]).toBe(barPlate())
-      }
-    })
-
-    it("shows a bar's keyboard and acoustic records, one row per hand", async function() {
-      let now = Date.now()
-      let piece = await drillPiece(reverieOpening(), {startMeasure: 2, endMeasure: 4})
-      await writeBarItem(piece, {
-        measure: 3, hand: "both", attempts: 3, hits: 6, misses: 2, lastPracticed: now,
-        recent: [[now - 2, 4, 2, 2], [now - 1, 4, 4, 3], [now, null, null, 4]],
-      })
-      await writeBarItem(piece, {
-        measure: 3, hand: "upper", attempts: 1, hits: 0, misses: 0, lastPracticed: now,
-        recent: [[now, null, null, 1]], mode: "self",
-      })
-
-      renderScorePage()
-      await waitForEngineCard()
-      clickBar(3)
-
-      let text = barPlate().textContent
-      let order = [
-        "Hands together", "Played 3 times · last played today", "Recent: Stumbled → Clean → Easy",
-        "Accuracy 75%", "Right hand", "Played 1 time · last played today", "Recent: Fell apart",
-      ]
-      let last = -1
-      for (let part of order) {
-        let idx = text.indexOf(part)
-        expect(idx).toBeGreaterThan(-1)
-        expect(idx).toBeGreaterThan(last)
-        last = idx
-      }
-      expect(text.match(/Accuracy/g).length).toEqual(1)
-    })
-
-    it("changes bar on another click, and closes with ×", async function() {
-      await drillPiece(reverieOpening(), {startMeasure: 2, endMeasure: 4})
-      let el = renderScorePage()
-      await waitForEngineCard()
-
-      clickBar(2)
-      clickBar(4)
-      expect(barPlate().textContent).toContain("Bar 4")
-
-      flushSync(() => el.querySelector('button[aria-label="Close the bar\'s stats"]').click())
-      expect(barPlate()).toBe(null)
-      expect(el.textContent).toContain("This evening")
-    })
-
-    it("does nothing for a click outside every bar", async function() {
-      await drillPiece(reverieOpening(), {startMeasure: 2, endMeasure: 4})
-      renderScorePage()
-      await waitForEngineCard()
-
-      clickBelowEveryBar()
-      expect(barPlate()).toBe(null)
-    })
-
-    it("is at rest only: hidden in session, a click in session does nothing, and Rest brings it back", async function() {
-      await drillPiece(reverieOpening(), {startMeasure: 2, endMeasure: 4})
-      renderScorePage()
-      await waitForEngineCard()
-
-      clickBar(3)
-      expect(barPlate().textContent).toContain("Bar 3")
-
-      flushSync(() => page.beginSession())
-      expect(barPlate()).toBe(null)
-
-      clickBar(2)
-      expect(barPlate()).toBe(null)
-
-      flushSync(() => page.restSession())
-      expect(page.state.summary).toBe(null)
-      expect(barPlate().textContent).toContain("Bar 3")
-    })
-
-    it("works on the scroll-mode system", async function() {
-      await scrollPiece(reverieOpening(), {startMeasure: 2, endMeasure: 4})
-      renderScorePage()
-      await systemDrawn()
-
-      clickBar(3)
-      expect(barPlate().textContent).toContain("Bar 3")
-    })
-
-    it("works in acoustic mode at rest", async function() {
-      await drillPiece(reverieOpening(), {startMeasure: 2, endMeasure: 4})
-      renderScorePage({acoustic: true})
-      await waitForEngineCard()
-
-      clickBar(3)
-      expect(barPlate().textContent).toContain("Bar 3")
-    })
-
-    it("drops the bar when the piece changes", async function() {
-      let piece = await drillPiece(reverieOpening(), {startMeasure: 2, endMeasure: 4})
-      renderScorePage()
-      await waitForEngineCard()
-
-      clickBar(3)
-      expect(barPlate().textContent).toContain("Bar 3")
-
-      let {piece: other} = await importMusicXMLPiece("other.musicxml", pickupScore(), store)
-      flushSync(() => page.setGenerator(page.state.currentGenerator, {
-        ...page.state.currentGeneratorSettings, piece: other.id,
-      }))
-      expect(barPlate()).toBe(null)
-
-      flushSync(() => page.setGenerator(page.state.currentGenerator, {
-        ...page.state.currentGeneratorSettings, piece: piece.id,
-      }))
-      expect(barPlate()).toBe(null)
-    })
   })
 
   // acoustic mode's "Where?" (SelfGradeRow, st/srs/self_grade): bar badges

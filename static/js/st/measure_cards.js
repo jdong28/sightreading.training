@@ -22,7 +22,7 @@ import {addNoteListener} from "st/note_stats"
 import {getAppStore} from "st/storage"
 import {
   AttemptPass, passAttempts, passPractice, passPace, passRanges, columnClefs,
-  selfAttempts, selfPractice,
+  selfAttempts, selfPractice, barPasses, passGrade,
 } from "st/srs/attempt"
 import {AGAIN, HARD} from "st/srs/grade"
 import {itemId} from "st/srs/records"
@@ -331,6 +331,12 @@ export class MeasureCardGenerator {
     // the looping card's graded laps this sitting, which a self-graded
     // receipt's "Pass n" reads (see selfGrade, takePractice)
     this.lap = 0
+    // told about every finished pass, see setOnPass
+    this.onPass = null
+    // settles once every write finishPass has queued so far is done; a
+    // caller (the score page, at End session) awaits it before reading the
+    // items back, so the last pass's write is never missed
+    this.finishing = Promise.resolve()
 
     this.startCard()
 
@@ -359,6 +365,16 @@ export class MeasureCardGenerator {
    */
   setDrill(drill) {
     this.drill = drill
+  }
+
+  /**
+   * @param {function(Object): void} [fn] told about every finished pass
+   * (never an abandoned one), the score page's session log (§D10 of the
+   * score-first design): {at, startMeasure, endMeasure, hand, readThrough,
+   * self, grade, bars}, bars from barPasses(pass) and grade from passGrade(pass)
+   */
+  setOnPass(fn) {
+    this.onPass = fn
   }
 
   startCard(time=null) {
@@ -632,8 +648,27 @@ export class MeasureCardGenerator {
     let written = {...this.writtenUnder(), at}
     pass.written = written
 
-    // after the passes before it, whose items say which measures are on schedule
+    // after the passes before it, whose items say which measures are on
+    // schedule: also where onPass is told, since the hit on this pass's
+    // last column (notePlayed, right after this synchronous call returns)
+    // hasn't landed on it yet, and barPasses reads column.hit
     this.finishing = Promise.resolve(this.finishing).then(() => {
+      if (this.onPass) {
+        let bars = barPasses(pass)
+        if (bars.length) {
+          this.onPass({
+            at,
+            startMeasure: pass.card.startMeasure,
+            endMeasure: pass.card.endMeasure,
+            hand: written.hand,
+            readThrough: !!pass.readThrough,
+            self: !!pass.selfGrade,
+            grade: passGrade(pass),
+            bars,
+          })
+        }
+      }
+
       let store = this.deck.getStore()
       pass.found = Object.fromEntries(passRanges(pass.card).map(({startMeasure, endMeasure}) => {
         let id = itemId({pieceId: written.pieceId, hand: written.hand, startMeasure, endMeasure})
@@ -661,11 +696,25 @@ export class MeasureCardGenerator {
    * @returns {{attempts: Object[], practice: Object[]}}
    */
   passRecords(pass, opts) {
+    // a single-bar stint demoted from an attempt (below) still carries its
+    // pass tuple ([columns, clean, grade|null]), from barPasses(pass): a
+    // detected bar's grade is left null (it wasn't graded), a self-graded
+    // bar's own grade is kept, since nothing more granular is knowable for
+    // it (see ItemRecord#passes)
+    let byMeasure = new Map(barPasses(pass).map(entry => [entry.measure, entry]))
+    let withPassTuple = stint => {
+      if (stint.startMeasure != stint.endMeasure) { return stint }
+      let entry = byMeasure.get(stint.startMeasure)
+      if (!entry) { return stint }
+      return {...stint, pass: pass.selfGrade ? [null, null, entry.grade] : [entry.columns, entry.clean, null]}
+    }
+
     if (pass.selfGrade) {
       let practiceOnly = this.practiceOnly(pass, opts)
       return {
         attempts: selfAttempts(pass, opts).filter(({id}) => !practiceOnly.includes(id)),
-        practice: selfPractice(pass, {...opts, also: practiceOnly}),
+        practice: selfPractice(pass, {...opts, also: practiceOnly}).map(stint =>
+          practiceOnly.includes(itemId(stint)) ? withPassTuple(stint) : stint),
       }
     }
 
@@ -677,7 +726,9 @@ export class MeasureCardGenerator {
     let practiceOnly = this.practiceOnly(pass, opts)
     return {
       attempts: attempts.filter(({id}) => !practiceOnly.includes(id)),
-      practice: passPractice(pass, opts).filter(stint => practiceOnly.includes(itemId(stint))),
+      practice: passPractice(pass, opts)
+        .filter(stint => practiceOnly.includes(itemId(stint)))
+        .map(withPassTuple),
     }
   }
 

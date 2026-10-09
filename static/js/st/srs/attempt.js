@@ -25,8 +25,8 @@
 // passPractice, writing reviews with mode "self" and none of the above
 // measurements (st/srs/self_grade).
 
-import {itemId, newItem, itemWithPractice, RECENT_ATTEMPTS, STAVES} from "st/srs/records"
-import {gradeAttempt, attemptPace, hesitations, openingColumn, GRADE_ALGO} from "st/srs/grade"
+import {itemId, newItem, itemWithPractice, withPass, RECENT_ATTEMPTS, STAVES} from "st/srs/records"
+import {gradeAttempt, attemptCounts, gradeRule, attemptPace, hesitations, openingColumn, GRADE_ALGO} from "st/srs/grade"
 import {SELF_PAUSE_MS} from "st/srs/self_grade"
 
 // time on one column longer than this is a pause, left out of elapsed times
@@ -332,6 +332,61 @@ export function passPace(pass) {
 }
 
 /**
+ * The bars a complete pass gives a session-log pass entry to (st/measure_cards
+ * setOnPass, §C1/§C4 of the score-first design): every bar of a detected
+ * pass with at least one column, each with its own [columns, clean] and a
+ * grade worked out from its own columns alone (pure, without the item's
+ * usual pace, so it is a touch rougher than the grade passAttempts stores:
+ * only used for the session log and the pass tuple of a demoted practice
+ * stint, neither of which reads a detected bar's grade back); for a
+ * self-graded pass, only the bars its grade reached (§C4), each carrying
+ * that grade with no columns. Nothing for a pass not played through in one
+ * go (abandoned, continued, or never played).
+ * @param {AttemptPass} pass complete
+ * @returns {{measure: number, columns: number|null, clean: number|null, grade: number}[]}
+ */
+export function barPasses(pass) {
+  if (!pass.graded) { return [] }
+
+  if (pass.selfGrade) {
+    let {grade} = pass.selfGrade
+    let selectedBars = pass.selfGrade.bars ?? pass.card.measures
+    return passRanges(pass.card)
+      .filter(range => !range.bars && selectedBars.includes(range.startMeasure))
+      .map(range => ({measure: range.startMeasure, columns: null, clean: null, grade}))
+  }
+
+  if (!pass.complete || !pass.played || !pass.drill) { return [] }
+
+  let {mode} = pass.drill
+  let cardColumns = pass.columns.map((column, idx) => gradedColumn(pass, idx, mode))
+  let pace = attemptPace(cardColumns)
+
+  return passRanges(pass.card).filter(range => !range.bars).map(range => {
+    let columns = range.indices.map(idx => cardColumns[idx])
+    let counts = attemptCounts(columns, {mode, pace})
+    let {grade} = gradeRule(counts, {mode})
+    return {measure: range.startMeasure, columns: counts.columns, clean: counts.clean, grade}
+  })
+}
+
+/**
+ * The grade of a complete pass as a whole: its full range for a detected
+ * pass of more than one bar, its one bar's for a single-bar pass, or the
+ * player's own grade for a self-graded pass. The session log's top-level
+ * grade (st/measure_cards setOnPass); null for a pass not graded.
+ * @param {AttemptPass} pass complete
+ * @returns {number|null}
+ */
+export function passGrade(pass) {
+  if (pass.selfGrade) { return pass.graded ? pass.selfGrade.grade : null }
+  if (!pass.graded || !pass.complete || !pass.played || !pass.drill) { return null }
+
+  let grading = passGrading(pass)
+  return gradeAttempt(grading.columns, {mode: grading.mode, pace: grading.pace}).grade
+}
+
+/**
  * What the grade of a pass played through reads (see passAttempts): the
  * drill it was played in, each of its columns as the grade reads it, the
  * pace hesitations are judged by (the whole card's, for each of its ranges)
@@ -400,6 +455,9 @@ export function passAttempts(pass, {pieceId, hand, at=pass.lastAt, sessionId, de
       let record = itemWithPractice(current, {...totals, at, deliberate})
       record.recent = [...current.recent, [at, graded.columns, graded.clean, graded.grade]]
         .slice(-RECENT_ATTEMPTS)
+      if (startMeasure == endMeasure) {
+        record.passes = withPass(current, [at, graded.columns, graded.clean, graded.grade])
+      }
       if (graded.pace != null && !graded.slips && !graded.skipped) {
         let usual = current.paceMs == null ? graded.pace :
           current.paceMs + (graded.pace - current.paceMs) * PACE_WEIGHT
@@ -525,6 +583,9 @@ export function selfAttempts(pass, {pieceId, hand, at=pass.lastAt, sessionId, de
 
         let record = itemWithPractice(current, {hits: 0, misses: 0, at, elapsedMs, played: true, deliberate})
         record.recent = [...current.recent, [at, null, null, grade]].slice(-RECENT_ATTEMPTS)
+        if (range.startMeasure == range.endMeasure) {
+          record.passes = withPass(current, [at, null, null, grade])
+        }
 
         let review = {
           itemId: record.id,

@@ -317,6 +317,59 @@ export const repeatedNoteBar = () => `<?xml version="1.0" encoding="UTF-8"?>
   </part>
 </score-partwise>`
 
+// Six bars of a grand-staff piece with a pickup, realistic enough to catch
+// score-first layout bugs the minimal fixtures don't (sr-score-pages-y0):
+// a title, E major (4 sharps), common time, a one-beat pickup bar, a slur
+// from the pickup into bar 1's first note, and dynamics ("p" under bar 1,
+// "pp" under bar 4) placed below the treble staff — a mark OSMD draws
+// outside the staff lines, below where the bass staff's notes already are.
+// Both hands play one quarter note a beat throughout
+export const dynamicsOpening = ({title="Expressive Study"}={}) => {
+  let attrs = "<attributes><divisions>1</divisions><key><fifths>4</fifths></key>" +
+    "<time symbol=\"common\"><beats>4</beats><beat-type>4</beat-type></time><staves>2</staves>" +
+    "<clef number=\"1\"><sign>G</sign><line>2</line></clef><clef number=\"2\"><sign>F</sign><line>4</line></clef></attributes>"
+
+  let note = (step, octave, staff, voice, notations="") =>
+    `<note><pitch><step>${step}</step><octave>${octave}</octave></pitch><duration>1</duration>` +
+    `<voice>${voice}</voice><type>quarter</type><staff>${staff}</staff>${notations}</note>`
+
+  let slurStart = "<notations><slur type=\"start\" number=\"1\"/></notations>"
+  let slurStop = "<notations><slur type=\"stop\" number=\"1\"/></notations>"
+  let dynamics = word =>
+    `<direction placement="below"><direction-type><dynamics><${word}/></dynamics></direction-type></direction>`
+
+  let upper = ["G", "A", "B", "C"]
+  let lower = ["E", "F", "G", "A"]
+
+  let bar = (number, {beats=4, directions="", firstNotations=""}={}) => {
+    let trebleNotes = Array.from({length: beats}, (_, idx) =>
+      note(upper[idx % upper.length], 4, 1, 1, idx == 0 ? firstNotations : "")).join("")
+    let bassNotes = Array.from({length: beats}, (_, idx) => note(lower[idx % lower.length], 3, 2, 2)).join("")
+    let backup = `<backup><duration>${beats}</duration></backup>`
+    return `<measure number="${number}"${beats < 4 ? " implicit=\"yes\"" : ""}>` +
+      `${number == 0 ? attrs : ""}${directions}${trebleNotes}${backup}${bassNotes}</measure>`
+  }
+
+  let measures = [
+    bar(0, {beats: 1, firstNotations: slurStart}),
+    bar(1, {directions: dynamics("p"), firstNotations: slurStop}),
+    bar(2),
+    bar(3),
+    bar(4, {directions: dynamics("pp")}),
+    bar(5),
+    bar(6),
+  ].join("\n")
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <work><work-title>${title}</work-title></work>
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    ${measures}
+  </part>
+</score-partwise>`
+}
+
 // A 4/4 single staff piece of four whole notes in the given key signatures
 // (in fifths): the first key from measure 1, the second, if any, from
 // measure 3

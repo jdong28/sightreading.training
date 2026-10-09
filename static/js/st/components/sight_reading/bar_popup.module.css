@@ -1,0 +1,233 @@
+/* The bar pop-up, anchored over the score by score_sheet's renderPopup slot
+   (score-first design §D6) */
+
+.popup {
+    position: absolute;
+    z-index: 5;
+    width: 300px;
+    max-width: 100%;
+    box-sizing: border-box;
+    margin: 6px 0;
+    background: var(--salon-paper);
+    border: 1px solid var(--salon-oxblood);
+    padding: 14px 16px 16px;
+    box-shadow: 0 2px 3px rgba(36, 31, 24, .08), 0 18px 34px -14px rgba(36, 31, 24, .45);
+    font-family: var(--font-ui);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.header {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    padding-bottom: 9px;
+    border-bottom: var(--salon-double-rule);
+}
+
+.heading {
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: 24px;
+    font-weight: 400;
+}
+
+.heading_italic {
+    font-style: italic;
+}
+
+.tag {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--salon-ink-muted);
+
+    &.tag_oxblood {
+        color: var(--salon-oxblood);
+    }
+}
+
+.close {
+    margin-left: auto;
+    flex: none;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: 1px solid var(--salon-rule);
+    background: var(--salon-paper);
+    color: var(--salon-ink-soft);
+    cursor: pointer;
+    padding: 0;
+    font-size: 16px;
+    line-height: 1;
+}
+
+.empty {
+    margin: 0;
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 16px;
+    color: var(--salon-ink-soft);
+}
+
+.row {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.figures {
+    display: flex;
+    align-items: flex-end;
+    gap: 16px;
+}
+
+.figure {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.figure_label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--salon-ink-muted);
+}
+
+.latest {
+    font-family: var(--font-display);
+    font-size: 30px;
+    line-height: 1;
+    color: var(--salon-ghost-ink);
+
+    &.weak {
+        color: var(--salon-oxblood);
+    }
+}
+
+.best {
+    font-family: var(--font-display);
+    font-size: 18px;
+    line-height: 1;
+    color: var(--salon-ghost-ink);
+}
+
+.played {
+    margin-left: auto;
+    padding-bottom: 2px;
+    font-size: 12px;
+    color: var(--salon-ink-muted);
+}
+
+.chart {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.chart_area {
+    position: relative;
+    height: 122px;
+    display: flex;
+    align-items: flex-end;
+    gap: 5px;
+    border-bottom: 1px solid var(--salon-rule-strong);
+}
+
+.target_line {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 100px;
+    border-top: 1px dashed var(--salon-gilt);
+}
+
+.column {
+    flex: 1;
+    min-width: 0;
+    max-width: 40px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 3px;
+    position: relative;
+}
+
+.column_value {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--salon-ink-soft);
+
+    &.weak {
+        color: var(--salon-oxblood);
+    }
+}
+
+.column_fill {
+    display: block;
+    width: 100%;
+    background: var(--salon-gilt);
+
+    &.weak {
+        background: var(--salon-oxblood);
+    }
+}
+
+.chart_labels {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 11px;
+    color: var(--salon-ink-muted);
+}
+
+.self_line {
+    margin: 0;
+    font-size: 13px;
+    color: var(--salon-ink-soft);
+}
+
+.streak_row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding-top: 10px;
+    border-top: var(--salon-hairline);
+}
+
+.pips {
+    display: flex;
+    gap: 5px;
+}
+
+.pip {
+    display: block;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    box-sizing: border-box;
+    border: 1.5px solid var(--salon-pip-rule);
+    background: var(--salon-paper);
+
+    &.filled {
+        border-color: var(--salon-gilt-deep);
+        background: var(--salon-gilt-deep);
+    }
+}
+
+.streak_text {
+    font-family: var(--font-display);
+    font-size: 15px;
+    color: var(--salon-ink);
+}
+
+.practise.practise {
+    width: 100%;
+    min-height: 44px;
+    justify-content: center;
+}

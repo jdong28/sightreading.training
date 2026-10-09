@@ -560,7 +560,7 @@ export function reviewFlags(record) {
  * hand(s) each names: a flag of one hand gives that hand alone; a flag of
  * both gives the right hand first, then the left, the same order a
  * both-hands "practise hands separately" pill already offers
- * (handPillHand in passages_plate.jsx).
+ * (handPillHand in passage_pane.jsx).
  * @param {Object[]} flags flags in force (st/difficulty/records.flagsInForce)
  * @returns {Map<number, string[]>} measure number -> hand(s), only flags
  * ticked "start this passage hands separately"

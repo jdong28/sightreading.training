@@ -50,8 +50,8 @@ function SettingsGroup({label, aside, className, children}) {
 
 // A pane sliding in over a scrim, from the left by default or the right,
 // focusing its close button as it opens. The trainer's settings drawer
-// (SettingsDrawer, below) is one; the score page's "The score" pane
-// (passages_plate.jsx) is another, on the right
+// (SettingsDrawer, below) is one; the score page's passage and review panes
+// (passage_pane.jsx, review_pane.jsx) are others, on the right
 export class SidePane extends React.PureComponent {
   static propTypes = {
     open: types.bool,
