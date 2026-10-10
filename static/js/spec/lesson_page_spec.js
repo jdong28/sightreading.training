@@ -356,7 +356,9 @@ describe("notes for the next lesson on the score page, mounted", function() {
       expect(box.top).toBeGreaterThanOrEqual(cell.top - 8)
       expect(box.bottom).toBeLessThanOrEqual(cell.bottom)
       expect(box.right).toBeLessThanOrEqual(cell.right + 8)
-      expect(box.left).toBeGreaterThanOrEqual(cell.left - 8)
+      expect(box.right).toBeGreaterThanOrEqual(cell.right - 8)
+      // a chip wider than the cell hangs off its left edge by the little that is over
+      expect(box.left).toBeGreaterThanOrEqual(cell.left - 16)
 
       click(chip)
       await ready(() => popup() && popup().textContent.includes(words), "the window")
