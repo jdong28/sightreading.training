@@ -1,0 +1,86 @@
+{
+  "work": "A. Composer, Small Study",
+  "notes": "Nothing looks mis-encoded. No tempo is marked.",
+  "flags": [
+    {
+      "start": 2,
+      "end": 2,
+      "hand": "right",
+      "level": "hard",
+      "kinds": [
+        "reading",
+        "speed"
+      ],
+      "title": "The triplet into the trill",
+      "reason": "A triplet runs D5 E5 F#5 under the thumb of a trilled G5 in a single beat.",
+      "tip": "Play the triplet alone, then add the trill last.",
+      "evidence": [
+        {
+          "bar": 2,
+          "hand": "right",
+          "notes": [
+            "D5",
+            "F#5"
+          ],
+          "what": "the triplet"
+        },
+        {
+          "bar": 2,
+          "hand": "right",
+          "notes": [
+            "G5"
+          ],
+          "what": "the trilled note"
+        }
+      ],
+      "citations": [
+        {
+          "url": "https://example.com/small-study",
+          "title": "Notes on Small Study",
+          "says": "Teachers call the triplet the tricky spot.",
+          "quote": "",
+          "source_bars": ""
+        }
+      ],
+      "confidence": "high",
+      "analysis": "new",
+      "analysis_note": "The analysis sees the triplet bar but not the trill."
+    },
+    {
+      "start": 3,
+      "end": 3,
+      "hand": "both",
+      "level": "worth a look",
+      "kinds": [
+        "reading"
+      ],
+      "title": "The new key and metre",
+      "reason": "The key drops to one flat and the metre to three beats, with an Eb5 over a C major chord.",
+      "tip": "Count the new bar length aloud before you play.",
+      "evidence": [
+        {
+          "bar": 3,
+          "hand": "right",
+          "notes": [
+            "Eb5"
+          ],
+          "what": "the new accidental"
+        },
+        {
+          "bar": 3,
+          "hand": "left",
+          "notes": [
+            "C3",
+            "E3",
+            "G3"
+          ],
+          "what": "the chord"
+        }
+      ],
+      "citations": [],
+      "confidence": "medium",
+      "analysis": "agrees",
+      "analysis_note": ""
+    }
+  ]
+}

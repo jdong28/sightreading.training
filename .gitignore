@@ -12,3 +12,4 @@ static/guides/*.json
 *.lua
 nginx.conf.compiled
 firstmate/
+claude-flags-out/
