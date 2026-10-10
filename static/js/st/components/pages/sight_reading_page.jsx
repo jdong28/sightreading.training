@@ -275,6 +275,7 @@ export default class SightReadingPage extends React.Component {
     this.resumeSession = this.resumeSession.bind(this)
     this.endSession = this.endSession.bind(this)
     this.playOn = this.playOn.bind(this)
+    this.skipReadThrough = this.skipReadThrough.bind(this)
     this.dismissEnded = this.dismissEnded.bind(this)
     this.setCurrentSettings = this.setCurrentSettings.bind(this)
 
@@ -976,9 +977,11 @@ export default class SightReadingPage extends React.Component {
       throw new Error(`unknown generator mode: ${generator.mode}`)
     }
 
-    // enough columns to show the whole of any card of a piece
+    // enough columns to show the whole of any card of a piece, a passage of
+    // tonight's study and its lead-in among them
     let cardColumnCounts = (generatorInstance.cards || []).map(card => card.columns.length)
-    notes.fillBuffer(Math.max(this.state.bufferSize, ...cardColumnCounts))
+    let studyColumns = generatorInstance.maxCardColumns ? generatorInstance.maxCardColumns() : 0
+    notes.fillBuffer(Math.max(this.state.bufferSize, studyColumns, ...cardColumnCounts))
 
     // the matcher judges against the new list from the next event on, before
     // the render that draws it
@@ -1203,6 +1206,19 @@ export default class SightReadingPage extends React.Component {
   resumeSession() {
     if (!this.state.paused) { return }
     this.resumeFrom(this.state.pausedAt)
+  }
+
+  // Skips the read-through of today's programme (see
+  // PlanGenerator#skipReadThrough), at rest or in session: the pass in
+  // progress is abandoned like any, its practice written, and the staff
+  // is filled from the card that follows
+  skipReadThrough() {
+    let generator = this.currentNotesGenerator()
+    if (!generator || !generator.skipReadThrough) { return }
+
+    this.flushPractice(generator)
+    generator.skipReadThrough()
+    this.refreshNoteList(generator)
   }
 
   // A stand-in for endSession's ended strip when the log has entries but
@@ -1937,7 +1953,8 @@ export default class SightReadingPage extends React.Component {
                 settings={this.currentSettings()}
                 generator={this.currentNotesGenerator()}
                 sessionLog={this.state.sessionLog}
-                elapsedSeconds={this.elapsedSeconds()} /> : this.renderRail()}
+                elapsedSeconds={this.elapsedSeconds()}
+                onSkipReadThrough={this.skipReadThrough} /> : this.renderRail()}
             </div>
           </React.Fragment>}
         </main>
@@ -2013,6 +2030,7 @@ export default class SightReadingPage extends React.Component {
       idleTitle={this.programme.idleTitle}
       onBegin={this.begin}
       onPlayOn={this.playOn}
+      onSkipReadThrough={this.skipReadThrough}
       onDismissEnded={this.dismissEnded} />
   }
 

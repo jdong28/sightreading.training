@@ -8,7 +8,7 @@ import {
 import {SheetMusicGenerator, generatorDefaultSettings, fixGeneratorSettings} from "st/generators"
 import {
   SHEET_MUSIC_GENERATOR, sheetMusicSection, BOTH_HANDS, RIGHT_HAND, WHOLE_SECTION, SHEET_MUSIC_STORAGE_KEY,
-  sheetMusicMeasureBounds, sheetMusicSectionRange, sheetMusicSectionUpdate, sheetMusicSectionLength,
+  FREE_PRACTICE, sheetMusicMeasureBounds, sheetMusicSectionRange, sheetMusicSectionUpdate, sheetMusicSectionLength,
 } from "st/data"
 import {importMusicXMLPiece} from "st/sheet_music_deck"
 import {setAppStore} from "st/storage"
@@ -1084,7 +1084,7 @@ describe("measure cards", function() {
     })
 
     let settingsFor = extra => ({
-      piece: piece.id, song: "", startMeasure: 0, endMeasure: 2,
+      piece: piece.id, song: "", startMeasure: 0, endMeasure: 2, practice: FREE_PRACTICE,
       hand: BOTH_HANDS, measuresPerCard: 2, order: IN_ORDER, ...extra,
     })
 
@@ -1124,7 +1124,7 @@ describe("measure cards", function() {
       let settings
       try {
         window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
-          piece: long.id, song: "", startMeasure: 1, endMeasure: 16, hand: BOTH_HANDS,
+          piece: long.id, song: "", startMeasure: 1, endMeasure: 16, hand: BOTH_HANDS, practice: FREE_PRACTICE,
         }))
         settings = generatorDefaultSettings(sheetMusic, grand)
       } finally {

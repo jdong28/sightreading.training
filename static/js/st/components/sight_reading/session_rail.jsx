@@ -8,12 +8,12 @@ import * as React from "react"
 import * as types from "prop-types"
 import classNames from "classnames"
 
-import {Plate, SectionLabel} from "st/components/salon"
+import {Plate, Pill, SectionLabel} from "st/components/salon"
 import {romanNumeral} from "st/music"
 import {measureNumberList} from "st/song_sections"
 import {pieceSong} from "st/sheet_music_deck"
 import {getAppStore} from "st/storage"
-import {pulledPassage} from "st/srs/planner"
+import {pulledPassage, READ_THROUGH} from "st/srs/planner"
 import {TROUBLE_BELOW} from "st/bar_progress"
 import {selfWord} from "st/srs/self_grade"
 import {GOOD} from "st/srs/grade"
@@ -55,6 +55,8 @@ export class SessionRail extends React.Component {
     sessionLog: types.array,
     elapsedSeconds: types.number,
     store: types.object,
+    // skips the programme's read-through, offered while it is being played
+    onSkipReadThrough: types.func,
   }
 
   static defaultProps = {
@@ -82,7 +84,10 @@ export class SessionRail extends React.Component {
   renderThisSession(piece, song, store) {
     let {settings, generator, elapsedSeconds} = this.props
     let isProgramme = piece && plannedPractice(settings, store)
-    let aside = isProgramme ?
+    let study = isProgramme && generator && generator.study ? generator.study() : null
+    let reading = !!generator && !!generator.deck && !!generator.deck.entry &&
+      generator.deck.entry.reason == READ_THROUGH
+    let aside = study && !study.learned ? "Tonight's study" : isProgramme ?
       (orderOffered(settings, store) ? INTRODUCTION_LABELS[introductionOrder(settings)] : "Today's programme") :
       "Free practice"
 
@@ -112,6 +117,8 @@ export class SessionRail extends React.Component {
           <div className={styles.track}>
             <div className={styles.fill} style={{width: `${Math.min(1, elapsedSeconds / target) * 100}%`}} />
           </div>
+          {reading && this.props.onSkipReadThrough && <Pill
+            className={styles.skip_pill} onClick={this.props.onSkipReadThrough}>Skip the read-through</Pill>}
         </React.Fragment> : <div className={styles.clock_row}>
           <span className={styles.clock}>{formatElapsed(elapsedSeconds)}</span>
           {startMeasure != null && <span className={styles.clock_note}>
@@ -168,8 +175,9 @@ export class SessionRail extends React.Component {
     let rows = []
 
     if (isProgramme && generator.upNext) {
-      rows = generator.upNext(3).map(({measure, words}) => ({
-        left: `Bar ${measure}`, right: words, strong: words.includes("passage"),
+      rows = generator.upNext(3).map(({measure, words, bars}) => ({
+        left: bars && bars[0] != bars[1] ? `Bars ${bars[0]}–${bars[1]}` : `Bar ${measure}`,
+        right: words, strong: words.includes("passage"),
       }))
     } else if (!isProgramme && (this.props.settings.order || "in order") != "random" &&
         generator.cards && generator.cards.length > 1) {

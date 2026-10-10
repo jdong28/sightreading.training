@@ -9,7 +9,7 @@ import {ReviewPane} from "st/components/sight_reading/review_pane"
 import {importMusicXMLPiece, songToJSON} from "st/sheet_music_deck"
 import {parseMusicXML} from "st/musicxml"
 import {setAppStore} from "st/storage"
-import {SHEET_MUSIC_STORAGE_KEY, BOTH_HANDS, FREE_PRACTICE, WHOLE_SECTION} from "st/data"
+import {SHEET_MUSIC_STORAGE_KEY, BOTH_HANDS, FREE_PRACTICE, PROGRAMME_PRACTICE, WHOLE_SECTION} from "st/data"
 import {SCORE_DRILL_STORAGE_KEY} from "st/generators"
 import {SCORE_VIEW_NO_SOURCE, SCORE_VIEW_FAILED} from "st/components/sight_reading/score_view"
 import viewStyles from "st/components/sight_reading/score_view.module.css"
@@ -219,6 +219,72 @@ describe("the score view at rest (st/components/sight_reading/score_view)", func
 
       click(buttonNamed(el, "Off"))
       expect(legend()).toBe(null)
+    })
+
+    // a stored study plan with the passages given flowed, [start, end] each
+    let flowedPlan = (piece, passages) => store.putStudy({
+      pieceId: piece.id, status: "learning", startedAt: 1,
+      plan: {
+        createdAt: 1, known: [],
+        passages: passages.map(([start, end]) =>
+          ({start, end, from: "score", openedAt: 1, stage: 4, stageAt: 2, flowedAt: 3})),
+      },
+    })
+
+    // the overlay of a bar on the page shown, paging on until it is found
+    let barOverlay = (el, measure) => {
+      while (!buttonNamed(el, "‹ Previous page").disabled) { click(buttonNamed(el, "‹ Previous page")) }
+      for (;;) {
+        let overlay = buttonLabelled(el, `Bar ${measure}`)
+        if (overlay || buttonNamed(el, "Next page ›").disabled) { return overlay }
+        click(buttonNamed(el, "Next page ›"))
+      }
+    }
+
+    it("outlines tonight's study in oxblood, with a tag, and the passages that flow in gilt", async function() {
+      let {container: el} = await renderFixture({practice: PROGRAMME_PRACTICE})
+      // the fixture's flagged passage, bars 5-9, is the hardest: laid out first, in runs of at most four
+      expect(el.textContent).toContain("Tonight's study · bars 5–7")
+
+      for (let measure of [5, 6, 7]) {
+        let overlay = barOverlay(el, measure)
+        expect(overlay.style.borderTopWidth).withContext(`bar ${measure}`).toEqual("4px")
+        expect(overlay.style.borderTopColor).withContext(`bar ${measure}`).toEqual("var(--salon-oxblood)")
+      }
+      for (let measure of [8, 3]) {
+        expect(barOverlay(el, measure).style.borderTopWidth).withContext(`bar ${measure}`).toEqual("")
+      }
+    })
+
+    it("outlines a passage that flows in gilt beside the one in progress, and not under the difficulty shade", async function() {
+      let piece = await (async () => {
+        let musicXML = await (await fetch("/tools/fingerings/tests/fixture/score.musicxml")).text()
+        return (await importMusicXMLPiece("fixture.musicxml", musicXML, store)).piece
+      })()
+      await flowedPlan(piece, [[1, 4]])
+      window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+        piece: piece.id, hand: BOTH_HANDS, measuresPerCard: WHOLE_SECTION, practice: PROGRAMME_PRACTICE,
+      }))
+      container = document.createElement("div")
+      container.style.width = "1440px"
+      document.body.appendChild(container)
+      root = createRoot(container)
+      flushSync(() => {
+        root.render(React.createElement(MemoryRouter, {},
+          React.createElement(ScorePage, {ref: p => page = p, viewportHeight: 1240})))
+      })
+      flushSync(() => {})
+      await waitFor(() => container.querySelectorAll('button[aria-label^="Bar "]').length > 0,
+        {message: "the fixture's bars to draw"})
+      let el = container
+
+      for (let measure of [1, 2, 3, 4]) {
+        let overlay = barOverlay(el, measure)
+        expect(overlay.style.borderTopColor).withContext(`bar ${measure}`).toEqual("var(--salon-gilt)")
+      }
+      click(buttonNamed(el, "Score difficulty"))
+      expect(barOverlay(el, 2).style.borderTopWidth).toEqual("")
+      expect(el.textContent).not.toContain("Tonight's study · bars")
     })
 
     it("opens a clicked bar's pop-up, names its flagged passage, and closes with Escape or ×", async function() {
@@ -465,6 +531,34 @@ describe("the score view at rest (st/components/sight_reading/score_view)", func
       // the shade group still works over the grid
       let shadePill = [...el.querySelectorAll("button")].find(b => b.textContent.trim() == "Score difficulty")
       expect(shadePill).toBeTruthy()
+    })
+
+    it("draws the study's outlines on the grid of bars too", async function() {
+      let song = parseMusicXML(workhorseScore())
+      let piece = await store.putPiece({id: "old", title: "Workhorse", importedAt: 1000, song: songToJSON(song)})
+      await store.putStudy({
+        pieceId: piece.id, status: "learning", startedAt: 1,
+        plan: {
+          createdAt: 1, known: [],
+          passages: [{start: 1, end: 4, from: "score", openedAt: 1, stage: 4, stageAt: 2, flowedAt: 3}],
+        },
+      })
+      window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+        piece: piece.id, hand: "both hands", measuresPerCard: "all", practice: PROGRAMME_PRACTICE,
+      }))
+
+      let el = renderScorePage()
+      await waitFor(() => page.state.engineSource?.status == "missing", {message: "the missing source"})
+      await waitFor(() => el.querySelector('[aria-label="Bar 5"]'), {message: "the grid"})
+
+      let cell = number => el.querySelector(`[aria-label="Bar ${number}"]`)
+      expect(cell(2).style.borderTopColor).toEqual("var(--salon-gilt)")
+      expect(cell(2).style.borderTopWidth).toEqual("4px")
+      // bars 5-8, or the flag's own passage, are the one in progress
+      let outlined = [...el.querySelectorAll('[aria-label^="Bar "]')]
+        .filter(bar => bar.style.borderTopColor == "var(--salon-oxblood)")
+      expect(outlined.length).toBeGreaterThan(0)
+      expect(outlined.every(bar => bar.style.borderTopWidth == "4px")).toBe(true)
     })
 
     it("shows a grid of bars when the engine can't draw the piece", async function() {

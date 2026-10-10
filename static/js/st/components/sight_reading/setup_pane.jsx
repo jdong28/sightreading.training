@@ -7,18 +7,20 @@
 
 import * as React from "react"
 import * as types from "prop-types"
+import classNames from "classnames"
 
 import {Plate, Pill} from "st/components/salon"
 import NumberPicker from "st/components/number_picker"
 import PdfSteps from "st/components/sight_reading/pdf_steps"
 import {LEVEL_WORDS} from "st/difficulty/index"
-import {barsLabel} from "st/music"
+import {barsLabel, romanNumeral} from "st/music"
 import {measureNumberList} from "st/song_sections"
 import {pieceSong} from "st/sheet_music_deck"
 import {getAppStore} from "st/storage"
 import {learnedCount} from "st/bar_progress"
 import {
   mostOverduePiece, pulledPassage, READ_FIRST, HARDEST_FIRST, SCORE_ORDER,
+  READ, HANDS, TOGETHER, FLOW, STAGE_NAMES, MIN_PASSAGE_BARS, MAX_PASSAGE_BARS,
 } from "st/srs/planner"
 import {IN_ORDER, RANDOM_ORDER} from "st/measure_cards"
 import {scoreEnginesPath} from "st/score_render/route"
@@ -28,7 +30,7 @@ import {
   sheetMusicPiece, programmeOffered, plannedPractice, sheetMusicPassages, programmePassages,
   introductionOrder, orderOffered, passageSettings, planCardMeasures, sheetMusicMeasureBounds,
   sheetMusicSectionRange, sheetMusicSectionUpdate, sheetMusicSectionLength, sheetMusicSection,
-  itemHand,
+  itemHand, passageBarsSetting,
 } from "st/data"
 
 import styles from "./setup_pane.module.css"
@@ -44,6 +46,38 @@ const ORDER_PILLS = [
 ]
 
 const plural = (count, word) => `${count} ${word}${count == 1 ? "" : "s"}`
+
+const HAND_WORDS = {upper: "right hand", lower: "left hand"}
+
+// "5–8", or "9" for a passage of one bar
+const spanOf = (start, end) => start == end ? `${start}` : `${start}–${end}`
+
+// the most passages the path names before "and n more"
+const PATH_LENGTH = 6
+
+// The four stage rows of a passage of tonight's study (view: the planner's
+// studyView passage), each with the words it carries, whether it is passed
+// and whether it is the stage the passage is at: a bar the scaffold split
+// puts the passage back at stage II until its hand holds
+function stageRows(view) {
+  let {bars, lead, flowedAt, handsPlayed, effective, card} = view
+  let [first, last] = [bars[0], bars[bars.length - 1]]
+  let current = flowedAt ? FLOW + 1 : effective
+
+  let handsWords = list => list.map(({measure, hand}) => `bar ${measure}, ${HAND_WORDS[hand]}`).join(" · ")
+  let hands = effective == HANDS && card ? handsWords([{measure: card.measures[0], hand: card.hand}]) :
+    handsPlayed.length ? handsWords(handsPlayed) : null
+
+  let words = {
+    [READ]: "each bar once, at sight",
+    [HANDS]: hands || (current > HANDS ? "not needed" : "only where a bar needs it"),
+    [TOGETHER]: `growing from bar ${first}, a bar at a time`,
+    [FLOW]: `${barsLabel(lead != null ? lead : first, last)}, twice without a stop`,
+  }
+
+  return [READ, HANDS, TOGETHER, FLOW].map(stage =>
+    ({stage, words: words[stage], passed: stage < current, current: stage == current}))
+}
 
 // the lead-in bar just before a pulled flag's first playable bar, or null
 // at the piece's start (st/srs/planner introduction()'s own leadIn, read
@@ -98,6 +132,8 @@ export class SetupPane extends React.Component {
     acoustic: types.bool,
     onBegin: types.func.isRequired,
     now: types.func,
+    // skips the programme's read-through, see PlanGenerator#skipReadThrough
+    onSkipReadThrough: types.func,
   }
 
   static defaultProps = {
@@ -372,6 +408,7 @@ export class SetupPane extends React.Component {
     let order = introductionOrder(settings)
     let flag = pulledPassage(programmePassages(settings, store), hand)
     let other = this.props.pickPiece && this.suggestion()
+    let study = generator && generator.study ? generator.study() : null
 
     return <div className={styles.subgroup}>
       <div className={styles.figures}>
@@ -393,10 +430,18 @@ export class SetupPane extends React.Component {
       </div>
 
       <div className={styles.hint}>
-        Today's programme picks each bar: the ones due for review, new ones{" "}
-        {orderOffered(settings, store) ? "in the order below" : "in score order"}, and those you missed again
-        in a moment.
+        {study && !study.learned ?
+          "Today's programme plays the reviews due, then tonight's study: one passage at a time, " +
+            "read, hands, together, flow." : <React.Fragment>
+          Today's programme picks each bar: the ones due for review, new ones{" "}
+          {orderOffered(settings, store) ? "in the order below" : "in score order"}, and those you missed
+          again in a moment.</React.Fragment>}
       </div>
+
+      {study && this.renderStudy(study)}
+      {!study && hand != "both" && <div className={styles.hint}>
+        Tonight's study plays hands together; with one hand, new bars arrive one at a time.
+      </div>}
 
       {other && <div className={styles.suggestion}>
         <span>{other.title} has the most bars due.</span>
@@ -438,6 +483,82 @@ export class SetupPane extends React.Component {
         </div>
       </div>
     </div>
+  }
+
+  // "Tonight's study": the read-through still to play and its Skip it, the
+  // passage in progress (or next to open) with its four stages, the path of
+  // passages, and the bars a new passage takes; one line once learned
+  renderStudy(study) {
+    let {settings} = this.props
+    let {passage, path} = study
+
+    return <div className={styles.sub}>
+      <div className={styles.sub_label}>Tonight's study</div>
+
+      {study.readThroughLeft > 0 && <div className={styles.read_row}>
+        <span>Read-through first · {plural(study.readThroughLeft, "bar")} left</span>
+        <Pill variant="ghost" className={styles.small_pill} onClick={this.props.onSkipReadThrough}>Skip it</Pill>
+      </div>}
+
+      {study.learned ? <div className={styles.learned}>Learned ❖ · the programme keeps it from here</div> :
+        passage && this.renderPassage(passage)}
+
+      {!study.learned && path.length > 0 && <div className={styles.path}>
+        <span>Path · </span>
+        {path.slice(0, PATH_LENGTH).map(({start, end, flowed, current}, idx) =>
+          <React.Fragment key={`${start}-${end}`}>
+            {idx > 0 && " · "}
+            <span className={classNames({[styles.path_current]: current})}>
+              {spanOf(start, end)}{flowed ? " ❖" : ""}
+            </span>
+          </React.Fragment>)}
+        {path.length > PATH_LENGTH && ` · and ${path.length - PATH_LENGTH} more`}
+        <div className={styles.path_count}>{study.flowed} of {study.total} passages flow</div>
+      </div>}
+
+      <div className={classNames(styles.sub, styles.study_size)}>
+        <div className={styles.sub_label}>Bars per passage</div>
+        <div className={styles.section_row}>
+          <NumberPicker
+            label="bars per passage"
+            slider={false}
+            min={MIN_PASSAGE_BARS}
+            max={MAX_PASSAGE_BARS}
+            value={passageBarsSetting(settings)}
+            onChange={value => this.updateSettings({passageBars: value})} />
+        </div>
+        <div className={styles.hint}>New passages take this many bars; the one in progress keeps its own.</div>
+      </div>
+    </div>
+  }
+
+  // the passage line and the stage rows
+  renderPassage(passage) {
+    let bars = passage.bars
+    let words = barsLabel(bars[0], bars[bars.length - 1])
+    let heading = `${words[0].toUpperCase()}${words.slice(1)}${passage.words ? ` · ${passage.words}` : ""}`
+    let at = passage.effective || passage.stage
+
+    return <React.Fragment>
+      <div className={styles.passage_line}>
+        <span className={styles.passage_bars}>{heading}</span>
+        <span className={styles.passage_stage}>{passage.open ? `${romanNumeral(at)} of IV` : "next"}</span>
+      </div>
+      <ol className={styles.steps} aria-label="Stages of the passage">
+        {stageRows(passage).map(({stage, words, passed, current}) =>
+          <li
+            key={stage}
+            className={classNames(styles.step, {[styles.step_current]: current})}
+            aria-current={current ? "step" : undefined}>
+            <span className={styles.numeral}>{romanNumeral(stage)}</span>
+            <span className={styles.step_text}>
+              <span className={styles.stage_name}>{STAGE_NAMES[stage]}</span>
+              <span className={styles.step_sub}>{words}</span>
+            </span>
+            {passed && <span className={styles.passed} role="img" aria-label="done">❖</span>}
+          </li>)}
+      </ol>
+    </React.Fragment>
   }
 
   suggestion() {

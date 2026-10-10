@@ -7,9 +7,9 @@ import {DECK_MIGRATION_MARKER, LIBRARY_FORMAT, LIBRARY_VERSION, DB_VERSION} from
 
 import {
   itemId, newItem, itemFromSectionStats, legacyReview, itemWithPractice, validItem,
-  validReview, SELF_ASPECTS, withPass, PASS_HISTORY
+  validReview, validStudy, SELF_ASPECTS, withPass, PASS_HISTORY, REVIEW_KINDS
 } from "st/srs/records"
-import {applyGrade} from "st/srs/schedule"
+import {applyGrade, replay, scheduled} from "st/srs/schedule"
 
 import {openTestStore, TEST_DB_NAME} from "spec/helpers"
 
@@ -215,6 +215,49 @@ describe("spaced repetition records", function() {
 
       let {misses: legacyMisses, ...noLegacyMisses} = legacyReview(section("p", 1, 4))
       expect(validReview(noLegacyMisses)).toBe(false)
+    })
+
+    it("accepts a read-through review, detected or self-graded, and none without a grade", function() {
+      expect(REVIEW_KINDS).toContain("read-through")
+
+      let detected = attempt("p", 1, 1, 5, {kind: "read-through"})
+      expect(validReview(detected)).toBe(true)
+      expect(validReview({...detected, grade: undefined})).toBe(false)
+      expect(validReview({...detected, grade: 5})).toBe(false)
+      let {misses, ...noMisses} = detected
+      expect(validReview(noMisses)).toBe(false)
+
+      let self = selfReview("p", 1, 1, 5, {kind: "read-through"})
+      expect(validReview(self)).toBe(true)
+      expect(validReview({...self, grade: undefined})).toBe(false)
+      expect(validReview({...self, columns: 4})).toBe(false)
+    })
+
+    it("accepts a study with a plan and a skipped read-through, and rejects a malformed plan", function() {
+      let passage = {start: 1, end: 4, from: "score", openedAt: 10, stage: 3, stageAt: 20}
+      let study = (plan, extra={}) => ({pieceId: "p", status: "learning", startedAt: 1, plan, ...extra})
+      let plan = (passages, extra={}) => ({createdAt: 5, known: [[9, 12]], passages, ...extra})
+
+      expect(validStudy({pieceId: "p", status: "learning", startedAt: 1})).toBe(true)
+      expect(validStudy(study(plan([])))).toBe(true)
+      expect(validStudy(study(plan([passage, {...passage, start: 5, end: 8, stage: 4, flowedAt: 30}], {learnedAt: 40}))))
+        .toBe(true)
+      expect(validStudy(study(plan([{...passage, from: "flag:a"}])))).toBe(true)
+      expect(validStudy({pieceId: "p", status: "learning", startedAt: 1, readThrough: "skipped"})).toBe(true)
+
+      expect(validStudy({pieceId: "p", status: "learning", startedAt: 1, readThrough: "done"})).toBe(false)
+      expect(validStudy(study(plan([{...passage, stage: 5}])))).toBe(false)
+      expect(validStudy(study(plan([{...passage, stage: 0}])))).toBe(false)
+      expect(validStudy(study(plan([{...passage, start: 5, end: 4}])))).toBe(false)
+      expect(validStudy(study(plan([{...passage, openedAt: undefined}])))).toBe(false)
+      expect(validStudy(study(plan([{...passage, stageAt: "now"}])))).toBe(false)
+      expect(validStudy(study(plan([{...passage, from: undefined}])))).toBe(false)
+      expect(validStudy(study(plan([passage, {...passage, start: 5, end: 8}])))).toBe(false)
+      expect(validStudy(study(plan([], {known: [[4, 1]]})))).toBe(false)
+      expect(validStudy(study(plan([], {known: [[1.5, 2]]})))).toBe(false)
+      expect(validStudy(study(plan([], {createdAt: undefined})))).toBe(false)
+      expect(validStudy(study(plan([], {learnedAt: "later"})))).toBe(false)
+      expect(validStudy(study("nothing"))).toBe(false)
     })
   })
 
@@ -585,6 +628,48 @@ describe("spaced repetition records", function() {
         expect(store.study("a").status).toEqual("shelved")
       })
 
+      it("keeps a study's plan and skipped read-through, rejecting a plan with two open passages", async function() {
+        let study = {
+          pieceId: "a", status: "learning", startedAt: 1000, readThrough: "skipped",
+          plan: {
+            createdAt: 1000, known: [[9, 12]],
+            passages: [{start: 1, end: 4, from: "flag:x", openedAt: 1000, stage: 2, stageAt: 1100}],
+          },
+        }
+        await store.putStudy(study)
+        expect(store.study("a")).toEqual(study)
+
+        let open = {start: 5, end: 8, from: "score", openedAt: 1200, stage: 1, stageAt: 1200}
+        await expectAsync(store.putStudy({...study, plan: {...study.plan, passages: [...study.plan.passages, open]}}))
+          .toBeRejectedWithError("Not a valid study")
+        expect(store.study("a")).toEqual(study)
+      })
+
+      it("stores a read-through review without scheduling its item, and replay ignores it", async function() {
+        let read = at => ({
+          item: {...practicedItem("a", 1, 1, at), recent: [], passes: [[at, 4, 4, null]]},
+          review: attempt("a", 1, 1, at, {kind: "read-through", grade: 4, clean: 4, misses: 0}),
+        })
+        await store.recordAttempt(read(1000))
+
+        let item = store.item("a:both:1-1")
+        expect(item.state).toEqual("tracked")
+        expect(scheduled(item)).toBe(false)
+        expect(item.recent).toEqual([])
+        let [review] = await store.reviews({pieceId: "a"})
+        expect(review).toEqual(jasmine.objectContaining({kind: "read-through", grade: 4}))
+        expect(review.r).toBeUndefined()
+
+        // the first graded attempt after it is the item's first schedule
+        let graded = {...practicedItem("a", 1, 1, 2000), recent: [[2000, 4, 4, 3]], attempts: 2}
+        await store.recordAttempt({item: graded, review: attempt("a", 1, 1, 2000, {grade: 3, clean: 4, misses: 0, was: "tracked"})})
+        let reviews = await store.reviews({pieceId: "a"})
+        expect(reviews.map(r => r.kind)).toEqual(["read-through", "attempt"])
+        expect(store.item("a:both:1-1").reps).toEqual(1)
+        expect(replay(reviews, {item: store.item("a:both:1-1")})).toEqual(store.item("a:both:1-1"))
+        expect(replay(reviews.slice(0, 1), {item: item}).state).toEqual("tracked")
+      })
+
       it("reads records in key order, and only indexed records by index", async function() {
         await store.recordAttempt({item: practicedItem("b", 1, 1, 1000), review: attempt("b", 1, 1, 3000)})
         await store.recordAttempt({item: practicedItem("a", 10, 10, 1000), review: attempt("a", 10, 10, 2000)})
@@ -670,7 +755,7 @@ describe("spaced repetition records", function() {
       let file = await exportLibraryFile(store)
       let data = JSON.parse(file.text)
       expect(data.version).toEqual(LIBRARY_VERSION)
-      expect(LIBRARY_VERSION).toEqual(10)
+      expect(LIBRARY_VERSION).toEqual(11)
       expect(data.items.map(item => item.id)).toEqual(["a:both:1-1", "a:upper:1-1"])
       expect(data.reviews.map(review => [review.itemId, review.at])).toEqual([["a:both:1-1", 1000], ["a:upper:1-1", 2000]])
       expect(data.studies).toEqual([{pieceId: "a", status: "learning", startedAt: 900}])
@@ -697,6 +782,41 @@ describe("spaced repetition records", function() {
       expect(again.report.addedStudies).toEqual(0)
       expect(reopened.items()).toEqual(data.items)
       expect((await storedReviews(reopened)).length).toEqual(2)
+    })
+
+    it("round trips read-through reviews and a study's plan at library version 11, and imports a version 10 library", async function() {
+      expect(LIBRARY_VERSION).toEqual(11)
+      let store = await open()
+      await store.putPiece(pieceData("a", "First", 1000))
+      let item = {...practicedItem("a", 1, 1, 1000), recent: [], passes: [[1000, 4, 4, null]]}
+      await store.recordAttempt({item, review: attempt("a", 1, 1, 1000, {kind: "read-through", grade: 4, clean: 4, misses: 0})})
+      let study = {
+        pieceId: "a", status: "learning", startedAt: 900, readThrough: "skipped",
+        plan: {
+          createdAt: 900, known: [],
+          passages: [{start: 1, end: 4, from: "score", openedAt: 900, stage: 3, stageAt: 950}],
+        },
+      }
+      await store.putStudy(study)
+
+      let file = await exportLibraryFile(store)
+      let data = JSON.parse(file.text)
+      expect(data.version).toEqual(11)
+      expect(data.reviews.map(review => review.kind)).toEqual(["read-through"])
+      expect(data.studies).toEqual([study])
+
+      let other = await open()
+      let result = await importLibraryFile(file.text, other)
+      expect(result.report.addedReviews).toEqual(1)
+      expect(other.study("a")).toEqual(study)
+      expect((await other.reviews({pieceId: "a"}))[0].kind).toEqual("read-through")
+
+      // a version 10 library, carrying neither, imports as it is
+      let older = await open()
+      let plain = {...data, version: 10, reviews: [], studies: [{pieceId: "a", status: "learning", startedAt: 900}]}
+      let imported = await importLibraryFile(JSON.stringify(plain), older)
+      expect(imported.error).toBeUndefined()
+      expect(older.study("a")).toEqual({pieceId: "a", status: "learning", startedAt: 900})
     })
 
     it("round trips an item's passes history through a library export and import", async function() {

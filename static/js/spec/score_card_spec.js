@@ -13,7 +13,10 @@ import {
 import {prepareCard} from "st/score_render/card_source"
 import {placeBadges} from "st/score_render/card_badges"
 import {loadScoreEngines} from "st/score_render/load"
-import {STAVES, pieceSectionMeasures, BOTH_HANDS, RIGHT_HAND, LEFT_HAND, SHEET_MUSIC_STORAGE_KEY} from "st/data"
+import {
+  STAVES, pieceSectionMeasures, BOTH_HANDS, RIGHT_HAND, LEFT_HAND, SHEET_MUSIC_STORAGE_KEY,
+  FREE_PRACTICE, PROGRAMME_PRACTICE,
+} from "st/data"
 import {sectionCard} from "st/measure_cards"
 import {importMusicXMLPiece, addPiece} from "st/sheet_music_deck"
 import {parseMusicXML} from "st/musicxml"
@@ -699,7 +702,7 @@ describe("score page engine card", function() {
   let drillPiece = async (xml, settings) => {
     let {piece} = await importMusicXMLPiece("piece.musicxml", xml, store)
     window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
-      piece: piece.id, hand: BOTH_HANDS, measuresPerCard: "all", ...settings,
+      piece: piece.id, hand: BOTH_HANDS, practice: FREE_PRACTICE, measuresPerCard: "all", ...settings,
     }))
     return piece
   }
@@ -897,7 +900,7 @@ describe("score page engine card", function() {
   it("draws a piece stored without its score on the app's staff, saying how to draw it from the score", async function() {
     let {piece} = await addPiece("Rêverie", parseMusicXML(reverieOpening()), store)
     window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
-      piece: piece.id, startMeasure: 2, endMeasure: 4, hand: BOTH_HANDS, measuresPerCard: "all",
+      piece: piece.id, startMeasure: 2, endMeasure: 4, hand: BOTH_HANDS, practice: FREE_PRACTICE, measuresPerCard: "all",
     }))
 
     let el = renderScorePage()
@@ -1111,7 +1114,7 @@ describe("score page engine card", function() {
   it("draws a piece stored without its score on the app's staff in scroll mode", async function() {
     let {piece} = await addPiece("Rêverie", parseMusicXML(reverieOpening()), store)
     window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
-      piece: piece.id, startMeasure: 2, endMeasure: 4, hand: BOTH_HANDS, measuresPerCard: "all",
+      piece: piece.id, startMeasure: 2, endMeasure: 4, hand: BOTH_HANDS, practice: FREE_PRACTICE, measuresPerCard: "all",
     }))
     window.localStorage.setItem(SCORE_DRILL_STORAGE_KEY, JSON.stringify({mode: "scroll"}))
 
@@ -1244,14 +1247,15 @@ describe("score page engine card", function() {
     let rightXML = right.map(name => noteXML(name.slice(0, -1), Number(name.slice(-1)), 1, 1)).join("")
     let bars = [1, 2].map(number => `<measure number="${number}">${number == 1 ? attributes([["G", 2], ["F", 4]], 2) : ""}${rightXML}<backup><duration>4</duration></backup>${notesOn(leftNotes, 3, 2)}</measure>`)
     let piece = await drillPiece(scoreOf("<score-part id=\"P1\"><part-name>Piano</part-name></score-part>",
-      `<part id="P1">${bars.join("")}</part>`), {startMeasure: 1, endMeasure: 2, measuresPerCard: "1"})
+      `<part id="P1">${bars.join("")}</part>`),
+      {startMeasure: 1, endMeasure: 2, practice: PROGRAMME_PRACTICE, measuresPerCard: "1"})
     await store.putStudy({pieceId: piece.id, status: "learning", startedAt: Date.now()})
     renderScorePage(props)
     await cardDrawn()
 
     flushSync(() => page.beginSession())
     let generator = page.state.notes.generator
-    expect(generator.statusLine()).toEqual("New · bar 1")
+    expect(generator.statusLine()).toEqual("Study · I Read · bar 1")
 
     // a wrong key under the other hand's note on each of two columns: the
     // blamed hand's notes are the untouched ones, and the bar fails

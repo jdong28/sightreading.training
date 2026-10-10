@@ -433,11 +433,15 @@ export function gradeRange({mode, pace, columns: cardColumns}, indices, current)
  * @param {string} [opts.sessionId]
  * @param {boolean} [opts.deliberate] a hand alone the player chose, see
  * ItemRecord
+ * @param {string} [opts.kind] the review's kind, "attempt" by default, or
+ * "read-through" for a first reading of a bar (tonight's study): graded and
+ * measured as any attempt, but its item gets practice alone (no recent, no
+ * pace) and the review is never scheduled
  * @returns {{id: string, build: function(ItemRecord|null): {item: ItemRecord, review: ReviewRecord}}[]}
  * the item id of each attempt, and its item as the attempt leaves it and its
  * review, from the stored item of the id
  */
-export function passAttempts(pass, {pieceId, hand, at=pass.lastAt, sessionId, deliberate}) {
+export function passAttempts(pass, {pieceId, hand, at=pass.lastAt, sessionId, deliberate, kind="attempt"}) {
   if (!pass.complete || !pass.graded || !pass.played || !pass.drill) { return [] }
 
   let grading = passGrading(pass)
@@ -452,16 +456,25 @@ export function passAttempts(pass, {pieceId, hand, at=pass.lastAt, sessionId, de
       let collected = indices.map(idx => pass.columns[idx])
       let totals = totalsOf(collected)
 
-      let record = itemWithPractice(current, {...totals, at, deliberate})
-      record.recent = [...current.recent, [at, graded.columns, graded.clean, graded.grade]]
-        .slice(-RECENT_ATTEMPTS)
-      if (startMeasure == endMeasure) {
-        record.passes = withPass(current, [at, graded.columns, graded.clean, graded.grade])
-      }
-      if (graded.pace != null && !graded.slips && !graded.skipped) {
-        let usual = current.paceMs == null ? graded.pace :
-          current.paceMs + (graded.pace - current.paceMs) * PACE_WEIGHT
-        record.paceMs = Math.round(usual)
+      let record
+      if (kind == "read-through") {
+        // read, not graded as evidence of recall: practice and a pass alone
+        record = itemWithPractice(current, {
+          ...totals, at, deliberate,
+          pass: startMeasure == endMeasure ? [graded.columns, graded.clean, null] : undefined,
+        })
+      } else {
+        record = itemWithPractice(current, {...totals, at, deliberate})
+        record.recent = [...current.recent, [at, graded.columns, graded.clean, graded.grade]]
+          .slice(-RECENT_ATTEMPTS)
+        if (startMeasure == endMeasure) {
+          record.passes = withPass(current, [at, graded.columns, graded.clean, graded.grade])
+        }
+        if (graded.pace != null && !graded.slips && !graded.skipped) {
+          let usual = current.paceMs == null ? graded.pace :
+            current.paceMs + (graded.pace - current.paceMs) * PACE_WEIGHT
+          record.paceMs = Math.round(usual)
+        }
       }
 
       let review = {
@@ -469,7 +482,7 @@ export function passAttempts(pass, {pieceId, hand, at=pass.lastAt, sessionId, de
         at,
         pieceId,
         ...(sessionId ? {sessionId} : {}),
-        kind: "attempt",
+        kind,
         grade: graded.grade,
         was: firstSight ? "new" : current.state,
         columns: graded.columns,
@@ -562,9 +575,11 @@ function selfElapsedOf(pass, range, total) {
  * @param {string} [opts.sessionId]
  * @param {boolean} [opts.deliberate] a hand alone the player chose, see
  * ItemRecord
+ * @param {string} [opts.kind] as for passAttempts: "read-through" writes
+ * the review and the item's practice alone, nothing a schedule reads
  * @returns {{id: string, build: function(ItemRecord|null): {item: ItemRecord, review: ReviewRecord}}[]}
  */
-export function selfAttempts(pass, {pieceId, hand, at=pass.lastAt, sessionId, deliberate}) {
+export function selfAttempts(pass, {pieceId, hand, at=pass.lastAt, sessionId, deliberate, kind="attempt"}) {
   if (!pass.selfGrade || !pass.graded) { return [] }
 
   let {grade, slipped} = pass.selfGrade
@@ -581,10 +596,19 @@ export function selfAttempts(pass, {pieceId, hand, at=pass.lastAt, sessionId, de
         let current = stored || newItem(itemRange, at)
         let firstSight = !current || current.attempts == 0 && !current.recent.length
 
-        let record = itemWithPractice(current, {hits: 0, misses: 0, at, elapsedMs, played: true, deliberate})
-        record.recent = [...current.recent, [at, null, null, grade]].slice(-RECENT_ATTEMPTS)
-        if (range.startMeasure == range.endMeasure) {
-          record.passes = withPass(current, [at, null, null, grade])
+        let single = range.startMeasure == range.endMeasure
+        let record
+        if (kind == "read-through") {
+          record = itemWithPractice(current, {
+            hits: 0, misses: 0, at, elapsedMs, played: true, deliberate,
+            pass: single ? [null, null, grade] : undefined,
+          })
+        } else {
+          record = itemWithPractice(current, {hits: 0, misses: 0, at, elapsedMs, played: true, deliberate})
+          record.recent = [...current.recent, [at, null, null, grade]].slice(-RECENT_ATTEMPTS)
+          if (single) {
+            record.passes = withPass(current, [at, null, null, grade])
+          }
         }
 
         let review = {
@@ -592,7 +616,7 @@ export function selfAttempts(pass, {pieceId, hand, at=pass.lastAt, sessionId, de
           at,
           pieceId,
           ...(sessionId ? {sessionId} : {}),
-          kind: "attempt",
+          kind,
           mode: "self",
           grade,
           was: firstSight ? "new" : current.state,

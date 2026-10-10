@@ -74,6 +74,8 @@ export class ScoreView extends React.Component {
     onBegin: types.func.isRequired,
     onPlayOn: types.func.isRequired,
     onDismissEnded: types.func.isRequired,
+    // skips the programme's read-through, see SightReadingPage#skipReadThrough
+    onSkipReadThrough: types.func,
   }
 
   static defaultProps = {
@@ -220,6 +222,33 @@ export class ScoreView extends React.Component {
       for (let [measure, mark] of sessionMarks(this.props.sessionLog)) {
         barInfo.set(measure, {fill: MARK_BG[mark.kind]})
         labels.set(measure, {text: mark.label, className: classNames(styles.label, styles[`label_${mark.kind}`])})
+      }
+    }
+
+    // tonight's study: the passage being learned outlined in oxblood, with a
+    // tag at its first bar, and each passage that flows in gilt (under the
+    // shades that leave the top border free)
+    let study = plannedPractice(settings, store) && this.props.generator && this.props.generator.study ?
+      this.props.generator.study() : null
+    if (study && ["practice", "off"].includes(this.state.shade)) {
+      let outline = (bars, color) => {
+        for (let measure of bars) {
+          barInfo.set(measure, {...(barInfo.get(measure) || {}), topBorder: color})
+        }
+      }
+
+      for (let {start, end, flowed} of study.path) {
+        if (flowed) { outline(measures.filter(measure => measure >= start && measure <= end), "var(--salon-gilt)") }
+      }
+
+      if (study.passage && !study.learned) {
+        let {bars} = study.passage
+        outline(bars, "var(--salon-oxblood)")
+        tags.push({
+          measure: bars[0],
+          text: `Tonight's study · ${barsLabel(bars[0], bars[bars.length - 1])}`,
+          className: styles.tag_oxblood,
+        })
       }
     }
 
@@ -410,7 +439,10 @@ export class ScoreView extends React.Component {
             aria-label={`Bar ${measure}`}
             aria-pressed={selected}
             className={classNames(styles.grid_cell, {[styles.selected]: selected})}
-            style={{background: selected ? undefined : info.fill}}
+            style={{
+              background: selected ? undefined : info.fill,
+              ...(info.topBorder ? {borderTopWidth: "4px", borderTopStyle: "solid", borderTopColor: info.topBorder} : {}),
+            }}
             onClick={() => this.selectBar(measure)}>
             {measure}
           </button>
@@ -471,7 +503,8 @@ export class ScoreView extends React.Component {
       tempo={this.props.tempo}
       setTempo={this.props.setTempo}
       acoustic={this.props.acoustic}
-      onBegin={this.props.onBegin} />
+      onBegin={this.props.onBegin}
+      onSkipReadThrough={this.props.onSkipReadThrough} />
   }
 
   renderPassagePane(piece) {

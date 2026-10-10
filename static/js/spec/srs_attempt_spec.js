@@ -393,6 +393,57 @@ describe("srs attempt", function() {
 
   // acoustic mode: the player grades the pass themself (st/srs/self_grade),
   // in place of detection
+  describe("read-through passes", function() {
+    let playThrough = () => {
+      for (let time of [3000, 3500, 4000, 4500]) { play(pass, time) }
+    }
+
+    it("logs a review of the card and of each bar as a read-through, graded as any attempt", function() {
+      playThrough()
+      let attempts = attemptsOf(pass, {kind: "read-through"})
+      let plain = attemptsOf(pass)
+      expect(attempts.map(a => a.id)).toEqual(["p:both:1-2", "p:both:1-1", "p:both:2-2"])
+      expect(attempts.every(({item, review}) => validItem(item) && validReview(review))).toBe(true)
+      expect(attempts.map(({review}) => review.kind)).toEqual(Array(3).fill("read-through"))
+      expect(attempts.map(({review}) => ({...review, kind: "attempt"}))).toEqual(plain.map(({review}) => review))
+    })
+
+    it("gives its items practice and a pass, never an attempt a schedule or the pace reads", function() {
+      playThrough()
+      let [card, bar1, bar2] = attemptsOf(pass, {kind: "read-through"})
+      expect(card.item).toEqual(jasmine.objectContaining({attempts: 1, hits: 4, lastPracticed: 4500, recent: []}))
+      expect(card.item.passes).toBeUndefined()
+      expect(card.item.paceMs).toBeUndefined()
+      expect(bar1.item.recent).toEqual([])
+      expect(bar1.item.passes).toEqual([[4500, 3, 3, null]])
+      expect(bar2.item.passes).toEqual([[4500, 1, 1, null]])
+      expect(bar1.item.state).toEqual("tracked")
+    })
+
+    it("adds to an item as stored, the first graded attempt after it still at first sight of nothing", function() {
+      playThrough()
+      let items = {"p:both:1-1": {...newItem({pieceId: "p", startMeasure: 1, endMeasure: 1}, 10), attempts: 1, hits: 3, lastPracticed: 2000}}
+      let [, bar1] = attemptsOf(pass, {kind: "read-through", items: id => items[id] || null})
+      expect(bar1.item).toEqual(jasmine.objectContaining({attempts: 2, hits: 6}))
+      expect(bar1.review.was).toEqual("tracked")
+    })
+
+    it("writes a self-graded read-through as a self review of the card and its bars, never a recent attempt", function() {
+      pass.selfGrade = {grade: GOOD}
+      let attempts = selfAttempts(pass, {pieceId: "p", hand: "both", at: 5000, kind: "read-through"})
+        .map(({id, build}) => ({id, ...build(null)}))
+      expect(attempts.map(a => a.id)).toEqual(["p:both:1-2", "p:both:1-1", "p:both:2-2"])
+      expect(attempts.every(({item, review}) => validItem(item) && validReview(review))).toBe(true)
+      expect(attempts[0].review).toEqual({
+        itemId: "p:both:1-2", at: 5000, pieceId: "p", kind: "read-through", mode: "self",
+        grade: GOOD, was: "new", elapsedMs: 4000,
+      })
+      expect(attempts.map(({item}) => item.recent)).toEqual([[], [], []])
+      expect(attempts[1].item.passes).toEqual([[5000, null, null, GOOD]])
+      expect(attempts[0].item.passes).toBeUndefined()
+    })
+  })
+
   describe("self-graded passes", function() {
     let selfAttemptsOf = (p, opts={}) => selfAttempts(p, {pieceId: "p", hand: "both", ...opts})
       .map(({id, build}) => ({id, ...build((opts.items || noItems)(id))}))
