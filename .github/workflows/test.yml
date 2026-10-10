@@ -48,6 +48,12 @@ jobs:
     - name: specs
       run: npm test
 
+    - name: claude-flags lint
+      run: npm run lint:claude-flags
+
+    - name: claude-flags specs
+      run: npm run test:claude-flags
+
   python:
     runs-on: ubuntu-latest
     defaults:

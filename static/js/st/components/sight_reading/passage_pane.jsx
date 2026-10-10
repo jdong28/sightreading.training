@@ -19,7 +19,7 @@ import {LEVEL_WORDS} from "st/difficulty/index"
 import styles from "./passage_pane.module.css"
 
 const HAND_LABEL = {upper: "Right hand alone", lower: "Left hand alone", both: "Hands separately"}
-const SOURCE_CHIP = {score: "Score", teacher: "Teacher", player: "You"}
+const SOURCE_CHIP = {score: "Score", teacher: "Teacher", player: "You", claude: "Claude"}
 
 // a passage to practise hands separately offers the right hand first
 function handPillHand(flag) {

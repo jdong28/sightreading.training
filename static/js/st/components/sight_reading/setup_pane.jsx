@@ -119,6 +119,7 @@ export class SetupPane extends React.Component {
     settings: types.object.isRequired,
     setSettings: types.func.isRequired,
     staff: types.object,
+    columnStaff: types.object,
     generator: types.object,
     store: types.object,
     // picks another piece in study, see score_page.jsx's programmeOf
@@ -572,7 +573,9 @@ export class SetupPane extends React.Component {
     let bounds = sheetMusicMeasureBounds(settings)
     let {startMeasure, endMeasure} = sheetMusicSectionRange(settings)
     let last = bounds ? bounds[1] : endMeasure
-    let staff = this.props.staff
+    // the staff the session builds its columns for (the page's columnStaff),
+    // so the count is what is drawn and judged
+    let staff = this.props.columnStaff || this.props.staff
     let columns = staff ? sheetMusicSection(staff, settings).columns.length : 0
     let flags = sheetMusicPassages(settings, this.getStore())
     let showOrder = Number(settings.measuresPerCard) >= 1

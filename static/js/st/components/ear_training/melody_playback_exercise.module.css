@@ -15,6 +15,11 @@
     .keyboard {
         margin-top: auto;
         position: static;
+        background:
+            linear-gradient(180deg, var(--salon-piano-lid), var(--salon-piano-lid-dark)) top / 100% 10px no-repeat,
+            var(--salon-band);
+        border-top: 1px solid var(--salon-rule-strong);
+        padding-top: 10px;
     }
 
     .stat_controls {
@@ -35,10 +40,4 @@
     }
 }
 
-.page_container {
-    margin-top: 0;
-    margin-bottom: 0;
-    > p:first-child {
-        margin-top: 0;
-    }
-}
+

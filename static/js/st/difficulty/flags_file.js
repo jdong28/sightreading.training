@@ -1,21 +1,31 @@
 // The flags file (report §4.3): an instructor's decisions on a piece,
-// shareable between installs and across editions numbered differently. It
-// carries no proposals (each device makes its own) and re-anchors by bar
-// fingerprint (st/difficulty/align) rather than by measure number, so it
-// survives a pickup gained or lost, a passage written out instead of
-// repeated, or a few corrected notes.
+// shareable between installs and across editions numbered differently. The
+// app's own export carries no proposals (each device makes its own) and
+// re-anchors by bar fingerprint (st/difficulty/align) rather than by measure
+// number, so it survives a pickup gained or lost, a passage written out
+// instead of repeated, or a few corrected notes.
+//
+// Version 2 is what the offline Claude command (tools/claude-flags) writes:
+// the same file plus `proposals`, Claude's passages (source "claude" only),
+// and a `run` block naming the model and prompt that made them. The app reads
+// both and only ever writes version 1.
 
 import {measureNumbers} from "st/song_sections"
 import {validDecision, byAt} from "st/difficulty/decisions"
+import {cleanClaudeProposal} from "st/difficulty/records"
 import {alignBars, mapRange, GOOD_SIMILARITY} from "st/difficulty/align"
 
 export const FLAGS_FORMAT = "sightreading-flags"
-export const FLAGS_VERSION = 1
+// the newest version this app reads
+export const FLAGS_VERSION = 2
+// what flagsFileFor writes: decisions only
+export const DECISIONS_FILE_VERSION = 1
 
 // generous enough for hundreds of bars' sketches (report §4.3 estimates
 // 10-20KB for 100 bars); still a hard cap on untrusted input
 export const MAX_FLAGS_FILE_BYTES = 1024 * 1024
 export const MAX_FLAGS_FILE_DECISIONS = 2000
+export const MAX_FLAGS_FILE_PROPOSALS = 50
 
 function numberAt(numbers, index) {
   return numbers && numbers[index] != null ? numbers[index] : index + 1
@@ -40,7 +50,7 @@ export function flagsFileFor(record, piece, song, {by = "", at = Date.now()} = {
   let fp = record.fingerprint
   return {
     format: FLAGS_FORMAT,
-    version: FLAGS_VERSION,
+    version: DECISIONS_FILE_VERSION,
     exportedAt: at,
     by,
     piece: {
@@ -87,6 +97,39 @@ function withinFingerprint(decision, fp) {
     .every(obj => !obj || (indexes(obj) && printed(obj)))
 }
 
+// a Claude proposal whose every range (its own, its evidence bars) lies within
+// the file's fingerprint, its evidence items that don't dropped: null when its
+// own range doesn't
+function claudeProposalWithin(proposal, fp) {
+  let lastIndex = fp.bars.length - 1
+  let firstNumber = fp.numbers ? fp.numbers[0] : 1
+  let lastNumber = fp.numbers ? fp.numbers[lastIndex] : fp.bars.length
+
+  let inside = ({startIndex, endIndex, start, end}) =>
+    startIndex >= 0 && endIndex <= lastIndex && start >= firstNumber && end <= lastNumber
+  if (!inside(proposal)) { return null }
+
+  if (proposal.evidence) {
+    let evidence = proposal.evidence.filter(item => item.index <= lastIndex &&
+      item.index >= proposal.startIndex && item.index <= proposal.endIndex)
+    return {...proposal, evidence}
+  }
+  return proposal
+}
+
+// the run block of a version 2 file, kept to the fields the app shows
+function cleanRun(run) {
+  if (!run || typeof run != "object") { return null }
+  let text = key => typeof run[key] == "string" ? run[key] : ""
+  let int = key => Number.isInteger(run[key]) ? run[key] : 0
+  return {
+    source: "claude",
+    model: text("model"), effort: text("effort"), web: !!run.web,
+    promptVersion: int("promptVersion"), schemaVersion: int("schemaVersion"), compactVersion: int("compactVersion"),
+    cli: text("cli"), at: int("at"),
+  }
+}
+
 /**
  * Parses and validates a flags file's text. Never throws.
  * @param {string} text
@@ -121,11 +164,29 @@ export function readFlagsFile(text) {
   }
 
   let fp = data.piece.fingerprint
+  let {proposals: rawProposals, run: rawRun, ...rest} = data
+
+  let proposals = []
+  let run = null
+  if (data.version >= 2) {
+    if (rawProposals != null && !Array.isArray(rawProposals)) { return {error: "This isn't a flags file."} }
+    if ((rawProposals || []).length > MAX_FLAGS_FILE_PROPOSALS) {
+      return {error: "This flags file is too large to open."}
+    }
+    proposals = (rawProposals || [])
+      .map(p => { let clean = cleanClaudeProposal(p); return clean && claudeProposalWithin(clean, fp) })
+      .filter(Boolean)
+    // proposals always come with the run that made them, even one a hand-edit left out
+    run = cleanRun(rawRun || (proposals.length ? {} : null))
+  }
+
   return {
     data: {
-      ...data,
+      ...rest,
       by: typeof data.by == "string" ? data.by : "",
       decisions: data.decisions.filter(d => validDecision(d) && withinFingerprint(d, fp)),
+      proposals,
+      ...(run ? {run} : {}),
     },
   }
 }
@@ -157,6 +218,21 @@ function decisionRange(decision) {
   if (decision.of) { return {startIndex: decision.of.startIndex, endIndex: decision.of.endIndex} }
   if (decision.given) { return {startIndex: decision.given.startIndex, endIndex: decision.given.endIndex} }
   return null
+}
+
+// the range of the flag a decision with none of its own governs (an accept,
+// dismiss or restore of a flag the log alone holds, which has no proposal to
+// name): that of the nearest decision of the same flag before it that has one,
+// else after it. Without it the decision would keep the exporting copy's
+// anchor, and read "check" on a copy whose bars merely differ in a corrected
+// note, or placed where its flag is not
+function governedRange(decisions, decision) {
+  let same = decisions
+    .filter(other => other != decision && other.flagId == decision.flagId && decisionRange(other))
+    .sort((a, b) => a.at - b.at)
+  let before = same.filter(other => other.at <= decision.at)
+  let sibling = before.length ? before[before.length - 1] : same[0]
+  return sibling ? decisionRange(sibling) : null
 }
 
 // whether an override carries a range at all, in either representation: a
@@ -222,12 +298,14 @@ function unstamped(decision) {
  * @param {Object} file a parsed flags file
  * @param {Object} record the local AnnotationRecord
  * @param {Object} song the local song model, for printed numbers
+ * @param {Array} [alignment] alignBars(file's fingerprint, record's), when the
+ * caller already made it (the full bar-for-bar DP is not free)
  * @returns {{decisions: Object[], report: {placed: number, moved: number,
  * unplaced: number, already: number, total: number}}} decisions is the
  * piece's whole log, the file's merged in, in `at` order
  */
-export function reanchorDecisions(file, record, song) {
-  let alignment = alignBars(file.piece.fingerprint, record.fingerprint)
+export function reanchorDecisions(file, record, song, alignment) {
+  alignment = alignment || alignBars(file.piece.fingerprint, record.fingerprint)
   let fileNumbers = file.piece.fingerprint.numbers
   let stored = record.decisions || []
 
@@ -236,10 +314,13 @@ export function reanchorDecisions(file, record, song) {
   let report = {placed: 0, moved: 0, unplaced: 0, already: 0, total: file.decisions.length}
 
   for (let decision of file.decisions) {
-    let range = decisionRange(decision)
+    let range = decisionRange(decision) || governedRange(file.decisions, decision)
     let mapped = range ? mapRange(alignment, range.startIndex, range.endIndex) : null
     let place = mapped ? mapped.place : "placed"
     let next = unstamped(decision)
+    // a decision that names no bars at all (its flag is nowhere in the file)
+    // anchors nothing, rather than the exporting copy's bars
+    if (!range) { next.anchor = {bars: []} }
 
     if (place == "unplaced") {
       next.unplaced = {
@@ -292,4 +373,58 @@ export function reanchorDecisions(file, record, song) {
   }
 
   return {decisions: byAt([...kept, ...added]), report}
+}
+
+/**
+ * Re-anchors a version 2 file's Claude proposals onto a local piece: every
+ * proposal's range, and each evidence bar, is rewritten to the local copy's
+ * bars through the same alignment decisions use. One whose range doesn't
+ * place is dropped and counted (a proposal has nothing to wait in the review
+ * with, unlike a decision), so what a run leaves is only what the copy has.
+ * @param {Object} file a parsed flags file
+ * @param {Object} record the local AnnotationRecord
+ * @param {Object} song the local song model, for printed numbers
+ * @param {Array} [alignment] alignBars(file's fingerprint, record's)
+ * @returns {{proposals: Object[], report: {placed: number, moved: number, unplaced: number}}}
+ */
+export function reanchorProposals(file, record, song, alignment) {
+  alignment = alignment || alignBars(file.piece.fingerprint, record.fingerprint)
+  let numbers = measureNumbers(song)
+  let proposals = []
+  let report = {placed: 0, moved: 0, unplaced: 0}
+
+  for (let proposal of file.proposals || []) {
+    let mapped = mapRange(alignment, proposal.startIndex, proposal.endIndex)
+    if (mapped.place == "unplaced") { report.unplaced++; continue }
+    report[mapped.place]++
+
+    let next = {
+      ...proposal,
+      start: numberAt(numbers, mapped.startIndex),
+      end: numberAt(numbers, mapped.endIndex),
+      startIndex: mapped.startIndex,
+      endIndex: mapped.endIndex,
+    }
+
+    if (proposal.claude && proposal.claude.claimed) {
+      // the bars Claude named move with the proposal, so "named 20–22, notes
+      // in 21–23" still reads right in an edition numbered differently
+      let offset = next.start - proposal.start
+      let {start, end} = proposal.claude.claimed
+      next.claude = {...proposal.claude, claimed: {start: start + offset, end: end + offset}}
+    }
+
+    if (proposal.evidence) {
+      next.evidence = proposal.evidence
+        .map(item => {
+          let at = mapRange(alignment, item.index, item.index)
+          if (at.place == "unplaced" || at.startIndex < mapped.startIndex || at.startIndex > mapped.endIndex) { return null }
+          return {...item, index: at.startIndex, bar: numberAt(numbers, at.startIndex)}
+        })
+        .filter(Boolean)
+    }
+    proposals.push(next)
+  }
+
+  return {proposals, report}
 }

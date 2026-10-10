@@ -14,7 +14,10 @@ import {parseMusicXML, readMusicXMLFile, MusicXMLError} from "st/musicxml"
 import {getAppStore, LEGACY_DECK_KEY, LibraryFormatError} from "st/storage"
 import {analyzePiece, annotationWith, annotationStale} from "st/difficulty/index"
 import {withDecisions} from "st/difficulty/decisions"
-import {flagsFileFor, readFlagsFile, reanchorDecisions, fileMatch} from "st/difficulty/flags_file"
+import {
+  flagsFileFor, readFlagsFile, reanchorDecisions, reanchorProposals, fileMatch,
+} from "st/difficulty/flags_file"
+import {alignBars} from "st/difficulty/align"
 
 // where the deck was kept before the local store, see migrateLegacyDeck in
 // st/storage
@@ -564,6 +567,9 @@ export async function exportFlagsFile(pieceId, {by=""}={}, store=getAppStore()) 
   }
 }
 
+// lets the page paint and answer input before the next piece of a long scan
+const yieldToUi = () => new Promise(resolve => setTimeout(resolve, 0))
+
 // a flags file must align at least this well to apply to a piece, report
 // §3.3's threshold for "the same score" across editions
 const MIN_FLAGS_FILE_MATCH = 0.5
@@ -605,7 +611,13 @@ export async function importFlagsFile(text, store=getAppStore(), {pieceId}={}) {
         let bestPiece = null
         let bestMatch = 0
         for (let candidate of store.pieces()) {
-          let match = fileMatch(file, store.annotation(candidate.id))
+          // each alignment is its own task, so a large deck never holds the
+          // page up for the whole search; a piece never analysed (imported
+          // before annotations were kept) is analysed to be looked at, as
+          // the title match above does, not passed over as matching nothing
+          await yieldToUi()
+          let record = store.annotation(candidate.id) || await ensureAnnotation(candidate.id, store)
+          let match = fileMatch(file, record)
           if (match > bestMatch) { bestMatch = match; bestPiece = candidate }
           // nothing can beat every bar aligning, so the rest of the deck
           // isn't aligned at all (each alignment is a full bar-for-bar DP)
@@ -624,11 +636,31 @@ export async function importFlagsFile(text, store=getAppStore(), {pieceId}={}) {
 
     let song = pieceSong(piece)
     let report = null
+    let claude = null
     await store.updateAnnotation(piece.id, current => {
-      let merged = reanchorDecisions(file, current, song)
+      let alignment = alignBars(file.piece.fingerprint, current.fingerprint)
+      let merged = reanchorDecisions(file, current, song, alignment)
       report = merged.report
-      return {...current, decisions: merged.decisions}
+
+      let next = {...current, decisions: merged.decisions}
+      if (file.run) {
+        // a run replaces only its own source's proposals (design §3.4), so a
+        // second file from Claude supersedes the last one's while the score
+        // analysis's and every decision stay
+        claude = reanchorProposals(file, current, song, alignment)
+        next.proposals = [...current.proposals.filter(p => p.source != "claude"), ...claude.proposals]
+        next.runs = {...current.runs, claude: file.run}
+      }
+      return next
     })
+
+    if (claude) {
+      let count = claude.proposals.length
+      let message = `Opened Claude’s proposals for “${piece.title}”: ` +
+        `${count} passage${count == 1 ? "" : "s"} to review` +
+        (claude.report.unplaced ? `, ${claude.report.unplaced} couldn’t be placed` : "")
+      return {piece, message}
+    }
 
     let who = file.by ? `${file.by}’s` : "the"
     let message = `Opened ${who} flags for “${piece.title}”: ` +

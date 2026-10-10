@@ -10,16 +10,26 @@
 
     .keyboard {
         position: static;
+        background:
+            linear-gradient(180deg, var(--salon-piano-lid), var(--salon-piano-lid-dark)) top / 100% 10px no-repeat,
+            var(--salon-band);
+        border-top: 1px solid var(--salon-rule-strong);
+        padding-top: 10px;
     }
 
     .staff_wrapper {
         margin-bottom: 0;
+        background: var(--salon-paper);
+        border-top: 1px solid var(--salon-rule-strong);
+        border-bottom: 1px solid var(--salon-rule-strong);
     }
 
     .play_along_workspace {
         > h2 {
+            font-family: var(--font-display);
             font-size: 20px;
-            background: white;
+            font-weight: 400;
+            background: var(--salon-paper-warm);
             padding: 20px 20px 0 40px;
             margin: 0;
         }
@@ -44,27 +54,32 @@
 
         .play_pause {
             min-width: 60px;
+            padding: 6px 16px;
         }
 
         > button {
             height: 28px;
 
             :global(.svgicon) {
-                fill: white;
+                fill: var(--salon-ink-soft);
             }
         }
 
         input[type=text] {
             margin-left: 10px;
             box-sizing: border-box;
-            border: 1px solid color-mix(in oklab, var(--border-color), white 10%);
-            font-family: "Raleway", sans-serif;
+            border: 1px solid var(--salon-rule);
+            font-family: var(--font-ui);
             font-size: 13px;
             padding: 4px 4px;
             height: 28px;
             width: 45px;
-            border-radius: 2px;
+            border-radius: 0;
             text-align: center;
+        }
+
+        input[type=checkbox] {
+            accent-color: var(--salon-oxblood);
         }
 
         .loop_controls {
@@ -73,9 +88,11 @@
             align-items: center;
 
             .label_text {
-                font-size: 13px;
-                font-weight: bold;
-                opacity: 0.8;
+                font-size: 11px;
+                font-weight: 700;
+                letter-spacing: .14em;
+                text-transform: uppercase;
+                color: var(--salon-ink-muted);
             }
         }
 
@@ -90,7 +107,8 @@
     }
 
     .song_tracks {
-        background: white;
+        background: var(--salon-paper-warm);
+        border-bottom: var(--salon-hairline);
         margin: 0;
         padding: 20px 40px;
         display: flex;
@@ -120,7 +138,7 @@
                 left: 0;
                 right: 0;
                 bottom: 0;
-                background: rgba(255, 255, 255, 0.8);
+                background: color-mix(in srgb, var(--salon-paper) 80%, transparent);
                 z-index: 2;
                 display: flex;
                 align-items: center;
@@ -141,10 +159,16 @@
     }
 
     .input_label {
-        font-size: 13px;
-        color: #666;
-        font-weight: bold;
+        font-size: 11px;
+        color: var(--salon-ink-muted);
+        font-weight: 700;
+        letter-spacing: .2em;
+        text-transform: uppercase;
         margin-bottom: 5px;
+    }
+
+    .song_tracks input[type=checkbox] {
+        accent-color: var(--salon-oxblood);
     }
 
     .slider_row {
@@ -158,5 +182,7 @@
     .current_value {
         width: 20px;
         text-align: center;
+        font-family: var(--font-display);
+        font-size: 16px;
     }
 }

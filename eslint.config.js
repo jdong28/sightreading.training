@@ -6,6 +6,29 @@ module.exports = [
     ...js.configs.recommended,
     files: ["**/*.js", "**/*.jsx"]
   },
+  // the offline Claude command (tools/claude-flags): node modules, beside
+  // the browser modules of its bridge, which the block below lints as the app
+  {
+    ...js.configs.recommended,
+    files: ["tools/claude-flags/**/*.mjs"],
+  },
+  {
+    files: ["tools/claude-flags/**/*.mjs"],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: "module",
+      globals: {
+        ...globals.node
+      }
+    },
+    rules: {
+      "no-unused-vars": "off",
+      "no-empty": "off",
+      "no-useless-assignment": "off",
+      "linebreak-style": ["error", "unix"],
+      "quotes": ["error", "double", { avoidEscape: true }]
+    }
+  },
   {
     files: ["**/*.js", "**/*.jsx"],
     languageOptions: {

@@ -33,7 +33,10 @@
   "scripts": {
     "dev": "node dev/serve.mjs",
     "build_assets": "node dev/build_assets.mjs",
-    "test": "node dev/run_specs.mjs"
+    "test": "node dev/run_specs.mjs",
+    "claude-flags": "node tools/claude-flags/cli.mjs",
+    "test:claude-flags": "node --test \"tools/claude-flags/test/*.test.mjs\"",
+    "lint:claude-flags": "eslint tools/claude-flags"
   },
   "author": "leaf corcoran",
   "license": "UNLICENSED",

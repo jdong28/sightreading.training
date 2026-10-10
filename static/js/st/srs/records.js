@@ -92,6 +92,12 @@ export const PASS_HISTORY = 8
  * hands-together item, on a hand alone only the programme's hand scaffold
  * has played, and on one not played by choice since the field was kept;
  * read by mostOverduePiece (st/srs/planner)
+ * @property {boolean} [requested] a hand-alone item the programme played at
+ * a flag's request (the "start this passage hands separately" tick, decision
+ * 6), set by the first such pass and kept from then on. Never deliberate: the
+ * planner retires it like the hand scaffold's own, but a trouble spot's
+ * "needed hands apart" rule (st/difficulty/trouble) never counts it as the
+ * bar's own failing
  */
 
 /**
@@ -240,7 +246,8 @@ export function validItem(item) {
       passes.every(validPassEntry)) &&
     optional(item.paceMs, isTime) && optional(item.contentKey, key => typeof key == "string") &&
     isCount(item.algo) && isTime(item.createdAt) &&
-    optional(item.deliberate, value => value === true)
+    optional(item.deliberate, value => value === true) &&
+    optional(item.requested, value => value === true)
 }
 
 const PER_COLUMN_FIELDS = 7
@@ -431,17 +438,17 @@ export function withPass(item, entry) {
  * An item with one practice stint on it added to its totals, as section
  * stats were added up before items.
  * @param {ItemRecord} item
- * @param {{hits: number, misses: number, at: number, elapsedMs?: number, played?: boolean, deliberate?: boolean, pass?: Array}} practice
+ * @param {{hits: number, misses: number, at: number, elapsedMs?: number, played?: boolean, deliberate?: boolean, requested?: boolean, pass?: Array}} practice
  * played forces the attempt count even without hits or misses, for a
  * self-graded stint that played notes but recorded none (see st/srs/attempt);
- * deliberate marks a hand-alone item the player chose to practise, see
- * ItemRecord; pass is [columns, clean, grade|null] for a single-bar range
+ * deliberate marks a hand-alone item the player chose to practise, requested
+ * one a flag asked to start hands apart, see ItemRecord; pass is [columns, clean, grade|null] for a single-bar range
  * demoted to practice (st/measure_cards#passRecords), appended to the item's
  * passes history (see withPass) with grade null for a detected pass, kept
  * for a self-graded one
  * @returns {ItemRecord}
  */
-export function itemWithPractice(item, {hits, misses, at, elapsedMs, played, deliberate, pass}) {
+export function itemWithPractice(item, {hits, misses, at, elapsedMs, played, deliberate, requested, pass}) {
   let record = {
     ...item,
     hits: item.hits + hits,
@@ -457,6 +464,10 @@ export function itemWithPractice(item, {hits, misses, at, elapsedMs, played, del
 
   if (deliberate && item.hand != "both") {
     record.deliberate = true
+  }
+
+  if (requested && item.hand != "both") {
+    record.requested = true
   }
 
   if (pass) {

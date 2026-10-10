@@ -11,7 +11,7 @@ import {
   applyGrade, replay, scheduled, DEFAULT_SCHEDULER_SETTINGS, DEFAULT_PRACTICE_SETTINGS,
   SCHEDULER_ALGO, DAY, MINUTE,
 } from "st/srs/schedule"
-import {newItem, itemId, RECENT_ATTEMPTS} from "st/srs/records"
+import {newItem, itemId, validItem, RECENT_ATTEMPTS} from "st/srs/records"
 import {PlanDeck, PlanGenerator} from "st/plan_cards"
 import {MeasureCardDeck, MeasureCardGenerator, measureCards, IN_ORDER, COLUMN_JOIN_KEYS} from "st/measure_cards"
 import {
@@ -1755,6 +1755,47 @@ describe("today's programme on the staff", function() {
       },
     })
   }
+
+  it("marks a hand alone a flag's tick asked for requested, never deliberate; the scaffold's hand is neither", async function() {
+    let {built, ...hands} = handPools()
+    let setUp = await generatorFor(1, {...hands, startApart: () => new Map([[1, ["lower"]]])})
+    let stats = new NoteStats()
+    let notes = await playCard(setUp, stats)
+
+    // bar 1 is introduced left hand alone, at the flag's request
+    expect(setUp.deck.entry).toEqual(jasmine.objectContaining({reason: NEW, measure: 1, hand: "lower"}))
+    expect(setUp.deck.scaffold).toBe(true)
+    expect(setUp.deck.requested).toBe(true)
+
+    await playCard({...setUp, notes}, stats)
+    let asked = store.item(`${piece.id}:lower:1-1`)
+    expect(asked.requested).toBe(true)
+    expect(asked.deliberate).toBeUndefined()
+    expect(validItem(asked)).toBe(true)
+    expect(store.item(`${piece.id}:both:0-0`).requested).toBeUndefined()
+  })
+
+  it("does not mark the hand scaffold's own hand-alone pass requested", async function() {
+    let {built, ...hands} = handPools()
+    await barOneFailing({blame: {upper: 0, lower: 4}})
+
+    // the log is read before the first card is dealt: bar 1 failed on the
+    // bass staff, so the scaffold offers it left hand alone
+    let setUp = await generatorFor(1, hands)
+    expect(setUp.deck.reviews.size).toEqual(1)
+    setUp.deck.advance(false)
+    setUp.generator.startCard()
+
+    expect(setUp.deck.entry).toEqual(jasmine.objectContaining({measure: 1, hand: "lower"}))
+    expect(setUp.deck.scaffold).toBe(true)
+    expect(setUp.deck.requested).toBe(false)
+
+    await playCard({...setUp, notes: setUp.notes}, new NoteStats())
+    let made = store.item(`${piece.id}:lower:1-1`)
+    expect(made).toBeTruthy()
+    expect(made.requested).toBeUndefined()
+    expect(made.deliberate).toBeUndefined()
+  })
 
   it("plans again from the log without dropping the card it never played", async function() {
     let measures = pool()

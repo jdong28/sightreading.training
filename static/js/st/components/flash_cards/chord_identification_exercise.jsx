@@ -1,5 +1,6 @@
 
 import {CardHolder} from "st/components/flash_cards/common"
+import {Plate} from "st/components/salon"
 
 import * as React from "react"
 import classNames from "classnames"
@@ -172,7 +173,7 @@ export default class ChordIdentificationExercise extends React.PureComponent {
     let notes = card.chord.getRange(card.octave, card.notes, card.inversion)
 
     return <div key={this.state.cardNumber} className={flashCardStyles.card_row}>
-      <div className={classNames(flashCardStyles.flash_card, {
+      <Plate className={classNames(flashCardStyles.flash_card, {
         [staffStyles.errorshake]: this.state.cardError,
       })}>
         <GStaff
@@ -183,7 +184,7 @@ export default class ChordIdentificationExercise extends React.PureComponent {
           noteShaking={false}
           scale={0.8}
         />
-      </div>
+      </Plate>
     </div>
   }
 

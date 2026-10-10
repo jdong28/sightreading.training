@@ -19,17 +19,21 @@
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
-            font-size: 1.5em;
+            font-family: var(--font-display);
+            font-size: 30px;
+            font-weight: 400;
+            letter-spacing: -.01em;
+            color: var(--salon-ink);
             margin: 0;
 
             @media (max-width: 900px) {
-                font-size: 1.2em;
+                font-size: 24px;
             }
         }
     }
 
     .warning {
-        color: var(--error-color);
+        color: var(--salon-oxblood);
         font-weight: bold;
         margin-bottom: 20px;
     }
@@ -42,30 +46,37 @@
 
     .slider_group {
         flex: 1;
-        border: 1px solid var(--border-color);
-        border-radius: 3px;
+        background: var(--salon-paper);
+        border: 1px solid var(--salon-rule);
         display: flex;
         align-items: center;
         gap: 2px;
         min-height: 26px;
 
         > span {
-            font-size: 12px;
-            font-weight: bold;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: .1em;
+            text-transform: uppercase;
+            color: var(--salon-ink-muted);
             &:first-child {
-                padding-left: 5px;
+                padding-left: 8px;
             }
         }
 
         code {
             min-width: 28px;
             text-align: center;
+            font-family: var(--font-display);
+            font-size: 16px;
+            color: var(--salon-ink);
         }
 
         > .shuffle_button {
             padding: 2px 8px;
             border: 0;
             border-radius: 0;
+            box-shadow: none;
             font-size: 12px;
             align-self: stretch;
         }
@@ -82,13 +93,18 @@
     }
 
     fieldset {
-        border: 1px solid #ddd;
+        border: var(--salon-hairline);
         legend {
-            font-size: 13px;
-            font-weight: bold;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: .2em;
             text-transform: uppercase;
-            color: #666;
+            color: var(--salon-ink-muted);
         }
+    }
+
+    input[type=checkbox] {
+        accent-color: var(--salon-oxblood);
     }
 
     .range_picker {
@@ -96,16 +112,14 @@
         align-items: center;
         gap: 10px;
 
-        button  {
-            &.active {
-                background-color: color-mix(in oklab, var(--button-color), white 10%);
-                color: var(--salon-paper);
-                box-shadow: 0 0 0 2px color-mix(in oklab, var(--border-color), black 20%);
-            }
+        @media (max-width: 640px) {
+            flex-wrap: wrap;
         }
 
         .current_range {
             margin-left: auto;
+            font-family: var(--font-display);
+            font-size: 16px;
         }
     }
 
@@ -119,6 +133,29 @@
     }
 }
 
-.page_container {
-    /* placeholder for choose_device combined class */
+/* the engraved plate holding an exercise, in the 600px column the old white
+   panel had */
+.exercise_plate {
+    width: 600px;
+    max-width: 100%;
+    margin: 20px auto;
+    padding: 32px 40px;
+
+    @media (max-width: 640px) {
+        width: auto;
+        margin: 12px;
+        padding: 24px 20px;
+    }
+
+    p {
+        font-size: 16px;
+        line-height: 1.5;
+    }
+
+    h3 {
+        font-family: var(--font-display);
+        font-size: 22px;
+        font-weight: 400;
+        color: var(--salon-ink);
+    }
 }
