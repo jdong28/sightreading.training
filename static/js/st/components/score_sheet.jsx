@@ -42,6 +42,11 @@ const RING_SCALE = 1.6
 // how far right of a head its ghost sits, in head widths
 const GHOST_GAP = 0.25
 
+// what a tag's text takes, to tell when two would overlap: a character, and
+// the padding either side
+const TAG_CHAR_PX = 5.3
+const TAG_PAD_PX = 10
+
 // how high above a column's top head its pause mark sits, in head heights
 const PAUSE_RISE = 1.2
 
@@ -276,8 +281,10 @@ export class ScoreSheet extends React.Component {
 
         let head = headsAt(beat, pitch).map(note => boxOf(note.el)).find(visible)
         if (head && kind == "once") {
-          let w = head.width * RING_SCALE
-          let h = head.height * RING_SCALE
+          // a circle round the head, wide in percent of the box as high in
+          // pixels, which the plate's two sizes tell apart
+          let w = Math.max(head.width, head.height * boxRect.height / boxRect.width) * RING_SCALE
+          let h = w * boxRect.width / boxRect.height
           placed.push({
             kind: "ring", left: head.left + head.width / 2 - w / 2, top: head.top + head.height / 2 - h / 2,
             width: w, height: h,
@@ -313,7 +320,8 @@ export class ScoreSheet extends React.Component {
           if (!head) { continue }
 
           let left = Math.min(92, Math.max(8, head.left + head.width / 2))
-          let stacked = tags.some(other => Math.abs(other.left - left) < 18)
+          let wide = mark => (mark.text.length * TAG_CHAR_PX + TAG_PAD_PX) / boxRect.width * 100
+          let stacked = tags.some(other => Math.abs(other.left - left) < (wide(other) + wide({text})) / 2 + 1)
           let mark = {kind: "tag", tone, left, top: overlay.top + overlay.height, text, stacked}
           tags.push(mark)
           placed.push(mark)

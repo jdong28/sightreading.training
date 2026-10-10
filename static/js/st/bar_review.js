@@ -33,6 +33,10 @@ export const STEADY_BAND = 0.25
 // stands for
 export const GHOST_RANGE = 6
 
+// how far from the centre of its cell, in half widths, the dot of a note
+// started far off the pulse stands beside its arrow
+const ARROW_REACH = 0.76
+
 // notes of a strip are told in words under it up to this many, past it the
 // caption names the worst
 const WORDS_UNDER = 6
@@ -186,12 +190,15 @@ function stripOf(row, {barStart, give}) {
 
     let off = !give && Math.abs(timing.r) > STEADY_BAND
     let paused = !give && marks.some(mark => mark[1] == "hesitated" && mark[0] == idx)
+    // past 90% of the way off the strip the dot stops short of the edge and an
+    // arrow takes it, as the design draws it
     let arrow = timing.r > 0.9 ? "»" : timing.r < -0.9 ? "«" : null
+    let reach = arrow ? ARROW_REACH : 0.9
 
     return {
       ...cell,
       kind: off || paused ? "off" : "steady",
-      left: 50 + 50 * clamp(timing.r, -0.9, 0.9),
+      left: 50 + 50 * clamp(timing.r, -reach, reach),
       arrow,
       delta: timing.delta,
       r: timing.r,

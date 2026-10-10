@@ -67,33 +67,39 @@ export class BarPopup extends React.Component {
     </div>
   }
 
-  // a cell of the timing strip: its note, a track with the tick where a
-  // steady pulse puts it and the dot where it started, and its words
+  // a cell of the timing strip: its note's label over a track holding the
+  // tick where a steady pulse puts the note and the dot where it started
   renderCell(strip, cell) {
     return <div key={cell.index} className={classNames(styles.cell, styles[`cell_${cell.kind}`])}>
       <span className={styles.cell_label}>{cell.label}</span>
-      <span className={styles.track}>
-        {strip.band && <span
-          className={styles.band}
-          style={{left: `${strip.band.from}%`, width: `${strip.band.to - strip.band.from}%`}} />}
-        <span className={styles.tick} />
-        {cell.left != null && <span
-          data-dot={cell.kind}
-          className={classNames(styles.dot, {[styles.dot_first]: cell.kind == "first", [styles.dot_arrow]: cell.arrow})}
-          style={{left: `${cell.left}%`}}>{cell.arrow}</span>}
-      </span>
-      {strip.words && cell.words && <span className={styles.cell_words}>{cell.words}</span>}
+      {strip.band && <span
+        className={styles.band}
+        style={{left: `${strip.band.from}%`, right: `${100 - strip.band.to}%`}} />}
+      <span className={styles.tick} />
+      {cell.left != null && <span
+        data-dot={cell.kind}
+        className={classNames(styles.dot, {[styles.dot_first]: cell.kind == "first"})}
+        style={{left: `${cell.left}%`}} />}
+      {cell.arrow && <span
+        className={classNames(styles.arrow, {[styles.arrow_early]: cell.arrow == "«"})}>{cell.arrow}</span>}
     </div>
   }
 
   renderStrip(strip) {
+    let columns = {gridTemplateColumns: `repeat(${strip.cells.length}, minmax(0, 1fr))`}
+
     return <div className={styles.strip}>
-      <div
-        role="img"
-        aria-label={strip.ariaLabel}
-        className={styles.cells}
-        style={{gridTemplateColumns: `repeat(${strip.cells.length}, minmax(0, 1fr))`}}>
-        {strip.cells.map(cell => this.renderCell(strip, cell))}
+      <div role="img" aria-label={strip.ariaLabel}>
+        <div className={styles.cells} style={columns}>
+          {strip.cells.map(cell => this.renderCell(strip, cell))}
+        </div>
+        {strip.words && <div className={styles.words} style={columns}>
+          {strip.cells.map(cell => <span
+            key={cell.index}
+            className={classNames({[styles.words_off]: cell.kind == "off", [styles.words_quiet]: ["first", "skipped", "held"].includes(cell.kind)})}>
+            {cell.words}
+          </span>)}
+        </div>}
       </div>
       <p className={styles.strip_caption}>{strip.caption}</p>
     </div>
@@ -126,7 +132,7 @@ export class BarPopup extends React.Component {
         </span>
         <span className={styles.behind_when}>{review.header.right}</span>
       </div>
-      {review.lines.map((line, idx) => <p key={idx} className={styles.behind_line}>{line}</p>)}
+      {review.lines.map((line, idx) => <p key={idx} className={idx == 0 ? styles.behind_first : styles.behind_line}>{line}</p>)}
       {review.strip && this.renderStrip(review.strip)}
       {review.pauseLines.map((line, idx) => <p key={`pause${idx}`} className={styles.behind_line}>{line}</p>)}
       {review.giveLine && <p className={styles.behind_line}>{review.giveLine}</p>}

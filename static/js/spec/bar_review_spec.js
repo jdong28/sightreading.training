@@ -5,6 +5,9 @@ import {MemoryRouter} from "react-router-dom"
 
 import ScorePage from "st/components/pages/score_page"
 import {importMusicXMLPiece} from "st/sheet_music_deck"
+import {TROUBLE_CLASS} from "st/components/score_sheet"
+import popupStyles from "st/components/sight_reading/bar_popup.module.css"
+import sheetStyles from "st/components/score_sheet.module.css"
 import {setAppStore} from "st/storage"
 import {SHEET_MUSIC_STORAGE_KEY, BOTH_HANDS, FREE_PRACTICE} from "st/data"
 import {SCORE_DRILL_STORAGE_KEY} from "st/generators"
@@ -317,8 +320,8 @@ describe("a bar's review (st/bar_review)", function() {
       expect(strip.cells.map(cell => cell.name)).toEqual(["Beat 1", "Beat 2", "Beat 3", "Beat 4"])
       expect(strip.cells.map(cell => cell.words)).toEqual(["first note", "on time", "2.5 s late", "on time"])
       expect(strip.band).toEqual({from: 37.5, to: 62.5})
-      // 3000 ms against 500: five times late, the far edge
-      expect(strip.cells[2].left).toEqual(95)
+      // 3000 ms against 500: five times late, the far edge, its dot beside the arrow
+      expect(strip.cells[2].left).toEqual(88)
       expect(strip.cells[2].arrow).toEqual("»")
       expect(strip.cells[1].left).toEqual(50)
       expect(strip.caption).toEqual("Against a steady pulse at your own pace (0.50 s a beat): inside the shading is steady. Timing is not in the %.")
@@ -453,5 +456,116 @@ ${(extras[number] || {}).direction ? `<direction placement="above"><direction-ty
       .replace('<measure number="2">', '<measure number="1">')
       .replace(/<measure number="3">([\s\S]*?)<\/measure>/, '<measure number="2">$1<direction><direction-type><words>rit.</words></direction-type></direction></measure>')
     expect([...giveBars(pickup)].sort()).toEqual([2, 3])
+  })
+})
+
+// the bar window on the real page: the real fixture (16 bars, a chord of C5
+// over C3 up to F5 over F3 in each, grand staff) mounted through ScorePage,
+// played with the page's own keys, then its bars clicked as a player would.
+// Times are the events' own, so the timing the log keeps is the played one
+describe("the bar window behind a bar's score, mounted", function() {
+  let container, root, page, store, previous, saved
+  const KEYS = [SCORE_DRILL_STORAGE_KEY, SHEET_MUSIC_STORAGE_KEY]
+  let clock
+
+  beforeEach(async function() {
+    saved = KEYS.map(key => [key, window.localStorage.getItem(key)])
+    for (let key of KEYS) { window.localStorage.removeItem(key) }
+    store = await openTestStore()
+    previous = setAppStore(store)
+    clock = 100000
+  })
+
+  afterEach(function() {
+    if (root) { flushSync(() => root.unmount()); root = null }
+    if (container) { container.remove(); container = null }
+    setAppStore(previous)
+    store.close()
+    for (let [key, value] of saved) {
+      if (value == null) { window.localStorage.removeItem(key) } else { window.localStorage.setItem(key, value) }
+    }
+  })
+
+  let button = text => [...container.querySelectorAll("button")].find(b => b.textContent.trim() == text)
+  let bar = number => container.querySelector(`button[aria-label="Bar ${number}"]`)
+  let click = el => flushSync(() => el.click())
+  let popup = () => container.querySelector('[role="dialog"]')
+  let marked = () => container.querySelectorAll(`.${TROUBLE_CLASS}`)
+  let layer = kind => container.querySelectorAll(`[data-mark="${kind}"]`)
+
+  let mount = async (settings={}, xml=null, {width=1440}={}) => {
+    let musicXML = xml || await (await fetch("/tools/fingerings/tests/fixture/score.musicxml")).text()
+    let {piece} = await importMusicXMLPiece("fixture.musicxml", musicXML, store)
+    window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+      piece: piece.id, hand: BOTH_HANDS, measuresPerCard: 1, practice: FREE_PRACTICE,
+      startMeasure: 3, endMeasure: 3, ...settings,
+    }))
+    container = document.createElement("div")
+    container.style.width = `${width}px`
+    document.body.appendChild(container)
+    root = createRoot(container)
+    flushSync(() => root.render(React.createElement(MemoryRouter, {},
+      React.createElement(ScorePage, {ref: p => page = p, viewportHeight: 1240}))))
+    await waitFor(() => container.querySelectorAll('button[aria-label^="Bar "]').length > 0, {message: "bars"})
+    return piece
+  }
+
+  // a pass through the card: a column's notes down together a column's gap
+  // apart, a gap given for a column (ms before it) and wrong keys struck
+  // before it ({column: [keys]})
+  let play = ({gaps={}, wrong={}, step=500}={}) => {
+    let columns = page.currentCard().card.columns.length
+    for (let i = 0; i < columns; i++) {
+      clock += gaps[i] ?? step
+      let column = [...page.state.notes.currentColumn()]
+      for (let key of wrong[i] || []) {
+        flushSync(() => page.pressNote(key, clock))
+        flushSync(() => page.releaseNote(key, clock + 10))
+      }
+      for (let note of column) { flushSync(() => page.pressNote(note, clock)) }
+      for (let note of column) { flushSync(() => page.releaseNote(note, clock + 20)) }
+    }
+  }
+
+  // Begin, the passes (each a play), End session and Done: the bars are back
+  // at rest, shaded, with nothing marked
+  let session = async (...passes) => {
+    click(button("Begin"))
+    for (let pass of passes) { play(pass) }
+    await page.state.notes.generator.finishing
+    click(button("End session"))
+    await waitFor(() => container.textContent.includes("Session ended"), {message: "the strip"})
+    click(button("Done"))
+    await waitFor(() => bar(3), {message: "the score back"})
+  }
+
+  let ready = async test => waitFor(test, {message: "the bar's window"})
+
+  describe("a bar that keeps going wrong", function() {
+    it("marks nothing until the bar is clicked, then fills its trouble notes, ghosts the key struck and says why", async function() {
+      await mount()
+      await session({wrong: {1: ["D#3"]}}, {wrong: {1: ["D#3"]}}, {wrong: {1: ["D#3"]}})
+
+      // nothing is marked on the score at rest
+      expect(popup()).toBe(null)
+      expect(marked().length).toEqual(0)
+      expect(layer("ghost").length).toEqual(0)
+
+      click(bar(3))
+      await ready(() => popup() && popup().textContent.includes("Behind the 75%"))
+
+      expect(popup().textContent).toContain("Beat 2 went wrong in all 3 of your last passes, filled in on the score.")
+      expect(popup().textContent).toContain("The grey head beside it is the key you pressed instead: the black key just above.")
+      // the accuracy chart is kept, the new block below it
+      expect(popup().querySelector(`.${popupStyles.chart}`)).toBeTruthy()
+      expect(popup().querySelector(`.${popupStyles.chart}`).compareDocumentPosition(
+        popup().querySelector('[data-behind="detected"]')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
+      // the D5 and the D3 of beat 2, coloured on the engraving
+      await ready(() => marked().length == 2)
+      expect(layer("ghost").length).toEqual(1)
+      expect([...layer("tag")].map(tag => tag.textContent)).toEqual(["wrong 3 of 3"])
+      expect(layer("ring").length).toEqual(0)
+    })
   })
 })
