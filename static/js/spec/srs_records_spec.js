@@ -7,7 +7,8 @@ import {DECK_MIGRATION_MARKER, LIBRARY_FORMAT, LIBRARY_VERSION, DB_VERSION} from
 
 import {
   itemId, newItem, itemFromSectionStats, legacyReview, itemWithPractice, validItem,
-  validReview, validStudy, SELF_ASPECTS, withPass, PASS_HISTORY, REVIEW_KINDS
+  validReview, validStudy, SELF_ASPECTS, withPass, PASS_HISTORY, REVIEW_KINDS,
+  validBarLog, barLogForPiece, MARK_KINDS,
 } from "st/srs/records"
 import {applyGrade, replay, scheduled} from "st/srs/schedule"
 
@@ -320,6 +321,100 @@ describe("spaced repetition records", function() {
       // without pass, nothing is added
       let untouched = itemWithPractice(written, {hits: 1, misses: 0, at: 5000})
       expect(untouched.passes).toEqual(written.passes)
+    })
+  })
+
+  describe("bar log rows (validBarLog)", function() {
+    // a bar of four columns, one gone wrong, with its timing
+    let row = (extra={}) => ({
+      itemId: "p:both:3-3", at: 5000, pieceId: "p", hand: "both", measure: 3, sessionId: "s1", mode: "wait",
+      card: [3, 4], cardGrade: 3, columns: 4, clean: 3, grade: 2, reviewed: true,
+      beats: [8, 9, 10, 11], gaps: [null, 1, 1, 1], iois: [null, 500, -50, 500], pulse: 500,
+      marks: [[1, "wrong", ["D3", "D5"], ["D#3"], 1, null]],
+      ...extra,
+    })
+
+    let selfRow = (extra={}) => ({
+      itemId: "p:both:3-3", at: 5000, pieceId: "p", hand: "both", measure: 3, mode: "self", card: [3, 3],
+      cardGrade: 2, columns: null, clean: null, grade: 2, slipped: ["tempo"], ...extra,
+    })
+
+    it("takes a row of a detected pass and a self row, and the optional fields left out", function() {
+      expect(validBarLog(row())).toBe(true)
+      expect(validBarLog(row({sessionId: undefined, reviewed: undefined, marks: undefined, clean: 4}))).toBe(true)
+      expect(validBarLog(row({readThrough: true}))).toBe(true)
+      expect(validBarLog(row({mode: "scroll"}))).toBe(true)
+      // a negative ioi, a bar without rhythm, no pulse: all as a pass writes them
+      expect(validBarLog(row({beats: [null, null, null, null], gaps: [null, null, null, null], pulse: null}))).toBe(true)
+      expect(validBarLog(selfRow())).toBe(true)
+      expect(validBarLog(selfRow({slipped: undefined}))).toBe(true)
+      expect(MARK_KINDS).toEqual(["wrong", "skipped", "scrolled", "hesitated"])
+    })
+
+    it("rejects a clean that doesn't add up to the columns and their marks", function() {
+      expect(validBarLog(row({clean: 4}))).toBe(false)
+      expect(validBarLog(row({clean: 2}))).toBe(false)
+      expect(validBarLog(row({clean: 5, marks: []}))).toBe(false)
+      // a column marked twice costs once; a pause costs nothing
+      let twice = [[1, "wrong", ["D5"], [], 1, null], [1, "skipped", ["D3"], [], 0, null]]
+      expect(validBarLog(row({marks: twice, clean: 3}))).toBe(true)
+      expect(validBarLog(row({marks: [...twice, [2, "hesitated", ["E5"], [], 0, 2500]], clean: 3}))).toBe(true)
+      expect(validBarLog(row({marks: [[1, "hesitated", ["D5"], [], 0, 2500]], clean: 3}))).toBe(false)
+      expect(validBarLog(row({marks: [[1, "hesitated", ["D5"], [], 0, 2500]], clean: 4}))).toBe(true)
+    })
+
+    it("rejects a self row carrying anything a detected pass measures", function() {
+      for (let extra of [{marks: []}, {beats: [8]}, {gaps: [null]}, {iois: [null]}, {pulse: 500}, {columns: 4}, {clean: 3}]) {
+        expect(validBarLog(selfRow(extra))).withContext(JSON.stringify(extra)).toBe(false)
+      }
+      expect(validBarLog(selfRow({slipped: ["feel"]}))).toBe(false)
+      expect(validBarLog(selfRow({grade: 5}))).toBe(false)
+    })
+
+    it("rejects a mark that isn't one", function() {
+      expect(validBarLog(row({marks: [[4, "wrong", ["D5"], [], 1, null]]}))).toBe(false)
+      expect(validBarLog(row({marks: [[-1, "wrong", ["D5"], [], 1, null]]}))).toBe(false)
+      expect(validBarLog(row({marks: [[1, "tripped", ["D5"], [], 1, null]]}))).toBe(false)
+      expect(validBarLog(row({marks: [[1, "wrong", ["D5"], [], 1]]}))).toBe(false)
+      expect(validBarLog(row({marks: [[1, "wrong", "D5", [], 1, null]]}))).toBe(false)
+      expect(validBarLog(row({marks: [[1, "wrong", ["D5"], [51], 1, null]]}))).toBe(false)
+      expect(validBarLog(row({marks: [[1, "wrong", ["D5"], [], -1, null]]}))).toBe(false)
+      expect(validBarLog(row({marks: [[1, "wrong", ["D5"], [], 1, "slow"]]}))).toBe(false)
+      // a hesitation that names keys, or in a scroll row, isn't one the grade makes
+      expect(validBarLog(row({marks: [[1, "hesitated", ["D5"], ["E5"], 0, 2000]], clean: 4}))).toBe(false)
+      expect(validBarLog(row({mode: "scroll", marks: [[1, "hesitated", ["D5"], [], 0, 2000]], clean: 4}))).toBe(false)
+    })
+
+    it("rejects arrays that aren't a value a column", function() {
+      expect(validBarLog(row({beats: [8, 9, 10]}))).toBe(false)
+      expect(validBarLog(row({gaps: [null, 1, 1]}))).toBe(false)
+      expect(validBarLog(row({iois: [null, 500, 500, 500, 500]}))).toBe(false)
+      expect(validBarLog(row({beats: undefined}))).toBe(false)
+      expect(validBarLog(row({iois: [null, "a", 1, 1]}))).toBe(false)
+      expect(validBarLog(row({pulse: 0}))).toBe(false)
+      expect(validBarLog(row({pulse: undefined}))).toBe(false)
+    })
+
+    it("rejects an id, hand, mode, grade or card that isn't the bar's", function() {
+      expect(validBarLog(row({itemId: "p:both:4-4"}))).toBe(false)
+      expect(validBarLog(row({itemId: "q:both:3-3"}))).toBe(false)
+      expect(validBarLog(row({hand: "left"}))).toBe(false)
+      expect(validBarLog(row({mode: "metronome"}))).toBe(false)
+      expect(validBarLog(row({grade: 0}))).toBe(false)
+      expect(validBarLog(row({cardGrade: 5}))).toBe(false)
+      expect(validBarLog(row({card: [4, 3]}))).toBe(false)
+      expect(validBarLog(row({at: "now"}))).toBe(false)
+      expect(validBarLog(row({reviewed: false}))).toBe(false)
+      expect(validBarLog(null)).toBe(false)
+      expect(validBarLog("row")).toBe(false)
+    })
+
+    it("moves a row to the piece it was matched to, the id with it", function() {
+      let moved = barLogForPiece(row(), "z")
+      expect(moved).toEqual(row({itemId: "z:both:3-3", pieceId: "z"}))
+      expect(validBarLog(moved)).toBe(true)
+      // a piece id that is a prefix of another's isn't confused with it
+      expect(barLogForPiece(row({itemId: "pp:both:3-3", pieceId: "pp"}), "q").itemId).toEqual("q:both:3-3")
     })
   })
 

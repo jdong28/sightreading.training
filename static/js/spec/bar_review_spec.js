@@ -11,7 +11,7 @@ import sheetStyles from "st/components/score_sheet.module.css"
 import {setAppStore} from "st/storage"
 import {SHEET_MUSIC_STORAGE_KEY, BOTH_HANDS, FREE_PRACTICE} from "st/data"
 import {SCORE_DRILL_STORAGE_KEY} from "st/generators"
-import {openTestStore} from "spec/helpers"
+import {openTestStore, dynamicsOpening} from "spec/helpers"
 import {
   barReview, beatLabel, keyWords, ghostSteps, BAR_REVIEW_WINDOW, HABIT_PASSES, STEADY_BAND,
 } from "st/bar_review"
@@ -500,6 +500,13 @@ describe("the bar window behind a bar's score, mounted", function() {
       piece: piece.id, hand: BOTH_HANDS, measuresPerCard: 1, practice: FREE_PRACTICE,
       startMeasure: 3, endMeasure: 3, ...settings,
     }))
+    await render({width})
+    return piece
+  }
+
+  // the page, drawn afresh as a visit does, over what the store and the
+  // settings hold
+  let render = async ({width=1440}={}) => {
     container = document.createElement("div")
     container.style.width = `${width}px`
     document.body.appendChild(container)
@@ -509,7 +516,14 @@ describe("the bar window behind a bar's score, mounted", function() {
     // the engraved score and its bars: before it is drawn the page only holds a grid
     await waitFor(() => container.querySelector("[data-score-sheet] svg") && bar(1), {message: "the score to be engraved"})
     await paginated()
-    return piece
+  }
+
+  // leaves the page as a reload does, the store and the settings staying
+  let leave = () => {
+    flushSync(() => root.unmount())
+    root = null
+    container.remove()
+    container = null
   }
 
   // waits for the pages to stop changing: the first pagination may be drawn
@@ -640,6 +654,36 @@ describe("the bar window behind a bar's score, mounted", function() {
       expect(layer("ghost").length + layer("ring").length + layer("tag").length).toEqual(0)
       click(button("‹ Previous page"))
       expect(marked().length).toEqual(0)
+    })
+  })
+
+  describe("a real piece", function() {
+    it("marks a bar of a piece with a title, key signature, dynamics, slurs and a pickup bar, each mark on its head", async function() {
+      // the expressive study: a one beat pickup (bar 0), then bars of four crotchets, E major
+      await mount({startMeasure: 2, endMeasure: 2}, dynamicsOpening())
+      expect(container.querySelector("h1").textContent).toContain("Expressive Study")
+      await session({wrong: {1: ["F#3"]}}, {wrong: {1: ["F#3"]}}, {})
+
+      click(showBar(2))
+      await ready(() => popup() && popup().textContent.includes("Beat 2 went wrong in 2 of your last 3 passes, filled in on the score."))
+      await ready(() => marked().length == 2 && layer("ghost").length == 1)
+
+      expect(popup().textContent).toContain("The grey head beside it is the key you pressed instead: the black key just above.")
+      expect([...layer("tag")].map(tag => tag.textContent)).toEqual(["wrong 2 of 3"])
+
+      // the ghost sits a quarter of a head right of the bass head, on its line
+      let heads = [...marked()].map(el => el.getBoundingClientRect())
+      let bass = heads.reduce((low, rect) => rect.top > low.top ? rect : low)
+      let ghost = layer("ghost")[0].getBoundingClientRect()
+      expect(Math.abs(ghost.left - (bass.right + bass.width * 0.25))).toBeLessThanOrEqual(2)
+      expect(Math.abs(ghost.top - bass.top)).toBeLessThanOrEqual(2)
+
+      // the tag sits under the bar's band, the dynamics and slur beside it left alone
+      let band = bar(2).getBoundingClientRect()
+      let tag = layer("tag")[0].getBoundingClientRect()
+      expect(Math.abs(tag.bottom - band.bottom)).toBeLessThanOrEqual(2)
+      expect(tag.left).toBeGreaterThanOrEqual(band.left - 40)
+      expect(tag.right).toBeLessThanOrEqual(band.right + 40)
     })
   })
 
@@ -832,6 +876,108 @@ describe("the bar window behind a bar's score, mounted", function() {
       expect(popup().textContent).not.toContain("on the score")
       expect(popup().textContent).not.toContain("grey head")
       expect(marked().length + container.querySelectorAll("[data-mark]").length).toEqual(0)
+    })
+  })
+
+  describe("the ended strip after a reload", function() {
+    let endedSession = async ({rest=false}={}) => {
+      click(button("Begin"))
+      play({})
+      play({wrong: {1: ["D#3"]}})
+      await page.state.notes.generator.finishing
+      if (rest) { click(button("Rest")) }
+      click(button("End session"))
+      await waitFor(() => container.textContent.includes("Session ended"), {message: "the strip"})
+    }
+
+    it("comes back for a session ended from a pause, with the bars it played tinted and labelled", async function() {
+      await mount()
+      await endedSession({rest: true})
+      let log = page.state.sessionLog
+      expect(log.length).toEqual(2)
+
+      leave()
+      await render()
+      await waitFor(() => container.textContent.includes("Session ended"), {timeout: 4000, message: "the strip to come back"})
+      expect(page.state.sessionLog).toEqual(log)
+      expect(page.state.endedRestored).toBe(true)
+      expect(button("Play on")).toBeUndefined()
+      expect(button("Done")).toBeTruthy()
+
+      // the strip's marks: bar 3 played twice, 7 of 8 notes right
+      click(button("This session"))
+      expect(container.textContent).toContain("88%")
+      expect(container.textContent).toContain("Session ended")
+    })
+
+    it("brings back the last of two sessions in a visit, and only its passes", async function() {
+      await mount()
+      await endedSession()
+      click(button("Done"))
+      await waitFor(() => bar(3))
+
+      click(button("Begin"))
+      play({})
+      await page.state.notes.generator.finishing
+      click(button("End session"))
+      await waitFor(() => container.textContent.includes("Session ended"), {message: "the second strip"})
+      let log = page.state.sessionLog
+      expect(log.length).toEqual(1)
+      let marker = await store.scoreEnded()
+      expect(marker.sessionId).toEqual(store.recentSessions()[store.recentSessions().length - 1].id)
+
+      leave()
+      await render()
+      await waitFor(() => container.textContent.includes("Session ended"), {timeout: 4000, message: "the strip to come back"})
+      expect(page.state.sessionLog).toEqual(log)
+      expect(container.textContent).toContain("100%")
+    })
+
+    // a marker the strip mustn't come back for, and forgotten
+    let staleMarker = async (change, why) => {
+      let piece = await mount()
+      await endedSession()
+      let marker = await store.scoreEnded()
+      leave()
+      await store.putScoreEnded({sessionId: marker.sessionId, pieceId: piece.id, at: marker.at, ...change(marker)})
+
+      await render()
+      await new Promise(resolve => setTimeout(resolve, 400))
+      expect(container.textContent).withContext(why).not.toContain("Session ended")
+      expect(await store.scoreEnded()).withContext(why).toBe(null)
+    }
+
+    it("forgets a marker of another piece", async function() {
+      await staleMarker(() => ({pieceId: "another-piece"}), "another piece")
+    })
+
+    it("forgets a marker of a day before today's practice day", async function() {
+      await staleMarker(marker => ({at: marker.at - 26 * 60 * 60 * 1000}), "yesterday")
+    })
+
+    it("forgets a marker whose session isn't among the recent ones", async function() {
+      await staleMarker(() => ({sessionId: "s-gone"}), "a session not kept")
+    })
+
+    it("leaves the strip alone when Begin comes before it is read", async function() {
+      await mount()
+      await endedSession()
+      leave()
+      container = null
+
+      // the page remounts and Begin is pressed at once
+      container = document.createElement("div")
+      container.style.width = "1440px"
+      document.body.appendChild(container)
+      root = createRoot(container)
+      flushSync(() => root.render(React.createElement(MemoryRouter, {},
+        React.createElement(ScorePage, {ref: p => page = p, viewportHeight: 1240}))))
+      await waitFor(() => button("Begin"), {message: "Begin"})
+      click(button("Begin"))
+      await new Promise(resolve => setTimeout(resolve, 300))
+      expect(container.textContent).not.toContain("Session ended")
+      expect(page.state.ended).toBe(null)
+      expect(await store.scoreEnded()).toBe(null)
     })
   })
 
