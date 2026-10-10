@@ -6,11 +6,11 @@ import {openDB, deleteDB} from "idb"
 
 import {
   LEGACY_DECK_KEY, DECK_MIGRATION_MARKER, LIBRARY_FORMAT, LIBRARY_VERSION,
-  RECENT_SESSION_DAYS, DB_VERSION
+  RECENT_SESSION_DAYS, DB_VERSION, SCORE_ENDED_KEY
 } from "st/storage"
 
 import {compressSource, bytesToBase64, SOURCE_ENCODING} from "st/score_source"
-import {newItem} from "st/srs/records"
+import {newItem, validBarLog} from "st/srs/records"
 import {GOOD} from "st/srs/grade"
 
 import {
@@ -904,6 +904,188 @@ describe("local store", function() {
 
   // acoustic mode: a self-graded review (st/srs/self_grade) goes through the
   // same store as any detected review
+  describe("bar log", function() {
+    let row = (pieceId, measure, at, extra={}) => ({
+      itemId: `${pieceId}:both:${measure}-${measure}`, at, pieceId, hand: "both", measure, sessionId: "s1",
+      mode: "wait", card: [measure, measure], cardGrade: 3, columns: 2, clean: 1, grade: 2, reviewed: true,
+      beats: [0, 1], gaps: [null, 1], iois: [null, 500], pulse: 500,
+      marks: [[1, "wrong", ["D4"], ["D#4"], 1, null]],
+      ...extra,
+    })
+
+    describe("schema upgrade", function() {
+      it("adds the barLog store, empty, leaving every other store's records exactly as they were", async function() {
+        await deleteDB(TEST_DB_NAME)
+
+        // the version 5 database, before the bar log
+        let db = await openDB(TEST_DB_NAME, 5, {
+          upgrade(db) {
+            db.createObjectStore("pieces", {keyPath: "id"})
+            db.createObjectStore("pieceSources", {keyPath: "pieceId"})
+            db.createObjectStore("sectionStats", {keyPath: ["pieceId", "startMeasure", "endMeasure"]})
+              .createIndex("pieceId", "pieceId")
+            db.createObjectStore("sessions", {keyPath: "id"}).createIndex("startedAt", "startedAt")
+            db.createObjectStore("meta", {keyPath: "key"})
+            db.createObjectStore("items", {keyPath: "id"}).createIndex("pieceId", "pieceId")
+            let reviews = db.createObjectStore("reviews", {keyPath: ["itemId", "at"]})
+            reviews.createIndex("pieceId", "pieceId")
+            db.createObjectStore("studies", {keyPath: "pieceId"})
+            db.createObjectStore("annotations", {keyPath: "pieceId"})
+          },
+        })
+
+        let minuet = pieceData("p1", "Minuet", 1000)
+        let item = {
+          id: "p1:both:1-4", pieceId: "p1", hand: "both", startMeasure: 1, endMeasure: 4,
+          level: "span", state: "tracked", step: 0, reps: 0, lapses: 0, streak: 0,
+          hits: 1, misses: 0, attempts: 1, lastPracticed: 1000, recent: [], algo: 0, createdAt: 1,
+        }
+        let review = {itemId: "p1:both:1-4", at: 1000, pieceId: "p1", kind: "legacy", hits: 1, misses: 0, attempts: 1}
+        await db.put("pieces", minuet)
+        await db.put("items", item)
+        await db.put("reviews", review)
+        await db.put("studies", {pieceId: "p1"})
+        await db.put("meta", {key: DECK_MIGRATION_MARKER, migratedAt: 1, pieces: 0})
+        db.close()
+
+        let store = await open({keep: true})
+        expect(store.persistent).toBe(true)
+        expect(store.backend.db.version).toEqual(DB_VERSION)
+        expect([...store.backend.db.objectStoreNames]).toContain("barLog")
+
+        expect(store.pieces()).toEqual([minuet])
+        expect(store.items("p1")).toEqual([item])
+        expect(await store.reviews({pieceId: "p1"})).toEqual([review])
+        expect(store.studies()).toEqual([{pieceId: "p1"}])
+        expect(await store.barLog({pieceId: "p1"})).toEqual([])
+        expect(await store.scoreEnded()).toBe(null)
+      })
+    })
+
+    for (let persist of [true, false]) {
+      describe(persist ? "in IndexedDB" : "in memory", function() {
+        it("reads rows by bar, session and piece, oldest first and by measure within a pass, across reopening", async function() {
+          let store = await open({persist})
+          await store.putPiece(pieceData("a", "First", 1000))
+          await store.putPiece(pieceData("b", "Second", 1000))
+
+          expect(await store.recordBarLog([row("a", 2, 3000, {sessionId: "s2"}), row("a", 1, 3000, {sessionId: "s2"})])).toEqual(2)
+          await store.recordBarLog([row("a", 1, 2000), row("b", 1, 2500, {sessionId: "s3"})])
+
+          let at = rows => rows.map(r => [r.itemId, r.at])
+          expect(at(await store.barLog({itemId: "a:both:1-1"}))).toEqual([["a:both:1-1", 2000], ["a:both:1-1", 3000]])
+          expect(at(await store.barLog({sessionId: "s2"}))).toEqual([["a:both:1-1", 3000], ["a:both:2-2", 3000]])
+          expect(at(await store.barLog({pieceId: "a"}))).toEqual([
+            ["a:both:1-1", 2000], ["a:both:1-1", 3000], ["a:both:2-2", 3000],
+          ])
+          expect(at(await store.barLog({pieceId: "b"}))).toEqual([["b:both:1-1", 2500]])
+          expect(await store.barLog({itemId: "a:both:3-3"})).toEqual([])
+
+          // a row of the same bar and time replaces the stored one
+          await store.recordBarLog([row("a", 1, 2000, {clean: 2, marks: []})])
+          expect((await store.barLog({itemId: "a:both:1-1"})).map(r => r.clean)).toEqual([2, 1])
+
+          if (persist) {
+            await store.close()
+            let reopened = await open({keep: true})
+            expect(at(await reopened.barLog({pieceId: "a"}))).toEqual([
+              ["a:both:1-1", 2000], ["a:both:1-1", 3000], ["a:both:2-2", 3000],
+            ])
+          }
+        })
+
+        it("writes nothing when any row of a pass isn't valid", async function() {
+          let store = await open({persist})
+          await store.putPiece(pieceData("a", "First", 1000))
+
+          let bad = row("a", 2, 3000, {clean: 2, marks: []})
+          expect(validBarLog(bad)).toBe(true)
+          expect(validBarLog({...bad, clean: 0})).toBe(false)
+
+          let thrown = null
+          try {
+            await store.recordBarLog([row("a", 1, 3000), {...row("a", 2, 3000), clean: 0}])
+          } catch (e) {
+            thrown = e
+          }
+          expect(thrown).not.toBe(null)
+          expect(await store.barLog({pieceId: "a"})).toEqual([])
+        })
+
+        it("goes with its piece when the piece is deleted, and only its piece's", async function() {
+          let store = await open({persist})
+          await store.putPiece(pieceData("a", "First", 1000))
+          await store.putPiece(pieceData("b", "Second", 1000))
+          await store.recordBarLog([row("a", 1, 2000), row("b", 1, 2000)])
+
+          expect(await store.deletePiece("a")).toBe(true)
+          expect(await store.barLog({pieceId: "a"})).toEqual([])
+          expect((await store.barLog({pieceId: "b"})).length).toEqual(1)
+        })
+
+        it("keeps the ended session the score page remembers, per device and never exported", async function() {
+          let store = await open({persist})
+          await store.putPiece(pieceData("a", "First", 1000))
+          expect(await store.scoreEnded()).toBe(null)
+
+          await store.putScoreEnded({sessionId: "s1", pieceId: "a", at: 5000})
+          expect(await store.scoreEnded()).toEqual({key: SCORE_ENDED_KEY, sessionId: "s1", pieceId: "a", at: 5000})
+
+          let exported = await store.exportLibrary()
+          expect(JSON.stringify(exported)).not.toContain(SCORE_ENDED_KEY)
+
+          let thrown = null
+          try { await store.putScoreEnded({sessionId: 1}) } catch (e) { thrown = e }
+          expect(thrown).not.toBe(null)
+
+          await store.putScoreEnded(null)
+          expect(await store.scoreEnded()).toBe(null)
+        })
+
+        it("exports at version 12 and imports as a union by key, remapped to the piece it matched", async function() {
+          let store = await open({persist})
+          await store.putPiece(pieceData("a", "First", 1000))
+          await store.recordBarLog([row("a", 1, 2000), row("a", 2, 2000)])
+
+          let exported = await store.exportLibrary()
+          expect(exported.version).toEqual(12)
+          expect(exported.barLog.map(r => [r.itemId, r.at])).toEqual([["a:both:1-1", 2000], ["a:both:2-2", 2000]])
+
+          // a library holding the same song under another id: the rows follow the stored piece
+          let other = await open({persist})
+          await other.putPiece(pieceData("z", "First", 1000))
+          let report = await other.importLibrary(exported)
+          expect(report.addedBarLog).toEqual(2)
+          expect((await other.barLog({pieceId: "z"})).map(r => [r.itemId, r.pieceId, r.at])).toEqual([
+            ["z:both:1-1", "z", 2000], ["z:both:2-2", "z", 2000],
+          ])
+          expect(await other.barLog({pieceId: "a"})).toEqual([])
+
+          // a union: again adds nothing, and a library with one more row adds just it
+          expect((await other.importLibrary(exported)).addedBarLog).toEqual(0)
+          let more = {...exported, barLog: [...exported.barLog, row("a", 1, 3000)]}
+          expect((await other.importLibrary(more)).addedBarLog).toEqual(1)
+          expect((await other.barLog({itemId: "z:both:1-1"})).map(r => r.at)).toEqual([2000, 3000])
+        })
+
+        it("leaves out an invalid row, a row of a piece the file lacks, and a version 11 library's", async function() {
+          let store = await open({persist})
+          let library = (version, barLog) => ({
+            format: LIBRARY_FORMAT, version, pieces: [pieceData("a", "First", 1000)],
+            items: [], reviews: [], studies: [], sessions: [], barLog,
+          })
+
+          let report = await store.importLibrary(library(12, [row("a", 1, 2000), {...row("a", 2, 2000), grade: 9}, row("ghost", 1, 2000)]))
+          expect(report.addedBarLog).toEqual(1)
+
+          let old = await open({persist})
+          expect((await old.importLibrary(library(11, [row("a", 1, 2000)]))).addedBarLog).toEqual(0)
+          expect(await old.barLog({pieceId: "a"})).toEqual([])
+        })
+      })
+    }
+  })
+
   describe("self-graded reviews", function() {
     it("stores and schedules a self attempt through recordAttempt", async function() {
       let store = await open()
@@ -926,7 +1108,8 @@ describe("local store", function() {
 
       let exported = await store.exportLibrary()
       expect(exported.version).toEqual(LIBRARY_VERSION)
-      expect(LIBRARY_VERSION).toEqual(11)
+      // version 11 libraries carry no bar log, and import as they are
+      expect(LIBRARY_VERSION).toEqual(12)
       expect(exported.reviews).toEqual([jasmine.objectContaining({mode: "self", grade: GOOD})])
 
       let other = await open()
