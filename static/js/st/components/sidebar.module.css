@@ -30,7 +30,7 @@
                 left: 0;
                 bottom: 0;
                 right: 0;
-                background: rgba(0, 0, 0, 0.5);
+                background: rgba(36, 31, 24, .32);
                 z-index: 10;
             }
 
@@ -55,13 +55,16 @@
         width: 250px;
         flex: none;
         box-sizing: border-box;
-        background: #EFEFEF;
+        background: var(--salon-paper-warm);
+        border-right: 1px solid var(--salon-rule-strong);
         padding: 20px;
 
         .nav_header {
-            font-weight: bold;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: .2em;
             text-transform: uppercase;
-            font-size: 12px;
+            color: var(--salon-ink-muted);
         }
 
         nav {
@@ -78,9 +81,19 @@
                 }
             }
 
-            a.active {
+            a {
+                font-size: 13px;
                 text-decoration: none;
-                font-weight: bold;
+                color: var(--salon-ink-soft);
+
+                &:hover {
+                    color: var(--salon-ink);
+                }
+            }
+
+            a.active {
+                color: var(--salon-oxblood);
+                font-weight: 700;
             }
         }
     }

@@ -19,7 +19,7 @@ import {IconMenu} from "st/components/icons"
 
 import {toggleActive} from "st/components/util"
 
-import pageContainerStyles from "../page_container.module.css"
+import {Plate} from "st/components/salon"
 import sidebarStyles from "st/components/sidebar.module.css"
 import styles from "./ear_training_page.module.css"
 
@@ -106,7 +106,7 @@ export default class EarTrainingPage extends React.Component {
   }
 
   renderIntro() {
-    return <div className={classNames(pageContainerStyles.page_container, styles.page_container, styles.choose_device)}>
+    return <Plate className={classNames(styles.exercise_plate, styles.choose_device)}>
       <h3>Choose a MIDI output device for ear training</h3>
       <p>The ear training tools require an output device to be configured.</p>
 
@@ -115,6 +115,6 @@ export default class EarTrainingPage extends React.Component {
         pickMidi={() => {
           trigger(this, "pickMidi")
         }} />
-    </div>
+    </Plate>
   }
 }

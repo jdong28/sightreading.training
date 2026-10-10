@@ -18,7 +18,8 @@ import {IconShuffle} from "st/components/icons"
 
 import {setTitle} from "st/globals"
 
-import pageContainerStyles from "../page_container.module.css"
+import {Plate, Pill} from "st/components/salon"
+import drawerStyles from "st/components/sight_reading/programme_drawer.module.css"
 import parentStyles from "../pages/ear_training_page.module.css"
 import styles from "./melody_recognition_exercise.module.css"
 
@@ -387,13 +388,13 @@ export default class MelodyRecognitionExercise extends React.Component {
       </div>
 
       {this.state.loading ?
-        <div className={classNames(pageContainerStyles.page_container, styles.page_container)}>Loading</div>
+        <Plate className={parentStyles.exercise_plate}>Loading</Plate>
       :
-        <div className={classNames(pageContainerStyles.page_container, styles.page_container)}>
+        <Plate className={parentStyles.exercise_plate}>
           {this.renderSongPlayer()}
           {this.renderIntervalSettings()}
           {this.renderAutoplayer()}
-        </div>
+        </Plate>
       }
     </div>
   }
@@ -447,7 +448,8 @@ export default class MelodyRecognitionExercise extends React.Component {
       </fieldset>
 
       <p>
-        <button
+        <Pill
+          variant="primary"
           onClick={(e) => {
             e.preventDefault()
             if (this.state.autoplayTimer) {
@@ -466,7 +468,7 @@ export default class MelodyRecognitionExercise extends React.Component {
               this.autoplayNextInterval()
             }
           }}
-          >{this.state.autoplayTimer ? "Stop" : "Start autoplay"}</button>
+          >{this.state.autoplayTimer ? "Stop" : "Start autoplay"}</Pill>
         {" "}
         {skipButton}
       </p>
@@ -537,13 +539,15 @@ export default class MelodyRecognitionExercise extends React.Component {
 
     return <div className={styles.song_selector}>
       <div className={styles.global_controls}>
-        <button
+        <Pill
+          variant="primary"
           disabled={disabled}
-          onClick={(e) => { this.nextMelody() }}>Next melody</button>
+          onClick={(e) => { this.nextMelody() }}>Next melody</Pill>
 
         <label className={parentStyles.slider_group}>
           <span>BPM</span>
           <Slider
+            className={drawerStyles.gilt_slider}
             min={40}
             max={160}
             onChange={(value) => {
@@ -556,6 +560,7 @@ export default class MelodyRecognitionExercise extends React.Component {
         <label className={parentStyles.slider_group}>
           <span>Transpose</span>
           <Slider
+            className={drawerStyles.gilt_slider}
             min={-24}
             max={24}
             onChange={(value) => {
