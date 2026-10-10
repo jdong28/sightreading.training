@@ -24,6 +24,12 @@
 // selfPractice are the self-graded counterparts of passAttempts and
 // passPractice, writing reviews with mode "self" and none of the above
 // measurements (st/srs/self_grade).
+//
+// A finished pass is also written as the bar log (barLogRows): a row for each
+// of its bars, graded or demoted to practice, with the wrong notes and keys,
+// the skipped columns, the pauses and when each column started. The log has
+// the measurements no review keeps (reviews stay as they were, see
+// perColumn), and is written whether or not the bar's review was.
 
 import {itemId, newItem, itemWithPractice, withPass, RECENT_ATTEMPTS, STAVES} from "st/srs/records"
 import {gradeAttempt, attemptCounts, gradeRule, attemptPace, hesitations, openingColumn, GRADE_ALGO} from "st/srs/grade"
@@ -67,6 +73,9 @@ export class AttemptPass {
     this.columns = card.columns.map(() => ({
       misses: 0, counted: 0, hit: false, done: false, settled: false, ms: null,
       staffMisses: {upper: 0, lower: 0},
+      // for the bar log: the notes the misses were put down to, the wrong
+      // keys struck at the column, and when its first own key went down
+      blamed: [], wrongKeys: [], onset: null,
       ...UNMEASURED,
     }))
   }
@@ -107,13 +116,17 @@ export class AttemptPass {
    * @param {boolean} [opts.counted=true] false for a further slip on a column
    * the stats already counted missed, which only the grade reads
    * @param {number} [opts.time]
+   * @param {string[]} [opts.wrongKeys] the keys struck at the column that it
+   * doesn't ask for, kept for the bar log
    */
-  miss(notes, {counted=true, time}={}) {
+  miss(notes, {counted=true, time, wrongKeys=[]}={}) {
     let column = this.columns[this.head]
     if (!column) { return }
 
     column.misses += 1
     if (counted) { column.counted += 1 }
+    column.blamed = unionOf(column.blamed, notes)
+    column.wrongKeys = unionOf(column.wrongKeys, wrongKeys)
     for (let staff of notesStaves(this.card.columns[this.head], notes)) {
       column.staffMisses[staff] += 1
     }
@@ -128,7 +141,10 @@ export class AttemptPass {
    * it was played (see NoteMatcher#measured): latency, spread, early,
    * heldCredit and late, each null when not measured, and settled when a key
    * held completed it with none of its keys struck at it. A column skipped or
-   * scrolled past has none, so the grade reads no hesitation on it
+   * scrolled past has none, so the grade reads no hesitation on it. The bar
+   * log's two, onset (when its first own key went down) and wrongKeys (every
+   * wrong key struck at it, which a miss may not have reported, see
+   * NoteMatcher#measured), are kept apart from those the grade stores
    * @returns {number} its index in the card
    */
   done(time, measured={}) {
@@ -138,6 +154,8 @@ export class AttemptPass {
     for (let key of MEASURES) {
       column[key] = measured[key] ?? null
     }
+    column.onset = measured.onset ?? null
+    column.wrongKeys = unionOf(column.wrongKeys, measured.wrongKeys ?? [])
 
     // a settled column has no time of its own: the time since the column
     // before it goes to the next column done
@@ -162,6 +180,9 @@ export class AttemptPass {
     this.columns[index].hit = true
   }
 }
+
+// the values of both lists, each once, in the order first seen
+const unionOf = (list, more) => [...new Set([...list, ...more])]
 
 // the score staves of the notes of a card column, eg. ["upper"], each once
 function notesStaves(column, notes) {
@@ -682,4 +703,148 @@ export function selfPractice(pass, {pieceId, hand, at=pass.lastAt, also, deliber
         ...(elapsedMs !== undefined ? {elapsedMs} : {}),
       }
     })
+}
+
+const median = values => {
+  let sorted = [...values].sort((a, b) => a - b)
+  let mid = Math.floor(sorted.length / 2)
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2
+}
+
+/**
+ * When each column of a pass was struck, against the score's beats: for the
+ * bar log, never for the grade. A column is struck when its first own key
+ * went down (its onset, on the events' clock: a column settled by held keys
+ * or skipped has none), and its gap and ioi are measured from the column
+ * struck before it in the pass, bars apart or not, so a settled column
+ * between them doesn't break the chain. An ioi is negative when the player
+ * struck a key of the next column first.
+ *
+ * The pulse is the pass's own: the median of the ms a beat each ioi comes to
+ * (the ms a column where the score's rhythm isn't known), leaving out stops
+ * (PAUSE_MS or more) and the values that run backwards. Null with fewer than
+ * two columns struck.
+ * @param {AttemptPass} pass
+ * @returns {{rhythm: boolean, beats: (number|null)[], gaps: (number|null)[],
+ * iois: (number|null)[], pulse: number|null}} a value for each of the card's
+ * columns, beats and gaps null without rhythm (every column of the card
+ * carrying a beat)
+ */
+export function passTiming(pass) {
+  let {columns: written} = pass.card
+  let rhythm = written.every(column => column.beat != null)
+  let beats = written.map(column => rhythm ? column.beat : null)
+  let gaps = pass.columns.map(() => null)
+  let iois = pass.columns.map(() => null)
+  let rates = []
+
+  let before = null
+  pass.columns.forEach((column, idx) => {
+    if (column.onset == null) { return }
+
+    if (before != null) {
+      let ioi = Math.round(column.onset - pass.columns[before].onset)
+      iois[idx] = ioi
+      if (rhythm) { gaps[idx] = beats[idx] - beats[before] }
+      let beatsApart = rhythm ? gaps[idx] : 1
+      if (ioi > 0 && ioi < PAUSE_MS && beatsApart > 0) { rates.push(ioi / beatsApart) }
+    }
+    before = idx
+  })
+
+  return {rhythm, beats, gaps, iois, pulse: rates.length ? Math.round(median(rates)) : null}
+}
+
+// the mark of a column of a pass that went wrong, [index, kind, notes, keys,
+// tries, ms] for the bar log (see BarLogRecord#marks), null for a column
+// played clean
+function wrongMark(pass, idx, at, mode) {
+  let column = pass.columns[idx]
+  let written = pass.card.columns[idx]
+  let kind = columnSkipped(column, mode) ? "skipped" :
+    mode == "scroll" && !column.hit && column.misses > 0 ? "scrolled" :
+    column.misses > 0 ? "wrong" : null
+  if (!kind) { return null }
+
+  let blamed = written.filter(note => column.blamed.includes(note))
+  return [at, kind, blamed.length ? blamed : [...written], [...column.wrongKeys], column.misses, null]
+}
+
+/**
+ * The bar log's rows of a finished pass, one for each bar it gave a session
+ * log entry to (see barPasses): nothing for a pass abandoned, continued or
+ * never played. A detected pass keeps what the bar log needs of each of its
+ * columns, a self-graded one only its grade and the player's own tags (see
+ * BarLogRecord in st/srs/records, where the shape and its invariants are).
+ * Built when the pass is written, once its last hit has landed, as the
+ * session log's entry is (st/measure_cards).
+ * @param {AttemptPass} pass complete
+ * @param {Object} opts
+ * @param {string} opts.pieceId
+ * @param {string} opts.hand the item hand, one of HANDS
+ * @param {number} [opts.at] when it was written, the pass's last activity
+ * by default: the same as its reviews'
+ * @param {string} [opts.sessionId]
+ * @param {string[]} [opts.reviewed] the item ids of the bars a review was
+ * written to, so a bar demoted to practice has none
+ * @param {boolean} [opts.readThrough] a first reading of the bar (tonight's
+ * study), the pass's own by default
+ * @returns {Object[]}
+ */
+export function barLogRows(pass, {pieceId, hand, at=pass.lastAt, sessionId, reviewed=[], readThrough=!!pass.readThrough}) {
+  let bars = barPasses(pass)
+  if (!bars.length) { return [] }
+
+  let {card} = pass
+  let cardGrade = passGrade(pass)
+  let ranges = new Map(passRanges(card).filter(range => !range.bars).map(range => [range.startMeasure, range]))
+  let detected = !pass.selfGrade
+  let grading = detected ? passGrading(pass) : null
+  let timing = detected ? passTiming(pass) : null
+  let mode = detected ? grading.mode : "self"
+
+  return bars.map(bar => {
+    let range = ranges.get(bar.measure)
+    let id = itemId({pieceId, hand, startMeasure: bar.measure, endMeasure: bar.measure})
+    let row = {
+      itemId: id, at, pieceId, hand, measure: bar.measure,
+      ...(sessionId ? {sessionId} : {}),
+      mode,
+      ...(readThrough ? {readThrough: true} : {}),
+      card: [card.startMeasure, card.endMeasure],
+      cardGrade,
+      columns: bar.columns, clean: bar.clean, grade: bar.grade,
+      ...(reviewed.includes(id) ? {reviewed: true} : {}),
+    }
+
+    if (!detected) {
+      let {slipped} = pass.selfGrade
+      return slipped && slipped.length ? {...row, slipped: [...slipped]} : row
+    }
+
+    let {indices} = range
+    let marks = indices.flatMap((idx, i) => {
+      let mark = wrongMark(pass, idx, i, mode)
+      return mark ? [mark] : []
+    })
+
+    // the per-bar review's rule: a column is hesitated on by its latency
+    // against the pass's pace, the column opening the pass never
+    let barColumns = indices.map(idx => grading.columns[idx])
+    let hesitated = mode == "wait" ? hesitations(barColumns, {lead: indices[0] == 0, pace: grading.pace}) : []
+    for (let i of hesitated) {
+      let column = pass.columns[indices[i]]
+      marks.push([i, "hesitated", [...card.columns[indices[i]]], [], 0, Math.round(column.latency)])
+    }
+
+    marks.sort((a, b) => a[0] - b[0])
+    return {
+      ...row,
+      beats: indices.map(idx => timing.beats[idx]),
+      gaps: indices.map(idx => timing.gaps[idx]),
+      iois: indices.map(idx => timing.iois[idx]),
+      pulse: timing.pulse,
+      ...(marks.length ? {marks} : {}),
+    }
+  })
 }

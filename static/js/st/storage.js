@@ -4,13 +4,14 @@
 // One database holds the stores in STORES: the imported sheet music pieces
 // (the deck, see st/sheet_music_deck), the source score each piece was
 // imported from, the practice records of spaced repetition (items, the log of
-// reviews and studies, see st/srs/records), a piece's flagged passages
+// reviews and studies, see st/srs/records), the bar log (a row a bar of each
+// pass played through, see BarLogRecord), a piece's flagged passages
 // (annotations, see st/difficulty), practice sessions, and in meta the
 // scheduler's and practice settings (st/srs/schedule).
 // init() loads the pieces, items, studies, annotations, recent sessions and
 // settings into an in-memory cache so the UI reads synchronously (eg. a
-// generator's settings inputs on every render); a piece's source and the
-// reviews are read on demand. Every
+// generator's settings inputs on every render); a piece's source, the
+// reviews and the bar log are read on demand. Every
 // mutation is async, writes to the database first and only then updates the
 // cache, so a failed write (usually the storage quota) leaves both untouched.
 // Mutations run one at a time in call order.
@@ -24,7 +25,8 @@ import {openDB} from "idb"
 import {shiftNoteOctave} from "st/music"
 import {
   validItem, validReview, validStudy, newItem, itemId, itemFromSectionStats,
-  legacyReview, itemWithPractice, itemForPiece, reviewForPiece, sectionStatsOf
+  legacyReview, itemWithPractice, itemForPiece, reviewForPiece, sectionStatsOf,
+  validBarLog, barLogForPiece
 } from "st/srs/records"
 import {
   scheduledAttempt, replay, schedulable, scheduled,
@@ -50,7 +52,8 @@ export const DB_NAME = "sightreading"
 // is left as it was, frozen: nothing reads or writes it after the migration
 // 5: adds the annotations store, a piece's flagged passages (st/difficulty);
 // pieces stored before it are analysed on first open
-export const DB_VERSION = 5
+// 6: adds the barLog store, empty: nothing stored before is reinterpreted
+export const DB_VERSION = 6
 
 // the localStorage deck used before the local store, migrated into the pieces
 // store once, see migrateLegacyDeck. The key itself is left in place
@@ -59,6 +62,10 @@ export const LEGACY_DECK_KEY = "st:sheet_music_pieces:v1"
 // meta store record written with the migrated pieces, its presence means the
 // legacy deck has been migrated (or there was none) and is never read again
 export const DECK_MIGRATION_MARKER = "legacyDeckMigrated"
+
+// meta store record of the session the score page ended last, see
+// LocalStore#scoreEnded
+export const SCORE_ENDED_KEY = "scoreEnded"
 
 export const LIBRARY_FORMAT = "sightreading-library"
 // 2: note names use middle C "C4", version 1 pieces are renumbered on import
@@ -84,7 +91,9 @@ export const LIBRARY_FORMAT = "sightreading-library"
 // 11: reviews may be read-throughs (kind "read-through", never scheduled) and
 // studies may carry a study plan; version 10 libraries carry neither and
 // import as they are
-export const LIBRARY_VERSION = 11
+// 12: carries the bar log (barLog) of the pieces; version 11 libraries carry
+// none and import as they are
+export const LIBRARY_VERSION = 12
 
 // sessions started within this many days are loaded into the cache
 export const RECENT_SESSION_DAYS = 30
@@ -113,6 +122,12 @@ const STORES = {
   },
   studies: {keyPath: "pieceId"},
   annotations: {keyPath: "pieceId"},
+  // one row a bar of each finished pass, appended and never cached, see
+  // BarLogRecord. Keyed like reviews, so a library merge is a union
+  barLog: {
+    keyPath: ["itemId", "at"],
+    indexes: {itemId: "itemId", sessionId: "sessionId", pieceId: "pieceId", at: "at"},
+  },
 }
 
 /**
@@ -187,6 +202,7 @@ const STORES = {
  * @property {ItemRecord[]} [items] since version 5
  * @property {ReviewRecord[]} [reviews] since version 5
  * @property {StudyRecord[]} [studies] since version 5
+ * @property {BarLogRecord[]} [barLog] since version 12
  * @property {Object[]} [settings] the scheduler and practice settings records
  * (st/srs/schedule), since version 5
  * @property {SectionStatsRecord[]} [sectionStats] before version 5
@@ -208,6 +224,7 @@ const STORES = {
  * @property {number} addedSections items added (from section stats in older libraries)
  * @property {number} updatedSections items replaced by more recently practiced ones
  * @property {number} addedReviews
+ * @property {number} addedBarLog bar log rows added
  * @property {number} addedStudies studies of pieces that had none
  * @property {number} addedAnnotations annotations added to a piece without one
  * @property {number} addedDecisions instructor decisions unioned into a piece's
@@ -297,6 +314,11 @@ async function upgradeSchema(db, oldVersion, newVersion, transaction) {
 
   if (oldVersion >= 1 && oldVersion < 5) {
     createStore(db, "annotations")
+  }
+
+  if (oldVersion >= 1 && oldVersion < 6) {
+    // starts empty: the passes played before it kept only their reviews
+    createStore(db, "barLog")
   }
 }
 
@@ -926,6 +948,70 @@ export class LocalStore {
     })
   }
 
+  /**
+   * The bar log rows of a bar, a session or a piece, read from the database
+   * (the log is never cached), oldest first and by measure within a pass.
+   * @param {{itemId: string}|{sessionId: string}|{pieceId: string}} query
+   * @returns {Promise<BarLogRecord[]>}
+   */
+  barLog(query) {
+    return this.mutate(async () => {
+      let index = "itemId" in query ? "itemId" : "sessionId" in query ? "sessionId" : "pieceId"
+      let rows = await this.backend.getAllWith("barLog", index, query[index])
+      return rows.sort((a, b) => a.at - b.at || a.measure - b.measure ||
+        (a.itemId < b.itemId ? -1 : a.itemId > b.itemId ? 1 : 0))
+    })
+  }
+
+  /**
+   * Appends the rows of a finished pass to the bar log in one write, nothing
+   * at all when one is not valid (see validBarLog). A row of the same bar and
+   * time replaces the stored one.
+   * @param {BarLogRecord[]} rows
+   * @returns {Promise<number>} how many rows were written
+   */
+  recordBarLog(rows) {
+    return this.mutate(async () => {
+      if (!rows.every(validBarLog)) {
+        throw new Error("Not a valid bar log row")
+      }
+
+      await this.backend.write(rows.map(row => ({store: "barLog", put: row})))
+      return rows.length
+    })
+  }
+
+  /**
+   * What the score page keeps of the session it last ended, so its strip
+   * survives a reload: {key: "scoreEnded", sessionId, pieceId, at}, or null
+   * when there is none. Per device: never exported.
+   * @returns {Promise<{key: string, sessionId: string, pieceId: string, at: number}|null>}
+   */
+  scoreEnded() {
+    return this.mutate(async () => (await this.backend.get("meta", SCORE_ENDED_KEY)) || null)
+  }
+
+  /**
+   * Replaces what scoreEnded says, or clears it with null.
+   * @param {{sessionId: string, pieceId: string, at: number}|null} record
+   * @returns {Promise<void>}
+   */
+  putScoreEnded(record) {
+    return this.mutate(async () => {
+      if (record === null) {
+        await this.backend.write([{store: "meta", delete: SCORE_ENDED_KEY}])
+        return
+      }
+
+      let {sessionId, pieceId, at} = record
+      if (typeof sessionId != "string" || typeof pieceId != "string" || typeof at != "number") {
+        throw new Error("Not a valid ended session")
+      }
+
+      await this.backend.write([{store: "meta", put: {key: SCORE_ENDED_KEY, sessionId, pieceId, at}}])
+    })
+  }
+
   /** @returns {SessionRecord[]} sessions of the last RECENT_SESSION_DAYS, oldest first */
   recentSessions() {
     return this.cache.sessions
@@ -1049,8 +1135,10 @@ export class LocalStore {
   }
 
   /**
-   * Removes a piece along with its source, items, reviews, study and the
-   * frozen section stats rows it had before items.
+   * Removes a piece along with its source, items, reviews, bar log rows,
+   * study and the frozen section stats rows it had before items. The ended
+   * session the score page remembers is left to its own check of the piece
+   * (see SightReadingPage#restoreEnded).
    * @param {string} id
    * @returns {Promise<boolean>} whether there was such a piece
    */
@@ -1060,8 +1148,9 @@ export class LocalStore {
         return false
       }
 
-      let [reviews, sections] = await Promise.all([
+      let [reviews, bars, sections] = await Promise.all([
         this.backend.getAllWith("reviews", "pieceId", id),
+        this.backend.getAllWith("barLog", "pieceId", id),
         this.backend.getAllWith("sectionStats", "pieceId", id),
       ])
 
@@ -1075,6 +1164,7 @@ export class LocalStore {
         {store: "annotations", delete: id},
         ...deletes("items", this.items(id)),
         ...deletes("reviews", reviews),
+        ...deletes("barLog", bars),
         ...deletes("sectionStats", sections),
       ])
 
@@ -1269,16 +1359,18 @@ export class LocalStore {
   }
 
   /**
-   * The pieces with their sources, items, reviews, studies and every session,
-   * for a library file.
+   * The pieces with their sources, items, reviews, bar log, studies and every
+   * session, for a library file. What the score page remembers of the session
+   * it ended (scoreEnded) is per device and not exported.
    * @returns {Promise<LibraryExport>}
    */
   exportLibrary() {
     return this.mutate(async () => {
       let pieceIds = new Set(this.cache.pieces.map(piece => piece.id))
-      let [sources, reviews, sessions] = await Promise.all([
+      let [sources, reviews, barLog, sessions] = await Promise.all([
         this.backend.getAll("pieceSources"),
         this.backend.getAll("reviews"),
+        this.backend.getAll("barLog"),
         this.backend.getAll("sessions"),
       ])
 
@@ -1290,6 +1382,7 @@ export class LocalStore {
         sources: sources.filter(source => pieceIds.has(source.pieceId)).map(sourceToJSON),
         items: this.cache.items,
         reviews,
+        barLog,
         studies: this.cache.studies,
         annotations: this.cache.annotations,
         settings: [this.cache.settings.scheduler, this.cache.settings.practice],
@@ -1307,8 +1400,8 @@ export class LocalStore {
    * another song. An item replaces the stored item of its id only when
    * practiced more recently; the section stats of a library before
    * LIBRARY_VERSION 5 are read as tracked items with a legacy review, and
-   * replace only the totals of a stored item. Reviews are a union by key, and
-   * a study is added to a piece without one. Sessions are added unless one of
+   * replace only the totals of a stored item. Reviews and bar log rows are a
+   * union by key, and a study is added to a piece without one. Sessions are added unless one of
    * the same id is stored.
    * @param {LibraryExport} data
    * @param {Object} [opts]
@@ -1328,7 +1421,7 @@ export class LocalStore {
       let report = {
         addedPieces: 0, existingPieces: 0, invalidPieces: 0, fullPieces: 0, addedSources: 0,
         addedSections: 0, updatedSections: 0, addedReviews: 0, addedStudies: 0, addedAnnotations: 0,
-        addedDecisions: 0, importedSettings: 0, addedSessions: 0, existingSessions: 0,
+        addedDecisions: 0, importedSettings: 0, addedSessions: 0, existingSessions: 0, addedBarLog: 0,
       }
 
       let importedPieces = data.version < 2 ?
@@ -1398,6 +1491,7 @@ export class LocalStore {
       let changedItems = new Set()
       let reviewKeys = new Set((await this.backend.getAllKeys("reviews")).map(memoryKey))
       let fileReviews = []
+      let fileBarLog = []
 
       // an imported item: added, or replacing the stored one when practiced
       // more recently. totalsOnly keeps the rest of the stored item. A hand
@@ -1462,6 +1556,12 @@ export class LocalStore {
             fileReviews.push(reviewForPiece(review, pieceIds.get(review.pieceId)))
           }
         }
+
+        for (let row of data.version >= 12 && Array.isArray(data.barLog) ? data.barLog : []) {
+          if (validBarLog(row) && pieceIds.has(row.pieceId)) {
+            fileBarLog.push(barLogForPiece(row, pieceIds.get(row.pieceId)))
+          }
+        }
       }
 
       for (let review of fileReviews) {
@@ -1470,6 +1570,18 @@ export class LocalStore {
           reviewKeys.add(key)
           ops.push({store: "reviews", put: review})
           report.addedReviews += 1
+        }
+      }
+
+      if (fileBarLog.length) {
+        let barLogKeys = new Set((await this.backend.getAllKeys("barLog")).map(memoryKey))
+        for (let row of fileBarLog) {
+          let key = memoryKey(recordKey("barLog", row))
+          if (!barLogKeys.has(key)) {
+            barLogKeys.add(key)
+            ops.push({store: "barLog", put: row})
+            report.addedBarLog += 1
+          }
         }
       }
 

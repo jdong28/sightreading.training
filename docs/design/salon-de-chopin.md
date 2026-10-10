@@ -277,6 +277,35 @@ played, when last, the recent-grades sentence, and accuracy or the acoustic "N o
 equivalent, plus a "Practise bar *n*" pill that sets the section to that bar alone and begins. ×, a
 click elsewhere, Escape or turning the page closes it. The setup pane is unchanged while it's open.
 
+**Behind a bar's %** (Claude Design canvas "Practice Record",
+`https://claude.ai/artifact/C5bEWXdKoWaNLz4nh3aviP`, artboards "1 · Click a bar" and "1 · A bar's %
+counts right notes; timing strip beside it"; `st/bar_review.js`, the pop-up's second block and
+`score_sheet.jsx`'s note marks): the pop-up only opens when a bar is clicked, 340px wide, and below
+its accuracy chart, latest/best figures and pips it says what lies behind the %, read from the bar's
+last five rows of the bar log (`barLog` store, one row a bar of each pass played through, written
+with the reviews by `barLogRows`). The % is still right notes only; timing is beside it and never in
+it. A paper-warm panel reads "Behind the 75%" (oxblood below 100%, else "Every note right" with
+"· timing" when its strip shows), "Latest pass · 19:44" (or "Earlier pass" when the strip shows an
+older one) and the worst beat in words ("Beat 2 went wrong in all 3 of your last passes, filled in
+on the score."), the next two ("Also beat 4 and beat 1."), and the key pressed instead as "the black
+key just above". No note name appears anywhere (the owner reads beats, not C3 and D5). On the score
+the notes that went wrong in 2 or more of the last 5 passes (`HABIT_PASSES`) are filled oxblood, a
+note wrong once is ringed, the key pressed instead is a grey head (`--salon-ghost-head`) beside it,
+raised by its staff steps, a pause is a gilt ▾ over its column, and one or two tags
+("wrong 3 of 3", "wrong once in 3", "2.7 s pause") sit at the bottom of the bar's band: all placed
+in percent of the plate box on the heads the engine drew, found by pitch and onset, again at every
+`showPage` and whenever the selected bar changes; they vanish with the pop-up. The timing strip is a
+cell a note (a bordered grid with dashed dividers, 56px tall): the tick at the notated gap times the
+pass's own pulse, the shading ±25% (`STEADY_BAND`) and the note's dot where it started, "»" or "«"
+past 90% off; a hollow dot for the first note struck, words under the cells up to six notes
+("on time", "2.0 s late", "after a slip", "skipped", "held"), and the caption naming the worst past
+that. It shows only when a note fell outside the shading or paused, from the newest pass, or an older
+one in the window that paused when the newest was steady. A bar with a fermata or a slowing word
+(rit., rall., a piacere...) in it or the bar before is read from the stored MusicXML
+(`st/score_give.js`) and its timing isn't judged: the strip keeps its dots but drops the shading,
+the words and ▾. A bar played before the log began says its details start with the passes played
+from now on; a bar graded by ear shows the player's own tags as chips ("You noted").
+
 **Setup pane, "Tonight's session"** (`components/sight_reading/setup_pane.jsx`): replaces the old
 Programme drawer and rail plates, always in the right column at rest (there is no drawer and no
 Programme pill: `Drawer: null`). Groups, in order: Piece (the piece select, Remove, the import/
@@ -314,14 +343,18 @@ Done (dismisses the strip alone). Every bar played that session is tinted and la
 accuracy under the This session shade (`--salon-mark-clean/near/trouble`; the 80% line between
 "nearly" and "trouble" per build note 6's placeholder), which the toolbar offers only while `ended`
 is set. There is no full-screen summary dialog on this page (§4's implementation note): a restPauses
-page like this one never opens `SessionSummary`.
+page like this one never opens `SessionSummary`. The strip survives a reload: End session writes a
+`scoreEnded` marker to the local store, and the page brings the strip back, its log rebuilt from
+the bar log (`sessionLogOf`) with Done alone, while the marker's piece is the one drilled, its
+session is a recent one and it ended on today's practice day; Begin, Play on and Done forget it.
 
 **New tokens** (`static/js/st/global.css`, alongside the existing palette): `--salon-gilt-deep`,
 `--salon-gilt-mid`, `--salon-pip-rule`, `--salon-gilt-ink` and `--salon-ink-faint` for the setup
 pane and bar labels; `--salon-learn-0/1/2/3` for the learnedness tints and `--salon-mark-clean/
 near/trouble` for the session shade, both described above; `--salon-heat-tint-1..4` for the Score
 difficulty shade (reusing the existing heat ramp's steps as translucent fills over the engraving);
-`--salon-selected-tint` for a clicked bar's fill.
+`--salon-selected-tint` for a clicked bar's fill; `--salon-ghost-head` for the key pressed instead
+on a bar's note marks.
 
 ## Interactions & behaviour
 

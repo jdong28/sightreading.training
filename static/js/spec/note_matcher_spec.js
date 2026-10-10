@@ -1637,3 +1637,55 @@ describe("note matcher", function() {
     })
   })
 })
+
+describe("what a judgement tells the bar log", function() {
+  it("a miss names the wrong keys struck at the head so far", function() {
+    let matcher = matcherFor([["C4", "E4"], ["G4"]])
+    matcher.noteOn("D4", 100)
+    expect(matcher.judged.find(e => e.type == "miss").wrongKeys).toEqual(["D4"])
+  })
+
+  it("a hit carries its onset and every wrong key struck at it, a second one in the same try too", function() {
+    let matcher = matcherFor([["C4", "E4"], ["G4"]])
+    matcher.noteOn("D4", 100)
+    matcher.noteOn("F4", 150)
+    matcher.noteOn("C4", 250)
+    matcher.noteOn("E4", 300)
+    // the second wrong key is in the same try: the page passes nothing on for it
+    expect(matcher.judged.map(e => `${e.type}:${e.counted}`)).toEqual(["miss:miss", "miss:null", "hit:undefined"])
+    let hit = matcher.judged.find(e => e.type == "hit")
+    expect(hit.onset).toEqual(250)
+    expect(hit.wrongKeys).toEqual(["D4", "F4"])
+  })
+
+  it("a column completed by a key struck early for it starts at that key", function() {
+    let matcher = matcherFor([["C4"], ["G4"], ["E4"]])
+    matcher.noteOn("G4", 1000)
+    matcher.noteOn("C4", 1100)
+    expect(matcher.judged.filter(e => e.type == "hit").map(h => h.onset)).toEqual([1100, 1000])
+  })
+
+  it("a column settled by held keys alone has no onset and no wrong keys", function() {
+    let sustain = column => Object.assign(column, {sustained: ["Bb3"]})
+    let matcher = matcherFor([["Bb3"], sustain(["Bb3"]), ["C4"]].map((column, idx) => Object.assign(column, {cardIndex: idx})))
+    matcher.noteOn("Bb3", 0)
+    matcher.noteOn("C4", 575)
+    let hits = matcher.judged.filter(e => e.type == "hit")
+    expect(hits.map(h => [h.settled, h.onset, h.wrongKeys])).toEqual([[false, 0, []], [true, null, []], [false, 575, []]])
+  })
+
+  it("a tempo-mode scroll past after a wrong key carries that key", function() {
+    let matcher = matcherFor([["C4"], ["E4"]], {scroll: true, tempo: true})
+    matcher.noteOn("D4", 100)
+    matcher.judged.length = 0
+    matcher.scrollPast(1000)
+    let miss = matcher.judged.find(e => e.type == "miss")
+    expect(miss.wrongKeys).toEqual(["D4"])
+  })
+
+  it("a scroll past with no wrong key carries none", function() {
+    let matcher = matcherFor([["C4"], ["E4"]], {scroll: true, tempo: true})
+    matcher.scrollPast(1000)
+    expect(matcher.judged.find(e => e.type == "miss").wrongKeys).toEqual([])
+  })
+})

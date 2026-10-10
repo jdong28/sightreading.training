@@ -49,6 +49,71 @@
     }
 }
 
+/* a bar's habitual wrong notes (placeMarks): the heads the player tends to
+   get wrong, in oxblood over the plate's ink */
+.plate {
+    :global(.score_note_trouble),
+    :global(.score_note_trouble *) {
+        fill: var(--salon-oxblood) !important;
+        stroke: var(--salon-oxblood) !important;
+        color: var(--salon-oxblood) !important;
+    }
+}
+
+/* the layer of a bar's note marks over the plate, in percent of it */
+.marks {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    pointer-events: none;
+}
+
+.mark {
+    position: absolute;
+    box-sizing: border-box;
+    pointer-events: none;
+}
+
+.mark_ring {
+    border: 2px solid var(--salon-oxblood);
+    border-radius: 50%;
+}
+
+.mark_ghost {
+    border-radius: 50%;
+    background: var(--salon-ghost-head);
+}
+
+.mark_pause {
+    color: var(--salon-gilt-deep);
+    font-size: 15px;
+    line-height: 1;
+    transform: translate(-50%, -100%);
+}
+
+.mark_tag {
+    transform: translate(-50%, -100%);
+    padding: 0 5px;
+    font-family: var(--font-ui);
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 15px;
+    white-space: nowrap;
+    color: var(--salon-paper);
+
+    &.tag_oxblood {
+        background: var(--salon-oxblood);
+    }
+
+    &.tag_gilt {
+        background: var(--salon-gilt-deep);
+    }
+
+    &.tag_stacked {
+        transform: translate(-50%, -200%);
+    }
+}
+
 .bar_overlay {
     position: absolute;
     box-sizing: border-box;

@@ -22,7 +22,7 @@ import {addNoteListener} from "st/note_stats"
 import {getAppStore} from "st/storage"
 import {
   AttemptPass, passAttempts, passPractice, passPace, passRanges, columnClefs,
-  selfAttempts, selfPractice, barPasses, passGrade,
+  selfAttempts, selfPractice, barPasses, passGrade, barLogRows,
 } from "st/srs/attempt"
 import {AGAIN, HARD} from "st/srs/grade"
 import {itemId} from "st/srs/records"
@@ -497,7 +497,7 @@ export class MeasureCardGenerator {
     }
   }
 
-  notePlayed({type, notes=[], blamed=notes, stats}) {
+  notePlayed({type, notes=[], blamed=notes, wrongKeys=[], stats}) {
     if (!this.deck.card) { return }
 
     if (stats) {
@@ -516,7 +516,7 @@ export class MeasureCardGenerator {
       }
     } else if (type == "miss" || type == "slip") {
       let pass = this.playedPass()
-      pass.miss(blamed, {counted: type == "miss", time: this.now()})
+      pass.miss(blamed, {counted: type == "miss", time: this.now(), wrongKeys})
       if (type == "miss" && stats) {
         stats.countClefs(columnClefs(pass.card.columns[pass.head], blamed), "miss")
       }
@@ -679,9 +679,14 @@ export class MeasureCardGenerator {
 
       let {attempts, practice} = this.passRecords(pass, {...written, sessionId: this.sessionId})
 
+      // a row a bar for the log of what went wrong in it, whether the bar's
+      // review was written or the pass demoted to practice (see barLogRows)
+      let rows = barLogRows(pass, {...written, sessionId: this.sessionId, reviewed: attempts.map(({id}) => id)})
+
       return Promise.all([
         ...attempts.map(({id, build}) => store.recordAttempt(stored => build(stored.item(id)))),
         ...practice.map(stint => store.recordSectionPractice(stint)),
+        ...(rows.length ? [store.recordBarLog(rows)] : []),
       ])
     }).catch(err => console.warn("Couldn't save the attempt", err))
 

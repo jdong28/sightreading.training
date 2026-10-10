@@ -6,6 +6,16 @@
 // queue (st/components/score_card enqueueDraw), never an engine directly,
 // and loads the engines bundle on demand (st/score_render/load), never
 // statically.
+//
+// A bar's note marks (st/bar_review's marks: the notes that tend to go wrong
+// filled in, once-wrong ones ringed, the key pressed instead as a grey head,
+// a ▾ over a pause, and a tag or two) are put on the heads the engine drew,
+// found by pitch and onset as the trainer's join finds them (st/score_render/
+// card_join): the engraving only gains a class, and the rest is a layer over
+// it of boxes in percent of the plate, which scales with the page. They are
+// placed again whenever the page is shown (a re-engrave, a width change or a
+// page turn all end in showPage) and whenever noteMarks change, so nothing
+// of them is kept between draws.
 
 import * as React from "react"
 import * as types from "prop-types"
@@ -17,6 +27,28 @@ import {
 } from "st/score_render/score_pages"
 
 import styles from "./score_sheet.module.css"
+
+// the class a note head the player tends to get wrong gains, drawn in
+// oxblood whatever the plate paints heads in
+export const TROUBLE_CLASS = "score_note_trouble"
+
+// the onset grid the two clocks are compared on, as the join's
+const TICKS = 960
+const tick = beats => Math.round(beats * TICKS)
+
+// the size of a ring round a head, in head widths
+const RING_SCALE = 1.6
+
+// how far right of a head its ghost sits, in head widths
+const GHOST_GAP = 0.25
+
+// what a tag's text takes, to tell when two would overlap: a character, and
+// the padding either side
+const TAG_CHAR_PX = 5.3
+const TAG_PAD_PX = 10
+
+// how high above a column's top head its pause mark sits, in head heights
+const PAUSE_RISE = 1.2
 
 function naturalSize(svg) {
   return {
@@ -60,6 +92,10 @@ export class ScoreSheet extends React.Component {
     // for the selected bar's pop-up, see score-first design §D6
     renderPopup: types.func,
     onError: types.func,
+    // the clicked bar's note marks, see st/bar_review (barReview().marks):
+    // {measure, heads: [{beat, pitch, kind}], ghosts: [{beat, pitch, played,
+    // steps}], pauses: [{beat}], tags: [{beat, pitch, text, tone}]}, or null
+    noteMarks: types.object,
   }
 
   static defaultProps = {
@@ -69,9 +105,14 @@ export class ScoreSheet extends React.Component {
 
   constructor(props) {
     super(props)
-    this.state = {drawing: true, width: 0, engraveWidth: null, naturalWidth: 0, naturalHeight: 0, pages: []}
+    this.state = {
+      drawing: true, width: 0, engraveWidth: null, naturalWidth: 0, naturalHeight: 0, pages: [],
+      // the layer over the plate, see placeMarks
+      marks: [],
+    }
     this.rootRef = React.createRef()
     this.plateRef = React.createRef()
+    this.boxRef = React.createRef()
     this.drawCount = 0
   }
 
@@ -93,6 +134,8 @@ export class ScoreSheet extends React.Component {
 
     if (prevProps.page != this.props.page) {
       this.showPage()
+    } else if (prevProps.noteMarks != this.props.noteMarks) {
+      this.placeMarks()
     }
   }
 
@@ -192,6 +235,105 @@ export class ScoreSheet extends React.Component {
 
     svg.setAttribute("viewBox", `0 ${page.top * k} ${vbWidth} ${(page.bottom - page.top) * k}`)
     svg.setAttribute("height", `${page.bottom - page.top}`)
+
+    this.placeMarks()
+  }
+
+  // The clicked bar's note marks, on the page as it is now: the class on the
+  // heads, and the boxes of the layer over the plate in percent of it. The
+  // heads found by pitch and onset (a tick either side), none for a note the
+  // engine drew on another page (outside the box) or not at all
+  placeMarks() {
+    let plate = this.plateRef.current
+    let box = this.boxRef.current
+    if (!plate) { return }
+
+    for (let el of plate.querySelectorAll(`.${TROUBLE_CLASS}`)) {
+      el.classList.remove(TROUBLE_CLASS)
+    }
+
+    let marks = this.props.noteMarks
+    let placed = []
+    let page = this.currentPage()
+
+    // the marks of a bar not on this page are none: its heads are in the
+    // engraving all the same, drawn on another page
+    if (marks && this.result && box && page && page.measures.some(measure => measure.number == marks.measure)) {
+      let boxRect = box.getBoundingClientRect()
+      let pct = (value, size) => size ? value / size * 100 : 0
+
+      // a head's box in percent of the plate box
+      let boxOf = el => {
+        let rect = el.getBoundingClientRect()
+        return {
+          left: pct(rect.left - boxRect.left, boxRect.width), top: pct(rect.top - boxRect.top, boxRect.height),
+          width: pct(rect.width, boxRect.width), height: pct(rect.height, boxRect.height),
+        }
+      }
+      let visible = rect => rect.width > 0 && rect.height > 0 && rect.top >= 0 && rect.top + rect.height <= 100 &&
+        rect.left >= 0 && rect.left + rect.width <= 100
+
+      let headsAt = (beat, pitch) => this.result.notes.filter(note =>
+        (pitch == null || note.pitch == pitch) && Math.abs(tick(note.onsetBeats) - tick(beat)) <= 1)
+
+      for (let {beat, pitch, kind} of marks.heads || []) {
+        for (let note of headsAt(beat, pitch)) {
+          if (kind == "habit") { note.el.classList.add(TROUBLE_CLASS) }
+        }
+
+        let head = headsAt(beat, pitch).map(note => boxOf(note.el)).find(visible)
+        if (head && kind == "once") {
+          // a circle round the head, wide in percent of the box as high in
+          // pixels, which the plate's two sizes tell apart
+          let w = Math.max(head.width, head.height * boxRect.height / boxRect.width) * RING_SCALE
+          let h = w * boxRect.width / boxRect.height
+          placed.push({
+            kind: "ring", left: head.left + head.width / 2 - w / 2, top: head.top + head.height / 2 - h / 2,
+            width: w, height: h,
+          })
+        }
+      }
+
+      for (let {beat, pitch, steps} of marks.ghosts || []) {
+        let head = headsAt(beat, pitch).map(note => boxOf(note.el)).find(visible)
+        if (!head) { continue }
+
+        placed.push({
+          kind: "ghost",
+          left: head.left + head.width * (1 + GHOST_GAP), top: head.top - steps * head.height / 2,
+          width: head.width, height: head.height,
+        })
+      }
+
+      for (let {beat} of marks.pauses || []) {
+        let heads = headsAt(beat).map(note => boxOf(note.el)).filter(visible)
+        if (!heads.length) { continue }
+
+        let top = heads.reduce((best, head) => head.top < best.top ? head : best)
+        placed.push({kind: "pause", left: top.left + top.width / 2, top: top.top - top.height * PAUSE_RISE, text: "▾"})
+      }
+
+      // the tags sit at the bottom of the bar's system band, under the head
+      let overlay = barOverlays(page, this.state.naturalWidth).find(o => o.number == marks.measure)
+      if (overlay) {
+        let tags = []
+        for (let {beat, pitch, text, tone} of marks.tags || []) {
+          let head = headsAt(beat, pitch).map(note => boxOf(note.el)).find(visible)
+          if (!head) { continue }
+
+          let left = Math.min(92, Math.max(8, head.left + head.width / 2))
+          let wide = mark => (mark.text.length * TAG_CHAR_PX + TAG_PAD_PX) / boxRect.width * 100
+          let stacked = tags.some(other => Math.abs(other.left - left) < (wide(other) + wide({text})) / 2 + 1)
+          let mark = {kind: "tag", tone, left, top: overlay.top + overlay.height, text, stacked}
+          tags.push(mark)
+          placed.push(mark)
+        }
+      }
+    }
+
+    if (JSON.stringify(placed) != JSON.stringify(this.state.marks)) {
+      this.setState({marks: placed})
+    }
   }
 
   render() {
@@ -203,11 +345,32 @@ export class ScoreSheet extends React.Component {
       className={styles.sheet}
       data-score-sheet
       aria-busy={this.state.drawing}>
-      <div className={classNames(styles.plate_box, {[styles.drawing]: this.state.drawing})}>
+      <div ref={this.boxRef} className={classNames(styles.plate_box, {[styles.drawing]: this.state.drawing})}>
         <div ref={this.plateRef} className={styles.plate} />
         {page && this.renderOverlays(page, overlays)}
+        {this.renderMarks()}
         {page && this.renderPopupSlot(page, overlays)}
       </div>
+    </div>
+  }
+
+  // the layer of a bar's note marks over the plate, never in the way of a
+  // click
+  renderMarks() {
+    return <div className={styles.marks} aria-hidden="true">
+      {this.state.marks.map((mark, idx) => {
+        let style = {left: `${mark.left}%`, top: `${mark.top}%`}
+        if (mark.width != null) { style = {...style, width: `${mark.width}%`, height: `${mark.height}%`} }
+
+        return <span
+          key={idx}
+          data-mark={mark.kind}
+          className={classNames(styles.mark, styles[`mark_${mark.kind}`], {
+            [styles.tag_oxblood]: mark.tone == "oxblood", [styles.tag_gilt]: mark.tone == "gilt",
+            [styles.tag_stacked]: mark.stacked,
+          })}
+          style={style}>{mark.text}</span>
+      })}
     </div>
   }
 

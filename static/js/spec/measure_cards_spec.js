@@ -846,6 +846,121 @@ describe("measure cards", function() {
         ])
       })
 
+      // the bar log (st/srs/attempt barLogRows), a row a bar of each pass
+      // played through, beside the reviews
+      describe("the bar log", function() {
+        it("writes a row a bar of a finished card at the reviews' time, under their session, keeping what went wrong", async function() {
+          let {generator, notes} = generatorFor()
+          let stats = new NoteStats()
+
+          time = 1000
+          stats.missNotes(["D5"], ["D5"], ["E5"])
+          time = 1500
+          notes = hit(notes, stats, {latency: 500, onset: 1450, wrongKeys: ["E5"]})
+          for (let t of [2000, 2500, 3000]) {
+            time = t
+            notes = hit(notes, stats, {latency: 500, onset: t - 10})
+          }
+          await generator.finishing
+
+          let rows = await store.barLog({pieceId: "p"})
+          let reviews = await store.reviews({pieceId: "p"})
+          expect(rows.map(r => [r.itemId, r.at, r.sessionId, r.mode, r.card, r.reviewed, r.columns, r.clean])).toEqual([
+            ["p:both:0-0", 3000, stats.id, "wait", [0, 1], true, 1, 0],
+            ["p:both:1-1", 3000, stats.id, "wait", [0, 1], true, 3, 3],
+          ])
+          expect(reviews.filter(r => r.at == 3000 && r.sessionId == stats.id).map(r => r.itemId))
+            .toEqual(["p:both:0-0", "p:both:0-1", "p:both:1-1"])
+          expect(rows[0].marks).toEqual([[0, "wrong", ["D5"], ["E5"], 1, null]])
+          expect(rows[1].marks).toBeUndefined()
+          // the first column's time is counted from the last struck in the bar before it
+          expect(rows[1].iois).toEqual([540, 500, 500])
+
+          // the item's own entry for the pass says the same of the bar
+          let passes = store.item("p:both:1-1").passes
+          expect(passes[passes.length - 1]).toEqual([3000, rows[1].columns, rows[1].clean, jasmine.any(Number)])
+        })
+
+        it("writes a row for a bar demoted to practice, with no review of it, and for the pass that fails it", async function() {
+          let columns = [["G4"], ["A4"], ["B4"]].map((notes, idx) => Object.assign(notes, {beat: 4 + idx}))
+          let deck = new MeasureCardDeck(measureCards([{number: 19, columns}], 1), {
+            pieceId: "p", order: IN_ORDER, store,
+          })
+          let generator = track(new MeasureCardGenerator(deck, {now: () => time}))
+          generator.setDrill(() => ({mode: "scroll", speed: 25}))
+          let notes = new NoteList([], {generator})
+          let stats = new NoteStats()
+          notes.fillBuffer(6)
+
+          let lap = async (t, {slip=false}={}) => {
+            for (let i = 0; i < 3; i++) {
+              time = t + i * 500
+              if (slip && i == 1) { stats.missNotes(["A4"], ["A4"], ["G#4"]) }
+              notes = hit(notes, stats, {latency: 500, onset: time})
+            }
+            await generator.finishing
+          }
+
+          // good at sight (scroll mode is never easy), a clean loop 20 s later (its rung not due:
+          // practice alone), then a failed one
+          await lap(0)
+          await lap(20 * 1000)
+          await lap(40 * 1000, {slip: true})
+
+          let rows = await store.barLog({itemId: "p:both:19-19"})
+          let reviews = await store.reviews({pieceId: "p"})
+          expect(rows.map(r => [r.at, r.reviewed, r.clean, (r.marks || []).map(m => m[1])])).toEqual([
+            [1000, true, 3, []],
+            [21000, undefined, 3, []],
+            [41000, true, 2, ["wrong"]],
+          ])
+          expect(reviews.map(r => r.at)).toEqual([1000, 41000])
+
+          // every row is the bar's passes entry of its time
+          let passes = store.item("p:both:19-19").passes
+          expect(passes.map(([at, columns, clean]) => [at, columns, clean]))
+            .toEqual(rows.map(r => [r.at, r.columns, r.clean]))
+          expect(rows[2].marks).toEqual([[1, "wrong", ["A4"], ["G#4"], 1, null]])
+          expect(rows[2].beats).toEqual([4, 5, 6])
+        })
+
+        it("writes none for a pass abandoned at Rest or the rest of its card", async function() {
+          let {generator, notes} = generatorFor()
+          let stats = new NoteStats()
+
+          time = 1000
+          notes = hit(notes, stats, {latency: 500, onset: 990})
+          notes = hit(notes, stats, {latency: 500, onset: 1490})
+          generator.takePractice()
+
+          // the rest of the card is played as practice alone
+          for (let t of [2000, 2500]) {
+            time = t
+            notes = hit(notes, stats, {latency: 500, onset: t})
+          }
+          await generator.finishing
+
+          expect(generator.deck.card.measures).toEqual([2])
+          expect(await store.barLog({pieceId: "p"})).toEqual([])
+          expect((await store.reviews({pieceId: "p"})).length).toEqual(0)
+        })
+
+        it("writes a self-graded pass as rows of its grade and tags for the bars the grade reached", async function() {
+          let {generator} = generatorFor()
+          generator.setDrill(() => ({mode: "self"}))
+
+          time = 2000
+          generator.selfGrade(HARD, {sessionId: "s1", bars: [1], slipped: ["tempo"]})
+          await generator.finishing
+
+          let rows = await store.barLog({sessionId: "s1"})
+          expect(rows).toEqual([
+            {itemId: "p:both:1-1", at: 2000, pieceId: "p", hand: "both", measure: 1, sessionId: "s1", mode: "self",
+              card: [0, 1], cardGrade: HARD, columns: null, clean: null, grade: HARD, reviewed: true, slipped: ["tempo"]},
+          ])
+        })
+      })
+
       // acoustic mode: the player grades the pass themself (st/srs/self_grade)
       describe("self-graded passes", function() {
         it("writes the self reviews through the store and advances the deck", async function() {

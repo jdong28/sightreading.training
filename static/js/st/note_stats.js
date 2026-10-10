@@ -38,10 +38,11 @@ export function settingsSummary(settings) {
 // told about every hit and miss counted by any stats, see addNoteListener
 const noteListeners = new Set()
 
-// Calls fn({type, time, notes, blamed, stats}) after every hit and miss
-// counted by any NoteStats (type "hit" or "miss", with the notes played or
-// missed, for a miss the notes it is put down to, and the stats counting
-// them), eg. so the measure flashcards (st/measure_cards)
+// Calls fn({type, time, notes, blamed, wrongKeys, stats}) after every hit and
+// miss counted by any NoteStats (type "hit" or "miss", with the notes played
+// or missed, for a miss the notes it is put down to and the wrong keys struck
+// at the column so far (none when the caller knows no more), and the stats
+// counting them), eg. so the measure flashcards (st/measure_cards)
 // can tell which measure the player got wrong, and for each further slip on
 // a column already counted missed (type "slip", counting nothing). Returns a
 // function that removes it
@@ -187,7 +188,7 @@ export default class NoteStats {
 
   // blamed are the notes the miss is put down to, eg. for the score staff it
   // is counted against, the notes by default
-  missNotes(notes, blamed=notes) {
+  missNotes(notes, blamed=notes, wrongKeys=[]) {
     let now = +new Date
     this.endSessionAfterPause(now)
 
@@ -202,7 +203,7 @@ export default class NoteStats {
     this.misses += 1;
     this.buffer.misses += 1;
     this.flushLater()
-    notifyNoteListeners({type: "miss", time: now, notes, blamed, stats: this})
+    notifyNoteListeners({type: "miss", time: now, notes, blamed, wrongKeys, stats: this})
   }
 
   // Counts a pass the player graded themself (acoustic mode, see
@@ -221,8 +222,8 @@ export default class NoteStats {
   // A further slip on a column already counted missed: nothing more is
   // counted, but the listeners are told, eg. for the grade of the measure
   // cards, which counts every slip
-  slipNotes(notes, blamed=notes) {
-    notifyNoteListeners({type: "slip", time: +new Date, notes, blamed, stats: this})
+  slipNotes(notes, blamed=notes, wrongKeys=[]) {
+    notifyNoteListeners({type: "slip", time: +new Date, notes, blamed, wrongKeys, stats: this})
   }
 
   // Adds a hit or a miss (type) for each of the clef signs, eg. ["g", "f"]

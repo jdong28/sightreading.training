@@ -1,8 +1,9 @@
 import {
   AttemptPass, passAttempts, passPractice, passPace, columnClefs, PAUSE_MS, selfAttempts, selfPractice,
+  barLogRows, passTiming,
 } from "st/srs/attempt"
 import {sectionCard} from "st/measure_cards"
-import {newItem, validItem, validReview} from "st/srs/records"
+import {newItem, validItem, validReview, validBarLog} from "st/srs/records"
 import {AGAIN, HARD, GOOD, EASY, GRADE_ALGO} from "st/srs/grade"
 import {SELF_PAUSE_MS} from "st/srs/self_grade"
 
@@ -560,6 +561,237 @@ describe("srs attempt", function() {
 
       let unmarkedPractice = selfPractice(pass, {pieceId: "p", hand: "lower", at: 5000})
       expect(unmarkedPractice.every(stint => stint.requested === undefined)).toBe(true)
+    })
+  })
+})
+
+describe("bar log rows (barLogRows)", function() {
+  // plays the head column with its own first key down at onset, done at
+  // time, after an optional wrong key {blamed, keys, time}
+  let playAt = (pass, time, onset, {wrong}={}) => {
+    if (wrong) { pass.miss(wrong.blamed, {counted: true, time: wrong.time, wrongKeys: wrong.keys}) }
+    let latency = time - pass.columnStartedAt
+    let index = pass.done(time, {latency, spread: 0, early: 0, heldCredit: 0, late: null, onset,
+      wrongKeys: wrong ? wrong.keys : []})
+    pass.hit(index)
+  }
+
+  let rowsOf = (pass, opts={}) => barLogRows(pass, {pieceId: "p", hand: "both", sessionId: "s1", ...opts})
+
+  it("writes a row a bar: the session log's figures, each column's beat and timing, and its marks", function() {
+    let pass = new AttemptPass(twoBars(), {startedAt: 1000})
+    pass.drill = {mode: "wait"}
+    playAt(pass, 3000, 3000)
+    playAt(pass, 3500, 3500, {wrong: {blamed: ["A4"], keys: ["A#4"], time: 3300}})
+    playAt(pass, 4000, 4000)
+    playAt(pass, 6500, 6500)
+
+    let rows = barLogRows(pass, {pieceId: "p", hand: "both", sessionId: "s1", reviewed: ["p:both:1-1", "p:both:2-2"]})
+    expect(rows).toEqual([
+      {itemId: "p:both:1-1", at: 6500, pieceId: "p", hand: "both", measure: 1, sessionId: "s1", mode: "wait",
+        card: [1, 2], cardGrade: HARD, columns: 3, clean: 2, grade: AGAIN, reviewed: true,
+        beats: [0, 1, 2], gaps: [null, 1, 1], iois: [null, 500, 500], pulse: 500,
+        marks: [[1, "wrong", ["A4"], ["A#4"], 1, null]]},
+      {itemId: "p:both:2-2", at: 6500, pieceId: "p", hand: "both", measure: 2, sessionId: "s1", mode: "wait",
+        card: [1, 2], cardGrade: HARD, columns: 1, clean: 1, grade: EASY, reviewed: true,
+        beats: [3], gaps: [1], iois: [2500], pulse: 500,
+        marks: [[0, "hesitated", ["C3"], [], 0, 2500]]},
+    ])
+    expect(rows.every(validBarLog)).toBe(true)
+  })
+
+  describe("a pass that isn't played clean", function() {
+    let pass
+    beforeEach(function() {
+      pass = new AttemptPass(twoBars(), {startedAt: 1000})
+    })
+
+    it("marks a column skipped after a wrong key as skipped with its try, in wait mode", function() {
+      pass.drill = {mode: "wait"}
+      playAt(pass, 3000, 3000)
+      pass.miss(["A4"], {counted: true, time: 3200, wrongKeys: ["Bb4"]})
+      pass.done(3500)
+      playAt(pass, 4000, 4000)
+      playAt(pass, 4500, 4500)
+
+      let rows = rowsOf(pass)
+      expect(rows[0].marks).toEqual([[1, "skipped", ["A4"], ["Bb4"], 1, null]])
+      expect(rows[0].clean).toEqual(2)
+      expect(rows[0].iois).toEqual([null, null, 1000])
+      expect(rows[0].gaps).toEqual([null, null, 2])
+      expect(rows.every(validBarLog)).toBe(true)
+    })
+
+    it("marks a column scrolled past after a wrong key as scrolled, and one skipped clean as skipped, in scroll mode", function() {
+      pass.drill = {mode: "scroll", speed: 30, tempo: 0.5}
+      playAt(pass, 3000, 3000)
+      pass.miss(["A4"], {counted: true, time: 3200, wrongKeys: ["G4"]})
+      pass.done(3500)
+      pass.done(4000)
+      playAt(pass, 4500, 4500)
+
+      let [bar1, bar2] = rowsOf(pass)
+      expect(bar1.mode).toEqual("scroll")
+      expect(bar1.marks).toEqual([[1, "scrolled", ["A4"], ["G4"], 1, null], [2, "skipped", ["B4"], [], 0, null]])
+      expect(bar1.clean).toEqual(1)
+      expect(bar2.marks).toBeUndefined()
+      expect([bar1, bar2].every(validBarLog)).toBe(true)
+    })
+
+    it("keeps every row's clean equal to its columns less the distinct columns it marks", function() {
+      pass.drill = {mode: "wait"}
+      pass.miss(["G3", "G4"], {counted: true, time: 2800, wrongKeys: ["F4"]})
+      pass.miss(["G4", "G3"], {counted: false, time: 2900, wrongKeys: ["F4", "F#4"]})
+      playAt(pass, 3000, 3000)
+      playAt(pass, 3500, 3500)
+      pass.done(4000)
+      playAt(pass, 9000, 9000)
+
+      let rows = rowsOf(pass)
+      for (let row of rows) {
+        let marked = new Set((row.marks ?? []).filter(mark => mark[1] != "hesitated").map(mark => mark[0]))
+        expect(row.clean).toEqual(row.columns - marked.size)
+      }
+      // a further slip's key and the blamed notes are kept once, in the column's order
+      expect(rows[0].marks[0]).toEqual([0, "wrong", ["G3", "G4"], ["F4", "F#4"], 2, null])
+    })
+
+    it("lists a column's hesitation beside its wrong mark, never costing the %", function() {
+      pass.drill = {mode: "wait"}
+      playAt(pass, 3000, 3000)
+      playAt(pass, 3500, 3500)
+      playAt(pass, 4000, 4000)
+      playAt(pass, 7000, 7000, {wrong: {blamed: ["C3"], keys: ["D3"], time: 6900}})
+
+      let [, bar2] = rowsOf(pass)
+      expect(bar2.marks).toEqual([[0, "wrong", ["C3"], ["D3"], 1, null], [0, "hesitated", ["C3"], [], 0, 3000]])
+      expect(bar2.clean).toEqual(0)
+      expect(validBarLog(bar2)).toBe(true)
+    })
+
+    it("has no hesitation in scroll mode, which the grade doesn't read either", function() {
+      pass.drill = {mode: "scroll", speed: 30}
+      playAt(pass, 3000, 3000)
+      playAt(pass, 3500, 3500)
+      playAt(pass, 4000, 4000)
+      playAt(pass, 9000, 9000)
+
+      let rows = rowsOf(pass)
+      expect(rows.every(row => row.marks === undefined)).toBe(true)
+    })
+  })
+
+  describe("a pass not written as a detected one", function() {
+    it("writes a self-graded pass as a row of its grade and tags only, a bar the grade reached each", function() {
+      let pass = new AttemptPass(twoBars(), {startedAt: 1000})
+      pass.drill = {mode: "wait"}
+      pass.lastAt = 5000
+      pass.selfGrade = {grade: HARD, bars: [2], slipped: ["rhythm"]}
+
+      let rows = rowsOf(pass, {reviewed: ["p:both:2-2"]})
+      expect(rows).toEqual([
+        {itemId: "p:both:2-2", at: 5000, pieceId: "p", hand: "both", measure: 2, sessionId: "s1", mode: "self",
+          card: [1, 2], cardGrade: HARD, columns: null, clean: null, grade: HARD, reviewed: true, slipped: ["rhythm"]},
+      ])
+      expect(rows.every(validBarLog)).toBe(true)
+    })
+
+    it("marks a read-through, whose reviews are never scheduled", function() {
+      let pass = new AttemptPass(twoBars(), {startedAt: 1000})
+      pass.drill = {mode: "wait"}
+      pass.readThrough = true
+      ;[3000, 3500, 4000, 4500].forEach(time => playAt(pass, time, time))
+
+      let rows = rowsOf(pass)
+      expect(rows.map(row => row.readThrough)).toEqual([true, true])
+      expect(rowsOf(pass, {readThrough: false}).map(row => row.readThrough)).toEqual([undefined, undefined])
+    })
+
+    it("writes nothing for a pass abandoned, continued or never played", function() {
+      let abandoned = new AttemptPass(twoBars(), {startedAt: 1000})
+      abandoned.drill = {mode: "wait"}
+      playAt(abandoned, 3000, 3000)
+      expect(rowsOf(abandoned)).toEqual([])
+
+      let continued = new AttemptPass(twoBars(), {from: 1, continued: true, startedAt: 1000})
+      continued.drill = {mode: "wait"}
+      ;[3000, 3500, 4000].forEach(time => playAt(continued, time, time))
+      expect(continued.complete).toBe(true)
+      expect(rowsOf(continued)).toEqual([])
+
+      let idle = new AttemptPass(twoBars(), {startedAt: 1000})
+      idle.drill = {mode: "wait"}
+      expect(rowsOf(idle)).toEqual([])
+    })
+  })
+
+  describe("passTiming", function() {
+    let settled = {latency: null, spread: null, early: 0, heldCredit: 1, late: null, onset: null, settled: true}
+
+    it("leaves a settled column out and counts the next one's gap from the column struck before it", function() {
+      let pass = new AttemptPass(twoBars(), {startedAt: 1000})
+      pass.drill = {mode: "wait"}
+      playAt(pass, 3000, 3000)
+      pass.hit(pass.done(3000, settled))
+      playAt(pass, 4000, 4000)
+      playAt(pass, 4500, 4500)
+
+      let timing = passTiming(pass)
+      expect(timing.gaps).toEqual([null, null, 2, 1])
+      expect(timing.iois).toEqual([null, null, 1000, 500])
+      expect(timing.pulse).toEqual(500)
+    })
+
+    it("keeps a negative ioi, when the next column's key was struck first, out of the pulse", function() {
+      let pass = new AttemptPass(twoBars(), {startedAt: 1000})
+      pass.drill = {mode: "wait"}
+      playAt(pass, 3000, 3000)
+      playAt(pass, 3600, 2900)
+      playAt(pass, 3900, 3400)
+      playAt(pass, 4500, 3900)
+
+      let timing = passTiming(pass)
+      expect(timing.iois).toEqual([null, -100, 500, 500])
+      expect(timing.pulse).toEqual(500)
+    })
+
+    it("leaves a stop out of the pulse but keeps it as the column's ioi", function() {
+      let pass = new AttemptPass(twoBars(), {startedAt: 1000})
+      pass.drill = {mode: "wait"}
+      playAt(pass, 3000, 3000)
+      playAt(pass, 3400, 3400)
+      playAt(pass, 3800, 3800)
+      playAt(pass, 3800 + 31000, 3800 + 31000)
+
+      let timing = passTiming(pass)
+      expect(timing.iois).toEqual([null, 400, 400, 31000])
+      expect(timing.pulse).toEqual(400)
+    })
+
+    it("has no pulse with fewer than two columns struck", function() {
+      let pass = new AttemptPass(twoBars(), {startedAt: 1000})
+      pass.drill = {mode: "wait"}
+      playAt(pass, 3000, 3000)
+      pass.done(3500)
+      expect(passTiming(pass).pulse).toBe(null)
+    })
+
+    it("reads the ms a column where the card has no rhythm", function() {
+      let card = twoBars()
+      card.columns.forEach(column => { column.beat = null })
+      let pass = new AttemptPass(card, {startedAt: 1000})
+      pass.drill = {mode: "wait"}
+      ;[3000, 3500, 4100, 4600].forEach(time => playAt(pass, time, time))
+
+      let timing = passTiming(pass)
+      expect(timing.beats).toEqual([null, null, null, null])
+      expect(timing.gaps).toEqual([null, null, null, null])
+      expect(timing.iois).toEqual([null, 500, 600, 500])
+      expect(timing.pulse).toEqual(500)
+
+      let rows = rowsOf(pass)
+      expect(rows[0].beats).toEqual([null, null, null])
+      expect(rows.every(validBarLog)).toBe(true)
     })
   })
 })

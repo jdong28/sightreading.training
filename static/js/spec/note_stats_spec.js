@@ -1,4 +1,4 @@
-import NoteStats, {staffClefs} from "st/note_stats"
+import NoteStats, {staffClefs, addNoteListener} from "st/note_stats"
 import {GOOD, HARD} from "st/srs/grade"
 
 describe("note stats", function() {
@@ -25,6 +25,25 @@ describe("note stats", function() {
       stats.hitNotes(["F4"])
       expect(stats.streak).toEqual(1)
       expect(stats.bestStreak).toEqual(3)
+    })
+  })
+
+  describe("note listeners", function() {
+    it("hear the wrong keys of a miss and of a further slip, none by default", function() {
+      let events = []
+      let remove = addNoteListener(event => events.push(event))
+      try {
+        let stats = new NoteStats()
+        stats.missNotes(["F4"], ["F4"], ["G4"])
+        stats.slipNotes(["F4"], ["F4"], ["G4", "A4"])
+        stats.missNotes(["F4"])
+        stats.slipNotes(["F4"])
+      } finally {
+        remove()
+      }
+      expect(events.map(e => [e.type, e.wrongKeys])).toEqual([
+        ["miss", ["G4"]], ["slip", ["G4", "A4"]], ["miss", []], ["slip", []],
+      ])
     })
   })
 
