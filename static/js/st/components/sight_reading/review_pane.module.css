@@ -39,6 +39,13 @@
     min-width: 0;
 }
 
+/* the strip's every second bracket sits a row higher, its label above the
+   strip's own padding: room for it under the hint, so two or more flags
+   (Claude's passages come in a handful) never print over it */
+.mark_plate .hint {
+    margin-bottom: 24px;
+}
+
 .trouble_list {
     list-style: none;
     margin: 0;
