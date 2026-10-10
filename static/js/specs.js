@@ -1,5 +1,7 @@
 import "./specs.css"
 import "spec/bar_progress_spec"
+import "spec/practice_day_spec"
+import "spec/practice_record_page_spec"
 import "spec/difficulty_spec"
 import "spec/bar_stats_spec"
 import "spec/score_view_spec"

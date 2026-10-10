@@ -1,4 +1,5 @@
-// The Progress screen ("Progress" in docs/design/salon-de-chopin.md): local
+// The Progress screen, the practice record's Last 14 days tab ("Progress" in
+// docs/design/salon-de-chopin.md): local
 // practice history read from the session records the trainer writes at Rest
 // (NoteStats#sessionRecord, putSession in st/storage). Every figure is a
 // pure fold of st/progress over those records; this component only paints
@@ -14,6 +15,7 @@ import {setTitle} from "st/globals"
 import {displayNoteName} from "st/music"
 import {progressSummary, readSince, accuracyChangeCaption, PROGRESS_DAYS} from "st/progress"
 import {Plate, Pill, StatCard, TitleBlock, SectionLabel, AccuracyRule} from "st/components/salon"
+import {RecordTabs} from "st/components/record_tabs"
 
 import styles from "./progress_page.module.css"
 
@@ -140,7 +142,8 @@ export default class ProgressPage extends React.Component {
     let changeCaption = accuracyChangeCaption(cards.accuracyDelta)
 
     return <main className={styles.progress_page}>
-      <TitleBlock eyebrow="Practice history" title="Your" italic="progress" />
+      <TitleBlock eyebrow="Practice record" title="Your" italic="progress" />
+      <RecordTabs />
 
       <div className={styles.headline_grid}>
         <StatCard label="Evenings kept" value={cards.eveningsKept} suffix={`/ ${PROGRESS_DAYS}`} />

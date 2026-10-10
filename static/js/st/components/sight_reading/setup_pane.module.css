@@ -47,6 +47,86 @@
     color: var(--salon-ink-muted);
 }
 
+/* a group's toggle: full width, the label, the summary while closed, the
+   chevron */
+.toggle {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    min-height: 36px;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    font: inherit;
+    letter-spacing: normal;
+    line-height: inherit;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+
+    &:hover {
+        color: inherit;
+    }
+
+    &:focus-visible {
+        box-shadow: 0 0 0 2px var(--salon-gilt);
+    }
+}
+
+.summary {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+    font-weight: 400;
+    letter-spacing: normal;
+    text-transform: none;
+    color: var(--salon-ink-soft);
+}
+
+.summary_display {
+    font-family: var(--font-display);
+    font-size: 15px;
+}
+
+/* a 12 px stroke chevron, pointing down while open */
+.chevron {
+    flex: none;
+    box-sizing: border-box;
+    width: 12px;
+    height: 12px;
+    position: relative;
+    color: var(--salon-ink-muted);
+    transition: transform .15s ease;
+
+    &::before {
+        content: "";
+        position: absolute;
+        left: 2px;
+        top: 1px;
+        width: 7px;
+        height: 7px;
+        border-right: 1.5px solid currentColor;
+        border-bottom: 1.5px solid currentColor;
+        transform: rotate(45deg);
+    }
+}
+
+.chevron_closed {
+    transform: rotate(-90deg);
+}
+
+.group_body {
+    display: flex;
+    flex-direction: column;
+    gap: 11px;
+}
+
 .subgroup {
     display: flex;
     flex-direction: column;
@@ -225,12 +305,6 @@
     font-style: italic;
     font-size: 14px;
     color: var(--salon-ink-soft);
-}
-
-.tempo_header {
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
 }
 
 .tempo_value {

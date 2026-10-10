@@ -1,6 +1,6 @@
 import {
   passHistory, passAccuracy, isClean, learnedness, learnedCount, sessionMarks, endedSummary, sessionLogOf,
-  TROUBLE_BELOW,
+  barTotals, barMark, learnedSince, minutesWords, TROUBLE_BELOW,
 } from "st/bar_progress"
 import {measureCards, MeasureCardDeck, MeasureCardGenerator, IN_ORDER} from "st/measure_cards"
 import NoteList from "st/note_list"
@@ -166,6 +166,59 @@ describe("bar progress", function() {
 
     it("leaves a bar not in the log untinted (absent from the map)", function() {
       expect(sessionMarks([entry(1, 4, 4)]).has(2)).toBe(false)
+    })
+  })
+
+  describe("barTotals", function() {
+    let entry = (measure, columns, clean, grade=GOOD) => ({bars: [{measure, columns, clean, grade}]})
+    let selfEntry = (measure, grade) => ({bars: [{measure, columns: null, clean: null, grade}]})
+
+    it("adds up a bar's detected passes and counts its self-graded ones apart", function() {
+      let totals = barTotals([entry(1, 4, 4), entry(1, 4, 3, AGAIN), selfEntry(1, GOOD), selfEntry(1, HARD), selfEntry(2, EASY)])
+
+      expect(totals.get(1)).toEqual({columns: 8, clean: 7, passes: 2, selfPasses: 2, selfClean: 1})
+      expect(totals.get(2)).toEqual({columns: 0, clean: 0, passes: 0, selfPasses: 1, selfClean: 1})
+      expect(totals.has(3)).toBe(false)
+    })
+
+    it("is what barMark and sessionMarks read: a detected bar keeps its accuracy, a self-graded one its share", function() {
+      let log = [entry(1, 4, 4), entry(1, 4, 3, AGAIN), selfEntry(1, AGAIN), selfEntry(2, GOOD), selfEntry(2, HARD)]
+      let totals = barTotals(log)
+
+      expect(barMark(totals.get(1))).toEqual({kind: "near", label: "88%", share: 88, detected: true})
+      expect(barMark(totals.get(2))).toEqual({kind: "trouble", label: "1 of 2 clean", share: 50, detected: false})
+      expect(sessionMarks(log).get(1)).toEqual({kind: "near", label: "88%"})
+    })
+  })
+
+  describe("learnedSince", function() {
+    it("is true for a bar whose clean passes since the time made it learned", function() {
+      let learned = item({attempts: 3, passes: [pass(100), pass(1100), pass(1200), pass(1300)]})
+      expect(learnedSince(learned, 1000)).toBe(true)
+      expect(learnedSince(item({attempts: 3, passes: [pass(1100), pass(1200), pass(1300)]}), 1000)).toBe(true)
+    })
+
+    it("is false for a bar already learned before the time, or not learned yet", function() {
+      // learned by passes before the time, played clean again since
+      let before = item({attempts: 4, passes: [pass(100), pass(200), pass(300), pass(1100)]})
+      expect(learnedSince(before, 1000)).toBe(false)
+
+      // fewer than three clean in a row
+      expect(learnedSince(item({attempts: 3, passes: [pass(1100), pass(1200), pass(1300, 4, 2)]}), 1000)).toBe(false)
+      expect(learnedSince(item({attempts: 2, passes: [pass(1100), pass(1200)]}), 1000)).toBe(false)
+      expect(learnedSince(null, 1000)).toBe(false)
+    })
+
+    it("counts self-graded Clean passes too", function() {
+      expect(learnedSince(item({attempts: 3, passes: [self(1100, GOOD), self(1200, EASY), self(1300, GOOD)]}), 1000)).toBe(true)
+    })
+  })
+
+  describe("minutesWords", function() {
+    it("says under a minute, 1 minute and N minutes", function() {
+      expect(minutesWords(20)).toEqual("Under a minute")
+      expect(minutesWords(60)).toEqual("1 minute")
+      expect(minutesWords(1200)).toEqual("20 minutes")
     })
   })
 

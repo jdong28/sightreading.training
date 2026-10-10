@@ -7,7 +7,7 @@ import {shiftNotationOctaves} from "st/song_parser"
 import {
   RandomNotes, SweepRangeNotes, MiniSteps, TriadNotes, SevenOpenNotes,
   ProgressionGenerator, PositionGenerator, IntervalGenerator, SheetMusicGenerator,
-  allKeySignatures, focusPool
+  allKeySignatures, focusPool, generatorDefaultSettings
 } from "st/generators"
 
 import {
@@ -212,6 +212,28 @@ export function passageSettings(settings, flag, hand) {
     measuresPerCard: WHOLE_SECTION,
     hand: hand ? handSetting(hand) : settings.hand,
   }
+}
+
+// The settings for practising the span of a piece's trouble bars (Today's
+// "Practise bars 3–9", st/practice_day): free practice over the span, hand
+// kept, and for more than one bar one bar a card in Random order, which
+// brings the weakest bars (st/measure_cards cardWeights) up most often. Never
+// begins anything: the score page opens at rest on these in its setup pane
+export function troublePracticeSettings(settings, [start, end]) {
+  let passage = passageSettings(settings, {start, end})
+  return start == end ? passage : {...passage, measuresPerCard: 1, order: RANDOM_ORDER}
+}
+
+// The sheet music settings that open the score page on a piece: the stored
+// ones when they are of that piece, else the piece picked as the setup pane
+// picks it (its opening bars, both hands, the practice it opens in by
+// default), written by Today before it goes to /sheet-music
+export function scoreSettingsForPiece(id) {
+  let stored = generatorDefaultSettings(SHEET_MUSIC_GENERATOR)
+  if (stored.piece == id) { return stored }
+
+  let input = SHEET_MUSIC_GENERATOR.inputs.find(input => input.name == "piece")
+  return input.pick(stored, id).settings
 }
 
 // the measures per card of the programme, see PLAN_CARD_MEASURES

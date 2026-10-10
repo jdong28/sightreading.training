@@ -5,6 +5,7 @@ import {MemoryRouter, Routes, Route} from "react-router-dom"
 
 import ProgressPage from "st/components/pages/progress_page"
 import StatsPage, {statsPageFor} from "st/components/pages/stats"
+import PracticeRecordPage from "st/components/pages/practice_record_page"
 import styles from "st/components/pages/progress_page.module.css"
 import salonStyles from "st/components/salon.module.css"
 import {setAppStore} from "st/storage"
@@ -58,9 +59,9 @@ describe("progress page", function() {
     document.body.appendChild(container)
     root = createRoot(container)
     flushSync(() => {
-      root.render(React.createElement(MemoryRouter, {initialEntries: ["/stats"]},
+      root.render(React.createElement(MemoryRouter, {initialEntries: ["/stats/last-14-days"]},
         React.createElement(Routes, {},
-          React.createElement(Route, {path: "/stats", element: React.createElement(ProgressPage)}),
+          React.createElement(Route, {path: "/stats/last-14-days", element: React.createElement(ProgressPage)}),
           React.createElement(Route, {path: "/setup", element: React.createElement("div", {id: "setup"}, "setup")}),
         )))
     })
@@ -78,6 +79,15 @@ describe("progress page", function() {
       .map(node => node.textContent)
       .join("")
   }
+
+  it("sits under the practice record's tabs, Last 14 days the one marked", function() {
+    let el = renderProgress()
+    let tabs = [...el.querySelectorAll('nav[aria-label="Practice record"] a')]
+    expect(tabs.map(a => a.textContent)).toEqual(["Today", "Last 14 days"])
+    expect(tabs.map(a => a.getAttribute("href"))).toEqual(["/stats", "/stats/last-14-days"])
+    expect(tabs.map(a => a.getAttribute("aria-current"))).toEqual([null, "page"])
+    expect(el.querySelector("h1").textContent).toEqual("Your progress")
+  })
 
   it("shows the headline cards, the chart, and By clef / By note from seeded sessions", async function() {
     let now = Date.now()
@@ -175,9 +185,9 @@ describe("progress page", function() {
   })
 
   describe("statsPageFor", function() {
-    it("routes a local session to the Progress screen and an account to the backend stats page", function() {
-      expect(statsPageFor(null).type).toBe(ProgressPage)
-      expect(statsPageFor({}).type).toBe(ProgressPage)
+    it("routes a local session to the practice record and an account to the backend stats page", function() {
+      expect(statsPageFor(null).type).toBe(PracticeRecordPage)
+      expect(statsPageFor({}).type).toBe(PracticeRecordPage)
       expect(statsPageFor({currentUser: {id: 1}}).type).toBe(StatsPage)
     })
   })

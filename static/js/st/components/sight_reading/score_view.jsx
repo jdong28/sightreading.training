@@ -16,11 +16,12 @@ import {ScoreSheet} from "st/components/score_sheet"
 import {SetupPane} from "st/components/sight_reading/setup_pane"
 import {BarPopup} from "st/components/sight_reading/bar_popup"
 import {PassagePane} from "st/components/sight_reading/passage_pane"
+import {EndedStrip} from "st/components/sight_reading/ended_strip"
 import {ReviewPane} from "st/components/sight_reading/review_pane"
 import {keyLabel} from "st/components/sight_reading/settings_panel"
 import {romanNumeral, barsLabel} from "st/music"
 import {measureNumberList, measureNumberRange, measureBeatRange} from "st/song_sections"
-import {SCORE_SCALE, clampScale, pageOfBar} from "st/score_render/score_pages"
+import {SCORE_SCALE, clampScale} from "st/score_render/score_pages"
 import {currentScoreScale, storeCurrentDrill, SCORE_DRILL_STORAGE_KEY} from "st/generators"
 import {barReview} from "st/bar_review"
 import {giveBars} from "st/score_give"
@@ -31,6 +32,7 @@ import {flagsInForce} from "st/difficulty/records"
 import {heat as heatLevel} from "st/difficulty/sections"
 import {LEVEL_WORDS} from "st/difficulty/index"
 import {learnedness, sessionMarks, endedSummary} from "st/bar_progress"
+import {todayMinutes, todayMinutesWords} from "st/practice_day"
 import {sheetMusicPiece, itemHand, plannedPractice, passageSettings} from "st/data"
 
 import styles from "./score_view.module.css"
@@ -85,6 +87,11 @@ export class ScoreView extends React.Component {
     onDismissEnded: types.func.isRequired,
     // skips the programme's read-through, see SightReadingPage#skipReadThrough
     onSkipReadThrough: types.func,
+    // a bar to open the window of once the score shows it (Today's links,
+    // /sheet-music?bar=N, see ScorePage), turning to the page that holds it,
+    // and what to call when it has: the request is used once
+    openBar: types.number,
+    onBarOpened: types.func,
   }
 
   static defaultProps = {
@@ -117,10 +124,20 @@ export class ScoreView extends React.Component {
       // clicked and again when the hand changes (see loadBarRows)
       barRows: null,
     }
+
+    // the bar asked for, until the score has shown it (see openRequestedBar).
+    // The page's settings may not hold the piece yet when this is made, so
+    // whether the piece has the bar is asked once it does
+    this.pendingBar = props.openBar ?? null
+    // the bar asked for and shown, whose page the score keeps turned to while
+    // it is paginated again (the plate's width settling), until the player
+    // turns a page or picks another bar
+    this.followBar = null
   }
 
   componentDidMount() {
     this.ensureAnnotation()
+    this.openRequestedBar()
   }
 
   componentDidUpdate(prevProps) {
@@ -140,6 +157,8 @@ export class ScoreView extends React.Component {
     } else if (prevProps.ended && !this.props.ended) {
       this.setState({shade: "practice"})
     }
+
+    this.openRequestedBar()
   }
 
   componentWillUnmount() {
@@ -167,6 +186,7 @@ export class ScoreView extends React.Component {
   }
 
   setPage(page) {
+    this.followBar = null
     this.setState({page, selectedBar: null})
   }
 
@@ -184,20 +204,70 @@ export class ScoreView extends React.Component {
     })
   }
 
-  // The pages a new engraving was cut into (a new scale, a window resize):
-  // the page holding the bar whose pop-up is open, else the page holding the
-  // first bar of the page shown before, else the first page. A page number
-  // kept would show other bars and hide the pop-up
-  setPages(pages) {
-    this.setState(state => {
-      let shown = state.pages[state.page]
-      let anchor = state.selectedBar != null ? state.selectedBar : shown && shown.measures[0] && shown.measures[0].number
-      let page = anchor == null ? 0 : pageOfBar(pages, anchor)
-      return {pages, page: Math.min(page, Math.max(0, pages.length - 1))}
-    })
+  // The bar asked for (openBar), opened where the score is drawn as a grid
+  // of bars, as soon as it is known to be one: a piece with no stored score,
+  // one whose score failed. An engraved score opens it from its pagination
+  // instead (onPages), which knows the page that holds it
+  openRequestedBar() {
+    if (this.pendingBar == null) { return }
+
+    let piece = sheetMusicPiece(this.props.settings)
+    let song = piece && pieceSong(piece)
+    if (!song) { return }
+
+    // a bar the piece doesn't have is dropped, so it can't stay in the address
+    if (!measureNumberList(song).includes(this.pendingBar)) {
+      this.spendRequestedBar()
+      return
+    }
+
+    let source = this.props.source
+    let grid = this.state.scoreFailed || (source && (source.status == "missing" || source.status == "failed"))
+    if (!grid) { return }
+
+    let bar = this.spendRequestedBar()
+    this.setState({selectedBar: bar}, () => this.loadBarRows())
+  }
+
+  // the request used (or dropped): forgotten here and taken out of the address
+  spendRequestedBar() {
+    let bar = this.pendingBar
+    this.pendingBar = null
+    if (this.props.onBarOpened) { this.props.onBarOpened() }
+    return bar
+  }
+
+  // The score's pages, as it has paginated (a new scale, a window resize, a
+  // first draw): turned to the page with the bar asked for (and kept turned to
+  // it while the score is paginated again), else the page holding the bar whose
+  // pop-up is open, else the page holding the first bar of the page shown
+  // before, else the first page. A page number kept would show other bars and
+  // hide the pop-up
+  onPages(pages) {
+    let requested = this.pendingBar
+    let shown = this.state.pages[this.state.page]
+    let first = shown && shown.measures[0] && shown.measures[0].number
+    let bar = requested ?? this.followBar ?? this.state.selectedBar ?? first
+    let idx = bar == null ? -1 : pages.findIndex(page => page.measures.some(m => m.number == bar))
+
+    if (idx < 0) {
+      // pages with no such bar settle the request: the piece hasn't it
+      if (requested != null && pages.length) { this.spendRequestedBar() }
+      this.setState(state => ({pages, page: Math.min(state.page, Math.max(0, pages.length - 1))}))
+      return
+    }
+
+    if (requested != null) {
+      this.spendRequestedBar()
+      this.followBar = requested
+      this.setState({pages, page: idx, selectedBar: requested}, () => this.loadBarRows())
+    } else {
+      this.setState({pages, page: idx})
+    }
   }
 
   selectBar(measure) {
+    this.followBar = null
     this.setState(state => ({selectedBar: state.selectedBar == measure ? null : measure}), () => this.loadBarRows())
   }
 
@@ -392,26 +462,24 @@ export class ScoreView extends React.Component {
 
   renderEndedStrip(piece) {
     let store = this.getStore()
+    let ended = this.props.ended
     let summary = endedSummary({
-      record: this.props.ended, pieceId: piece.id, sessions: store.recentSessions(), log: this.props.sessionLog,
+      record: ended, pieceId: piece.id, sessions: store.recentSessions(), log: this.props.sessionLog,
     })
+    let minutes = todayMinutes(store.recentSessions(), {now: Date.now(), record: ended})
 
-    return <div className={styles.ended_strip}>
-      <div className={styles.ended_left}>
-        <div className={styles.ended_eyebrow}>Session ended</div>
-        <div className={styles.ended_headline}>
-          {summary.headline} <span className={styles.ended_headline_italic}>{summary.headlineItalic}</span>
-        </div>
-      </div>
-      <div className={styles.ended_detail}>
+    return <EndedStrip
+      headline={summary.headline}
+      italic={summary.headlineItalic}
+      detail={<>
         {summary.comparison && <span>{summary.comparison}<br /></span>}
         {summary.detail}
-      </div>
-      <div className={styles.ended_actions}>
+      </>}
+      today={{words: todayMinutesWords(minutes, store.practiceSettings().dailyGoalMinutes)}}
+      actions={<>
         {this.props.canPlayOn && <Pill variant="ghost" onClick={this.props.onPlayOn}>Play on</Pill>}
         <Pill variant="primary" onClick={this.props.onDismissEnded}>Done</Pill>
-      </div>
-    </div>
+      </>} />
   }
 
   pageBarsLabel(page) {
@@ -631,7 +699,7 @@ export class ScoreView extends React.Component {
           viewportHeight={this.props.viewportHeight}
           page={this.state.page}
           scale={this.state.scale}
-          onPages={pages => this.setPages(pages)}
+          onPages={pages => this.onPages(pages)}
           {...this.buildBarInfo(piece, song)}
           selected={this.state.selectedBar}
           noteMarks={this.selectedMarks(piece)}

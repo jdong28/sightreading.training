@@ -10,10 +10,11 @@ import {importMusicXMLPiece, importFlagsFile, exportFlagsFile, songToJSON, decid
 import {parseMusicXML} from "st/musicxml"
 import {setAppStore} from "st/storage"
 import {loadScoreEngines} from "st/score_render/load"
-import {SHEET_MUSIC_STORAGE_KEY, BOTH_HANDS, FREE_PRACTICE, PROGRAMME_PRACTICE, WHOLE_SECTION} from "st/data"
+import {SHEET_MUSIC_STORAGE_KEY, BOTH_HANDS, RIGHT_HAND, FREE_PRACTICE, PROGRAMME_PRACTICE, WHOLE_SECTION} from "st/data"
 import {SCORE_DRILL_STORAGE_KEY} from "st/generators"
 import {SCORE_VIEW_NO_SOURCE, SCORE_VIEW_FAILED} from "st/components/sight_reading/score_view"
 import viewStyles from "st/components/sight_reading/score_view.module.css"
+import setupStyles from "st/components/sight_reading/setup_pane.module.css"
 import {SELF_GRADE_DWELL_MS, SELF_GRADE_FLASH_MS} from "st/srs/self_grade"
 import {learnedness} from "st/bar_progress"
 import reviewStyles from "st/components/sight_reading/review_pane.module.css"
@@ -191,6 +192,431 @@ describe("the score view at rest (st/components/sight_reading/score_view)", func
       bars[8] = {upper: leap.map(name => ({name})), lower: bar(10, 3)}
       return pianoScore({title: "Stepwise", bars})
     }
+
+    // The setup pane's groups (Piece, Session, Tonight's study, Cards,
+    // Tempo): each a full-width toggle that opens and closes its body, the
+    // closed ones kept on this device and summarised on the toggle
+    describe("the setup groups", function() {
+      let pane = el => el.querySelector(`.${viewStyles.setup_column}`)
+      let toggles = el => [...pane(el).querySelectorAll("button[aria-expanded]")]
+      let nameOf = toggle => toggle.children[0].textContent
+      let names = el => toggles(el).map(nameOf)
+      let toggleNamed = (el, name) => toggles(el).find(toggle => nameOf(toggle) == name)
+      let isOpen = (el, name) => toggleNamed(el, name).getAttribute("aria-expanded") == "true"
+      let summaryOf = (el, name) => toggleNamed(el, name).children[1].textContent
+      let closedNames = el => toggles(el).filter(toggle => toggle.getAttribute("aria-expanded") == "false").map(nameOf)
+      let setClosed = (el, name, closed) => {
+        if (isOpen(el, name) == closed) { click(toggleNamed(el, name)) }
+      }
+      let storedClosed = () => JSON.parse(window.localStorage.getItem(SCORE_DRILL_STORAGE_KEY) || "{}").closedGroups
+      let storeDrill = update => window.localStorage.setItem(SCORE_DRILL_STORAGE_KEY,
+        JSON.stringify({...JSON.parse(window.localStorage.getItem(SCORE_DRILL_STORAGE_KEY) || "{}"), ...update}))
+
+      // one control of each group's body, found by what it is
+      let controls = {
+        Piece: el => pane(el).querySelector("select"),
+        Session: el => buttonNamed(pane(el), "Free practice"),
+        "Tonight's study": el => buttonNamed(pane(el), "Skip it"),
+        Cards: el => buttonNamed(pane(el), "Right hand"),
+        Tempo: el => pane(el).querySelector('input[aria-label="Speed"]'),
+      }
+      let ALL = Object.keys(controls)
+      let bodyIn = (el, name) => !!controls[name](el)
+
+      let mountAgain = async (props={}) => {
+        flushSync(() => root.unmount())
+        container.remove()
+        container = document.createElement("div")
+        container.style.width = "1440px"
+        document.body.appendChild(container)
+        root = createRoot(container)
+        flushSync(() => {
+          root.render(React.createElement(MemoryRouter, {},
+            React.createElement(ScorePage, {ref: p => page = p, viewportHeight: 1240, ...props})))
+        })
+        flushSync(() => {})
+        await waitFor(() => container.querySelectorAll('button[aria-label^="Bar "]').length > 0,
+          {message: "the score to draw"})
+        return container
+      }
+
+      let setSelect = (select, value) => {
+        Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(select, value)
+        flushSync(() => select.dispatchEvent(new Event("change", {bubbles: true})))
+      }
+
+      // the programme's own Begin line, the one under the groups
+      let beginLine = el => pane(el).querySelector("p").textContent
+
+      let QUIET_PIECE = () => pianoScore({title: "Quiet", bars: Array.from({length: 8}, () =>
+        ({upper: QUIET.upper.map(name => ({name})), lower: QUIET.lower.map(name => ({name}))}))})
+
+      it("offers a toggle for each group, all open, with the controls of every one", async function() {
+        let {container: el} = await renderFixture({practice: PROGRAMME_PRACTICE})
+
+        expect(names(el)).toEqual(["Piece", "Session", "Tonight's study", "Cards", "Tempo"])
+        for (let toggle of toggles(el)) {
+          expect(toggle.tagName).toEqual("BUTTON")
+          expect(toggle.getAttribute("type")).toEqual("button")
+          expect(toggle.getAttribute("aria-expanded")).withContext(nameOf(toggle)).toEqual("true")
+        }
+        for (let name of ALL) { expect(bodyIn(el, name)).withContext(name).toBe(true) }
+        expect(closedNames(el)).toEqual([])
+      })
+
+      it("closes Piece alone: its body goes, the toggle reads the piece, the others stay open", async function() {
+        let {container: el} = await renderFixture({practice: PROGRAMME_PRACTICE})
+
+        click(toggleNamed(el, "Piece"))
+        expect(isOpen(el, "Piece")).toBe(false)
+        expect(controls.Piece(el)).toBe(null)
+        expect(toggleNamed(el, "Piece").textContent).toContain("Fixture")
+        expect(closedNames(el)).toEqual(["Piece"])
+        for (let name of ALL.filter(name => name != "Piece")) {
+          expect(isOpen(el, name)).withContext(name).toBe(true)
+          expect(bodyIn(el, name)).withContext(name).toBe(true)
+        }
+
+        click(toggleNamed(el, "Piece"))
+        expect(isOpen(el, "Piece")).toBe(true)
+        expect(controls.Piece(el)).toBeTruthy()
+      })
+
+      it("builds each toggle on the one before when several land in one batch", async function() {
+        let {container: el} = await renderFixture({practice: PROGRAMME_PRACTICE})
+
+        flushSync(() => { for (let name of ["Piece", "Cards", "Tempo"]) { toggleNamed(el, name).click() } })
+        expect(closedNames(el)).toEqual(["Piece", "Cards", "Tempo"])
+        expect(storedClosed()).toEqual(["piece", "cards", "tempo"])
+      })
+
+      it("closes each group alone, then all five, then reopens them", async function() {
+        let {container: el} = await renderFixture({practice: PROGRAMME_PRACTICE})
+
+        for (let name of ALL) {
+          click(toggleNamed(el, name))
+          expect(closedNames(el)).withContext(`${name} alone`).toEqual([name])
+          for (let other of ALL) { expect(bodyIn(el, other)).withContext(`${name}: ${other}`).toBe(other != name) }
+          click(toggleNamed(el, name))
+          expect(closedNames(el)).withContext(`${name} reopened`).toEqual([])
+        }
+
+        for (let name of ALL) { click(toggleNamed(el, name)) }
+        expect(closedNames(el)).toEqual(ALL)
+        for (let name of ALL) { expect(bodyIn(el, name)).withContext(name).toBe(false) }
+        // only the toggles and the footer are left of the pane
+        expect(buttonNamed(pane(el), "Begin")).toBeTruthy()
+
+        for (let name of ALL) { click(toggleNamed(el, name)) }
+        expect(closedNames(el)).toEqual([])
+        for (let name of ALL) { expect(bodyIn(el, name)).withContext(name).toBe(true) }
+      })
+
+      it("summarises the Session group, in the programme and in free practice", async function() {
+        let {container: el} = await renderFixture({practice: PROGRAMME_PRACTICE, introduce: "read first"})
+        let closed = () => { setClosed(el, "Session", true); return summaryOf(el, "Session") }
+        let opened = () => setClosed(el, "Session", false)
+
+        expect(closed()).toEqual("Today's programme · read through · 20 min")
+        opened()
+        click(buttonNamed(el, "30 min"))
+        // the length is stored, then the pane draws it
+        await waitFor(() => store.practiceSettings().sessionMinutes == 30, {message: "the length to be stored"})
+        await new Promise(resolve => setTimeout(resolve, 0))
+        click(buttonNamed(el, "Hardest first"))
+        expect(closed()).toEqual("Today's programme · hardest first · 30 min")
+        opened()
+        click(buttonNamed(el, "Free practice"))
+        // the section the page opened with: the whole piece
+        expect(closed()).toEqual("Free practice · bars 1–16")
+      })
+
+      it("summarises Session for a free section of several bars and one bar, and of a piece with no flagged passage", async function() {
+        let {container: el} = await renderFixture({startMeasure: 5, endMeasure: 9})
+        setClosed(el, "Session", true)
+        expect(summaryOf(el, "Session")).toEqual("Free practice · bars 5–9")
+
+        window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+          ...JSON.parse(window.localStorage.getItem(SHEET_MUSIC_STORAGE_KEY)), startMeasure: 5, endMeasure: 5,
+        }))
+        el = await mountAgain()
+        setClosed(el, "Session", true)
+        expect(summaryOf(el, "Session")).toEqual("Free practice · bar 5")
+
+        // a piece with no flagged passage has no order to name
+        let quiet = await importMusicXMLPiece("quiet.musicxml", QUIET_PIECE(), store)
+        window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+          piece: quiet.piece.id, hand: BOTH_HANDS, measuresPerCard: WHOLE_SECTION, practice: PROGRAMME_PRACTICE,
+        }))
+        window.localStorage.removeItem(SCORE_DRILL_STORAGE_KEY)
+        el = await mountAgain()
+        setClosed(el, "Session", true)
+        expect(summaryOf(el, "Session")).toEqual("Today's programme · 20 min")
+      })
+
+      it("summarises Tonight's study: the read-through, the passage and its stage, and a learned piece", async function() {
+        let {container: el, piece} = await renderFixture({practice: PROGRAMME_PRACTICE, introduce: "read first"})
+        setClosed(el, "Tonight's study", true)
+        expect(summaryOf(el, "Tonight's study")).toEqual("Read-through first · 16 bars left")
+
+        setClosed(el, "Tonight's study", false)
+        click(buttonNamed(el, "Skip it"))
+        await page.state.notes.generator.studying
+        flushSync(() => {})
+        setClosed(el, "Tonight's study", true)
+        let skipped = summaryOf(el, "Tonight's study")
+        expect(skipped).toEqual("Bars 5–7 · next")
+
+        await store.putStudy({
+          pieceId: piece.id, status: "maintaining", startedAt: 1,
+          plan: {
+            createdAt: 1, known: [], learnedAt: 4,
+            passages: [[1, 4], [5, 8], [9, 12], [13, 16]].map(([start, end]) =>
+              ({start, end, from: "score", openedAt: 1, stage: 4, stageAt: 2, flowedAt: 3})),
+          },
+        })
+        el = await mountAgain()
+        expect(isOpen(el, "Tonight's study")).toBe(false)
+        expect(summaryOf(el, "Tonight's study")).toEqual("Learned ❖")
+      })
+
+      it("summarises Tonight's study at a passage in progress as its heading and I of IV", async function() {
+        let {container: el, piece} = await renderFixture({practice: PROGRAMME_PRACTICE})
+        await store.putStudy({
+          pieceId: piece.id, status: "learning", startedAt: 1, readThrough: "skipped",
+          plan: {createdAt: 1, known: [], passages: [{start: 5, end: 7, from: "score", openedAt: 1, stage: 1, stageAt: 1}]},
+        })
+        el = await mountAgain()
+
+        setClosed(el, "Tonight's study", true)
+        let summary = summaryOf(el, "Tonight's study")
+        expect(summary).toEqual("Bars 5–7 · I of IV")
+        expect(summary).not.toContain("next")
+      })
+
+      it("summarises Cards with the Begin line's own count of bars a card", async function() {
+        let cases = [
+          {settings: {practice: PROGRAMME_PRACTICE}, words: "Both hands · 2 bars a card"},
+          {settings: {startMeasure: 5, endMeasure: 9}, words: "Both hands · 5 bars a card"},
+          {settings: {hand: RIGHT_HAND, measuresPerCard: 1}, words: "Right hand · 1 bar a card"},
+        ]
+
+        for (let {settings, words} of cases) {
+          window.localStorage.removeItem(SCORE_DRILL_STORAGE_KEY)
+          let el
+          if (!container) {
+            ({container: el} = await renderFixture(settings))
+          } else {
+            window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+              ...JSON.parse(window.localStorage.getItem(SHEET_MUSIC_STORAGE_KEY)),
+              practice: FREE_PRACTICE, startMeasure: 1, endMeasure: 16, hand: BOTH_HANDS, measuresPerCard: WHOLE_SECTION,
+              ...settings,
+            }))
+            el = await mountAgain()
+          }
+
+          setClosed(el, "Cards", true)
+          expect(summaryOf(el, "Cards")).withContext(words).toEqual(words)
+          // the Begin line says the same count of bars a card
+          expect(beginLine(el)).withContext(words).toContain(words.split(" · ")[1])
+        }
+      })
+
+      it("summarises Tempo: waiting, scrolling with keep tempo, and acoustic", async function() {
+        let {container: el} = await renderFixture()
+        setClosed(el, "Tempo", true)
+        expect(summaryOf(el, "Tempo")).toEqual("Wait · speed 100")
+
+        storeDrill({mode: "scroll", speed: 120, tempo: true})
+        el = await mountAgain()
+        expect(isOpen(el, "Tempo")).toBe(false)
+        expect(summaryOf(el, "Tempo")).toEqual("Scroll · speed 120 · keep tempo")
+
+        storeDrill({tempo: false})
+        el = await mountAgain()
+        expect(summaryOf(el, "Tempo")).toEqual("Scroll · speed 120")
+
+        el = await mountAgain({acoustic: true})
+        expect(summaryOf(el, "Tempo")).toEqual("Acoustic · graded by you")
+      })
+
+      it("summarises Piece by title, and Pasted notation for a pasted song", async function() {
+        let {container: el} = await renderFixture()
+        setClosed(el, "Piece", true)
+        expect(summaryOf(el, "Piece")).toEqual("Fixture")
+
+        setClosed(el, "Piece", false)
+        setSelect(controls.Piece(el), "")
+        setClosed(el, "Piece", true)
+        expect(summaryOf(el, "Piece")).toEqual("Pasted notation")
+      })
+
+      it("keeps a closed group's summary up to date as another group changes", async function() {
+        let {container: el} = await renderFixture({startMeasure: 1, endMeasure: 16})
+        setClosed(el, "Cards", true)
+        expect(summaryOf(el, "Cards")).toEqual("Both hands · 16 bars a card")
+
+        // picking the difficult passage in Session sets the section, which the cards follow
+        let passage = [...pane(el).querySelectorAll('[aria-label="Difficult passages"] button')][0]
+        click(passage)
+        expect(summaryOf(el, "Cards")).toEqual("Both hands · 5 bars a card")
+        expect(beginLine(el)).toContain("5 bars a card")
+
+        // and Session's own, when another piece is picked in Piece
+        let other = await importMusicXMLPiece("other.musicxml", QUIET_PIECE(), store)
+        setClosed(el, "Session", true)
+        expect(summaryOf(el, "Session")).toEqual("Free practice · bars 5–9")
+        setSelect(controls.Piece(el), other.piece.id)
+        expect(el.querySelector("h1").textContent).toContain("Quiet")
+        // the new piece opens in its programme, which has no flagged passage to order by
+        expect(summaryOf(el, "Session")).toEqual("Today's programme · 20 min")
+      })
+
+      it("shows the speed beside the Tempo toggle while open and the summary alone when closed", async function() {
+        storeDrill({speed: 140})
+        let {container: el} = await renderFixture()
+        let tempoValue = () => toggleNamed(el, "Tempo").querySelector(`.${setupStyles.tempo_value}`)
+
+        expect(tempoValue().textContent).toEqual("140")
+        expect(summaryOf(el, "Tempo")).toEqual("")
+
+        click(toggleNamed(el, "Tempo"))
+        expect(tempoValue()).toBe(null)
+        expect(summaryOf(el, "Tempo")).toEqual("Wait · speed 140")
+
+        click(toggleNamed(el, "Tempo"))
+        expect(tempoValue().textContent).toEqual("140")
+      })
+
+      it("remembers the closed groups across Begin and End session, a remount and another piece", async function() {
+        let {container: el} = await renderFixture({practice: PROGRAMME_PRACTICE})
+        let other = await importMusicXMLPiece("other.musicxml", QUIET_PIECE(), store)
+
+        click(toggleNamed(el, "Piece"))
+        click(toggleNamed(el, "Tempo"))
+        expect(storedClosed()).toEqual(["piece", "tempo"])
+
+        click(buttonNamed(el, "Begin"))
+        expect(el.querySelector(`.${viewStyles.setup_column}`)).toBe(null)
+        click(buttonNamed(el, "End session"))
+        await waitFor(() => toggles(container).length, {message: "the setup pane"})
+        expect(closedNames(container)).toEqual(["Piece", "Tempo"])
+
+        el = await mountAgain()
+        expect(closedNames(el)).toEqual(["Piece", "Tempo"])
+
+        // picking another piece in the open Piece group leaves the others as they were
+        click(toggleNamed(el, "Piece"))
+        expect(closedNames(el)).toEqual(["Tempo"])
+        setSelect(controls.Piece(el), other.piece.id)
+        expect(el.querySelector("h1").textContent).toContain("Quiet")
+        expect(closedNames(el)).toEqual(["Tempo"])
+        click(toggleNamed(el, "Piece"))
+        expect(closedNames(el)).toEqual(["Piece", "Tempo"])
+        expect(summaryOf(el, "Piece")).toEqual("Quiet")
+
+        // and a page that opens on it
+        window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+          ...JSON.parse(window.localStorage.getItem(SHEET_MUSIC_STORAGE_KEY)), piece: other.piece.id,
+        }))
+        el = await mountAgain()
+        expect(el.querySelector("h1").textContent).toContain("Quiet")
+        expect(closedNames(el)).toEqual(["Piece", "Tempo"])
+        expect(storedClosed()).toEqual(["piece", "tempo"])
+      })
+
+      it("keeps the other drill settings the groups share the record with", async function() {
+        storeDrill({mode: "scroll", speed: 130})
+        let {container: el} = await renderFixture()
+
+        click(toggleNamed(el, "Cards"))
+        let stored = JSON.parse(window.localStorage.getItem(SCORE_DRILL_STORAGE_KEY))
+        expect(stored).toEqual(jasmine.objectContaining({mode: "scroll", speed: 130, closedGroups: ["cards"]}))
+      })
+
+      it("reads a stored list that is not groups as all open", async function() {
+        for (let stored of [["x"], "piece", 7, {piece: true}, [null]]) {
+          window.localStorage.setItem(SCORE_DRILL_STORAGE_KEY, JSON.stringify({closedGroups: stored}))
+          let {container: el} = container ? {container: await mountAgain()} : await renderFixture()
+          expect(closedNames(el)).withContext(JSON.stringify(stored)).toEqual([])
+        }
+
+        // a stored mix keeps the groups it knows, in the pane's order
+        window.localStorage.setItem(SCORE_DRILL_STORAGE_KEY, JSON.stringify({closedGroups: ["tempo", "x", "piece"]}))
+        let el = await mountAgain()
+        expect(closedNames(el)).toEqual(["Piece", "Tempo"])
+      })
+
+      it("offers no Tonight's study group in free practice or with one hand, even with it stored closed", async function() {
+        storeDrill({closedGroups: ["study"]})
+        let {container: el} = await renderFixture()
+        expect(names(el)).toEqual(["Piece", "Session", "Cards", "Tempo"])
+        expect(closedNames(el)).toEqual([])
+
+        window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+          ...JSON.parse(window.localStorage.getItem(SHEET_MUSIC_STORAGE_KEY)),
+          practice: PROGRAMME_PRACTICE, hand: RIGHT_HAND,
+        }))
+        el = await mountAgain()
+        expect(names(el)).toEqual(["Piece", "Session", "Cards", "Tempo"])
+
+        // and back to both hands: the stored closed study group is closed
+        click(buttonNamed(el, "Both hands"))
+        expect(names(el)).toEqual(["Piece", "Session", "Tonight's study", "Cards", "Tempo"])
+        expect(closedNames(el)).toEqual(["Tonight's study"])
+      })
+
+      it("offers only the Piece group with no piece and no pasted song, and Begin disabled", function() {
+        let el = renderScorePage()
+
+        expect(names(el)).toEqual(["Piece"])
+        expect(buttonNamed(el, "Begin").disabled).toBe(true)
+      })
+
+      it("has no horizontal overflow at 390px wide with every group closed, and cuts a long title short", async function() {
+        let title = "Variations on a Theme of Considerable Length for Piano Solos"
+        expect(title.length).toEqual(60)
+        let long = pianoScore({title, bars: Array.from({length: 4}, () =>
+          ({upper: QUIET.upper.map(name => ({name})), lower: QUIET.lower.map(name => ({name}))}))})
+        let {container: el} = await renderFixture({practice: PROGRAMME_PRACTICE}, long)
+        el.style.width = "390px"
+        flushSync(() => {})
+        for (let name of names(el)) { setClosed(el, name, true) }
+        flushSync(() => {})
+
+        expect(closedNames(el).length).toEqual(names(el).length)
+        expect(el.scrollWidth).toBeLessThanOrEqual(el.clientWidth + 1)
+        let summary = toggleNamed(el, "Piece").children[1]
+        expect(summary.textContent).toEqual(title)
+        expect(summary.scrollWidth).toBeGreaterThan(summary.clientWidth)
+        expect(getComputedStyle(summary).textOverflow).toEqual("ellipsis")
+      })
+
+      it("lays a closed toggle across the pane, at least 36px tall, a chevron turned on the right", async function() {
+        let {container: el} = await renderFixture({practice: PROGRAMME_PRACTICE})
+        let box = toggle => toggle.getBoundingClientRect()
+        let group = toggle => toggle.parentElement.getBoundingClientRect()
+
+        for (let state of ["open", "closed"]) {
+          for (let toggle of toggles(el)) {
+            let chevron = toggle.lastElementChild
+            expect(box(toggle).width).withContext(`${nameOf(toggle)} ${state}`).toBeCloseTo(group(toggle).width, 0)
+            expect(box(toggle).height).withContext(`${nameOf(toggle)} ${state}`).toBeGreaterThanOrEqual(35.5)
+            expect(chevron.getAttribute("aria-hidden")).toEqual("true")
+            expect(chevron.classList.contains(setupStyles.chevron_closed)).withContext(nameOf(toggle)).toBe(state == "closed")
+            expect(box(chevron).right).withContext(`${nameOf(toggle)} ${state}`).toBeLessThanOrEqual(box(toggle).right + 0.5)
+            expect(box(chevron).left).toBeGreaterThan(box(toggle).left + box(toggle).width / 2)
+          }
+          if (state == "open") { for (let name of names(el)) { setClosed(el, name, true) } }
+        }
+
+        // all closed: the pane is a column of toggles and the footer, with Begin inside it
+        let begin = buttonNamed(pane(el), "Begin").getBoundingClientRect()
+        let plate = pane(el).firstElementChild.getBoundingClientRect()
+        expect(begin.bottom).toBeLessThanOrEqual(plate.bottom)
+        expect(plate.height).toBeLessThan(700)
+      })
+    })
 
     it("titles a weak leap by where it stands in the piece, on the page's passage pane", async function() {
       let {container: el, piece} = await renderFixture({}, stepwiseScore(["C4", "G4", "E4", "D4"]))
@@ -1102,6 +1528,15 @@ describe("the score view at rest (st/components/sight_reading/score_view)", func
       // free practice only: no programme toggle, no "Due/New/Learned" figures
       expect(el.textContent).not.toContain("Today's programme")
       expect(el.textContent).not.toContain("Learned")
+
+      // the groups that apply to it, with Pasted notation for the piece
+      let toggles = [...pane.querySelectorAll("button[aria-expanded]")]
+      expect(toggles.map(toggle => toggle.children[0].textContent)).toEqual(["Piece", "Session", "Cards", "Tempo"])
+      click(toggles[0])
+      expect(toggles[0].children[1].textContent).toEqual("Pasted notation")
+      expect(pane.querySelector('textarea[aria-label="song notation"]')).toBe(null)
+      click(toggles[0])
+      expect(pane.querySelector('textarea[aria-label="song notation"]')).toBeTruthy()
 
       expect(buttonNamed(el, "Begin").disabled).toBe(false)
       click(buttonNamed(el, "Begin"))

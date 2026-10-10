@@ -1,7 +1,7 @@
 import * as React from "react"
 import {createRoot} from "react-dom/client"
 import {flushSync} from "react-dom"
-import {MemoryRouter} from "react-router-dom"
+import {MemoryRouter, useLocation} from "react-router-dom"
 
 import ScorePage from "st/components/pages/score_page"
 import {importMusicXMLPiece} from "st/sheet_music_deck"
@@ -464,7 +464,11 @@ ${(extras[number] || {}).direction ? `<direction placement="above"><direction-ty
 // played with the page's own keys, then its bars clicked as a player would.
 // Times are the events' own, so the timing the log keeps is the played one
 describe("the bar window behind a bar's score, mounted", function() {
-  let container, root, page, store, previous, saved
+  let container, root, page, store, previous, saved, location
+  let LocationProbe = () => {
+    location = useLocation()
+    return null
+  }
   const KEYS = [SCORE_DRILL_STORAGE_KEY, SHEET_MUSIC_STORAGE_KEY]
   let clock
 
@@ -493,28 +497,30 @@ describe("the bar window behind a bar's score, mounted", function() {
   let marked = () => container.querySelectorAll(`.${TROUBLE_CLASS}`)
   let layer = kind => container.querySelectorAll(`[data-mark="${kind}"]`)
 
-  let mount = async (settings={}, xml=null, {width=1440}={}) => {
+  let mount = async (settings={}, xml=null, {width=1440, entries}={}) => {
     let musicXML = xml || await (await fetch("/tools/fingerings/tests/fixture/score.musicxml")).text()
     let {piece} = await importMusicXMLPiece("fixture.musicxml", musicXML, store)
     window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
       piece: piece.id, hand: BOTH_HANDS, measuresPerCard: 1, practice: FREE_PRACTICE,
       startMeasure: 3, endMeasure: 3, ...settings,
     }))
-    await render({width})
+    await render({width, entries})
     return piece
   }
 
   // the page, drawn afresh as a visit does, over what the store and the
   // settings hold
-  let render = async ({width=1440}={}) => {
+  let render = async ({width=1440, entries=["/sheet-music"]}={}) => {
     container = document.createElement("div")
     container.style.width = `${width}px`
     document.body.appendChild(container)
     root = createRoot(container)
-    flushSync(() => root.render(React.createElement(MemoryRouter, {},
+    flushSync(() => root.render(React.createElement(MemoryRouter, {initialEntries: entries},
+      React.createElement(LocationProbe),
       React.createElement(ScorePage, {ref: p => page = p, viewportHeight: 1240}))))
     // the engraved score and its bars: before it is drawn the page only holds a grid
-    await waitFor(() => container.querySelector("[data-score-sheet] svg") && bar(1), {message: "the score to be engraved"})
+    await waitFor(() => container.querySelector("[data-score-sheet] svg") && container.querySelector('button[aria-label^="Bar "]'),
+      {message: "the score to be engraved"})
     await paginated()
   }
 
@@ -952,6 +958,23 @@ describe("the bar window behind a bar's score, mounted", function() {
       expect(container.textContent).toContain("Session ended")
     })
 
+    it("leads to Today's practice, with the day's minutes, also once it is brought back after a reload", async function() {
+      await mount()
+      await endedSession()
+
+      let todayLink = () => [...container.querySelectorAll("a")].find(a => a.textContent.includes("Today's practice"))
+      expect(todayLink().getAttribute("href")).toEqual("/stats")
+      expect(container.textContent).toContain("of 10 minutes today")
+
+      leave()
+      await render()
+      await waitFor(() => container.textContent.includes("Session ended"), {timeout: 4000, message: "the strip to come back"})
+      expect(todayLink().getAttribute("href")).toEqual("/stats")
+      // the session counted once, not twice, though the strip holds its record and the cache does too
+      expect(container.textContent).toContain("of 10 minutes today")
+      expect(container.textContent).not.toContain("20 minutes today")
+    })
+
     it("brings back the last of two sessions in a visit, and only its passes", async function() {
       await mount()
       await endedSession()
@@ -1020,6 +1043,82 @@ describe("the bar window behind a bar's score, mounted", function() {
       expect(container.textContent).not.toContain("Session ended")
       expect(page.state.ended).toBe(null)
       expect(await store.scoreEnded()).toBe(null)
+    })
+  })
+
+  describe("a bar asked for in the address", function() {
+    // the bar's own window, open on the score's page that holds it
+    let opened = number => popup() && popup().textContent.includes(`Bar ${number}`) && bar(number)
+
+    it("turns to the page that holds the bar and opens its window, once", async function() {
+      await mount({}, null, {entries: ["/sheet-music?bar=16"]})
+      await ready(() => opened(16))
+
+      // the plate's width may settle after it, drawing the pages again: the page stays on the bar
+      await paginated()
+      expect(opened(16)).toBeTruthy()
+      expect(bar(16).getAttribute("aria-pressed")).toEqual("true")
+      expect(bar(1)).toBe(null)
+      expect(location.search).toEqual("")
+      expect(page.state.session).toBe(false)
+
+      // Begin and End session draw the score view afresh: the request is spent
+      click(button("Begin"))
+      play({})
+      await page.state.notes.generator.finishing
+      click(button("End session"))
+      await waitFor(() => container.textContent.includes("Session ended"), {message: "the strip"})
+      click(button("Done"))
+      await waitFor(() => bar(3), {message: "the score back"})
+      expect(popup()).toBe(null)
+      expect(location.search).toEqual("")
+    })
+
+    // the real piece: a title, a key signature, dynamics, slurs and a one beat pickup, numbered bar 0
+    it("opens the pickup bar, number 0, of a piece with a title, a key signature, dynamics and slurs", async function() {
+      await mount({startMeasure: 1, endMeasure: 1}, dynamicsOpening(), {entries: ["/sheet-music?bar=0"]})
+      await ready(() => opened(0))
+
+      expect(bar(0).getAttribute("aria-pressed")).toEqual("true")
+      expect(popup().textContent).toContain("Bar 0")
+      expect(container.textContent).toContain("Expressive Study")
+      expect(location.search).toEqual("")
+
+      // the popup sits under the bar's own band, as a clicked bar's does
+      let band = bar(0).getBoundingClientRect()
+      let box = popup().getBoundingClientRect()
+      expect(box.top).toBeGreaterThanOrEqual(band.bottom - 2)
+    })
+
+    it("leaves the window shut for a bar the piece doesn't have, or one that isn't a number", async function() {
+      await mount({}, null, {entries: ["/sheet-music?bar=99"]})
+      expect(popup()).toBe(null)
+      expect(page.state.session).toBe(false)
+      // the request is dropped from the address as a spent one is
+      await waitFor(() => location.search == "", {message: "the request to be dropped"})
+      leave()
+
+      await render({entries: ["/sheet-music?bar=abc"]})
+      expect(popup()).toBe(null)
+    })
+
+    it("opens a bar's window directly on a piece drawn as a grid, with no score stored", async function() {
+      let piece = await mount()
+      await store.putPiece(store.piece(piece.id), {source: null})
+      leave()
+
+      container = document.createElement("div")
+      container.style.width = "1440px"
+      document.body.appendChild(container)
+      root = createRoot(container)
+      flushSync(() => root.render(React.createElement(MemoryRouter, {initialEntries: ["/sheet-music?bar=3"]},
+        React.createElement(LocationProbe),
+        React.createElement(ScorePage, {ref: p => page = p, viewportHeight: 1240}))))
+      await waitFor(() => bar(3), {message: "the grid"})
+      expect(container.querySelector("svg")).toBe(null)
+      await ready(() => popup() && popup().textContent.includes("Bar 3"))
+      expect(bar(3).getAttribute("aria-pressed")).toEqual("true")
+      expect(location.search).toEqual("")
     })
   })
 

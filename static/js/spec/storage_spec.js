@@ -994,6 +994,26 @@ describe("local store", function() {
           }
         })
 
+        it("reads the rows since a time, oldest first and by measure, a row just written included", async function() {
+          let store = await open({persist})
+          await store.putPiece(pieceData("a", "First", 1000))
+          await store.putPiece(pieceData("b", "Second", 1000))
+
+          await store.recordBarLog([row("a", 1, 2000), row("a", 2, 2000)])
+          await store.recordBarLog([row("b", 1, 3000), row("a", 2, 3000), row("a", 1, 3000)])
+
+          let at = rows => rows.map(r => [r.itemId, r.at])
+          expect(at(await store.barLogSince(2500))).toEqual([
+            ["a:both:1-1", 3000], ["b:both:1-1", 3000], ["a:both:2-2", 3000],
+          ])
+          expect((await store.barLogSince(2000)).length).toEqual(5)
+          expect(await store.barLogSince(3001)).toEqual([])
+
+          // not awaited: the read queues behind the write
+          store.recordBarLog([row("a", 3, 4000)])
+          expect(at(await store.barLogSince(3500))).toEqual([["a:both:3-3", 4000]])
+        })
+
         it("writes nothing when any row of a pass isn't valid", async function() {
           let store = await open({persist})
           await store.putPiece(pieceData("a", "First", 1000))

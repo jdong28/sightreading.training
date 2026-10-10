@@ -168,7 +168,7 @@ class Layout extends React.Component {
 
         <Route path="/play-along" element={<SongsPage />} />
 
-        <Route path="/stats" element={statsPageFor(getSession(), pageProps)} />
+        <Route path="/stats/*" element={statsPageFor(getSession(), pageProps)} />
         <Route path="/latency" element={<LatencyPage {...pageProps} />} />
         <Route path="/midi-monitor" element={<MidiMonitorPage {...pageProps} />} />
         <Route path="/new-song" element={<PlayAlongPage editorOpen={true} {...pageProps} />} />
