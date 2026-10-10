@@ -5,7 +5,10 @@
 // Below the accuracy it says what lies behind it (st/bar_review, handed in as
 // review once the bar's rows of the bar log are read): the notes that went
 // wrong in words, a timing strip with no note names, and a word on the
-// notes marked on the score.
+// notes marked on the score. A note for the next lesson (st/lesson_notes) is
+// written from here: "Note for lesson" swaps the window's body for the form
+// (st/components/lesson_note_form), and the bar's own notes and the teacher's
+// answer are listed under what lies behind the score, as quiet lines.
 
 import * as React from "react"
 import * as types from "prop-types"
@@ -13,6 +16,7 @@ import classNames from "classnames"
 
 import {barPopup, PIP_COUNT} from "st/bar_stats"
 import {Pill} from "st/components/salon"
+import {LessonNoteForm} from "st/components/lesson_note_form"
 
 import styles from "./bar_popup.module.css"
 
@@ -26,6 +30,13 @@ export class BarPopup extends React.Component {
     // st/bar_review's barReview, null until the bar's rows are read
     review: types.object,
     now: types.func,
+    // the bar's lines for the lesson, [{id, label, text, answer}], and what
+    // the record says of it ({accuracy, line}, st/lesson_notes evidenceOf)
+    notes: types.array,
+    evidence: types.object,
+    // called with {text, topic, attach} to store a note on the bar, and may
+    // return a promise; the form closes when it is done
+    onSaveNote: types.func,
     style: types.object,
     onClose: types.func.isRequired,
     onPractise: types.func.isRequired,
@@ -33,7 +44,10 @@ export class BarPopup extends React.Component {
 
   static defaultProps = {
     now: Date.now,
+    notes: [],
   }
+
+  state = {writing: false}
 
   componentDidMount() {
     this.onKeyDown = e => {
@@ -44,6 +58,7 @@ export class BarPopup extends React.Component {
 
   componentWillUnmount() {
     window.removeEventListener("keydown", this.onKeyDown)
+    this.unmounted = true
   }
 
   renderChart(chart) {
@@ -139,14 +154,43 @@ export class BarPopup extends React.Component {
     </section>
   }
 
+  // the bar's notes for the lesson, and the teacher's answer, as quiet lines
+  renderLessonLines(notes) {
+    if (!notes.length) { return null }
+
+    return <section className={styles.lesson} aria-label="For your lesson">
+      {notes.map(line => <div key={line.id} className={styles.lesson_line}>
+        <span className={styles.lesson_label}>{line.answer ? "" : "❧ "}{line.label}</span>
+        <span className={styles.lesson_text}>{line.text}</span>
+      </div>)}
+    </section>
+  }
+
+  async saveNote(fields) {
+    await this.props.onSaveNote(fields)
+    if (!this.unmounted) { this.setState({writing: false}) }
+  }
+
+  renderWriting() {
+    let {evidence} = this.props
+
+    return <LessonNoteForm
+      evidence={evidence || undefined}
+      onSave={fields => this.saveNote(fields)}
+      onCancel={() => this.setState({writing: false})} />
+  }
+
   render() {
-    let {pieceId, measure, hand, items, flags, style, review} = this.props
+    let {pieceId, measure, hand, items, flags, style, review, notes} = this.props
     let bar = barPopup({pieceId, measure, hand, items, flags, now: this.props.now()})
+    let writing = this.state.writing && !!this.props.onSaveNote
 
     return <div role="dialog" aria-label={`Bar ${measure} stats`} className={styles.popup} style={style}>
       <div className={styles.header}>
         <h2 className={styles.heading}>Bar <span className={styles.heading_italic}>{measure}</span></h2>
-        <span className={classNames(styles.tag, {[styles.tag_oxblood]: bar.inPassage})}>{bar.tag}</span>
+        <span className={classNames(styles.tag, {[styles.tag_oxblood]: bar.inPassage})}>
+          {writing ? "Note for your lesson" : bar.tag}
+        </span>
         <button
           type="button"
           className={styles.close}
@@ -154,6 +198,12 @@ export class BarPopup extends React.Component {
           onClick={this.props.onClose}>×</button>
       </div>
 
+      {writing ? this.renderWriting() : this.renderBody(bar, measure, review, notes)}
+    </div>
+  }
+
+  renderBody(bar, measure, review, notes) {
+    return <React.Fragment>
       {bar.empty && <p className={styles.empty}>No practice recorded for bar {measure} yet.</p>}
 
       {!bar.empty && bar.noPasses && <p className={styles.empty}>
@@ -187,10 +237,18 @@ export class BarPopup extends React.Component {
 
       {!bar.empty && this.renderBehind(review)}
 
-      <Pill variant="primary" className={styles.practise} onClick={this.props.onPractise}>
-        {`Practise bar ${measure}`}
-      </Pill>
-    </div>
+      {this.renderLessonLines(notes)}
+
+      <div className={styles.actions}>
+        <Pill variant="primary" className={styles.practise} onClick={this.props.onPractise}>
+          {`Practise bar ${measure}`}
+        </Pill>
+        {this.props.onSaveNote && <Pill
+          variant="ghost"
+          className={styles.note_action}
+          onClick={() => this.setState({writing: true})}>❧ Note for lesson</Pill>}
+      </div>
+    </React.Fragment>
   }
 }
 

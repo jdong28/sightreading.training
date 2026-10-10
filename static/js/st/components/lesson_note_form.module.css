@@ -1,0 +1,82 @@
+/* The form of a note for the next lesson, see st/components/lesson_note_form */
+
+.form {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 0;
+    font-family: var(--font-ui);
+}
+
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--salon-ink-muted);
+}
+
+.text {
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 76px;
+    padding: 9px 11px;
+    resize: vertical;
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 16px;
+    line-height: 1.4;
+    color: var(--salon-ghost-ink);
+    background: var(--salon-paper);
+    border: 1px solid var(--salon-rule-strong);
+    border-radius: 0;
+}
+
+.chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.attach {
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+    padding: 9px 11px;
+    font-size: 12.5px;
+    line-height: 1.45;
+    color: var(--salon-ink-soft);
+    background: var(--salon-paper-warm);
+    border: 1px solid var(--salon-rule-light);
+    cursor: pointer;
+
+    input {
+        flex: none;
+        margin: 2px 0 0;
+        accent-color: var(--salon-oxblood);
+    }
+
+    strong {
+        font-weight: 700;
+        color: var(--salon-ink);
+    }
+}
+
+.actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.save.save {
+    flex: 1;
+    min-width: 140px;
+    min-height: 44px;
+    justify-content: center;
+}

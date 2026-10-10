@@ -24,6 +24,9 @@ import {measureNumberList, measureNumberRange, measureBeatRange} from "st/song_s
 import {SCORE_SCALE, clampScale} from "st/score_render/score_pages"
 import {currentScoreScale, storeCurrentDrill, SCORE_DRILL_STORAGE_KEY} from "st/generators"
 import {barReview} from "st/bar_review"
+import {
+  newLessonNote, notePins, notesOnBars, answersOnBars, evidenceOf, noteDate,
+} from "st/lesson_notes"
 import {giveBars} from "st/score_give"
 import {itemId} from "st/srs/records"
 import {pieceSong, ensureAnnotation} from "st/sheet_music_deck"
@@ -52,6 +55,10 @@ const HEAT_BG = [
 const MARK_BG = {clean: "var(--salon-mark-clean)", near: "var(--salon-mark-near)", trouble: "var(--salon-mark-trouble)"}
 
 const plural = (count, word) => `${count} ${word}${count == 1 ? "" : "s"}`
+
+// the pin of a bar's notes for the lesson: "❧ note", "❧ 2 notes"
+const pinText = count => count == 1 ? "❧ note" : `❧ ${count} notes`
+const pinLabel = (count, measure) => `${plural(count, "note")} for your lesson, bar ${measure}`
 
 export class ScoreView extends React.Component {
   static propTypes = {
@@ -328,6 +335,41 @@ export class ScoreView extends React.Component {
     }
 
     return this.reviewMemo.value
+  }
+
+  // the bar's notes for the lesson and the teacher's answer, the lines of its
+  // window (st/lesson_notes)
+  lessonLines(piece, measure) {
+    let all = this.getStore().lessonNotes()
+    let lines = notesOnBars(all, piece.id, measure, measure).map(note => ({
+      id: note.id, label: `Your note · ${noteDate(note.createdAt)}`, text: note.text,
+    }))
+
+    let [answer] = answersOnBars(all, piece.id, measure, measure)
+    if (answer) {
+      lines.push({id: `answer-${answer.id}`, label: `Teacher, ${noteDate(answer.discussedAt)}`, text: answer.answer, answer: true})
+    }
+
+    return lines
+  }
+
+  // what the record says of the clicked bar, for a note written on it
+  evidenceOfBar(piece, measure) {
+    let review = this.barReviewOf(piece, measure)
+    if (!review) { return null }
+
+    let id = itemId({pieceId: piece.id, hand: itemHand(this.props.settings.hand), startMeasure: measure, endMeasure: measure})
+    let item = this.getStore().items(piece.id).find(i => i.id == id) || null
+    return evidenceOf({bars: [{measure, item, review}], now: Date.now()})
+  }
+
+  async saveLessonNote(piece, measure, {text, topic, attach}, evidence) {
+    await this.getStore().putLessonNote(newLessonNote({
+      source: "bar", pieceId: piece.id, pieceTitle: piece.title, start: measure, end: measure,
+      hand: itemHand(this.props.settings.hand), topic, text, evidence: attach ? evidence : null,
+    }))
+
+    if (!this.unmounted) { this.forceUpdate() }
   }
 
   practiseBar(measure) {
@@ -635,6 +677,7 @@ export class ScoreView extends React.Component {
 
     let store = this.getStore()
     let hand = itemHand(this.props.settings.hand)
+    let evidence = this.evidenceOfBar(piece, measure)
 
     return <BarPopup
       pieceId={piece.id}
@@ -643,6 +686,9 @@ export class ScoreView extends React.Component {
       items={store.items(piece.id)}
       flags={flagsInForce(store.annotation(piece.id))}
       review={this.barReviewOf(piece, measure)}
+      notes={this.lessonLines(piece, measure)}
+      evidence={evidence}
+      onSaveNote={fields => this.saveLessonNote(piece, measure, fields, evidence)}
       style={style}
       onClose={() => this.setState({selectedBar: null})}
       onPractise={() => this.practiseBar(measure)} />
@@ -651,6 +697,7 @@ export class ScoreView extends React.Component {
   renderGrid(piece, song) {
     let measures = measureNumberList(song)
     let {barInfo, labels} = this.buildBarInfo(piece, song)
+    let pins = new Map(notePins(this.getStore().lessonNotes(), piece.id).map(pin => [pin.measure, pin.count]))
 
     return <div className={styles.grid}>
       {measures.map(measure => {
@@ -672,6 +719,11 @@ export class ScoreView extends React.Component {
             {measure}
           </button>
           {label && <span className={label.className}>{label.text}</span>}
+          {pins.has(measure) && <button
+            type="button"
+            className={styles.pin}
+            aria-label={pinLabel(pins.get(measure), measure)}
+            onClick={() => this.selectBar(measure)}>{pinText(pins.get(measure))}</button>}
           {selected && this.renderBarPopup(piece, {top: "100%", left: 0})}
         </div>
       })}
@@ -703,6 +755,7 @@ export class ScoreView extends React.Component {
           {...this.buildBarInfo(piece, song)}
           selected={this.state.selectedBar}
           noteMarks={this.selectedMarks(piece)}
+          pins={notePins(this.getStore().lessonNotes(), piece.id)}
           onBar={measure => this.selectBar(measure)}
           onTag={measure => this.openPassageAt(measure)}
           renderPopup={style => this.renderBarPopup(piece, style)}

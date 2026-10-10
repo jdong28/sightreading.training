@@ -257,3 +257,10 @@
         }
     }
 }
+
+/* the printed page has no app header (see For my lesson's printed sheet) */
+@media print {
+    .header {
+        display: none;
+    }
+}

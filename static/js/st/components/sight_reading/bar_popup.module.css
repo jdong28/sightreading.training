@@ -226,10 +226,57 @@
     color: var(--salon-ink);
 }
 
+/* "Practise bar n" with "Note for lesson" beside it */
+.actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
 .practise.practise {
-    width: 100%;
+    flex: 1 1 140px;
     min-height: 44px;
     justify-content: center;
+}
+
+.note_action.note_action {
+    flex: none;
+    min-height: 44px;
+    justify-content: center;
+}
+
+/* the bar's notes for the next lesson and the teacher's answer: quiet lines,
+   never the window's own business (st/lesson_notes) */
+.lesson {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.lesson_line {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    padding: 6px 10px;
+    background: var(--salon-paper-warm);
+    border-left: 3px solid var(--salon-gilt-mid);
+}
+
+.lesson_label {
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--salon-gilt-deep);
+}
+
+.lesson_text {
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 14px;
+    line-height: 1.35;
+    color: var(--salon-ghost-ink);
+    overflow-wrap: anywhere;
 }
 
 /* what lies behind the accuracy (st/bar_review): the words, the timing strip

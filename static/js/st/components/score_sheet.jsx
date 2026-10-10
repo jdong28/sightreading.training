@@ -100,6 +100,10 @@ export class ScoreSheet extends React.Component {
     // {measure, heads: [{beat, pitch, kind}], ghosts: [{beat, pitch, played,
     // steps}], pauses: [{beat}], tags: [{beat, pitch, text, tone}]}, or null
     noteMarks: types.object,
+    // the bars with notes for the next lesson (st/lesson_notes notePins):
+    // [{measure, count}], each a pin at the bar's top-right corner that opens
+    // the bar like a click on it
+    pins: types.array,
   }
 
   static defaultProps = {
@@ -417,7 +421,32 @@ export class ScoreSheet extends React.Component {
         </React.Fragment>
       })}
       {this.renderTags(page, overlays)}
+      {this.renderPins(page, overlays)}
     </React.Fragment>
+  }
+
+  // a pin at the top-right corner of each bar with notes for the lesson, in
+  // the corner the tags (at the left) leave free
+  renderPins(page, overlays) {
+    let numbers = new Set(page.measures.map(m => m.number))
+
+    return (this.props.pins || [])
+      .filter(pin => numbers.has(pin.measure))
+      .map(pin => {
+        let overlay = overlays.find(o => o.number == pin.measure)
+        if (!overlay) { return null }
+
+        return <button
+          key={`pin${pin.measure}`}
+          type="button"
+          data-pin={pin.measure}
+          className={styles.bar_pin}
+          style={{left: `${overlay.left + overlay.width}%`, top: `${overlay.top}%`}}
+          aria-label={`${pin.count} ${pin.count == 1 ? "note" : "notes"} for your lesson, bar ${pin.measure}`}
+          onClick={() => this.props.onBar && this.props.onBar(pin.measure)}>
+          {pin.count == 1 ? "❧ note" : `❧ ${pin.count} notes`}
+        </button>
+      })
   }
 
   renderTags(page, overlays) {

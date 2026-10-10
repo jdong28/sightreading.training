@@ -360,7 +360,8 @@ on a bar's note marks.
 **Purpose:** a summary of today's practice, the whole practice day from 4 am (every session, every
 piece), in place of the pop-up summary of §4. Statistics becomes the practice record, a row of tabs
 each at its own route (`TabNav` in `salon.jsx`, `RECORD_TABS` in `record_tabs.jsx`): **Today**
-(`/stats`, the index) and **Last 14 days** (§5, `/stats/last-14-days`). Today never opens by itself:
+(`/stats`, the index), **For my lesson** (§8, `/stats/for-my-lesson`) and **Last 14 days** (§5,
+`/stats/last-14-days`). Today never opens by itself:
 the score page's ended strip and the exercises page's rest strip link to it, as does the header's
 Statistics entry.
 
@@ -388,6 +389,57 @@ The empty states are "The bench is *waiting*" and "Today's practice *fills in as
 This-session rule (`barTotals` in `st/bar_progress.js`) over the day's rows, so the day and the ended strip
 never disagree about a bar. A mistake is told by its beat (`beatLabel`, as the bar window does), never by a
 note name. The first paint is from the cached sessions; the rows fill in the plates and rail once read.
+
+### 8. Practice record: For my lesson — Claude Design canvas "Practice Record" (Q8 A, Q9 A)
+
+**Purpose:** notes a student leaves for their next lesson, shown at the lesson. In practice they are quiet
+marks, never a pop-up or a banner. Until teacher accounts exist the teacher reads the tab on the student's
+screen, or the sheet "Print for the lesson" makes. Notes stay on the device (the `lessonNotes` store, in the
+library file too, never on a server).
+
+**Writing a note:** three ways in. "❧ Note for lesson" beside "Practise bar n" in a bar's pop-up swaps the
+pop-up's body for the form (heading "Bar *3*" with "Note for your lesson"; the textarea "Your note",
+placeholder "What do you want to ask?"; topic chips Notes, Rhythm, Fingering, Pedal, How to practise, Other,
+one at a time and tapped again to clear; "Attach what happened: **75%**, beat 2 went wrong in all 3 of your
+last passes", ticked by default and absent for a bar never played; "Save note" and "Cancel"). Escape closes
+only the form. "❧ Flag for lesson" in the session rail's "This session" plate, beside "On the stand: bars
+3–4", stores a note with no words and the evidence from the finished passes, and says "Flagged bars 3–4 for
+your lesson. Add words later, at rest." for four seconds. "Add a note" on the tab writes a note on the
+setup's piece or on any piece. Evidence is told by beat, never by a note name.
+
+**Quiet marks:** a "❧ note" / "❧ 2 notes" pin in a bar's top-right corner on the score (the grid fallback
+too), in `--salon-gilt-deep` on `--salon-paper` with a `--salon-gilt-mid` border; a "❧ 2 notes for your
+lesson · Open" line above Begin in Tonight's session; in the rail, up to two lines for the bars on the stand:
+"Your note · bar 3" and "Teacher, 2 Oct · bar 3" with the answer. Removing a piece with open notes asks
+"Keep the notes", "Remove them too" or "Cancel".
+
+**Tab:** `For my lesson` (`/stats/for-my-lesson`) between Today and Last 14 days, with a count of the open
+notes. Layout as Today: title block "For my *lesson*" → tabs → two columns `minmax(0,1fr) 280px` (one column
+at 760px and below, measured on the page's own width). One plate holds the open notes grouped by piece
+(section label "Fixture · 2 open notes", the piece with the newest note first, "Any piece" last), each a
+grid `200px minmax(0,1fr)` (stacked at 520px): the bar engraved by the same engine as the score page, or a
+placeholder ("Whole piece", "Bar 3", "Any piece"); "Bar 3" with its label ("Fingering · both hands · 9 Oct",
+"Flagged in a session · 9 Oct", "kept for next time"); the words in italic display type, or "No words yet."
+with "Add words"; "Then: 75%, beat 2 went wrong…" with "Now: 75% latest, 0 of 3 towards learned." and
+"Over time: 50 → 44 → 75."; and the actions "Discussed…" (primary; asks "The teacher's answer (optional)"),
+"Keep for next time", "Drop" (with an "Undo" for the visit), "Open on the score" and "Edit". Under the open
+notes, the discussed ones by lesson day ("Discussed · 2 October", the last three days, then "and N earlier"),
+each with a "Teacher" box and "Since then: learned on 9 October." The right column has the "Since your last
+lesson" card ("7 *days*", "52 minutes · 5 bars learned · 2 notes"; "Before your first lesson" before one),
+"Print for the lesson" (primary, "Engraving the bars…" and disabled until every bar has drawn or failed),
+"Add a note" and the quote "Bring the questions; leave with the answers." Empty: "Nothing to ask *yet*".
+
+**Print:** a print stylesheet on the tab, no separate view. The header and its spacer are hidden
+(`@media print` in `header.module.css` and `global.css`), as are the tabs, the actions, the right column and
+the discussed notes (`data-print="hide"`); a print-only heading "For my lesson · Saturday 10 October", the
+since line and, under each open note, a ruled "The teacher's answer" box of three lines
+(`data-print="only"`) are added; each note keeps together on a page.
+
+**Implementation:** every word and figure is worked out in the pure module `st/lesson_notes.js` (`lessonView`
+for the tab, `evidenceOf`/`readEvidence` for the snapshot, `notesOnBars`/`answersOnBars`/`notePins` for the
+marks); `LessonPage` (`components/pages/lesson_page.jsx`) and the shared `LessonNoteForm` only paint it and
+write through `LocalStore#putLessonNote` and `updateLessonNote`. A dropped note stays stored with status
+"dropped" so a library merge cannot bring it back.
 
 ## Interactions & behaviour
 

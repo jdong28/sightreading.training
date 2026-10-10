@@ -8,6 +8,7 @@
 import * as React from "react"
 import * as types from "prop-types"
 import classNames from "classnames"
+import {Link} from "react-router-dom"
 
 import {Plate, Pill} from "st/components/salon"
 import NumberPicker from "st/components/number_picker"
@@ -18,6 +19,7 @@ import {measureNumberList} from "st/song_sections"
 import {pieceSong} from "st/sheet_music_deck"
 import {getAppStore} from "st/storage"
 import {learnedCount} from "st/bar_progress"
+import {openNotes} from "st/lesson_notes"
 import {
   mostOverduePiece, pulledPassage, READ_FIRST, HARDEST_FIRST, SCORE_ORDER,
   READ, HANDS, TOGETHER, FLOW, STAGE_NAMES, MIN_PASSAGE_BARS, MAX_PASSAGE_BARS,
@@ -215,7 +217,9 @@ export class SetupPane extends React.Component {
     // the closed groups are also kept here, so toggles landing in one batch
     // each build on the one before
     this.closed = storedClosedGroups()
-    this.state = {deckMessage: null, closed: this.closed}
+    // removeAsk: the piece with notes for the lesson being removed, asked what
+    // to do with them, {pieceId, count}
+    this.state = {deckMessage: null, closed: this.closed, removeAsk: null}
   }
 
   toggleGroup(id) {
@@ -361,20 +365,63 @@ export class SetupPane extends React.Component {
     })
   }
 
+  // the open notes for the lesson on a piece
+  noteCount(piece) {
+    return openNotes(this.getStore().lessonNotes()).filter(note => note.pieceId == piece.id).length
+  }
+
+  // A piece with notes for the lesson asks what to do with them first
   removePiece() {
     let {settings} = this.props
     let piece = sheetMusicPiece(settings)
     if (!piece) { return }
 
-    let input = this.deckInput()
-    input.removePiece(piece.id).then(result => {
+    let count = this.noteCount(piece)
+    if (count) {
+      this.setState({removeAsk: {pieceId: piece.id, count}})
+      return
+    }
+
+    this.deletePiece(piece, {keepNotes: true, count: 0})
+  }
+
+  deletePiece(piece, {keepNotes, count}) {
+    this.setState({removeAsk: null})
+
+    this.deckInput().removePiece(piece.id, {keepNotes}).then(result => {
       if (result.error) {
         this.setState({deckMessage: {error: true, text: result.error}})
         return
       }
-      this.setState({deckMessage: {text: `Removed "${piece.title}" from the deck`}})
+
+      let kept = keepNotes && count ?
+        `; its ${plural(count, "lesson note")} ${count == 1 ? "is" : "are"} kept in For my lesson.` : ""
+      this.setState({deckMessage: {text: `Removed "${piece.title}" from the deck${kept}`}})
       this.pickPiece("")
     })
+  }
+
+  renderRemoveAsk(piece) {
+    let ask = this.state.removeAsk
+    if (!ask || ask.pieceId != piece.id) { return null }
+
+    return <div className={styles.remove_ask} role="group" aria-label="Remove the piece">
+      <p className={styles.remove_question}>{piece.title} has {plural(ask.count, "note")} for your lesson.</p>
+      <div className={styles.pills}>
+        <Pill
+          variant="primary"
+          className={styles.small_pill}
+          onClick={() => this.deletePiece(piece, {keepNotes: true, count: ask.count})}>Keep the notes</Pill>
+        <Pill
+          variant="ghost"
+          className={styles.small_pill}
+          onClick={() => this.deletePiece(piece, {keepNotes: false, count: ask.count})}>Remove them too</Pill>
+        <Pill
+          variant="ghost"
+          className={styles.small_pill}
+          onClick={() => this.setState({removeAsk: null})}>Cancel</Pill>
+      </div>
+    </div>
   }
 
   renderPiece() {
@@ -399,6 +446,8 @@ export class SetupPane extends React.Component {
           </label>
           {piece && <Pill variant="ghost" className={styles.remove} onClick={() => this.removePiece()}>Remove</Pill>}
         </div>
+
+        {piece && this.renderRemoveAsk(piece)}
 
         {!piece && this.renderNotation()}
 
@@ -871,6 +920,17 @@ export class SetupPane extends React.Component {
     return `${range}, ${order}, ${handName.toLowerCase()}, ${cardBars(settings, false)}, ${tempoWords}`
   }
 
+  // "❧ 2 notes for your lesson · Open", a quiet line, only for a piece that has some
+  renderLessonNotes(piece) {
+    let count = piece ? this.noteCount(piece) : 0
+    if (!count) { return null }
+
+    return <div className={styles.lesson_line}>
+      <span><span aria-hidden="true">❧</span> {plural(count, "note")} for your lesson</span>
+      <Link to="/stats/for-my-lesson" className={styles.lesson_link}>Open</Link>
+    </div>
+  }
+
   render() {
     let {settings} = this.props
     let piece = sheetMusicPiece(settings)
@@ -898,6 +958,7 @@ export class SetupPane extends React.Component {
       {playable && this.renderTempo()}
 
       <div className={styles.footer}>
+        {this.renderLessonNotes(piece)}
         <p className={styles.begin_line}>{playable ? this.beginLine() : ""}</p>
         <Pill variant="primary" className={styles.begin} disabled={disabled} onClick={this.props.onBegin}>
           Begin

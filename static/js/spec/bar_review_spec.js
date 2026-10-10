@@ -193,6 +193,32 @@ describe("a bar's review (st/bar_review)", function() {
     })
   })
 
+  describe("summary, the one sentence a lesson note keeps", function() {
+    it("is the worst line without the tail about the score", function() {
+      expect(review([slipped(1000), slipped(2000), slipped(3000)]).summary)
+        .toEqual("Beat 2 went wrong in all 3 of your last passes")
+      expect(review([row(1000), slipped(2000), row(3000)]).summary)
+        .toEqual("Beat 2 went wrong once in your last 3 passes")
+      // the same sentence whether or not the score is engraved
+      expect(review([slipped(1000), slipped(2000)], {engraved: false}).summary)
+        .toEqual("Beat 2 went wrong in all 2 of your last passes")
+    })
+
+    it("says every note was right when none went wrong", function() {
+      expect(review([row(1000), row(2000), row(3000)]).summary).toEqual("Every note right in your last 3 passes")
+      expect(review([row(1000)]).summary).toEqual("Every note right in your last pass")
+    })
+
+    it("is null for a bar never played, played before the log and graded by ear", function() {
+      expect(barReview({rows: [], item: null, measure: 3, barStart: BAR_START}).summary).toBe(null)
+      expect(review([], {item: {attempts: 3}}).summary).toBe(null)
+      expect(review([{
+        ...row(2000), mode: "self", columns: null, clean: null, grade: 3, slipped: ["rhythm"],
+        beats: undefined, gaps: undefined, iois: undefined, pulse: undefined,
+      }]).summary).toBe(null)
+    })
+  })
+
   describe("what went wrong", function() {
     it("says the worst beat's trouble in words and marks it on the score: filled when it keeps going wrong", function() {
       let result = review([slipped(1000), slipped(2000), slipped(3000)])

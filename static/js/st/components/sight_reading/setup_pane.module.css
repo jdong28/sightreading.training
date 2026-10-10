@@ -507,3 +507,42 @@
     font-size: 16px;
     color: var(--salon-ink);
 }
+
+/* removing a piece that has notes for the next lesson asks what to do with them */
+.remove_ask {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px 12px;
+    background: var(--salon-paper-warm);
+    border: 1px solid var(--salon-rule-light);
+}
+
+.remove_question {
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: 15px;
+    line-height: 1.35;
+    color: var(--salon-ink);
+}
+
+/* the quiet line of the piece's notes for the lesson above the begin line */
+.lesson_line {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    margin: 0 0 10px;
+    padding-bottom: 9px;
+    border-bottom: var(--salon-hairline);
+    font-family: var(--font-display);
+    font-size: 15px;
+    color: var(--salon-ink-soft);
+}
+
+.lesson_link {
+    font-family: var(--font-ui);
+    font-size: 12px;
+    color: var(--salon-oxblood);
+    text-decoration: underline;
+}
