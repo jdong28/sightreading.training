@@ -36,7 +36,7 @@ import {
   SOURCE_ENCODING, compressSource, decompressSource, isCompressedSource,
   bytesToBase64, base64ToBytes
 } from "st/score_source"
-import {validAnnotation} from "st/difficulty/records"
+import {validAnnotation, cleanClaudeProposal} from "st/difficulty/records"
 import {withDecisions} from "st/difficulty/decisions"
 
 export const DB_NAME = "sightreading"
@@ -1496,7 +1496,10 @@ export class LocalStore {
 
         let idx = annotations.findIndex(a => a.pieceId == pieceId)
         if (idx < 0) {
-          let copy = {...record, pieceId}
+          // a library is untrusted text: Claude's links and notes are cleaned
+          // as a flags file's are
+          let proposals = record.proposals.map(p => p.source == "claude" ? cleanClaudeProposal(p) : p).filter(Boolean)
+          let copy = {...record, proposals, pieceId}
           annotations.push(copy)
           ops.push({store: "annotations", put: copy})
           report.addedAnnotations += 1

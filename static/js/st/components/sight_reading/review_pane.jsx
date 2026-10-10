@@ -26,6 +26,7 @@ import {
   reviewFlags, acceptDecision, editDecision, dismissDecision, restoreDecision, addDecision,
   promoteTroubleSpot,
 } from "st/difficulty/decisions"
+import {inForce as flagInForce, safeUrl} from "st/difficulty/records"
 import {troubleSpots} from "st/difficulty/trouble"
 
 import styles from "./review_pane.module.css"
@@ -51,7 +52,15 @@ function storeName(name, storage = window.localStorage) {
 }
 
 const HAND_LABEL = {both: "Both", upper: "Right", lower: "Left"}
-const SOURCE_CHIP = {score: "Score", teacher: "Teacher", player: "You"}
+const SOURCE_CHIP = {score: "Score", teacher: "Teacher", player: "You", claude: "Claude"}
+
+// how Claude says the score analysis sees a passage it proposed
+const AGREEMENT_WORDS = {
+  agrees: "Score analysis agrees",
+  "in part": "Score analysis agrees in part",
+  disagrees: "Score analysis ranks it easier",
+  new: "New to the score analysis",
+}
 
 // how a queue card reads the decided-ness of a flag
 function statusWords(flag, viewerName) {
@@ -567,13 +576,51 @@ export class ReviewPane extends React.Component {
         {flag.lines[0] && <p className={styles.queue_card_line}>{flag.lines[0].text}</p>}
         <div className={styles.source_chips}>
           {flag.sources.map(source =>
-            <span key={source} className={styles.source_chip}>{SOURCE_CHIP[source] || source}</span>)}
+            <span key={source} className={classNames(styles.source_chip, {[styles.source_chip_claude]: source == "claude"})}>
+              {SOURCE_CHIP[source] || source}
+            </span>)}
         </div>
         {place && <p className={styles.place_line}>{place}</p>}
         {evidence && <p className={styles.trouble_line}>From your playing: {evidence}</p>}
       </button>
+      {this.renderClaudeDetails(flag)}
       <div className={styles.queue_actions}>{this.renderActions(flag)}</div>
     </li>
+  }
+
+  // what Claude brought to a passage it proposed: its reading of the score
+  // analysis, the bars it named when the notes it quoted were elsewhere, and
+  // its sources, which the app has never opened ("not yet verified"). Drawn
+  // after the card's button, never inside it (a link can't sit in a button),
+  // and as React text only: every word of it is Claude's, not ours.
+  renderClaudeDetails(flag) {
+    let note = flag.claude
+    let citations = (flag.citations || []).filter(citation => safeUrl(citation.url))
+    if (!note && !citations.length) { return null }
+
+    let agreement = note && AGREEMENT_WORDS[note.analysis]
+    let shifted = note && note.shift && note.claimed
+
+    return <div className={styles.claude_details}>
+      {agreement && <p className={styles.claude_line}>
+        {agreement}{note.analysisNote ? ` · ${note.analysisNote}` : ""}
+      </p>}
+      {shifted && <p className={styles.claude_line}>
+        Claude named {barsLabel(note.claimed.start, note.claimed.end)}; the notes it quoted are
+        in {barsLabel(flag.start, flag.end)}
+      </p>}
+      {citations.length > 0 && <ul className={styles.citations}>
+        {citations.map((citation, idx) =>
+          <li key={idx} className={styles.citation}>
+            <a href={safeUrl(citation.url)} target="_blank" rel="noopener noreferrer">{citation.title}</a>
+            {citation.says ? ` — ${citation.says}` : ""}
+            {citation.quote ? <q className={styles.citation_quote}>{citation.quote}</q> : null}
+          </li>)}
+      </ul>}
+      {citations.length > 0 && <p className={styles.claude_unverified}>
+        Sources: not yet verified. Claude read them through a summary.
+      </p>}
+    </div>
   }
 
   renderPreview(song, draft) {
@@ -745,7 +792,7 @@ export class ReviewPane extends React.Component {
     let record = this.record()
     let heatPct = (record && record.runs && record.runs.score && record.runs.score.heat) || []
     let heat = numbers.map((_, idx) => heatLevel(heatPct[idx] || 0))
-    let inForce = flags.filter(flag => flag.status != "dismissed" && flag.place != "unplaced")
+    let inForce = flags.filter(flagInForce)
     let trouble = this.troubleList(inForce)
     let evidence = this.troubleList([])
     let queue = [...flags].sort(queueOrder)
