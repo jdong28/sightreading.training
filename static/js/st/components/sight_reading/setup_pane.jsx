@@ -13,7 +13,7 @@ import {Plate, Pill} from "st/components/salon"
 import NumberPicker from "st/components/number_picker"
 import PdfSteps from "st/components/sight_reading/pdf_steps"
 import {LEVEL_WORDS} from "st/difficulty/index"
-import {barsLabel, romanNumeral} from "st/music"
+import {barsLabel, barsHeading, romanNumeral} from "st/music"
 import {measureNumberList} from "st/song_sections"
 import {pieceSong} from "st/sheet_music_deck"
 import {getAppStore} from "st/storage"
@@ -24,6 +24,7 @@ import {
 } from "st/srs/planner"
 import {IN_ORDER, RANDOM_ORDER} from "st/measure_cards"
 import {scoreEnginesPath} from "st/score_render/route"
+import {SCORE_DRILL_STORAGE_KEY, loadGeneratorSettings, storeCurrentDrill} from "st/generators"
 import {
   SHEET_MUSIC_GENERATOR, BOTH_HANDS, RIGHT_HAND, LEFT_HAND, WHOLE_SECTION,
   PROGRAMME_PRACTICE, FREE_PRACTICE, PLAN_CARD_MEASURES,
@@ -51,6 +52,49 @@ const HAND_WORDS = {upper: "right hand", lower: "left hand"}
 
 // "5–8", or "9" for a passage of one bar
 const spanOf = (start, end) => start == end ? `${start}` : `${start}–${end}`
+
+// The setup groups, in the order they stand. Each is a toggle that opens or
+// closes its body; the closed ones are kept under SCORE_DRILL_STORAGE_KEY's
+// `closedGroups`, for every piece on this device
+const GROUPS = ["piece", "session", "study", "cards", "tempo"]
+
+function storedClosedGroups() {
+  let {closedGroups} = loadGeneratorSettings(SCORE_DRILL_STORAGE_KEY)
+  return Array.isArray(closedGroups) ? GROUPS.filter(group => closedGroups.includes(group)) : []
+}
+
+const HAND_NAMES = {[BOTH_HANDS]: "Both hands", [RIGHT_HAND]: "Right hand", [LEFT_HAND]: "Left hand"}
+
+const ORDER_NAMES = {[READ_FIRST]: "read through", [HARDEST_FIRST]: "hardest first", [SCORE_ORDER]: "in score order"}
+
+const GRADED_WORDS = "graded by you"
+
+// the bars a card takes, as the programme or free practice plays it: the
+// Begin line and the Cards group's summary both say this
+function cardBars(settings, isProgramme) {
+  let k
+  if (isProgramme) {
+    k = planCardMeasures(settings)
+  } else {
+    let mpc = settings.measuresPerCard
+    k = !(Number(mpc) >= 1) ? sheetMusicSectionLength(settings) : Math.floor(Number(mpc))
+  }
+  return `${plural(k, "bar")} a card`
+}
+
+// the passage of tonight's study, as the setup pane's heading and marker say it
+function passageBars(passage) {
+  return barsHeading(passage.bars[0], passage.bars[passage.bars.length - 1])
+}
+
+function passageHeading(passage) {
+  return `${passageBars(passage)}${passage.words ? ` · ${passage.words}` : ""}`
+}
+
+function passageStage(passage) {
+  let at = passage.effective || passage.stage
+  return passage.open ? `${romanNumeral(at)} of IV` : "next"
+}
 
 // the most passages the path names before "and n more"
 const PATH_LENGTH = 6
@@ -114,6 +158,31 @@ function orderHint(order, flag, measures) {
   }
 }
 
+// A group of the pane: a full-width toggle (the label, the summary of the
+// group while it is closed, whatever `aside` puts at the right, a chevron)
+// above the body, which is only rendered while the group is open
+function SetupGroup({id, label, open, onToggle, summary, aside, display, children}) {
+  let bodyId = `setup-group-${id}`
+  let words = open ? null : summary()
+
+  return <div className={styles.group}>
+    <button
+      type="button"
+      className={styles.toggle}
+      aria-expanded={open}
+      aria-controls={open ? bodyId : undefined}
+      onClick={() => onToggle(id)}>
+      <span className={styles.group_label}>{label}</span>
+      <span className={classNames(styles.summary, {[styles.summary_display]: display})} title={words || undefined}>
+        {words}
+      </span>
+      {open && aside}
+      <span className={classNames(styles.chevron, {[styles.chevron_closed]: !open})} aria-hidden="true" />
+    </button>
+    {open && <div className={styles.group_body} id={bodyId}>{children()}</div>}
+  </div>
+}
+
 export class SetupPane extends React.Component {
   static propTypes = {
     settings: types.object.isRequired,
@@ -143,7 +212,32 @@ export class SetupPane extends React.Component {
 
   constructor(props) {
     super(props)
-    this.state = {deckMessage: null}
+    // the closed groups are also kept here, so toggles landing in one batch
+    // each build on the one before
+    this.closed = storedClosedGroups()
+    this.state = {deckMessage: null, closed: this.closed}
+  }
+
+  toggleGroup(id) {
+    let {closed} = this
+    this.closed = GROUPS.filter(group => group == id ? !closed.includes(group) : closed.includes(group))
+
+    this.setState({closed: this.closed})
+    storeCurrentDrill({closedGroups: this.closed}, SCORE_DRILL_STORAGE_KEY)
+  }
+
+  // a group of the pane; body and summary are called only when they show
+  renderGroup(id, label, {summary, aside, display}, body) {
+    return <SetupGroup
+      id={id}
+      label={label}
+      open={!this.state.closed.includes(id)}
+      onToggle={id => this.toggleGroup(id)}
+      summary={summary}
+      aside={aside}
+      display={display}>
+      {body}
+    </SetupGroup>
   }
 
   getStore() {
@@ -289,9 +383,8 @@ export class SetupPane extends React.Component {
     let pieces = this.deckInput().pieces()
     let message = this.state.deckMessage
 
-    return <div className={styles.group}>
-      <div className={styles.group_label}>Piece</div>
-      <div className={styles.piece_body}>
+    return this.renderGroup("piece", "Piece", {summary: () => piece ? piece.title : "Pasted notation", display: true},
+      () => <div className={styles.piece_body}>
         <div className={styles.piece_row}>
           <label className={styles.piece_select}>
             <span>{piece ? piece.title : "Pasted notation"}</span>
@@ -334,8 +427,7 @@ export class SetupPane extends React.Component {
           <div className={message.error ? styles.input_error : styles.input_notice}>{message.text}</div>}
         {message && message.pdf && <PdfSteps fileName={message.fileName} />}
         {piece && this.renderKeyHint()}
-      </div>
-    </div>
+      </div>)
   }
 
   // the piece select's first option (open question 4d): the Piece group's
@@ -378,26 +470,38 @@ export class SetupPane extends React.Component {
     this.updateSettings({practice})
   }
 
-  renderSession() {
+  // what the Session group says while it is closed
+  sessionSummary(isProgramme) {
     let {settings} = this.props
     let store = this.getStore()
-    let isProgramme = plannedPractice(settings, store)
 
-    return <div className={styles.group}>
-      <div className={styles.group_label}>Session</div>
-      {programmeOffered(settings) && <div className={styles.pills} role="group" aria-label="Session">
-        <Pill variant="choice" selected={isProgramme} onClick={() => this.setPractice(PROGRAMME_PRACTICE)}>
-          Today's programme
-        </Pill>
-        <Pill variant="choice" selected={!isProgramme} onClick={() => this.setPractice(FREE_PRACTICE)}>
-          Free practice
-        </Pill>
-      </div>}
-      {isProgramme ? this.renderProgramme() : this.renderFreePractice()}
-    </div>
+    if (isProgramme) {
+      let order = orderOffered(settings, store) ? ORDER_NAMES[introductionOrder(settings)] : null
+      return ["Today's programme", order, `${store.practiceSettings().sessionMinutes} min`].filter(Boolean).join(" · ")
+    }
+
+    let {startMeasure, endMeasure} = sheetMusicSectionRange(settings)
+    return `Free practice · ${barsLabel(startMeasure, endMeasure)}`
   }
 
-  renderProgramme() {
+  renderSession(isProgramme, study) {
+    let {settings} = this.props
+
+    return this.renderGroup("session", "Session", {summary: () => this.sessionSummary(isProgramme)},
+      () => <React.Fragment>
+        {programmeOffered(settings) && <div className={styles.pills} role="group" aria-label="Session">
+          <Pill variant="choice" selected={isProgramme} onClick={() => this.setPractice(PROGRAMME_PRACTICE)}>
+            Today's programme
+          </Pill>
+          <Pill variant="choice" selected={!isProgramme} onClick={() => this.setPractice(FREE_PRACTICE)}>
+            Free practice
+          </Pill>
+        </div>}
+        {isProgramme ? this.renderProgramme(study) : this.renderFreePractice()}
+      </React.Fragment>)
+  }
+
+  renderProgramme(study) {
     let {settings, generator} = this.props
     let store = this.getStore()
     let piece = sheetMusicPiece(settings)
@@ -409,7 +513,6 @@ export class SetupPane extends React.Component {
     let order = introductionOrder(settings)
     let flag = pulledPassage(programmePassages(settings, store), hand)
     let other = this.props.pickPiece && this.suggestion()
-    let study = generator && generator.study ? generator.study() : null
 
     return <div className={styles.subgroup}>
       <div className={styles.figures}>
@@ -439,7 +542,6 @@ export class SetupPane extends React.Component {
           again in a moment.</React.Fragment>}
       </div>
 
-      {study && this.renderStudy(study)}
       {!study && hand != "both" && <div className={styles.hint}>
         Tonight's study plays hands together; with one hand, new bars arrive one at a time.
       </div>}
@@ -486,6 +588,15 @@ export class SetupPane extends React.Component {
     </div>
   }
 
+  // what the Tonight's study group says while it is closed
+  studySummary(study) {
+    if (study.learned) { return "Learned ❖" }
+    if (study.readThroughLeft > 0) {
+      return `Read-through first · ${plural(study.readThroughLeft, "bar")} left`
+    }
+    return study.passage ? `${passageBars(study.passage)} · ${passageStage(study.passage)}` : ""
+  }
+
   // "Tonight's study": the read-through still to play and its Skip it, the
   // passage in progress (or next to open) with its four stages, the path of
   // passages, and the bars a new passage takes; one line once learned
@@ -493,9 +604,8 @@ export class SetupPane extends React.Component {
     let {settings} = this.props
     let {passage, path} = study
 
-    return <div className={styles.sub}>
-      <div className={styles.sub_label}>Tonight's study</div>
-
+    return this.renderGroup("study", "Tonight's study", {summary: () => this.studySummary(study)},
+      () => <React.Fragment>
       {study.readThroughLeft > 0 && <div className={styles.read_row}>
         <span>Read-through first · {plural(study.readThroughLeft, "bar")} left</span>
         <Pill variant="ghost" className={styles.small_pill} onClick={this.props.onSkipReadThrough}>Skip it</Pill>
@@ -530,20 +640,15 @@ export class SetupPane extends React.Component {
         </div>
         <div className={styles.hint}>New passages take this many bars; the one in progress keeps its own.</div>
       </div>
-    </div>
+      </React.Fragment>)
   }
 
   // the passage line and the stage rows
   renderPassage(passage) {
-    let bars = passage.bars
-    let words = barsLabel(bars[0], bars[bars.length - 1])
-    let heading = `${words[0].toUpperCase()}${words.slice(1)}${passage.words ? ` · ${passage.words}` : ""}`
-    let at = passage.effective || passage.stage
-
     return <React.Fragment>
       <div className={styles.passage_line}>
-        <span className={styles.passage_bars}>{heading}</span>
-        <span className={styles.passage_stage}>{passage.open ? `${romanNumeral(at)} of IV` : "next"}</span>
+        <span className={styles.passage_bars}>{passageHeading(passage)}</span>
+        <span className={styles.passage_stage}>{passageStage(passage)}</span>
       </div>
       <ol className={styles.steps} aria-label="Stages of the passage">
         {stageRows(passage).map(({stage, words, passed, current}) =>
@@ -646,17 +751,17 @@ export class SetupPane extends React.Component {
     this.updateSettings({hand})
   }
 
-  renderCards() {
+  renderCards(isProgramme) {
     let {settings} = this.props
-    let isProgramme = plannedPractice(settings, this.getStore())
     let mpcInput = SHEET_MUSIC_GENERATOR.inputs.find(i => i.name == "measuresPerCard")
     let {max} = mpcInput.bounds(settings)
     let mpc = settings.measuresPerCard
     let isAll = !(Number(mpc) >= 1)
     let value = isAll ? max : Math.min(max, Math.floor(Number(mpc)) || 1)
 
-    return <div className={styles.group}>
-      <div className={styles.group_label}>Cards</div>
+    let summary = () => `${HAND_NAMES[settings.hand]} · ${cardBars(settings, isProgramme)}`
+
+    return this.renderGroup("cards", "Cards", {summary}, () => <React.Fragment>
       <div className={styles.sub}>
         <div className={styles.sub_label}>Hand</div>
         <div className={styles.pills} role="group" aria-label="Hand">
@@ -691,26 +796,30 @@ export class SetupPane extends React.Component {
             "All plays the whole section as one card. A number shows that many bars at a time, like a flashcard."}
         </div>
       </div>
-    </div>
+    </React.Fragment>)
+  }
+
+  // what the Tempo group says while it is closed
+  tempoSummary() {
+    let {mode, scrollSpeed, tempo, acoustic} = this.props
+    if (acoustic) { return `Acoustic · ${GRADED_WORDS}` }
+
+    let words = mode == "scroll" ? "Scroll" : "Wait"
+    return `${words} · speed ${scrollSpeed}${mode == "scroll" && tempo ? " · keep tempo" : ""}`
   }
 
   renderTempo() {
     let {mode, scrollSpeed, tempo, acoustic} = this.props
+    let summary = () => this.tempoSummary()
 
     if (acoustic) {
-      return <div className={styles.group}>
-        <div className={styles.tempo_header}>
-          <span className={styles.group_label}>Tempo</span>
-        </div>
-        <div className={styles.hint}>Acoustic piano: each card waits for your grade.</div>
-      </div>
+      return this.renderGroup("tempo", "Tempo", {summary}, () =>
+        <div className={styles.hint}>Acoustic piano: each card waits for your grade.</div>)
     }
 
-    return <div className={styles.group}>
-      <div className={styles.tempo_header}>
-        <span className={styles.group_label}>Tempo</span>
-        <span className={styles.tempo_value}>{scrollSpeed}</span>
-      </div>
+    let aside = <span className={styles.tempo_value}>{scrollSpeed}</span>
+
+    return this.renderGroup("tempo", "Tempo", {summary, aside}, () => <React.Fragment>
       <div className={styles.pills} role="group" aria-label="Mode">
         <Pill variant="choice" selected={mode == "wait"} onClick={() => this.props.setMode("wait")}>Wait</Pill>
         <Pill variant="choice" selected={mode == "scroll"} onClick={() => this.props.setMode("scroll")}>Scroll</Pill>
@@ -737,34 +846,29 @@ export class SetupPane extends React.Component {
         </Pill>
         <span className={styles.hint}>Scroll only: notes that pass the line unplayed are missed.</span>
       </div>
-    </div>
+    </React.Fragment>)
   }
 
   beginLine() {
     let {settings} = this.props
     let store = this.getStore()
     let isProgramme = plannedPractice(settings, store)
-    let handName = {[BOTH_HANDS]: "Both hands", [RIGHT_HAND]: "Right hand", [LEFT_HAND]: "Left hand"}[settings.hand]
-    let tempoWords = this.props.acoustic ? "graded by you." :
+    let handName = HAND_NAMES[settings.hand]
+    let tempoWords = this.props.acoustic ? `${GRADED_WORDS}.` :
       this.props.mode == "scroll" ? `scrolling at ${this.props.scrollSpeed}.` : "waiting for you."
 
     if (isProgramme) {
-      let order = introductionOrder(settings)
-      let orderName = {[READ_FIRST]: "read through", [HARDEST_FIRST]: "hardest first", [SCORE_ORDER]: "in score order"}[order]
+      let orderName = ORDER_NAMES[introductionOrder(settings)]
       let minutes = store.practiceSettings().sessionMinutes
-      let k = planCardMeasures(settings)
       return `About ${minutes} minutes of today’s programme, ${orderName}, ${handName.toLowerCase()}, ` +
-        `${plural(k, "bar")} a card, ${tempoWords}`
+        `${cardBars(settings, true)}, ${tempoWords}`
     }
 
     let {startMeasure, endMeasure} = sheetMusicSectionRange(settings)
-    let mpc = settings.measuresPerCard
-    let isAll = !(Number(mpc) >= 1)
-    let k = isAll ? sheetMusicSectionLength(settings) : Math.floor(Number(mpc))
     let order = settings.order == RANDOM_ORDER ? "weakest first" : "in order"
     let range = startMeasure == endMeasure ? `Bar ${startMeasure}` : `Bars ${startMeasure}–${endMeasure}`
 
-    return `${range}, ${order}, ${handName.toLowerCase()}, ${plural(k, "bar")} a card, ${tempoWords}`
+    return `${range}, ${order}, ${handName.toLowerCase()}, ${cardBars(settings, false)}, ${tempoWords}`
   }
 
   render() {
@@ -777,6 +881,9 @@ export class SetupPane extends React.Component {
     // groups apply to it too, free practice only (programmeOffered is
     // false without a real piece)
     let playable = piece || hasSong
+    let {generator} = this.props
+    let isProgramme = !!playable && plannedPractice(settings, this.getStore())
+    let study = isProgramme && generator && generator.study ? generator.study() : null
 
     return <Plate className={styles.pane}>
       <div className={styles.header}>
@@ -785,8 +892,9 @@ export class SetupPane extends React.Component {
       </div>
 
       {this.renderPiece()}
-      {playable && this.renderSession()}
-      {playable && this.renderCards()}
+      {playable && this.renderSession(isProgramme, study)}
+      {study && this.renderStudy(study)}
+      {playable && this.renderCards(isProgramme)}
       {playable && this.renderTempo()}
 
       <div className={styles.footer}>
