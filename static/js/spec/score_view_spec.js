@@ -17,6 +17,7 @@ import {SELF_GRADE_DWELL_MS, SELF_GRADE_FLASH_MS} from "st/srs/self_grade"
 import {learnedness} from "st/bar_progress"
 import reviewStyles from "st/components/sight_reading/review_pane.module.css"
 import barStripStyles from "st/components/bar_strip.module.css"
+import sheetStyles from "st/components/score_sheet.module.css"
 
 import {flagsInForce} from "st/difficulty/records"
 import {withDecisions, dismissDecision, reviewFlags} from "st/difficulty/decisions"
@@ -143,8 +144,8 @@ describe("the score view at rest (st/components/sight_reading/score_view)", func
     }
     let dialog = el => el.querySelector('[role="dialog"]')
 
-    let renderFixture = async (settings={}) => {
-      let musicXML = await (await fetch("/tools/fingerings/tests/fixture/score.musicxml")).text()
+    let renderFixture = async (settings={}, xml=null) => {
+      let musicXML = xml || await (await fetch("/tools/fingerings/tests/fixture/score.musicxml")).text()
       let {piece} = await importMusicXMLPiece("fixture.musicxml", musicXML, store)
       window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
         piece: piece.id, hand: BOTH_HANDS, measuresPerCard: WHOLE_SECTION,
@@ -178,6 +179,41 @@ describe("the score view at rest (st/components/sight_reading/score_view)", func
       let columns = page.currentCard().card.columns.length
       for (let i = 0; i < columns; i++) { playHead() }
     }
+
+    // an even stepwise piece (every bar a different walk by step) whose one
+    // fifth is bar `leapAt`'s upper hand; `leap` is that bar's notes
+    let stepwiseScore = leap => {
+      let scale = ["C", "D", "E", "F", "G", "A", "B"]
+      let walks = [[0, 1, 2, 1], [2, 1, 0, 1], [0, 1, 0, 1], [3, 2, 1, 2], [1, 2, 3, 2]]
+      let bar = (i, octave) => walks[i % 5].map(step => ({name: `${scale[((i % 4) + step) % 7]}${octave}`}))
+      let bars = Array.from({length: 16}, (_, i) => ({upper: bar(i, 4), lower: bar(i + 2, 3)}))
+      bars[8] = {upper: leap.map(name => ({name})), lower: bar(10, 3)}
+      return pianoScore({title: "Stepwise", bars})
+    }
+
+    it("titles a weak leap by where it stands in the piece, on the page's passage pane", async function() {
+      let {container: el, piece} = await renderFixture({}, stepwiseScore(["C4", "G4", "E4", "D4"]))
+      let flags = flagsInForce(store.annotation(piece.id))
+      let leap = flags.find(f => f.kinds[0] == "leaps")
+      expect(leap).toBeTruthy()
+      expect(leap.start).toBeLessThanOrEqual(9)
+      expect(leap.end).toBeGreaterThanOrEqual(9)
+
+      click(el.querySelector(`.${sheetStyles.bar_tag}`))
+      let pane = el.querySelector('aside[aria-label="Passage"]')
+      expect(pane.textContent).toContain("leaps a fifth")
+      expect(pane.textContent).toContain("The widest leaps in the right hand")
+      expect(pane.textContent).not.toMatch(/\bwide leaps\b/i)
+    })
+
+    it("keeps Wide leaps for an octave leap on the same piece", async function() {
+      let {container: el} = await renderFixture({}, stepwiseScore(["C4", "C5", "E4", "D4"]))
+
+      click(el.querySelector(`.${sheetStyles.bar_tag}`))
+      let pane = el.querySelector('aside[aria-label="Passage"]')
+      expect(pane.textContent).toContain("leaps an octave")
+      expect(pane.textContent).toContain("Wide leaps in the right hand")
+    })
 
     it("shows the score view at mount: no engine card, no Programme pill, the setup pane, the title and page 1", async function() {
       let {container: el} = await renderFixture()
@@ -448,6 +484,48 @@ describe("the score view at rest (st/components/sight_reading/score_view)", func
   // without a stored source, or an engraving failure, falls back to a bar
   // grid rather than the paginated engraving, at rest same as in session
   // (st/components/pages/sight_reading_page, AGENTS.md)
+  // the setup pane's "Section has N columns" counts what the session will
+  // draw and judge: every onset while the engine draws the piece, only those
+  // on the app staff while its fallback does
+  describe("the section's column hint", function() {
+    // a treble-only piece, 4 onsets a bar over bars 1-2, two below the
+    // treble staff's A3
+    let lowTreble = () => pianoScore({title: "Low treble", bars: [
+      {upper: ["C4", "G3", "E4", "G4"].map(name => ({name}))},
+      {upper: ["F3", "D4", "E4", "C4"].map(name => ({name}))},
+    ]})
+
+    let hint = el => [...el.querySelectorAll("div")]
+      .find(div => div.children.length == 0 && /^Marked in gilt/.test(div.textContent)).textContent
+
+    it("counts every onset while the engine draws the piece", async function() {
+      await drillPiece(lowTreble(), {startMeasure: 1, endMeasure: 2})
+      let el = renderScorePage()
+      await waitFor(() => el.querySelectorAll('button[aria-label^="Bar "]').length > 0, {message: "the score to draw"})
+
+      expect(page.engineCards()).toBe(true)
+      expect(hint(el)).toContain("Section has 8 columns")
+      // and it is what the session judges
+      expect(page.currentCard().card.columns.length).toBe(8)
+    })
+
+    it("counts what the app staff keeps while it draws in the engine's place", async function() {
+      let xml = lowTreble()
+      let song = parseMusicXML(xml)
+      let piece = await store.putPiece({id: "old", title: "Low treble", importedAt: 1000, song: songToJSON(song)})
+      window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+        piece: piece.id, hand: "both hands", measuresPerCard: "all", practice: "free practice",
+        startMeasure: 1, endMeasure: 2,
+      }))
+
+      let el = renderScorePage()
+      await waitFor(() => page.state.engineSource?.status == "missing", {message: "the missing source"})
+
+      expect(page.engineCards()).toBe(false)
+      expect(hint(el)).toContain("Section has 6 columns")
+    })
+  })
+
   describe("fallback states", function() {
     it("shows a grid of bars with no stored source", async function() {
       let xml = workhorseScore()
