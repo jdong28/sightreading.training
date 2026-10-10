@@ -256,7 +256,9 @@ export class ScoreSheet extends React.Component {
     let placed = []
     let page = this.currentPage()
 
-    if (marks && this.result && box && page) {
+    // the marks of a bar not on this page are none: its heads are in the
+    // engraving all the same, drawn on another page
+    if (marks && this.result && box && page && page.measures.some(measure => measure.number == marks.measure)) {
       let boxRect = box.getBoundingClientRect()
       let pct = (value, size) => size ? value / size * 100 : 0
 

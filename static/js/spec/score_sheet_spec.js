@@ -224,6 +224,7 @@ describe("ScoreSheet's note marks", function() {
     await waitFor(() => sheet.state.pages.length > 1, {message: "two pages"})
     render({noteMarks: marks, page: 1})
     expect(container.querySelectorAll("[data-mark]").length).toEqual(0)
+    expect(container.querySelectorAll(`.${TROUBLE_CLASS}`).length).toEqual(0)
     render({noteMarks: marks, page: 0})
     expectMarksOnHeads()
   })

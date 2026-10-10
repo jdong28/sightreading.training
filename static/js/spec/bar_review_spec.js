@@ -506,8 +506,23 @@ describe("the bar window behind a bar's score, mounted", function() {
     root = createRoot(container)
     flushSync(() => root.render(React.createElement(MemoryRouter, {},
       React.createElement(ScorePage, {ref: p => page = p, viewportHeight: 1240}))))
-    await waitFor(() => container.querySelectorAll('button[aria-label^="Bar "]').length > 0, {message: "bars"})
+    // the engraved score and its bars: before it is drawn the page only holds a grid
+    await waitFor(() => container.querySelector("[data-score-sheet] svg") && bar(1), {message: "the score to be engraved"})
+    await paginated()
     return piece
+  }
+
+  // waits for the pages to stop changing: the first pagination may be drawn
+  // before the plate's width is known, and a second follows it
+  let paginated = async () => {
+    let count = () => container.querySelectorAll('button[aria-label^="Bar "]').length
+    let seen = -1
+    for (let stable = 0; stable < 6;) {
+      await new Promise(resolve => setTimeout(resolve, 50))
+      let now = count()
+      stable = now == seen ? stable + 1 : 0
+      seen = now
+    }
   }
 
   // a pass through the card: a column's notes down together a column's gap
@@ -541,6 +556,16 @@ describe("the bar window behind a bar's score, mounted", function() {
 
   let ready = async test => waitFor(test, {message: "the bar's window"})
 
+  // the bar's page, a click on its bar: the puppeteer window is narrower
+  // than the design's, so a page holds fewer systems
+  let showBar = number => {
+    for (let turns = 0; !bar(number) && !button("Next page ›").disabled && turns < 10; turns++) {
+      click(button("Next page ›"))
+    }
+    expect(bar(number)).withContext(`bar ${number} on a page`).toBeTruthy()
+    return bar(number)
+  }
+
   describe("a bar that keeps going wrong", function() {
     it("marks nothing until the bar is clicked, then fills its trouble notes, ghosts the key struck and says why", async function() {
       await mount()
@@ -551,7 +576,7 @@ describe("the bar window behind a bar's score, mounted", function() {
       expect(marked().length).toEqual(0)
       expect(layer("ghost").length).toEqual(0)
 
-      click(bar(3))
+      click(showBar(3))
       await ready(() => popup() && popup().textContent.includes("Behind the 75%"))
 
       expect(popup().textContent).toContain("Beat 2 went wrong in all 3 of your last passes, filled in on the score.")
@@ -566,6 +591,284 @@ describe("the bar window behind a bar's score, mounted", function() {
       expect(layer("ghost").length).toEqual(1)
       expect([...layer("tag")].map(tag => tag.textContent)).toEqual(["wrong 3 of 3"])
       expect(layer("ring").length).toEqual(0)
+    })
+
+    it("follows the selection: another bar, the same bar again, Escape, the cross and a page turn clear it, and no shade does", async function() {
+      await mount()
+      await session({wrong: {1: ["D#3"]}}, {wrong: {1: ["D#3"]}}, {wrong: {1: ["D#3"]}})
+
+      click(showBar(3))
+      await ready(() => marked().length == 2)
+
+      // a bar never played has nothing to mark: its own words, and the marks of bar 3 gone
+      click(showBar(4))
+      await ready(() => popup() && popup().textContent.includes("Bar 4") && marked().length == 0)
+      expect(popup().textContent).toContain("No practice recorded for bar 4 yet.")
+      expect(layer("ghost").length + layer("tag").length).toEqual(0)
+
+      // the same bar again closes it
+      click(showBar(4))
+      expect(popup()).toBe(null)
+
+      click(showBar(3))
+      await ready(() => marked().length == 2)
+      document.body.dispatchEvent(new KeyboardEvent("keydown", {key: "Escape", bubbles: true}))
+      await ready(() => popup() == null)
+      expect(marked().length).toEqual(0)
+      expect(layer("ghost").length).toEqual(0)
+
+      click(showBar(3))
+      await ready(() => marked().length == 2)
+      click(popup().querySelector('button[aria-label="Close bar stats"]'))
+      await ready(() => popup() == null)
+      expect(marked().length).toEqual(0)
+
+      // the shades are only tints: the bar stays open, its marks as they were
+      click(showBar(3))
+      await ready(() => marked().length == 2)
+      for (let shade of ["Score difficulty", "Off", "Learnedness"]) {
+        click(button(shade))
+        expect(popup()).toBeTruthy()
+        expect(marked().length).toEqual(2)
+        expect(layer("ghost").length).toEqual(1)
+      }
+
+      // a page turn closes the bar and with it the marks
+      click(button("Next page ›"))
+      expect(popup()).toBe(null)
+      expect(marked().length).toEqual(0)
+      expect(layer("ghost").length + layer("ring").length + layer("tag").length).toEqual(0)
+      click(button("‹ Previous page"))
+      expect(marked().length).toEqual(0)
+    })
+  })
+
+  describe("a bar played steadily with one long wait", function() {
+    it("keeps the % as it was and shows the wait on the strip and the score, without touching what the bar has learned", async function() {
+      await mount({startMeasure: 5, endMeasure: 5})
+      await session({gaps: {2: 2500}})
+
+      click(showBar(5))
+      await ready(() => popup() && popup().querySelector("[data-behind]"))
+
+      expect(popup().textContent).toContain("Latest100%")
+      expect(popup().textContent).toContain("Every note right · timing")
+      expect(popup().querySelector(`.${popupStyles.chart}`)).toBeTruthy()
+
+      // the strip, a cell a beat, the long wait on beat 3 and nowhere else
+      let cells = [...popup().querySelectorAll(`.${popupStyles.cell}`)]
+      expect(cells.length).toEqual(4)
+      expect(popup().querySelector('[role="img"][aria-label^="Beat 3 started 2.0 seconds late"]')).toBeTruthy()
+      let words = [...popup().querySelectorAll(`.${popupStyles.words} > span`)].map(span => span.textContent)
+      expect(words).toEqual(["first note", "on time", "2.0 s late", "on time"])
+      expect(popup().textContent).toContain("Beat 3 paused 2.5 s before it started, marked ▾ on the score.")
+
+      // a ▾ over the column and a gilt tag; nothing is filled in or ringed, and no head is coloured
+      await ready(() => layer("pause").length == 1)
+      expect(layer("pause")[0].textContent).toEqual("▾")
+      expect([...layer("tag")].map(tag => tag.textContent)).toEqual(["2.5 s pause"])
+      expect(marked().length).toEqual(0)
+      expect(layer("ring").length).toEqual(0)
+
+      // one clean pass counts one of three, the wait costing it nothing
+      expect(popup().textContent).toContain("1 of 3 clean passes in a row")
+      expect(store.item(`${store.items()[0].pieceId}:both:5-5`).passes[0].slice(1, 3)).toEqual([4, 4])
+    })
+
+    it("keeps the dots' places and the % when a further steady pass follows, showing the wait as an earlier pass", async function() {
+      await mount({startMeasure: 5, endMeasure: 5})
+      await session({gaps: {2: 2500}}, {})
+
+      click(showBar(5))
+      await ready(() => popup() && popup().textContent.includes("Earlier pass"))
+      expect(popup().textContent).toContain("Every note right in your last 2 passes.")
+      expect(popup().querySelector('[role="img"][aria-label^="Beat 3 started 2.0 seconds late"]')).toBeTruthy()
+    })
+  })
+
+  describe("a bar with a single wrong key in three passes", function() {
+    it("rings the note, fills nothing, and says it went wrong once", async function() {
+      await mount({startMeasure: 6, endMeasure: 6})
+      await session({}, {wrong: {2: ["F#3"]}}, {})
+
+      click(showBar(6))
+      await ready(() => popup() && popup().textContent.includes("went wrong once in your last 3 passes"))
+
+      expect(popup().textContent).toContain("Beat 3 went wrong once in your last 3 passes, ringed on the score.")
+      expect(popup().textContent).toContain("Ringed rather than filled: once is a slip, not a habit.")
+      await ready(() => layer("ring").length == 2)
+      expect(marked().length).toEqual(0)
+      expect([...layer("tag")].map(tag => tag.textContent)).toEqual(["wrong once in 3"])
+    })
+  })
+
+  describe("the marks when the container changes width", function() {
+    it("puts each mark on its head again after the score is engraved again", async function() {
+      await mount({}, null, {width: 1440})
+      await session({wrong: {1: ["D#3"]}}, {wrong: {1: ["D#3"]}}, {wrong: {1: ["D#3"]}})
+      click(showBar(3))
+      await ready(() => marked().length == 2 && layer("ghost").length == 1)
+
+      let svg = container.querySelector("svg")
+      // the page's score column narrows, as a narrower window would make it
+      let column = container.querySelector('section[aria-label="The score"]')
+      let wide = column.getBoundingClientRect().width
+      column.style.maxWidth = "560px"
+      column.style.flex = "none"
+      await waitFor(() => container.querySelector("svg") !== svg, {message: "the re-engraving"})
+      await ready(() => marked().length == 2 && layer("ghost").length == 1)
+
+      // the class is on the new svg's heads
+      for (let head of marked()) { expect(container.querySelector("svg").contains(head)).toBe(true) }
+
+      // each mark within 2 px of its head: the ghost a quarter head right of the bass one
+      let headBoxes = [...marked()].map(el => el.getBoundingClientRect())
+      let bass = headBoxes.reduce((low, rect) => rect.top > low.top ? rect : low)
+      let ghost = layer("ghost")[0].getBoundingClientRect()
+      expect(Math.abs(ghost.left - (bass.right + bass.width * 0.25))).toBeLessThanOrEqual(2)
+      expect(Math.abs(ghost.top - bass.top)).toBeLessThanOrEqual(2)
+      expect(Math.abs(ghost.width - bass.width)).toBeLessThanOrEqual(2)
+
+      let tag = layer("tag")[0].getBoundingClientRect()
+      let band = bar(3).getBoundingClientRect()
+      expect(Math.abs(tag.bottom - band.bottom)).toBeLessThanOrEqual(2)
+      expect(Math.abs((tag.left + tag.right) / 2 - (bass.left + bass.right) / 2)).toBeLessThanOrEqual(3)
+    }, 30000)
+  })
+
+  describe("a bar's window in its other states", function() {
+    // a bar played before the log began, written as an old one: its item, review and passes only
+    let playedBefore = async (piece, measure, extra={}) => {
+      let id = `${piece.id}:${extra.hand || "both"}:${measure}-${measure}`
+      await store.recordAttempt({
+        item: {
+          id, pieceId: piece.id, hand: "both", startMeasure: measure, endMeasure: measure, level: "bar",
+          state: "learning", step: 1, reps: 1, lapses: 0, streak: 1, hits: 4, misses: 0, attempts: 1,
+          lastPracticed: Date.now(), recent: [[Date.now(), 4, 4, 3]], passes: [[Date.now(), 4, 4, 3]], algo: 1, createdAt: 1,
+          ...extra,
+        },
+        review: {itemId: id, at: Date.now(), pieceId: piece.id, kind: "attempt", grade: 3, was: "new", columns: 4,
+          clean: 4, misses: 0, stuck: 0, skipped: 0, hesitations: 0, mode: "wait", algo: 3},
+      })
+    }
+
+    it("says a bar played before the log began has only its score, with no mark on the score", async function() {
+      let piece = await mount()
+      await playedBefore(piece, 7)
+      click(showBar(7))
+      await ready(() => popup() && popup().textContent.includes("Beat-by-beat details start with the passes you play from now on."))
+
+      expect(popup().textContent).toContain("Earlier passes kept only their score.")
+      expect(popup().querySelector('[data-behind="before"]')).toBeTruthy()
+      expect(marked().length + layer("ring").length + layer("ghost").length).toEqual(0)
+    })
+
+    it("tells a bar graded by ear by the tags the player gave, never a mark on the score", async function() {
+      let piece = await mount()
+      await playedBefore(piece, 8)
+      let at = Date.now()
+      await store.recordBarLog([{
+        itemId: `${piece.id}:both:8-8`, at, pieceId: piece.id, hand: "both", measure: 8, mode: "self", card: [8, 8],
+        cardGrade: 2, columns: null, clean: null, grade: 2, reviewed: true, slipped: ["rhythm", "tempo"],
+      }])
+      click(showBar(8))
+      await ready(() => popup() && popup().textContent.includes("You noted"))
+
+      let chips = [...popup().querySelectorAll(`.${popupStyles.chip}`)].map(chip => chip.textContent)
+      expect(chips).toEqual(["Rhythm", "Tempo"])
+      expect(popup().textContent).toContain("Nothing is detected on an acoustic piano")
+      expect(marked().length + layer("ring").length + layer("ghost").length + layer("tag").length).toEqual(0)
+    })
+
+    it("reads the rows of the hand picked when it changes with the window open", async function() {
+      let piece = await mount()
+      await playedBefore(piece, 9)
+      await playedBefore(piece, 9, {hand: "upper"})
+      let rowOf = (hand, clean) => ({
+        itemId: `${piece.id}:${hand}:9-9`, at: Date.now() - (hand == "both" ? 2000 : 1000), pieceId: piece.id, hand,
+        measure: 9, mode: "wait", card: [9, 9], cardGrade: 2, columns: 4, clean, grade: 2, reviewed: true,
+        beats: [32, 33, 34, 35], gaps: [null, 1, 1, 1], iois: [null, 500, 500, 500], pulse: 500,
+        marks: clean == 4 ? undefined : [[1, "wrong", ["D5"], ["E5"], 1, null]],
+      })
+      await store.recordBarLog([rowOf("both", 4), {...rowOf("upper", 3)}])
+
+      click(showBar(9))
+      await ready(() => popup() && popup().textContent.includes("Every note right in your last pass."))
+
+      click(button("Right hand"))
+      await ready(() => popup() && popup().textContent.includes("Behind the 75%"))
+      expect(popup().textContent).toContain("Beat 2 went wrong in your last pass")
+      expect(popup().textContent).not.toContain("Every note right in your last pass.")
+
+      click(button("Both hands"))
+      await ready(() => popup() && popup().textContent.includes("Every note right in your last pass."))
+    })
+
+    it("marks nothing on a piece drawn as a grid, its words ending without the score", async function() {
+      let piece = await mount()
+      await store.putPiece(store.piece(piece.id), {source: null})
+      await store.recordBarLog([2000, 3000].map(at => ({
+        itemId: `${piece.id}:both:3-3`, at, pieceId: piece.id, hand: "both", measure: 3, mode: "wait", card: [3, 3], cardGrade: 2,
+        columns: 4, clean: 3, grade: 2, reviewed: true,
+        beats: [8, 9, 10, 11], gaps: [null, 1, 1, 1], iois: [null, 500, 500, 500], pulse: 500,
+        marks: [[1, "wrong", ["D3", "D5"], ["D#3"], 1, null]],
+      })))
+      await playedBefore(piece, 3)
+
+      flushSync(() => root.unmount())
+      container.remove()
+      container = document.createElement("div")
+      container.style.width = "1440px"
+      document.body.appendChild(container)
+      root = createRoot(container)
+      flushSync(() => root.render(React.createElement(MemoryRouter, {},
+        React.createElement(ScorePage, {ref: p => page = p, viewportHeight: 1240}))))
+      await waitFor(() => bar(3), {message: "the grid"})
+      expect(container.querySelector("svg")).toBe(null)
+
+      click(showBar(3))
+      await ready(() => popup() && popup().textContent.includes("Behind the 75%"))
+      expect(popup().textContent).toContain("Beat 2 went wrong in all 2 of your last passes.")
+      expect(popup().textContent).not.toContain("on the score")
+      expect(popup().textContent).not.toContain("grey head")
+      expect(marked().length + container.querySelectorAll("[data-mark]").length).toEqual(0)
+    })
+  })
+
+  describe("the ended strip's marker", function() {
+    it("is cleared by Begin and by Play on, and written only for a session that was recorded", async function() {
+      await mount()
+      expect(await store.scoreEnded()).toBe(null)
+
+      // End session with nothing played writes no session, so no marker
+      click(button("Begin"))
+      click(button("End session"))
+      await new Promise(resolve => setTimeout(resolve, 50))
+      expect(await store.scoreEnded()).toBe(null)
+      expect(container.textContent).not.toContain("Session ended")
+
+      click(button("Begin"))
+      play()
+      await page.state.notes.generator.finishing
+      click(button("End session"))
+      await waitFor(() => container.textContent.includes("Session ended"), {message: "the strip"})
+      let marker = await store.scoreEnded()
+      expect(marker).toEqual(jasmine.objectContaining({sessionId: store.recentSessions()[0].id}))
+
+      // Play on goes back to the session and forgets the marker
+      click(button("Play on"))
+      await waitFor(async () => (await store.scoreEnded()) === null, {message: "Play on to clear it"})
+        .catch(() => {})
+      expect(await store.scoreEnded()).toBe(null)
+      expect(container.textContent).not.toContain("Session ended")
+
+      // ended again, then Begin from the strip's own page clears it too
+      click(button("End session"))
+      await waitFor(() => container.textContent.includes("Session ended"), {message: "the strip again"})
+      expect(await store.scoreEnded()).not.toBe(null)
+      click(button("Begin"))
+      expect(await store.scoreEnded()).toBe(null)
+      expect(container.textContent).not.toContain("Session ended")
     })
   })
 })
