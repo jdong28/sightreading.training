@@ -172,6 +172,7 @@ export default class SongEditor extends React.Component {
     return <TextInputRow
       onChange={this.fieldUpdaters[field]}
       value={this.state[field] || ""}
+      className={styles.text_row}
       name={field}
       >{title}</TextInputRow>
   }

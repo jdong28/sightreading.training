@@ -28,6 +28,8 @@ import classNames from "classnames"
 import settingsPanelStyles from "st/components/settings_panel.module.css"
 
 import {IconRewind} from "st/components/icons"
+import {Pill} from "st/components/salon"
+import drawerStyles from "st/components/sight_reading/programme_drawer.module.css"
 
 import * as types from "prop-types"
 
@@ -66,6 +68,7 @@ class SettingsPanel extends React.Component {
           <div className={styles.input_label}>Note spacing</div>
           <div className={styles.slider_row}>
             <Slider
+              className={drawerStyles.gilt_slider}
               min={-5}
               max={10}
               onChange={this.setMinChordSpacing}
@@ -78,6 +81,7 @@ class SettingsPanel extends React.Component {
           <div className={styles.input_label}>Multiplier</div>
           <div className={styles.slider_row}>
             <Slider
+              className={drawerStyles.gilt_slider}
               min={1}
               max={4}
               onChange={this.setAutochordsRate}
@@ -97,14 +101,13 @@ class SettingsPanel extends React.Component {
         AutoChords.allGenerators.map((type, idx) => {
           let name = type.displayName
 
-          return <button
+          return <Pill
+            variant="choice"
+            selected={idx == this.props.autoChordType}
             onClick={(e) => trigger(this, "setAutochords", idx)}
-            className={classNames(settingsPanelStyles.toggle_option, {
-              [settingsPanelStyles.active]: idx == this.props.autoChordType
-            })}
             key={name}>
               {name}
-            </button>
+            </Pill>
         })
       }
     </div>
@@ -133,7 +136,7 @@ export class PlayAlongPage extends React.Component {
       metronome: props.midiOutput ? props.midiOutput.getMetronome() : null
     }
 
-    const session = getSession()
+    const session = getSession() || {}
     this.stats = new NoteStats(session.currentUser)
 
     this.resetHitNotes()
@@ -721,9 +724,9 @@ export class PlayAlongPage extends React.Component {
 
       {
         this.state.songTimer
-        ? <button className={styles.play_pause} type="button" onClick={e => this.togglePlay()}>
+        ? <Pill variant="primary" className={styles.play_pause} onClick={e => this.togglePlay()}>
             {this.state.songTimer.running ? "Pause" : "Play"}
-          </button>
+          </Pill>
         : null
       }
 
@@ -799,6 +802,7 @@ export class PlayAlongPage extends React.Component {
       <span className={classNames(sliderStyles.slider_input, styles.transport_slider)}>
         <span className={sliderStyles.slider_label} title="Beats per minute (how fast the songs plays)">BPM</span>
         <Slider
+          className={drawerStyles.gilt_slider}
           min={10}
           max={300}
           onChange={this.getSetter("bpm")}
@@ -809,6 +813,7 @@ export class PlayAlongPage extends React.Component {
       <span className={classNames(sliderStyles.slider_input, styles.transport_slider)}>
         <span className={sliderStyles.slider_label} title="Pixels per beat (how spaced out the notes are)">PPB</span>
         <Slider
+          className={drawerStyles.gilt_slider}
           min={50}
           max={300}
           onChange={this.getSetter("pixelsPerBeat")}

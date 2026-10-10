@@ -21,13 +21,26 @@
         }
 
         .nav_header {
-            font-weight: bold;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: .2em;
             text-transform: uppercase;
-            font-size: 14px;
+            color: var(--salon-ink-muted);
+        }
+
+        a {
+            font-size: 13px;
+            text-decoration: none;
+            color: var(--salon-ink-soft);
+
+            &:hover {
+                color: var(--salon-ink);
+            }
         }
 
         a.active {
-            font-weight: bold;
+            color: var(--salon-oxblood);
+            font-weight: 700;
         }
 
         ul {
@@ -50,34 +63,56 @@
 
     p {
         > code {
-            background: rgba(0, 0, 0, 0.05);
+            background: var(--salon-paper-warm);
         }
     }
 
     pre {
         padding: 10px;
-        border-radius: 4px;
-        background: rgba(0, 0, 0, 0.05);
-        box-shadow: 0 0 0 1px inset rgba(0, 0, 0, 0.1);
+        border-radius: 0;
+        background: var(--salon-paper-warm);
+        border: var(--salon-hairline);
+        overflow-x: auto;
     }
 }
 
+/* the engraved plate holding a guide page, in the 600px column the old white
+   panel had */
 .page_container {
+    width: 600px;
+    max-width: 100%;
     margin: 0;
     align-self: flex-start;
-    padding-top: 30px;
-    padding-bottom: 30px;
+    padding: 40px;
 
+    @media (max-width: 720px) {
+        width: auto;
+        margin: 12px;
+        padding: 28px 20px;
+    }
+
+    p, ul {
+        font-size: 16px;
+        line-height: 1.5;
+    }
+}
+
+.contents {
     > h1, h2, h3, h4 {
         margin-bottom: 0.5em;
         margin-top: 1em;
+        font-family: var(--font-display);
+        font-weight: 400;
+        color: var(--salon-ink);
     }
 
-    > h2 { font-size: 24px; }
+    > h2 { font-size: 26px; }
     > h1 {
-        font-size: 30px;
-        font-weight: 900;
+        font-size: 34px;
+        letter-spacing: -.01em;
     }
+
+    > h3 { font-size: 20px; }
 
     > :first-child {
         margin-top: 0;
@@ -86,4 +121,11 @@
     p {
         margin-top: 0.5em;
     }
+}
+
+.edit_link {
+    margin-top: 30px;
+    padding-top: 16px;
+    border-top: var(--salon-hairline);
+    font-size: 13px;
 }

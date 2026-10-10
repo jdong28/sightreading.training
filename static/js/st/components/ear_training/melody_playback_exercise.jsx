@@ -16,10 +16,11 @@ import {RandomNotes} from "st/generators"
 import {STAVES} from "st/data"
 
 import Keyboard from "st/components/keyboard"
+import {Plate, Pill} from "st/components/salon"
 
 import {setTitle} from "st/globals"
 
-import pageContainerStyles from "../page_container.module.css"
+import drawerStyles from "st/components/sight_reading/programme_drawer.module.css"
 import parentStyles from "../pages/ear_training_page.module.css"
 import styles from "./melody_playback_exercise.module.css"
 import sharedStyles from "st/components/shared.module.css"
@@ -212,7 +213,7 @@ export default class MelodyPlaybackExercise extends React.Component {
     ]
 
 
-    let page = <div className={classNames(pageContainerStyles.page_container, styles.page_container)}>
+    let page = <Plate className={parentStyles.exercise_plate}>
       <details className={styles.instructions}>
         <summary>How does this work?</summary>
         <p>Click <em>New melody</em> to listen to a randomly generated melody.
@@ -223,10 +224,10 @@ export default class MelodyPlaybackExercise extends React.Component {
       </details>
       <div className={styles.stat_controls}>
         {repeatButton}
-        <button disabled={locked} onClick={(e) => {
+        <Pill variant="primary" disabled={locked} onClick={(e) => {
           e.preventDefault()
           this.pushMelody()
-        }}>New melody</button>
+        }}>New melody</Pill>
         {firstToggle}
 
         <strong>{this.state.statusMessage}</strong>
@@ -243,6 +244,7 @@ export default class MelodyPlaybackExercise extends React.Component {
         <legend>Notes per melody</legend>
         <div className={parentStyles.slider_group}>
           <Slider
+            className={drawerStyles.gilt_slider}
             min={2}
             max={8}
             onChange={this.setNotesPerMelody}
@@ -268,6 +270,7 @@ export default class MelodyPlaybackExercise extends React.Component {
         <legend>Notes per column</legend>
         <div className={parentStyles.slider_group}>
           <Slider
+            className={drawerStyles.gilt_slider}
             min={1}
             max={4}
             onChange={(value) => {
@@ -281,17 +284,16 @@ export default class MelodyPlaybackExercise extends React.Component {
       <fieldset className={parentStyles.range_picker}>
         <legend>Range</legend>
         {ranges.map(r => {
-          return <button
-            className={classNames({
-              [parentStyles.active]: r.range.join(",") == this.state.melodyRange.join(",")
-            })}
+          return <Pill
+            variant="choice"
+            selected={r.range.join(",") == this.state.melodyRange.join(",")}
             onClick={e => {
               e.preventDefault();
               this.setState({
                 melodyRange: r.range
               })
             }}
-            key={r.name}>{r.name}</button>
+            key={r.name}>{r.name}</Pill>
         })}
         <span className={parentStyles.current_range}>
           {this.state.melodyRange.join(" - ")}
@@ -320,7 +322,7 @@ export default class MelodyPlaybackExercise extends React.Component {
         <legend>Scale</legend>
         {this.renderScalePicker()}
       </fieldset>
-    </div>
+    </Plate>
 
     return <div className={styles.melody_playback_exercise}>
       <div className={parentStyles.exercise_header}>

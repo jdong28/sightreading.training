@@ -25,18 +25,45 @@
         margin-bottom: 10px;
 
         .import_label {
-            font-weight: bold;
+            font-family: var(--font-display);
+            font-size: 16px;
             margin-bottom: 4px;
         }
 
+        input[type=file]::file-selector-button {
+            margin-right: 10px;
+            padding: 6px 14px;
+            font-family: var(--font-ui);
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: .14em;
+            color: var(--salon-ghost-ink);
+            background: var(--salon-paper);
+            border: 1px solid var(--salon-rule);
+            border-radius: 999px;
+            cursor: pointer;
+        }
+
         .import_error {
-            color: #c0392b;
+            color: var(--salon-oxblood);
             margin-top: 4px;
         }
 
         .import_notice {
-            color: #7f6000;
+            color: var(--salon-gilt-deep);
             margin-top: 4px;
+        }
+    }
+
+    .text_row {
+        > label > div {
+            font-size: 11px;
+            letter-spacing: .2em;
+            color: var(--salon-ink-muted);
+        }
+
+        input[type='text'] {
+            border-color: var(--salon-rule);
         }
     }
 }

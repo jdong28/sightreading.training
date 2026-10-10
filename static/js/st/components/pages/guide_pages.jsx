@@ -6,8 +6,9 @@ import * as types from "prop-types"
 
 import {toggleActive} from "st/components/util"
 
+import {Plate} from "st/components/salon"
+
 import styles from "./guide_pages.module.css"
-import pageContainerStyles from "../page_container.module.css"
 
 export class GuideContents extends React.PureComponent {
   static propTypes = {
@@ -70,19 +71,19 @@ export class GuideContents extends React.PureComponent {
 
   render() {
     if (this.state.contents) {
-      return <div>
-        <section className={classNames(pageContainerStyles.page_container, styles.page_container)} dangerouslySetInnerHTML={{
+      return <Plate className={styles.page_container}>
+        <section className={styles.contents} dangerouslySetInnerHTML={{
           __html: this.state.contents
         }} />
-        <section className={classNames(pageContainerStyles.page_container, styles.page_container)}>
+        <section className={styles.edit_link}>
           <a target="_blank"
             href={`https://github.com/leafo/sightreading.training/edit/master/static/guides/${this.props.pageSource}.md`}>
               Edit this page on GitHub
           </a>
         </section>
-      </div>
+      </Plate>
     } else {
-      return <div className={classNames(pageContainerStyles.page_container, styles.page_container, "loading_message")}>Loading...</div>
+      return <Plate className={classNames(styles.page_container, "loading_message")}>Loading...</Plate>
     }
   }
 }
@@ -129,10 +130,12 @@ export function guideRoutes() {
       <Route index element={<Navigate replace to="/about" />} />
 
       <Route path="*" element={
-        <div className={classNames(pageContainerStyles.page_container, styles.page_container)}>
-          <h2>Not found</h2>
-          <p>Failed to find documentation page</p>
-        </div>
+        <Plate className={styles.page_container}>
+          <section className={styles.contents}>
+            <h2>Not found</h2>
+            <p>Failed to find documentation page</p>
+          </section>
+        </Plate>
       }/>
     </Route>
   </>
