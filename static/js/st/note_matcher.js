@@ -112,6 +112,9 @@
 // settled column that ends one carries nothing over, so the next card's
 // first column is timed from the same moment as the pass it opens (see
 // AttemptPass).
+// The hit and every miss also say what the bar log (st/srs/attempt.js
+// barLogRows) keeps of the column: wrongKeys, the keys struck at it that it
+// doesn't ask for, and on the hit its onset, when its first own key went down.
 
 // W_early: how long a key of the next column may wait for the column under
 // way to complete before it counts as a slip on it (ruling D2(a): about
@@ -863,7 +866,7 @@ export default class NoteMatcher {
       let blamed = this.blamedForHead()
       let counted = this.missedNotes == notes ? "slip" : "miss"
       this.missedNotes = notes
-      this.emit({type: "miss", missed: column, blamed, counted, notes})
+      this.emit({type: "miss", missed: column, blamed, counted, notes, wrongKeys: Object.keys(this.strays)})
     }
 
     let early = this.early
@@ -1087,12 +1090,19 @@ export default class NoteMatcher {
   // hit adds settled, whether held credit completed it with none of its keys
   // struck at it (see settleHeld, settleCardEnd), which gives it no time of
   // its own
+  // It also reports the bar log's two facts: onset, the time of the first of
+  // the column's own keys down (struck early for it or at it, on the events'
+  // clock: null when it was settled by held keys alone), and wrongKeys, every
+  // wrong key struck at the column so far, since a second one in the same try
+  // emits a miss with counted null, which the page never passes on
   measured(time, held) {
     return {
       latency: this.headLatency(),
       early: this.credited.length,
       heldCredit: held.length,
       late: this.headOnLine(time),
+      onset: this.firstAt ?? this.firstKeyAt,
+      wrongKeys: Object.keys(this.strays),
     }
   }
 
@@ -1136,7 +1146,7 @@ export default class NoteMatcher {
     // one slip a try, from a key down to every key struck at the column up
     this.slipped = true
 
-    return {type: "miss", missed, blamed, counted, notes: this.notes}
+    return {type: "miss", missed, blamed, counted, notes: this.notes, wrongKeys: Object.keys(this.strays)}
   }
 
   result() {

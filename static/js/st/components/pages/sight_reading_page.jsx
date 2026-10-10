@@ -1452,12 +1452,12 @@ export default class SightReadingPage extends React.Component {
   countMiss(event, update) {
     if (event.counted == "miss") {
       gaEvent("sight_reading", "note", "miss");
-      this.state.stats.missNotes(event.missed, event.blamed);
+      this.state.stats.missNotes(event.missed, event.blamed, event.wrongKeys);
       if (event.missed.cardIndex == null) {
         this.state.stats.countClefs(staffClefs(this.state.currentStaff?.name, event.blamed || event.missed), "miss")
       }
     } else if (event.counted == "slip") {
-      this.state.stats.slipNotes(event.missed, event.blamed)
+      this.state.stats.slipNotes(event.missed, event.blamed, event.wrongKeys)
     }
 
     this.markMissedCard(this.cardHead(event.notes).index)

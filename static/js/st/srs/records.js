@@ -503,6 +503,127 @@ export function reviewForPiece(review, pieceId) {
   }
 }
 
+// what a bar log mark says about a column of the bar, see BarLogRecord#marks
+export const MARK_KINDS = ["wrong", "skipped", "scrolled", "hesitated"]
+
+// the marks that cost a column its place in clean: hesitating doesn't
+const COSTLY_MARKS = ["wrong", "skipped", "scrolled"]
+
+/**
+ * One bar of one finished pass: what happened to its notes. The append-only
+ * bar log (the barLog store, written with LocalStore#recordBarLog) has a row
+ * for each bar of each pass that was played through in one go, whether the
+ * bar's review was written or the pass demoted to practice, and nothing
+ * else of the stored records is read to make it. Keyed [itemId, at], so a
+ * library merge is a union. A bar's % is still item.passes' (right notes
+ * only); the row says which notes, which keys instead, and when.
+ * @typedef {Object} BarLogRecord
+ * @property {string} itemId the bar's single-measure item, see itemId
+ * @property {number} at when the pass was written, as its reviews' and
+ * passes entries' at
+ * @property {string} pieceId
+ * @property {string} hand one of HANDS, the item's
+ * @property {number} measure the bar's printed number
+ * @property {string} [sessionId] the NoteStats id, as on reviews
+ * @property {string} mode "wait" or "scroll" for a detected pass, "self"
+ * @property {boolean} [readThrough] a first reading of the bar, never
+ * scheduled (tonight's study)
+ * @property {number[]} card [startMeasure, endMeasure] of the card played
+ * @property {number} cardGrade 1-4, the whole pass's (the session log's)
+ * @property {number|null} columns the bar's columns, null when self-graded
+ * @property {number|null} clean those played right, null when self-graded
+ * @property {number} grade 1-4: a detected bar's rough grade as the session
+ * log reads it (barPasses), not the review's, whose hesitations lead by
+ * position; the player's own for a self-graded pass
+ * @property {boolean} [reviewed] a per-bar review was written, absent when
+ * the pass was demoted to practice
+ * @property {(number|null)[]} [beats] detected: each column's beat on the
+ * song's clock, null without the score's rhythm
+ * @property {(number|null)[]} [gaps] notated beats since the column struck
+ * before it in the pass, null for the first column struck, one not struck,
+ * or without rhythm
+ * @property {(number|null)[]} [iois] ms from that column's first key down to
+ * this one's (the events' clock), null as gaps are, negative when the next
+ * column's key came first
+ * @property {number|null} [pulse] the pass's own ms a beat (or a column
+ * without rhythm), see passTiming; null with too little struck
+ * @property {Array[]} [marks] detected, a column each at most once for a
+ * costly kind: [index, kind, notes, keys, tries, ms]. index is the column's
+ * place in the bar; kind one of MARK_KINDS; notes the notes the mark is put
+ * down to; keys the wrong keys struck instead; tries the slips on it; ms
+ * the latency of a hesitation, else null. wrong, skipped and scrolled cost
+ * the % (so clean == columns - the distinct columns they mark); hesitated
+ * doesn't, and is never in a scroll mode row
+ * @property {string[]} [slipped] a self-graded row only: the "What slipped?"
+ * tags, as on the review
+ */
+
+const isFiniteNumber = n => typeof n == "number" && Number.isFinite(n)
+const isNote = note => typeof note == "string" && note != ""
+const nullable = test => value => value === null || test(value)
+
+const validMark = (mark, columns) => Array.isArray(mark) && mark.length == 6 &&
+  isCount(mark[0]) && mark[0] < columns && MARK_KINDS.includes(mark[1]) &&
+  Array.isArray(mark[2]) && mark[2].every(isNote) && Array.isArray(mark[3]) && mark[3].every(isNote) &&
+  isCount(mark[4]) && nullable(isCount)(mark[5])
+
+/**
+ * @param {*} row
+ * @returns {boolean} whether row has the shape of a bar log row
+ */
+export function validBarLog(row) {
+  if (!row || typeof row != "object" ||
+      typeof row.pieceId != "string" || row.pieceId == "" || !isTime(row.at) ||
+      !HANDS.includes(row.hand) || !Number.isInteger(row.measure) ||
+      row.itemId !== `${row.pieceId}:${row.hand}:${row.measure}-${row.measure}` ||
+      !optional(row.sessionId, id => typeof id == "string") ||
+      !["wait", "scroll", "self"].includes(row.mode) ||
+      !optional(row.readThrough, value => value === true) ||
+      !optional(row.reviewed, value => value === true) ||
+      !isBarRange(row.card) || !oneOf([1, 2, 3, 4])(row.cardGrade) ||
+      !oneOf([1, 2, 3, 4])(row.grade)) {
+    return false
+  }
+
+  if (row.mode == "self") {
+    return row.columns === null && row.clean === null &&
+      optional(row.slipped, slipped => Array.isArray(slipped) && slipped.every(oneOf(SELF_ASPECTS))) &&
+      row.beats === undefined && row.gaps === undefined && row.iois === undefined &&
+      row.pulse === undefined && row.marks === undefined
+  }
+
+  let {columns} = row
+  let perColumn = (list, test) => Array.isArray(list) && list.length == columns && list.every(nullable(test))
+  if (!isCount(columns) || !isCount(row.clean) || row.clean > columns || row.slipped !== undefined ||
+      !perColumn(row.beats, isFiniteNumber) || !perColumn(row.gaps, isFiniteNumber) ||
+      !perColumn(row.iois, isFiniteNumber) || !nullable(isPositive)(row.pulse)) {
+    return false
+  }
+
+  let marks = row.marks ?? []
+  if (!Array.isArray(marks) || !marks.every(mark => validMark(mark, columns)) ||
+      marks.some(mark => mark[1] == "hesitated" && (row.mode != "wait" || mark[3].length))) {
+    return false
+  }
+
+  let costly = new Set(marks.filter(mark => COSTLY_MARKS.includes(mark[1])).map(mark => mark[0]))
+  return row.clean == columns - costly.size
+}
+
+/**
+ * @param {BarLogRecord} row
+ * @param {string} pieceId
+ * @returns {BarLogRecord} the row of a piece under another piece id, as a
+ * library import remaps a piece matched to a stored one
+ */
+export function barLogForPiece(row, pieceId) {
+  return {
+    ...row,
+    pieceId,
+    itemId: `${pieceId}${row.itemId.slice(row.pieceId.length)}`,
+  }
+}
+
 /**
  * The section stats of DB_VERSION 3, as a view over items: one row per
  * measure range with the totals of every hand setting added up, in the order
