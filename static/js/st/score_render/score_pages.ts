@@ -8,10 +8,36 @@
 
 import type {CardMeasure} from "./types"
 
-// the width the artboards' pages were engraved at: at 1440 css px wide it
-// reproduces the design (5 bars a system, scaled up to the page box); a
-// phone-width box engraves at its own width instead, so it stays readable
+// the width the artboards' pages were engraved at, at 100% (SCORE_SCALE): at
+// 1440 css px wide it reproduces the design (5 bars a system, scaled up to
+// the page box); a phone-width box engraves at its own width instead, so it
+// stays readable
 export const ENGRAVE_MAX_WIDTH = 644
+
+// the score scale the reader picks, in percent: the score is engraved
+// 100 / scale times as wide, so a smaller scale fits more bars to a system
+// and a page, a larger one fewer, each page shown at the column's width
+export const SCORE_SCALE = {min: 60, max: 150, step: 10, initial: 100}
+
+/**
+ * A scale on the steps and in the range: the nearest step, then clamped;
+ * anything that isn't a finite number reads as 100.
+ */
+export function clampScale(value: unknown): number {
+  if (typeof value != "number" || !Number.isFinite(value)) { return SCORE_SCALE.initial }
+  const stepped = Math.round(value / SCORE_SCALE.step) * SCORE_SCALE.step
+  return Math.min(SCORE_SCALE.max, Math.max(SCORE_SCALE.min, stepped))
+}
+
+/**
+ * The width to engrave the score at: the column's width (at most
+ * ENGRAVE_MAX_WIDTH) widened by 100 / scale.
+ * @param width the score column's width (CSS px)
+ * @param scale the score scale in percent, see clampScale
+ */
+export function engraveWidthFor(width: number, scale: unknown): number {
+  return Math.floor(Math.min(width, ENGRAVE_MAX_WIDTH) * 100 / clampScale(scale))
+}
 
 // OSMD's staff space in CSS px at ZOOM 0.8 (./osmd), the padding a system's
 // band keeps above (3 spaces) and below (2 spaces) its measures' own boxes

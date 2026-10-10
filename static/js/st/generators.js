@@ -4,6 +4,7 @@ import MersenneTwister from "mersennetwister"
 
 import {shuffled} from "st/util"
 import {COLUMN_JOIN_KEYS} from "st/measure_cards"
+import {clampScale} from "st/score_render/score_pages"
 
 // takes generator object from data
 export function generatorDefaultSettings(generator, staff) {
@@ -168,6 +169,12 @@ export function currentScrollSpeed(storageKey=DRILL_STORAGE_KEY) {
 // missed, rather than waited for. Off by default
 export function currentScrollTempo(storageKey=DRILL_STORAGE_KEY) {
   return loadGeneratorSettings(storageKey).tempo === true
+}
+
+// the stored score scale (st/score_render/score_pages SCORE_SCALE), the score
+// view's scale control, on its steps and in its range; 100 by default
+export function currentScoreScale(storageKey=SCORE_DRILL_STORAGE_KEY) {
+  return clampScale(loadGeneratorSettings(storageKey).scale)
 }
 
 // strip any values that don't make sense

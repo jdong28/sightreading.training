@@ -780,6 +780,48 @@ describe("the bar window behind a bar's score, mounted", function() {
     }, 30000)
   })
 
+  describe("the marks when the score scale changes", function() {
+    // the slider as a drag sets it: the native value setter and an input event
+    let setScale = percent => {
+      let input = container.querySelector('input[type="range"][aria-label="Score scale, percent"]')
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(input, String(percent))
+      flushSync(() => input.dispatchEvent(new Event("input", {bubbles: true})))
+    }
+
+    it("puts each mark on its head again after the score is engraved again at 60% and at 150%", async function() {
+      await mount({}, null, {width: 1440})
+      await session({wrong: {1: ["D#3"]}}, {wrong: {1: ["D#3"]}}, {wrong: {1: ["D#3"]}})
+      click(showBar(3))
+      await ready(() => marked().length == 2 && layer("ghost").length == 1)
+
+      for (let scale of [60, 150, 100]) {
+        let svg = container.querySelector("svg")
+        setScale(scale)
+        await waitFor(() => container.querySelector("svg") !== svg, {message: `the score engraved at ${scale}%`})
+        // the bar's window stays open on the page holding the bar, with its marks
+        await ready(() => marked().length == 2 && layer("ghost").length == 1 && popup())
+        expect(bar(3)).withContext(`${scale}%: bar 3 on the page`).toBeTruthy()
+
+        // the class is on the new svg's heads
+        for (let head of marked()) { expect(container.querySelector("svg").contains(head)).toBe(true) }
+
+        // each mark within 2 px of its head, the tag in the bar's band
+        let headBoxes = [...marked()].map(el => el.getBoundingClientRect())
+        let bass = headBoxes.reduce((low, rect) => rect.top > low.top ? rect : low)
+        let ghost = layer("ghost")[0].getBoundingClientRect()
+        expect(Math.abs(ghost.left - (bass.right + bass.width * 0.25))).withContext(`${scale}%: ghost left`).toBeLessThanOrEqual(2)
+        expect(Math.abs(ghost.top - bass.top)).withContext(`${scale}%: ghost top`).toBeLessThanOrEqual(2)
+        expect(Math.abs(ghost.width - bass.width)).withContext(`${scale}%: ghost width`).toBeLessThanOrEqual(2)
+
+        let tag = layer("tag")[0].getBoundingClientRect()
+        let band = bar(3).getBoundingClientRect()
+        expect(Math.abs(tag.bottom - band.bottom)).withContext(`${scale}%: tag bottom`).toBeLessThanOrEqual(2)
+        expect(Math.abs((tag.left + tag.right) / 2 - (bass.left + bass.right) / 2)).withContext(`${scale}%: tag centre`)
+          .toBeLessThanOrEqual(3)
+      }
+    }, 30000)
+  })
+
   describe("a bar's window in its other states", function() {
     // a bar played before the log began, written as an old one: its item, review and passes only
     let playedBefore = async (piece, measure, extra={}) => {

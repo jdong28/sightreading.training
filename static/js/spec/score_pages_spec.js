@@ -1,6 +1,6 @@
 import {
   systemsOf, systemBands, scorePages, barOverlays, pageOfBar,
-  SPACE, ENGRAVE_MAX_WIDTH, PAGE_CHROME_PX,
+  SPACE, ENGRAVE_MAX_WIDTH, PAGE_CHROME_PX, SCORE_SCALE, clampScale, engraveWidthFor,
 } from "st/score_render/score_pages"
 import {loadScoreEngines} from "st/score_render/load"
 
@@ -11,6 +11,38 @@ const measure = (index, number, b) => ({index, number, box: b})
 const systemsAt = positions => positions.map(([y, h], idx) => measure(idx, idx + 1, box(0, y, 50, h)))
 
 describe("score pages", function() {
+  describe("the score scale", function() {
+    it("keeps its range and steps as constants", function() {
+      expect(SCORE_SCALE).toEqual({min: 60, max: 150, step: 10, initial: 100})
+    })
+
+    it("engraves 100% at the column's width up to ENGRAVE_MAX_WIDTH, and wider or narrower as the scale goes down or up", function() {
+      expect(engraveWidthFor(900, 100)).toEqual(644)
+      expect(engraveWidthFor(900, 60)).toEqual(1073)
+      expect(engraveWidthFor(900, 150)).toEqual(429)
+      expect(engraveWidthFor(330, 100)).toEqual(330)
+      expect(engraveWidthFor(330, 150)).toEqual(220)
+      expect(engraveWidthFor(900, 80)).toEqual(805)
+    })
+
+    it("reads a width as a whole number of pixels and a scale off the steps as the nearest", function() {
+      expect(engraveWidthFor(330.7, 100)).toEqual(330)
+      expect(engraveWidthFor(900, 104)).toEqual(644)
+      expect(engraveWidthFor(900, "big")).toEqual(644)
+    })
+
+    it("rounds a scale to the nearest step, clamps it to the range and reads anything else as 100", function() {
+      expect(clampScale(55)).toEqual(60)
+      expect(clampScale(155)).toEqual(150)
+      expect(clampScale(104)).toEqual(100)
+      expect(clampScale(105)).toEqual(110)
+      expect(clampScale(80)).toEqual(80)
+      for (let value of ["big", NaN, undefined, null, Infinity, {}]) {
+        expect(clampScale(value)).withContext(String(value)).toEqual(100)
+      }
+    })
+  })
+
   describe("systemsOf", function() {
     it("groups measures into systems by the y jump between them", function() {
       let measures = [

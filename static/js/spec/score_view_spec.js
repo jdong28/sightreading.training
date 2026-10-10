@@ -9,6 +9,7 @@ import {ReviewPane} from "st/components/sight_reading/review_pane"
 import {importMusicXMLPiece, importFlagsFile, exportFlagsFile, songToJSON, decideFlags} from "st/sheet_music_deck"
 import {parseMusicXML} from "st/musicxml"
 import {setAppStore} from "st/storage"
+import {loadScoreEngines} from "st/score_render/load"
 import {SHEET_MUSIC_STORAGE_KEY, BOTH_HANDS, FREE_PRACTICE, PROGRAMME_PRACTICE, WHOLE_SECTION} from "st/data"
 import {SCORE_DRILL_STORAGE_KEY} from "st/generators"
 import {SCORE_VIEW_NO_SOURCE, SCORE_VIEW_FAILED} from "st/components/sight_reading/score_view"
@@ -527,6 +528,506 @@ describe("the score view at rest (st/components/sight_reading/score_view)", func
       flushSync(() => {})
 
       expect(el.scrollWidth).toBeLessThanOrEqual(el.clientWidth + 1)
+    })
+
+    // The score scale (st/score_render/score_pages SCORE_SCALE): the score is
+    // engraved again at a width of 100 / scale times the column's, so bars to
+    // a system and page, the page count and every overlay follow it. The
+    // puppeteer window paginates against 600 px (SightReadingPage never
+    // hands ScoreView a viewportHeight), so these test how pages relate to
+    // one another, never an exact split
+    describe("the scale control", function() {
+      let widths
+      // the bar pop-up's own margin above and below (bar_popup.module.css)
+      const POPUP_MARGIN = 6
+
+      // the real engines, their renderCard recording the width it is asked for
+      let spyEngines = async () => {
+        let bundle = await loadScoreEngines()
+        return {
+          ...bundle,
+          ENGINES: {
+            ...bundle.ENGINES,
+            osmd: {...bundle.ENGINES.osmd, renderCard: async opts => {
+              widths.push(opts.width)
+              return bundle.ENGINES.osmd.renderCard(opts)
+            }},
+          },
+        }
+      }
+
+      let mountScale = async ({settings={}, xml=null, width=1440, stored=null, props={}}={}) => {
+        widths = []
+        let musicXML = xml || await (await fetch("/tools/fingerings/tests/fixture/score.musicxml")).text()
+        let {piece} = await importMusicXMLPiece("fixture.musicxml", musicXML, store)
+        window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+          piece: piece.id, hand: BOTH_HANDS, measuresPerCard: WHOLE_SECTION,
+          practice: FREE_PRACTICE, startMeasure: 1, endMeasure: 16, ...settings,
+        }))
+        if (stored) { window.localStorage.setItem(SCORE_DRILL_STORAGE_KEY, JSON.stringify(stored)) }
+        await drawScale({width, props})
+        return piece
+      }
+
+      // the page drawn afresh, as a visit or End session does, over what the
+      // store and the settings hold
+      let drawScale = async ({width=1440, props={}}={}) => {
+        container = document.createElement("div")
+        container.style.width = `${width}px`
+        document.body.appendChild(container)
+        root = createRoot(container)
+        flushSync(() => {
+          root.render(React.createElement(MemoryRouter, {},
+            React.createElement(ScorePage, {
+              ref: p => page = p, viewportHeight: 1240, loadEngines: spyEngines, ...props,
+            })))
+        })
+        flushSync(() => {})
+        await waitFor(() => container.querySelectorAll('button[aria-label^="Bar "]').length > 0,
+          {message: "the fixture's bars to draw"})
+        await quiet()
+        return container
+      }
+
+      let quiet = () => new Promise(resolve => setTimeout(resolve, 80))
+
+      let group = () => container.querySelector('[role="group"][aria-label="Score scale"]')
+      let slider = () => group().querySelector('input[type="range"]')
+      let smaller = () => buttonLabelled(group(), "Smaller score")
+      let larger = () => buttonLabelled(group(), "Larger score")
+      let reset = () => buttonNamed(group(), "Reset")
+      let value = () => group().querySelector(`.${viewStyles.scale_value}`).textContent
+      let barButtons = () => [...container.querySelectorAll('button[aria-label^="Bar "]')]
+      let barNumbers = () => barButtons().map(b => +b.getAttribute("aria-label").slice(4))
+      let bar = number => container.querySelector(`button[aria-label="Bar ${number}"]`)
+      let next = () => buttonNamed(container, "Next page ›")
+      let previous = () => buttonNamed(container, "‹ Previous page")
+
+      // what the header and pager say, and the bars on the page shown
+      let pageNow = () => {
+        let label = container.querySelector(`.${viewStyles.page_label}`).textContent
+        let found = /^Page (\d+) of (\d+) · bars? (\d+)(?:–(\d+))?$/.exec(label)
+        expect(found).withContext(`the page label "${label}"`).toBeTruthy()
+        let pager = container.querySelector(`.${viewStyles.pager_label}`).textContent
+        let numbers = barNumbers()
+        return {
+          page: +found[1], pages: +found[2], first: +found[3], last: +(found[4] || found[3]), pager, numbers,
+        }
+      }
+
+      // sets the slider as a drag does: the native value setter and an input event
+      let setSlider = percent => {
+        let input = slider()
+        let set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set
+        set.call(input, String(percent))
+        flushSync(() => input.dispatchEvent(new Event("input", {bubbles: true})))
+      }
+
+      // acts, then waits for the score to be engraved again and paginated
+      let engraved = async act => {
+        let sheet = container.querySelector("[data-score-sheet]")
+        let svg = sheet.querySelector("svg")
+        act()
+        await waitFor(() => {
+          let now = container.querySelector("[data-score-sheet] svg")
+          return now && now !== svg && container.querySelector("[data-score-sheet]").getAttribute("aria-busy") == "false"
+        }, {message: "the score to be engraved again"})
+        await quiet()
+      }
+
+      // pages on until the bar is shown
+      let showBar = number => {
+        while (!previous().disabled) { click(previous()) }
+        for (let turns = 0; !bar(number) && !next().disabled && turns < 40; turns++) { click(next()) }
+        expect(bar(number)).withContext(`bar ${number} on a page`).toBeTruthy()
+        return bar(number)
+      }
+
+      let near = (actual, expected, px, what) => {
+        expect(Math.abs(actual - expected)).withContext(`${what}: ${actual} against ${expected}`).toBeLessThanOrEqual(px)
+      }
+
+      it("sits in the toolbar after the page label and before Shade, at 100%, with Reset off", async function() {
+        await mountScale()
+
+        let toolbar = container.querySelector(`.${viewStyles.toolbar}`)
+        let children = [...toolbar.children]
+        let label = children.find(el => el.classList.contains(viewStyles.page_label))
+        let shade = children.find(el => el.getAttribute("aria-label") == "Shade bars by")
+        expect(children.indexOf(group())).toEqual(children.indexOf(label) + 1)
+        expect(children.indexOf(shade)).toEqual(children.indexOf(group()) + 1)
+
+        expect(group().textContent).toContain("Scale")
+        expect(value()).toEqual("100%")
+        expect(slider().value).toEqual("100")
+        expect([slider().min, slider().max, slider().step]).toEqual(["60", "150", "10"])
+        expect(slider().getAttribute("aria-label")).toEqual("Score scale, percent")
+        expect(reset().disabled).toBe(true)
+        expect(smaller().disabled).toBe(false)
+        expect(larger().disabled).toBe(false)
+        expect(widths[widths.length - 1]).toEqual(644)
+      })
+
+      it("fits more bars on fewer pages at 60%, the header and the first bar and last bar shown agreeing", async function() {
+        await mountScale()
+        let before = pageNow()
+
+        await engraved(() => { for (let i = 0; i < 4; i++) { click(smaller()) } })
+        expect(value()).toEqual("60%")
+        expect(smaller().disabled).toBe(true)
+        expect(slider().value).toEqual("60")
+        expect(reset().disabled).toBe(false)
+        expect(widths[widths.length - 1]).toEqual(1073)
+
+        let now = pageNow()
+        expect(now.pages).toBeLessThanOrEqual(before.pages)
+        expect(now.numbers.length).toBeGreaterThanOrEqual(before.numbers.length)
+        expect(now.page).toEqual(1)
+        expect([now.first, now.last]).toEqual([now.numbers[0], now.numbers[now.numbers.length - 1]])
+        expect(now.pager).toEqual(`Page 1 of ${now.pages}`)
+      })
+
+      it("fits fewer bars on more pages up to 150%, to a last page holding bar 16", async function() {
+        await mountScale()
+        let at100 = pageNow()
+
+        await engraved(() => { for (let i = 0; i < 5; i++) { click(larger()) } })
+        expect(value()).toEqual("150%")
+        expect(larger().disabled).toBe(true)
+        expect(widths[widths.length - 1]).toEqual(429)
+
+        let now = pageNow()
+        expect(now.pages).toBeGreaterThan(at100.pages)
+        expect(now.numbers.length).toBeLessThan(at100.numbers.length)
+        expect(now.pager).toEqual(`Page 1 of ${now.pages}`)
+        expect(previous().disabled).toBe(true)
+
+        let seen = new Set(now.numbers)
+        for (let turns = 0; !next().disabled && turns < 40; turns++) {
+          click(next())
+          let shown = pageNow()
+          expect(shown.pager).toEqual(`Page ${shown.page} of ${now.pages}`)
+          expect([shown.first, shown.last]).toEqual([shown.numbers[0], shown.numbers[shown.numbers.length - 1]])
+          shown.numbers.forEach(number => seen.add(number))
+        }
+        expect(bar(16)).toBeTruthy()
+        expect(pageNow().page).toEqual(now.pages)
+        // every bar of the piece is on one page or another
+        expect([...seen].sort((a, b) => a - b)).toEqual(Array.from({length: 16}, (_, i) => i + 1))
+      })
+
+      it("takes the slider as a native range, and Reset back to 100%", async function() {
+        await mountScale()
+        let at100 = pageNow()
+
+        await engraved(() => setSlider(120))
+        expect(value()).toEqual("120%")
+        expect(slider().value).toEqual("120")
+        expect(reset().disabled).toBe(false)
+        expect(pageNow().pages).toBeGreaterThanOrEqual(at100.pages)
+        expect(widths[widths.length - 1]).toEqual(536)
+
+        await engraved(() => click(reset()))
+        expect(value()).toEqual("100%")
+        expect(slider().value).toEqual("100")
+        expect(reset().disabled).toBe(true)
+        let again = pageNow()
+        expect(again.pages).toEqual(at100.pages)
+        expect(again.numbers).toEqual(at100.numbers)
+      })
+
+      it("re-engraves at each step of a drag, drawing nothing for a step to the same scale", async function() {
+        await mountScale()
+        let draws = widths.length
+
+        await engraved(() => setSlider(110))
+        expect(widths.length).toEqual(draws + 1)
+        setSlider(110)
+        await quiet()
+        expect(widths.length).toEqual(draws + 1)
+      })
+
+      it("keeps the bar's pop-up open on the page holding its bar, re-anchored to it, through every scale", async function() {
+        await mountScale()
+        click(showBar(16))
+        expect(dialog(container)).toBeTruthy()
+
+        let anchored = scale => {
+          let button = bar(16)
+          expect(button).withContext(`${scale}%: bar 16 on the page shown`).toBeTruthy()
+          let pop = dialog(container)
+          expect(pop).withContext(`${scale}%: the pop-up still open`).toBeTruthy()
+          expect(pop.getAttribute("aria-label")).toEqual("Bar 16 stats")
+
+          let rect = button.getBoundingClientRect()
+          let box = pop.getBoundingClientRect()
+          expect(box.left).withContext(`${scale}%: pop-up overlaps the bar`).toBeLessThan(rect.right)
+          expect(box.right).toBeGreaterThan(rect.left)
+          // below the bar, or above it on a page's last system, with the
+          // pop-up's own 6 px margin between
+          let below = Math.abs(box.top - rect.bottom - POPUP_MARGIN) <= 2
+          let above = Math.abs(rect.top - box.bottom - POPUP_MARGIN) <= 2
+          expect(below || above).withContext(`${scale}%: pop-up ${box.top}-${box.bottom} against bar ${rect.top}-${rect.bottom}`).toBe(true)
+        }
+
+        anchored(100)
+        await engraved(() => setSlider(150))
+        anchored(150)
+        await engraved(() => setSlider(60))
+        anchored(60)
+        await engraved(() => click(larger()))
+        anchored(70)
+      })
+
+      it("keeps the pop-up of a bar on an earlier page, anchored there, when the scale goes up", async function() {
+        await mountScale()
+        click(bar(3))
+        expect(dialog(container)).toBeTruthy()
+
+        await engraved(() => setSlider(150))
+        expect(bar(3)).toBeTruthy()
+        expect(dialog(container).getAttribute("aria-label")).toEqual("Bar 3 stats")
+        near(dialog(container).getBoundingClientRect().top, bar(3).getBoundingClientRect().bottom + POPUP_MARGIN, 2,
+          "the pop-up under bar 3")
+      })
+
+      it("applies the same page rule when the window re-engraves the score at another width", async function() {
+        await mountScale()
+        click(showBar(16))
+
+        let svg = container.querySelector("svg")
+        let column = container.querySelector('section[aria-label="The score"]')
+        column.style.maxWidth = "560px"
+        column.style.flex = "none"
+        await waitFor(() => container.querySelector("svg") !== svg, {message: "the re-engraving"})
+        await quiet()
+
+        expect(bar(16)).toBeTruthy()
+        expect(dialog(container).getAttribute("aria-label")).toEqual("Bar 16 stats")
+      })
+
+      it("shows the page holding the first bar it showed when no bar is open", async function() {
+        await mountScale()
+        await engraved(() => setSlider(150))
+        click(next())
+        let first = pageNow().first
+        expect(first).toBeGreaterThan(1)
+
+        await engraved(() => click(smaller()))
+        expect(bar(first)).withContext(`bar ${first} after the step to 140%`).toBeTruthy()
+
+        // and when the scale goes up and the page holding it is one further on
+        await engraved(() => setSlider(100))
+        expect(bar(first)).withContext(`bar ${first} after the step to 100%`).toBeTruthy()
+      })
+
+      it("starts on page 1 when nothing has been shown before", async function() {
+        await mountScale({stored: {scale: 150}})
+        expect(pageNow().page).toEqual(1)
+        expect(pageNow().first).toEqual(1)
+      })
+
+      it("keeps tonight's study's tag on its first bar and the outline on its bars, at every scale", async function() {
+        await mountScale({settings: {practice: PROGRAMME_PRACTICE}})
+
+        let check = scale => {
+          let tag = [...container.querySelectorAll(`.${sheetStyles.bar_tag}`)]
+            .find(el => el.textContent == "Tonight's study · bars 5–7")
+          // the tag is drawn on the page holding bar 5, so page to it
+          if (!tag) {
+            showBar(5)
+            tag = [...container.querySelectorAll(`.${sheetStyles.bar_tag}`)]
+              .find(el => el.textContent == "Tonight's study · bars 5–7")
+          }
+          expect(tag).withContext(`${scale}%: the study's tag`).toBeTruthy()
+          near(tag.getBoundingClientRect().left, bar(5).getBoundingClientRect().left, 1, `${scale}%: tag against bar 5`)
+
+          // the outlined bars on this page are bars 5-7 and no others
+          for (let number of barNumbers()) {
+            let overlay = bar(number)
+            let outlined = overlay.style.borderTopColor == "var(--salon-oxblood)"
+            expect(outlined).withContext(`${scale}%: bar ${number}`).toEqual(number >= 5 && number <= 7)
+            if (outlined) { expect(overlay.style.borderTopWidth).toEqual("4px") }
+          }
+        }
+
+        check(100)
+        await engraved(() => setSlider(60))
+        check(60)
+        await engraved(() => setSlider(150))
+        check(150)
+      })
+
+      it("keeps the passage tag at its first bar and the heat on the same bars under Score difficulty", async function() {
+        await mountScale()
+        click(buttonNamed(container, "Score difficulty"))
+
+        let heat = () => {
+          let found = new Set()
+          // every page's heated bars, as page 1 on
+          while (!previous().disabled) { click(previous()) }
+          for (let turns = 0; turns < 40; turns++) {
+            for (let button of barButtons()) {
+              if (button.style.background && button.style.background != "transparent") {
+                found.add(+button.getAttribute("aria-label").slice(4))
+              }
+            }
+            if (next().disabled) { break }
+            click(next())
+          }
+          return [...found].sort((a, b) => a - b)
+        }
+        let tagLeft = () => {
+          showBar(5)
+          let tag = [...container.querySelectorAll(`.${sheetStyles.bar_tag}`)].find(el => el.textContent.includes("bars 5–9"))
+          expect(tag).toBeTruthy()
+          near(tag.getBoundingClientRect().left, bar(5).getBoundingClientRect().left, 1, "the passage tag against bar 5")
+        }
+
+        let at100 = heat()
+        expect(at100.length).toBeGreaterThan(0)
+        tagLeft()
+
+        for (let scale of [60, 150]) {
+          await engraved(() => setSlider(scale))
+          expect(heat()).withContext(`${scale}%: the bars carrying a heat fill`).toEqual(at100)
+          tagLeft()
+        }
+      })
+
+      it("keeps the scale through a session, and puts each bar's session label on its bar at the old and new scale", async function() {
+        await mountScale({settings: {startMeasure: 3, endMeasure: 3, measuresPerCard: 1}})
+        await engraved(() => setSlider(120))
+        expect(value()).toEqual("120%")
+
+        click(buttonNamed(container, "Begin"))
+        playCard()
+        await page.state.notes.generator.finishing
+        click(buttonNamed(container, "End session"))
+        await waitFor(() => buttonNamed(container, "Done"), {message: "the ended strip"})
+        await waitFor(() => container.querySelector('button[aria-label^="Bar "]'), {message: "the score back"})
+        await quiet()
+
+        expect(container.textContent).toContain("Session ended")
+        expect(value()).toEqual("120%")
+        expect(slider().value).toEqual("120")
+        expect(widths[widths.length - 1]).toEqual(536)
+
+        let labelOnBar = scale => {
+          let labels = [...container.querySelectorAll(`.${viewStyles.label}`)]
+          expect(labels.length).withContext(`${scale}%: the played bar's label`).toBeGreaterThan(0)
+          let button = bar(3)
+          expect(button).withContext(`${scale}%: bar 3 on the page`).toBeTruthy()
+          let barRect = button.getBoundingClientRect()
+          for (let label of labels) {
+            let rect = label.getBoundingClientRect()
+            near(rect.left, barRect.left, 2, `${scale}%: label left`)
+            near(rect.bottom, barRect.top, rect.height + 2, `${scale}%: label above its bar`)
+          }
+        }
+
+        labelOnBar(120)
+        await engraved(() => setSlider(80))
+        expect(value()).toEqual("80%")
+        labelOnBar(80)
+      })
+
+      it("is remembered across visits for every piece, on its steps and in its range", async function() {
+        await mountScale()
+        await engraved(() => setSlider(80))
+        expect(JSON.parse(window.localStorage.getItem(SCORE_DRILL_STORAGE_KEY)).scale).toEqual(80)
+
+        flushSync(() => root.unmount())
+        container.remove()
+        widths = []
+        await drawScale()
+        expect(value()).toEqual("80%")
+        expect(slider().value).toEqual("80")
+        expect(widths).toEqual([805])
+
+        for (let [stored, shown] of [[55, "60%"], ["big", "100%"], [155, "150%"], [null, "100%"], [104, "100%"]]) {
+          flushSync(() => root.unmount())
+          container.remove()
+          window.localStorage.setItem(SCORE_DRILL_STORAGE_KEY, JSON.stringify({scale: stored}))
+          await drawScale()
+          expect(value()).withContext(`stored ${JSON.stringify(stored)}`).toEqual(shown)
+        }
+      })
+
+      it("keeps the scale beside the other drill settings it is stored with", async function() {
+        await mountScale({stored: {mode: "scroll", speed: 120}})
+        await engraved(() => setSlider(90))
+        let stored = JSON.parse(window.localStorage.getItem(SCORE_DRILL_STORAGE_KEY))
+        expect(stored).toEqual(jasmine.objectContaining({mode: "scroll", speed: 120, scale: 90}))
+      })
+
+      it("has no scale control for a piece drawn as a grid of bars", async function() {
+        let song = parseMusicXML(workhorseScore())
+        let piece = await store.putPiece({id: "old", title: "Workhorse", importedAt: 1000, song: songToJSON(song)})
+        window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+          piece: piece.id, hand: "both hands", measuresPerCard: "all", practice: "free practice",
+        }))
+
+        let el = renderScorePage()
+        await waitFor(() => page.state.engineSource?.status == "missing", {message: "the missing source"})
+        await waitFor(() => el.querySelector('[aria-label^="Bar "]'), {message: "the grid"})
+
+        expect(el.querySelector('[aria-label="Score scale"]')).toBe(null)
+        expect(el.querySelector('input[type="range"][aria-label="Score scale, percent"]')).toBe(null)
+      })
+
+      it("has no scale control for a piece the engine fails to draw", async function() {
+        await drillPiece(workhorseScore())
+        let el = renderScorePage({loadEngines: () => Promise.reject(new Error("offline"))})
+        await waitFor(() => el.textContent.includes(SCORE_VIEW_FAILED), {message: "the failed-engine note"})
+
+        expect(el.querySelector('[aria-label="Score scale"]')).toBe(null)
+      })
+
+      it("has no scale control without a piece", function() {
+        let el = renderScorePage()
+        expect(el.querySelector('[aria-label="Score scale"]')).toBe(null)
+      })
+
+      it("has no horizontal overflow at 390px wide, at 150% and at 60%", async function() {
+        for (let scale of [150, 60]) {
+          await mountScale({width: 390, stored: {scale}})
+          expect(value()).toEqual(`${scale}%`)
+          expect(container.scrollWidth).withContext(`${scale}%`).toBeLessThanOrEqual(container.clientWidth + 1)
+
+          // the controls themselves fit the plate they are in
+          let plate = container.querySelector(`.${viewStyles.score_plate}`).getBoundingClientRect()
+          let rect = group().getBoundingClientRect()
+          expect(rect.right).withContext(`${scale}%: the group in the plate`).toBeLessThanOrEqual(plate.right + 1)
+          expect(rect.left).toBeGreaterThanOrEqual(plate.left - 1)
+
+          flushSync(() => root.unmount())
+          container.remove()
+          root = container = null
+        }
+      })
+
+      it("keeps its controls on one line, inside the plate", async function() {
+        await mountScale()
+        let middles = [...group().children].map(el => {
+          let rect = el.getBoundingClientRect()
+          return rect.top + rect.height / 2
+        })
+        expect(middles.length).toEqual(6)
+        expect(Math.max(...middles) - Math.min(...middles)).withContext("the group's controls on one line").toBeLessThanOrEqual(4)
+
+        let plate = container.querySelector(`.${viewStyles.score_plate}`).getBoundingClientRect()
+        let rect = group().getBoundingClientRect()
+        expect(rect.left).toBeGreaterThanOrEqual(plate.left)
+        expect(rect.right).toBeLessThanOrEqual(plate.right)
+      })
+
+      it("takes steps pressed one after another in a single tick, each counting", async function() {
+        await mountScale()
+        await engraved(() => flushSync(() => { for (let i = 0; i < 3; i++) { smaller().click() } }))
+        expect(value()).toEqual("70%")
+        expect(JSON.parse(window.localStorage.getItem(SCORE_DRILL_STORAGE_KEY)).scale).toEqual(70)
+      })
     })
   })
 
