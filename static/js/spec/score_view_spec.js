@@ -17,6 +17,7 @@ import {SELF_GRADE_DWELL_MS, SELF_GRADE_FLASH_MS} from "st/srs/self_grade"
 import {learnedness} from "st/bar_progress"
 import reviewStyles from "st/components/sight_reading/review_pane.module.css"
 import barStripStyles from "st/components/bar_strip.module.css"
+import sheetStyles from "st/components/score_sheet.module.css"
 
 import {flagsInForce} from "st/difficulty/records"
 import {withDecisions} from "st/difficulty/decisions"
@@ -143,8 +144,8 @@ describe("the score view at rest (st/components/sight_reading/score_view)", func
     }
     let dialog = el => el.querySelector('[role="dialog"]')
 
-    let renderFixture = async (settings={}) => {
-      let musicXML = await (await fetch("/tools/fingerings/tests/fixture/score.musicxml")).text()
+    let renderFixture = async (settings={}, xml=null) => {
+      let musicXML = xml || await (await fetch("/tools/fingerings/tests/fixture/score.musicxml")).text()
       let {piece} = await importMusicXMLPiece("fixture.musicxml", musicXML, store)
       window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
         piece: piece.id, hand: BOTH_HANDS, measuresPerCard: WHOLE_SECTION,
@@ -178,6 +179,41 @@ describe("the score view at rest (st/components/sight_reading/score_view)", func
       let columns = page.currentCard().card.columns.length
       for (let i = 0; i < columns; i++) { playHead() }
     }
+
+    // an even stepwise piece (every bar a different walk by step) whose one
+    // fifth is bar `leapAt`'s upper hand; `leap` is that bar's notes
+    let stepwiseScore = leap => {
+      let scale = ["C", "D", "E", "F", "G", "A", "B"]
+      let walks = [[0, 1, 2, 1], [2, 1, 0, 1], [0, 1, 0, 1], [3, 2, 1, 2], [1, 2, 3, 2]]
+      let bar = (i, octave) => walks[i % 5].map(step => ({name: `${scale[((i % 4) + step) % 7]}${octave}`}))
+      let bars = Array.from({length: 16}, (_, i) => ({upper: bar(i, 4), lower: bar(i + 2, 3)}))
+      bars[8] = {upper: leap.map(name => ({name})), lower: bar(10, 3)}
+      return pianoScore({title: "Stepwise", bars})
+    }
+
+    it("titles a weak leap by where it stands in the piece, on the page's passage pane", async function() {
+      let {container: el, piece} = await renderFixture({}, stepwiseScore(["C4", "G4", "E4", "D4"]))
+      let flags = flagsInForce(store.annotation(piece.id))
+      let leap = flags.find(f => f.kinds[0] == "leaps")
+      expect(leap).toBeTruthy()
+      expect(leap.start).toBeLessThanOrEqual(9)
+      expect(leap.end).toBeGreaterThanOrEqual(9)
+
+      click(el.querySelector(`.${sheetStyles.bar_tag}`))
+      let pane = el.querySelector('aside[aria-label="Passage"]')
+      expect(pane.textContent).toContain("leaps a fifth")
+      expect(pane.textContent).toContain("The widest leaps in the right hand")
+      expect(pane.textContent).not.toMatch(/\bwide leaps\b/i)
+    })
+
+    it("keeps Wide leaps for an octave leap on the same piece", async function() {
+      let {container: el} = await renderFixture({}, stepwiseScore(["C4", "C5", "E4", "D4"]))
+
+      click(el.querySelector(`.${sheetStyles.bar_tag}`))
+      let pane = el.querySelector('aside[aria-label="Passage"]')
+      expect(pane.textContent).toContain("leaps an octave")
+      expect(pane.textContent).toContain("Wide leaps in the right hand")
+    })
 
     it("shows the score view at mount: no engine card, no Programme pill, the setup pane, the title and page 1", async function() {
       let {container: el} = await renderFixture()

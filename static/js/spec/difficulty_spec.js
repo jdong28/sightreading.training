@@ -572,6 +572,116 @@ describe("st/difficulty", () => {
       }
     })
 
+    // an even, stepwise piece: every bar moves by step in both hands (each
+    // bar a different walk, so none repeats another), save the bars named in
+    // `at`, which swap in the given upper/lower notes
+    const SCALE = ["C", "D", "E", "F", "G", "A", "B"]
+    function stepwiseBar(i, octave) {
+      let walks = [[0, 1, 2, 1], [2, 1, 0, 1], [0, 1, 0, 1], [3, 2, 1, 2], [1, 2, 3, 2]]
+      let start = i % 4
+      let walk = walks[i % 5]
+      return walk.map(step => ({name: `${SCALE[(start + step) % 7]}${octave}`}))
+    }
+
+    function stepwiseXML(at={}, barCount=16) {
+      let bars = Array.from({length: barCount}, (_, i) => at[i + 1] || {
+        upper: stepwiseBar(i, 4),
+        lower: stepwiseBar(i + 2, 3),
+      })
+      return pianoScore({bars})
+    }
+
+    function titlesOf(xml) {
+      return analyzePiece({song: parseMusicXML(xml), source: xml, at: 1}).proposals.map(p => p.title)
+    }
+
+    it("a stepwise piece whose widest leap is a fifth is not titled Wide leaps", () => {
+      let xml = stepwiseXML({9: {
+        upper: ["C4", "G4", "E4", "D4"].map(name => ({name})),
+        lower: stepwiseBar(10, 3),
+      }})
+      let analysis = analyzePiece({song: parseMusicXML(xml), source: xml, at: 1})
+      let leap = analysis.proposals.find(p => p.kinds[0] == "leaps")
+      expect(leap).toBeTruthy()
+      expect(leap.reasons[0]).toContain("leaps a fifth")
+      expect(leap.title).not.toMatch(/\bwide\b/i)
+      expect(leap.title).toEqual("The widest leaps in the right hand")
+    })
+
+    it("a one-staff stepwise piece with one fifth names it the widest leaps in this piece", () => {
+      let bars = Array.from({length: 16}, (_, i) => ({upper: stepwiseBar(i, 4)}))
+      bars[8] = {upper: ["C4", "G4", "E4", "D4"].map(name => ({name}))}
+      let xml = pianoScore({bars})
+      let leap = analyzePiece({song: parseMusicXML(xml), source: xml, at: 1}).proposals
+        .find(p => p.kinds[0] == "leaps")
+      expect(leap.title).toEqual("The widest leaps in this piece")
+    })
+
+    it("keeps the absolute title when the leap earns it, on the same even piece", () => {
+      let xml = stepwiseXML({9: {
+        upper: ["C4", "C5", "E4", "D4"].map(name => ({name})),
+        lower: stepwiseBar(10, 3),
+      }})
+      let leap = analyzePiece({song: parseMusicXML(xml), source: xml, at: 1}).proposals
+        .find(p => p.kinds[0] == "leaps")
+      expect(leap.reasons[0]).toContain("leaps an octave")
+      expect(leap.title).toEqual("Wide leaps in the right hand")
+    })
+
+    describe("hand feature titles on either side of their floor", () => {
+      // one passage over bar 2 whose only signal is `kind`, in bar 2's right
+      // hand, with bar 1 holding a feature `elsewhere` (a wider one, or none)
+      function leadTitle(kind, feature, {elsewhere=null, singleStaff=false}={}) {
+        let bar = (number, hand) => ({
+          number, indices: [number - 1, number - 1], beats: [number - 1, number],
+          hands: {upper: hand, lower: singleStaff ? null : {}},
+          density: {notes: 4, perBeat: 1, perSecond: null}, score: 1, top: [],
+        })
+        let target = bar(2, {[kind]: feature})
+        target.top = [{kind, hand: "upper", contribution: 1, detail: feature}]
+        let other = bar(1, elsewhere ? {[kind]: elsewhere} : {})
+        let passage = {start: 2, end: 2, run: [target], kinds: ["leaps"], hand: "upper", alsoAt: []}
+        return passageReasons(passage, {tempo: null, bars: [other, target]}).title
+      }
+
+      const NOTE_PAIR = {from: "C4", to: "G4", low: "C4", high: "G4"}
+      let sized = (semitones, extra={}) => ({...NOTE_PAIR, ...extra, semitones})
+
+      it("leaps: a minor sixth is relative, a major sixth is wide", () => {
+        expect(leadTitle("leap", sized(8))).toEqual("The widest leaps in the right hand")
+        expect(leadTitle("leap", sized(9))).toEqual("Wide leaps in the right hand")
+      })
+
+      it("stretches and reaches: an octave is relative, a minor ninth is wide", () => {
+        expect(leadTitle("span", sized(12))).toEqual("The widest stretches in the right hand")
+        expect(leadTitle("span", sized(13))).toEqual("A stretch in the right hand")
+        expect(leadTitle("reach", sized(12))).toEqual("The widest reaches in the right hand")
+        expect(leadTitle("reach", sized(13))).toEqual("A wide reach in the right hand")
+      })
+
+      it("chords: four notes are relative, five are big", () => {
+        expect(leadTitle("chordSize", 4)).toEqual("The biggest chords in the right hand")
+        expect(leadTitle("chordSize", 5)).toEqual("Big chords in the right hand")
+      })
+
+      it("sweeps: under two octaves is relative, two octaves is wide", () => {
+        expect(leadTitle("sweep", {semitones: 23, low: "C3", high: "B4"})).toEqual("The widest sweeps in the right hand")
+        expect(leadTitle("sweep", {semitones: 24, low: "C3", high: "C5"})).toEqual("Wide sweeps in the right hand")
+      })
+
+      it("says Among the widest when another bar of the hand has a wider one", () => {
+        expect(leadTitle("leap", sized(7), {elsewhere: sized(8)})).toEqual("Among the widest leaps in the right hand")
+        expect(leadTitle("leap", sized(7), {elsewhere: sized(7)})).toEqual("The widest leaps in the right hand")
+        expect(leadTitle("chordSize", 3, {elsewhere: 4})).toEqual("Among the biggest chords in the right hand")
+      })
+
+      it("speaks of this piece, not a hand, on a one-staff piece", () => {
+        expect(leadTitle("leap", sized(7), {singleStaff: true})).toEqual("The widest leaps in this piece")
+        expect(leadTitle("leap", sized(12), {singleStaff: true})).toEqual("Wide leaps")
+        expect(leadTitle("span", sized(7), {singleStaff: true})).toEqual("The widest stretches in this piece")
+      })
+    })
+
     it("names no hand on a one-staff piece", () => {
       let oneStaff = parseMusicXML(pianoScore({bars:
         Array.from({length: 16}, (_, i) =>
