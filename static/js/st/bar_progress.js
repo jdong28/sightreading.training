@@ -149,6 +149,41 @@ export function sessionMarks(log) {
   return marks
 }
 
+/**
+ * The session log of passes rebuilt from the bar log's rows (st/srs/records
+ * BarLogRecord), as the generator reported them while they were played (see
+ * MeasureCardGenerator#setOnPass): the rows of one pass share the time they
+ * were written at, so a pass is a group of rows and its bars come in measure
+ * order. For the ended strip to come back after a reload.
+ * @param {Object[]} rows bar log rows, of a session or more
+ * @returns {Object[]} entries {at, startMeasure, endMeasure, hand,
+ * readThrough, self, grade, bars: [{measure, columns, clean, grade}]}, oldest first
+ */
+export function sessionLogOf(rows) {
+  let passes = new Map()
+  for (let row of [...rows].sort((a, b) => a.at - b.at || a.measure - b.measure)) {
+    let key = `${row.at}\n${row.hand}`
+    let entry = passes.get(key)
+    if (!entry) {
+      entry = {
+        at: row.at,
+        startMeasure: row.card[0],
+        endMeasure: row.card[1],
+        hand: row.hand,
+        readThrough: !!row.readThrough,
+        self: row.mode == "self",
+        grade: row.cardGrade,
+        bars: [],
+      }
+      passes.set(key, entry)
+    }
+
+    entry.bars.push({measure: row.measure, columns: row.columns, clean: row.clean, grade: row.grade})
+  }
+
+  return [...passes.values()]
+}
+
 // "Under a minute", "1 minute" or "N minutes", from elapsed seconds
 function minutesWords(seconds) {
   let minutes = Math.round((seconds || 0) / 60)

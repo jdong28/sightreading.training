@@ -1,7 +1,11 @@
 import {
-  passHistory, passAccuracy, isClean, learnedness, learnedCount, sessionMarks, endedSummary,
+  passHistory, passAccuracy, isClean, learnedness, learnedCount, sessionMarks, endedSummary, sessionLogOf,
   TROUBLE_BELOW,
 } from "st/bar_progress"
+import {measureCards, MeasureCardDeck, MeasureCardGenerator, IN_ORDER} from "st/measure_cards"
+import NoteList from "st/note_list"
+import NoteStats from "st/note_stats"
+import {openTestStore} from "spec/helpers"
 import {AGAIN, HARD, GOOD, EASY} from "st/srs/grade"
 
 const item = (fields={}) => ({hand: "both", startMeasure: 5, endMeasure: 5, attempts: 0, recent: [], ...fields})
@@ -223,5 +227,75 @@ describe("bar progress", function() {
       expect(summary.headlineItalic).toEqual("passes clean")
       expect(summary.comparison).toBe(null)
     })
+  })
+})
+
+describe("sessionLogOf", function() {
+  let store, generators
+
+  beforeEach(async function() {
+    store = await openTestStore()
+    generators = []
+  })
+
+  afterEach(async function() {
+    generators.forEach(g => g.stop())
+    await store.close()
+  })
+
+  // two bars of three crotchets each in one card, played detected and then self-graded
+  let twoBarCard = () => {
+    let bar = (number, notes, from) => ({
+      number, columns: notes.map((note, idx) => Object.assign([note], {beat: from + idx})),
+    })
+    return measureCards([bar(1, ["C4", "D4", "E4"], 0), bar(2, ["F4", "G4", "A4"], 3)], 2)
+  }
+
+  it("equals the entries the generator reported while the passes were played, in order", async function() {
+    let time = 0
+    let deck = new MeasureCardDeck(twoBarCard(), {pieceId: "p", order: IN_ORDER, store})
+    let generator = new MeasureCardGenerator(deck, {now: () => time})
+    generators.push(generator)
+    let reported = []
+    generator.setOnPass(entry => reported.push(entry))
+
+    let notes = new NoteList([], {generator})
+    notes.fillBuffer(8)
+    let stats = new NoteStats()
+    let play = measured => {
+      let column = notes.currentColumn()
+      notes = notes.clone()
+      notes.shift(measured)
+      notes.pushRandom()
+      stats.hitNotes(column)
+    }
+
+    // a detected pass with a wrong key at bar 2's second column, then a clean one
+    for (let t of [1000, 1500, 2000, 2500]) { time = t; play({latency: 500, onset: t}) }
+    stats.missNotes(["G4"], ["G4"], ["F#4"])
+    for (let t of [3000, 3500]) { time = t; play({latency: 500, onset: t}) }
+    await generator.finishing
+    for (let t of [5000, 5500, 6000, 6500, 7000, 7500]) { time = t; play({latency: 500, onset: t}) }
+    await generator.finishing
+
+    // then a self-graded one, naming only bar 2
+    generator.setDrill(() => ({mode: "self"}))
+    time = 9000
+    generator.selfGrade(2, {bars: [2], slipped: ["tempo"]})
+    await generator.finishing
+
+    expect(reported.length).toEqual(3)
+    expect(reported.map(entry => entry.self)).toEqual([false, false, true])
+
+    let rows = await store.barLog({pieceId: "p"})
+    expect(rows.length).toEqual(5)
+    expect(sessionLogOf(rows)).toEqual(reported)
+
+    // however the rows come
+    expect(sessionLogOf([...rows].reverse())).toEqual(reported)
+  })
+
+  it("is empty for no rows", function() {
+    expect(sessionLogOf([])).toEqual([])
   })
 })
