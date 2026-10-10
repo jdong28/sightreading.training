@@ -121,21 +121,28 @@ function densitySentence(detail, bar, hand, ctx) {
   return `Dense writing, ${rate} notes a ${unit}${tempoSuffix}.`
 }
 
-function sweepSentence(detail, bar, hand, ctx) {
+// the lowest and highest note of hand's sweep across the passage's bars
+function sweepRange(passage, hand) {
   let low = null
   let high = null
-  for (let b of ctx.passage.run) {
+  for (let b of passage.run) {
     let sweep = b.hands[hand] && b.hands[hand].sweep
     if (!sweep) { continue }
     if (!low || parseNote(sweep.low) < parseNote(low)) { low = sweep.low }
     if (!high || parseNote(sweep.high) > parseNote(high)) { high = sweep.high }
   }
-  if (!low || !high) { return null }
+  return low && high ? {low, high} : null
+}
 
+function sweepSentence(detail, bar, hand, ctx) {
+  let range = sweepRange(ctx.passage, hand)
+  if (!range) { return null }
+
+  let {low, high} = range
   let passage = ctx.passage
-  let range = passage.start == passage.end ? `bar ${passage.start}` : `bars ${passage.start}–${passage.end}`
+  let bars = passage.start == passage.end ? `bar ${passage.start}` : `bars ${passage.start}–${passage.end}`
   return `${handLabel(hand, ctx)} sweeps ${displayNoteName(low)} to ${displayNoteName(high)}, ` +
-    `${intervalWords(low, high)}, in ${range}.`
+    `${intervalWords(low, high)}, in ${bars}.`
 }
 
 function leapSentence(detail, bar, hand, ctx) {
@@ -246,13 +253,60 @@ const SENTENCES = {
   nearRepeat: nearRepeatSentence,
 }
 
+// A hand feature's title is only worded absolutely ("Wide leaps") when its
+// size earns that word: the analysis is piece-relative (every piece has its
+// hardest passages), so on an even piece the lead signal can be a small
+// interval. Below its floor (in semitones, or notes for a chord) a feature
+// is named by where it stands in this piece instead ("The widest leaps in
+// this piece", or "Among the widest leaps" when something is wider). Only the
+// wording: what is flagged and how it scores are unchanged.
+const ABSOLUTE_FLOOR = {leap: 9, sweep: 24, span: 13, reach: 13, chordSize: 5}
+
+// [absolute title, the relative title's superlative and noun]
+const HAND_WORDS = {
+  leap: [hand => `Wide leaps${hand}`, "widest leaps"],
+  sweep: [hand => `Wide sweeps${hand}`, "widest sweeps"],
+  span: [hand => `A stretch${hand}`, "widest stretches"],
+  reach: [hand => `A wide reach${hand}`, "widest reaches"],
+  chordSize: [hand => `Big chords${hand}`, "biggest chords"],
+}
+
+// the lead signal's size, in the unit of its floor
+function leadMagnitude(kind, lead, ctx) {
+  if (kind == "sweep") {
+    let range = sweepRange(ctx.passage, lead.hand)
+    return range ? parseNote(range.high) - parseNote(range.low) : 0
+  }
+  return magnitudeOf(kind, lead.detail)
+}
+
+// the largest value of kind in any bar of hand across the whole piece
+function pieceMagnitude(kind, hand, bars) {
+  let best = 0
+  for (let bar of bars) {
+    let source = bar.hands[hand]
+    if (!source || !source[kind]) { continue }
+    best = Math.max(best, magnitudeOf(kind, source[kind]))
+  }
+  return best
+}
+
+function handFeatureTitle(lead, ctx) {
+  let [absolute, superlative] = HAND_WORDS[lead.kind]
+  let named = !ctx.singleStaff && HAND_WORD[lead.hand]
+  let magnitude = leadMagnitude(lead.kind, lead, ctx)
+
+  if (magnitude >= ABSOLUTE_FLOOR[lead.kind]) {
+    return absolute(named ? ` in the ${named} hand` : "")
+  }
+
+  // "The widest" only when nothing in the piece (that hand) is wider
+  let leading = magnitude >= pieceMagnitude(lead.kind, lead.hand, ctx.bars) ? "The" : "Among the"
+  return `${leading} ${superlative} in ${named ? `the ${named} hand` : "this piece"}`
+}
+
 const TITLES = {
   density: () => "The densest bars",
-  sweep: (hand, ctx) => ctx.singleStaff ? "Wide sweeps" : `Wide sweeps in the ${HAND_WORD[hand]} hand`,
-  leap: (hand, ctx) => ctx.singleStaff ? "Wide leaps" : `Wide leaps in the ${HAND_WORD[hand]} hand`,
-  span: (hand, ctx) => ctx.singleStaff ? "A stretch" : `A stretch in the ${HAND_WORD[hand]} hand`,
-  reach: (hand, ctx) => ctx.singleStaff ? "A wide reach" : `A wide reach in the ${HAND_WORD[hand]} hand`,
-  chordSize: (hand, ctx) => ctx.singleStaff ? "Big chords" : `Big chords in the ${HAND_WORD[hand]} hand`,
   chromatic: () => "Chromatic reading",
   ledger: () => "Ledger lines",
   keyChange: () => "The key change",
@@ -266,6 +320,12 @@ const TITLES = {
   holdMove: (hand, ctx) => ctx.singleStaff ? "Hold and move" : `Hold and move in the ${HAND_WORD[hand]} hand`,
   held: () => "Held notes for the pedal",
   nearRepeat: () => "A near repeat",
+}
+
+function titleFor(lead, ctx) {
+  if (!lead) { return "A difficult passage" }
+  if (HAND_WORDS[lead.kind]) { return handFeatureTitle(lead, ctx) }
+  return TITLES[lead.kind] ? TITLES[lead.kind](lead.hand, ctx) : "A difficult passage"
 }
 
 const TIPS = {
@@ -319,7 +379,7 @@ function recurrenceSentence(ranges) {
 // (for "the piece's densest bar" and whether the piece has one staff)
 export function passageReasons(passage, {tempo, bars} = {}) {
   let singleStaff = !bars.some(b => b.hands.lower)
-  let ctx = {tempo, passage, singleStaff}
+  let ctx = {tempo, passage, singleStaff, bars}
 
   let signals = rankedSignals(passage.run)
   let maxDensity = Math.max(0, ...bars.map(b =>
@@ -358,9 +418,7 @@ export function passageReasons(passage, {tempo, bars} = {}) {
     if (!leadDetail) { leadDetail = {kind: signal.kind, hand: signal.hand, detail: found.detail} }
   }
 
-  let title = leadDetail ?
-    (TITLES[leadDetail.kind] ? TITLES[leadDetail.kind](leadDetail.hand, ctx) : "A difficult passage") :
-    "A difficult passage"
+  let title = titleFor(leadDetail, ctx)
 
   if (recurrence) { reasons.push(recurrence) }
 

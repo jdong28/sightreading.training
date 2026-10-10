@@ -6,7 +6,7 @@ import {MemoryRouter} from "react-router-dom"
 import ScorePage from "st/components/pages/score_page"
 import {PassagePane} from "st/components/sight_reading/passage_pane"
 import {ReviewPane} from "st/components/sight_reading/review_pane"
-import {importMusicXMLPiece, importFlagsFile, exportFlagsFile, songToJSON} from "st/sheet_music_deck"
+import {importMusicXMLPiece, importFlagsFile, exportFlagsFile, songToJSON, decideFlags} from "st/sheet_music_deck"
 import {parseMusicXML} from "st/musicxml"
 import {setAppStore} from "st/storage"
 import {SHEET_MUSIC_STORAGE_KEY, BOTH_HANDS, FREE_PRACTICE, WHOLE_SECTION} from "st/data"
@@ -17,9 +17,10 @@ import {SELF_GRADE_DWELL_MS, SELF_GRADE_FLASH_MS} from "st/srs/self_grade"
 import {learnedness} from "st/bar_progress"
 import reviewStyles from "st/components/sight_reading/review_pane.module.css"
 import barStripStyles from "st/components/bar_strip.module.css"
+import sheetStyles from "st/components/score_sheet.module.css"
 
 import {flagsInForce} from "st/difficulty/records"
-import {withDecisions, reviewFlags, acceptDecision} from "st/difficulty/decisions"
+import {withDecisions, dismissDecision, reviewFlags, acceptDecision} from "st/difficulty/decisions"
 
 import {openTestStore, pianoScore} from "spec/helpers"
 
@@ -143,8 +144,8 @@ describe("the score view at rest (st/components/sight_reading/score_view)", func
     }
     let dialog = el => el.querySelector('[role="dialog"]')
 
-    let renderFixture = async (settings={}) => {
-      let musicXML = await (await fetch("/tools/fingerings/tests/fixture/score.musicxml")).text()
+    let renderFixture = async (settings={}, xml=null) => {
+      let musicXML = xml || await (await fetch("/tools/fingerings/tests/fixture/score.musicxml")).text()
       let {piece} = await importMusicXMLPiece("fixture.musicxml", musicXML, store)
       window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
         piece: piece.id, hand: BOTH_HANDS, measuresPerCard: WHOLE_SECTION,
@@ -178,6 +179,41 @@ describe("the score view at rest (st/components/sight_reading/score_view)", func
       let columns = page.currentCard().card.columns.length
       for (let i = 0; i < columns; i++) { playHead() }
     }
+
+    // an even stepwise piece (every bar a different walk by step) whose one
+    // fifth is bar `leapAt`'s upper hand; `leap` is that bar's notes
+    let stepwiseScore = leap => {
+      let scale = ["C", "D", "E", "F", "G", "A", "B"]
+      let walks = [[0, 1, 2, 1], [2, 1, 0, 1], [0, 1, 0, 1], [3, 2, 1, 2], [1, 2, 3, 2]]
+      let bar = (i, octave) => walks[i % 5].map(step => ({name: `${scale[((i % 4) + step) % 7]}${octave}`}))
+      let bars = Array.from({length: 16}, (_, i) => ({upper: bar(i, 4), lower: bar(i + 2, 3)}))
+      bars[8] = {upper: leap.map(name => ({name})), lower: bar(10, 3)}
+      return pianoScore({title: "Stepwise", bars})
+    }
+
+    it("titles a weak leap by where it stands in the piece, on the page's passage pane", async function() {
+      let {container: el, piece} = await renderFixture({}, stepwiseScore(["C4", "G4", "E4", "D4"]))
+      let flags = flagsInForce(store.annotation(piece.id))
+      let leap = flags.find(f => f.kinds[0] == "leaps")
+      expect(leap).toBeTruthy()
+      expect(leap.start).toBeLessThanOrEqual(9)
+      expect(leap.end).toBeGreaterThanOrEqual(9)
+
+      click(el.querySelector(`.${sheetStyles.bar_tag}`))
+      let pane = el.querySelector('aside[aria-label="Passage"]')
+      expect(pane.textContent).toContain("leaps a fifth")
+      expect(pane.textContent).toContain("The widest leaps in the right hand")
+      expect(pane.textContent).not.toMatch(/\bwide leaps\b/i)
+    })
+
+    it("keeps Wide leaps for an octave leap on the same piece", async function() {
+      let {container: el} = await renderFixture({}, stepwiseScore(["C4", "C5", "E4", "D4"]))
+
+      click(el.querySelector(`.${sheetStyles.bar_tag}`))
+      let pane = el.querySelector('aside[aria-label="Passage"]')
+      expect(pane.textContent).toContain("leaps an octave")
+      expect(pane.textContent).toContain("Wide leaps in the right hand")
+    })
 
     it("shows the score view at mount: no engine card, no Programme pill, the setup pane, the title and page 1", async function() {
       let {container: el} = await renderFixture()
@@ -472,6 +508,48 @@ describe("the score view at rest (st/components/sight_reading/score_view)", func
   // without a stored source, or an engraving failure, falls back to a bar
   // grid rather than the paginated engraving, at rest same as in session
   // (st/components/pages/sight_reading_page, AGENTS.md)
+  // the setup pane's "Section has N columns" counts what the session will
+  // draw and judge: every onset while the engine draws the piece, only those
+  // on the app staff while its fallback does
+  describe("the section's column hint", function() {
+    // a treble-only piece, 4 onsets a bar over bars 1-2, two below the
+    // treble staff's A3
+    let lowTreble = () => pianoScore({title: "Low treble", bars: [
+      {upper: ["C4", "G3", "E4", "G4"].map(name => ({name}))},
+      {upper: ["F3", "D4", "E4", "C4"].map(name => ({name}))},
+    ]})
+
+    let hint = el => [...el.querySelectorAll("div")]
+      .find(div => div.children.length == 0 && /^Marked in gilt/.test(div.textContent)).textContent
+
+    it("counts every onset while the engine draws the piece", async function() {
+      await drillPiece(lowTreble(), {startMeasure: 1, endMeasure: 2})
+      let el = renderScorePage()
+      await waitFor(() => el.querySelectorAll('button[aria-label^="Bar "]').length > 0, {message: "the score to draw"})
+
+      expect(page.engineCards()).toBe(true)
+      expect(hint(el)).toContain("Section has 8 columns")
+      // and it is what the session judges
+      expect(page.currentCard().card.columns.length).toBe(8)
+    })
+
+    it("counts what the app staff keeps while it draws in the engine's place", async function() {
+      let xml = lowTreble()
+      let song = parseMusicXML(xml)
+      let piece = await store.putPiece({id: "old", title: "Low treble", importedAt: 1000, song: songToJSON(song)})
+      window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+        piece: piece.id, hand: "both hands", measuresPerCard: "all", practice: "free practice",
+        startMeasure: 1, endMeasure: 2,
+      }))
+
+      let el = renderScorePage()
+      await waitFor(() => page.state.engineSource?.status == "missing", {message: "the missing source"})
+
+      expect(page.engineCards()).toBe(false)
+      expect(hint(el)).toContain("Section has 6 columns")
+    })
+  })
+
   describe("fallback states", function() {
     it("shows a grid of bars with no stored source", async function() {
       let xml = workhorseScore()
@@ -839,6 +917,122 @@ describe("ReviewPane", function() {
     await waitFor(() => reviewPane().textContent.includes("Teacher"), {message: "the Teacher chip"})
   })
 
+  // a drag across the strip's cells, as a real one captures the pointer on
+  // the cell it started in
+  let dragStrip = (fromIdx, toIdx) => {
+    let cells = [...reviewPane().querySelectorAll(`.${barStripStyles.cell}`)]
+    let from = cells[fromIdx]
+    let to = cells[toIdx]
+    let middle = cell => {
+      let rect = cell.getBoundingClientRect()
+      return rect.left + rect.width / 2
+    }
+    let drag = (type, clientX) => flushSync(() => from.dispatchEvent(
+      new PointerEvent(type, {bubbles: true, pointerId: 1, clientX})))
+
+    drag("pointerdown", middle(from))
+    drag("pointermove", middle(to))
+    drag("pointerup", middle(to))
+  }
+
+  let queueCard = text => [...reviewPane().querySelectorAll(`.${reviewStyles.queue_card}`)]
+    .find(card => card.textContent.includes(text))
+
+  it("dragging the strip after 'Add a passage' keeps what was already typed, changing only the bars", async function() {
+    let piece = await drillPiece(workhorseScore())
+    mountReview(piece)
+    await waitFor(() => reviewPane(), {message: "the review pane"})
+
+    clickButton(reviewPane(), "Add a passage")
+    let nameInput = await waitFor(() => reviewPane().querySelector('input[type="text"]'), {message: "the name field"})
+    changeValue(nameInput, "Typed name")
+    let textareas = () => [...reviewPane().querySelectorAll("textarea")]
+    let setTextarea = (idx, value) => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set.call(textareas()[idx], value)
+      flushSync(() => textareas()[idx].dispatchEvent(new Event("input", {bubbles: true})))
+    }
+    setTextarea(0, "Typed reason")
+    clickButton(reviewPane(), "Left")
+    clickButton(reviewPane(), "Hard")
+    clickButton(reviewPane(), "leaps")
+
+    dragStrip(0, 3)
+
+    let startBar = reviewPane().querySelector('input[aria-label="start bar"]')
+    let endBar = reviewPane().querySelector('input[aria-label="end bar"]')
+    expect([startBar.value, endBar.value]).toEqual(["1", "4"])
+    expect(reviewPane().querySelector('input[type="text"]').value).toEqual("Typed name")
+    expect(textareas()[0].value).toEqual("Typed reason")
+
+    clickButton(reviewPane(), "Save")
+    let added = await waitFor(() =>
+      flagsInForce(store.annotation(piece.id)).find(flag => flag.sources.includes("teacher")),
+      {message: "the teacher's added flag"})
+    expect([added.start, added.end, added.title, added.hand, added.level, added.kinds])
+      .toEqual([1, 4, "Typed name", "lower", 2, ["leaps"]])
+    expect(added.lines[0].text).toEqual("Typed reason")
+  })
+
+  it("a flag the teacher added and then renames shows no analysis name, and the editor keeps its name", async function() {
+    let piece = await drillPiece(workhorseScore())
+    mountReview(piece)
+    await waitFor(() => reviewPane(), {message: "the review pane"})
+
+    clickButton(reviewPane(), "Add a passage")
+    let nameInput = await waitFor(() => reviewPane().querySelector('input[type="text"]'), {message: "the name field"})
+    changeValue(nameInput, "Mind the pedal")
+    clickButton(reviewPane(), "Save")
+    await waitFor(() => queueCard("Mind the pedal"), {message: "the added flag's card"})
+
+    clickButton(queueCard("Mind the pedal"), "Edit")
+    nameInput = await waitFor(() => reviewPane().querySelector('input[type="text"]'), {message: "the editor"})
+    expect(nameInput.value).toEqual("Mind the pedal")
+    changeValue(nameInput, "Pedal first")
+    clickButton(reviewPane(), "Save")
+
+    await waitFor(() => queueCard("Pedal first"), {message: "the renamed card"})
+    expect(queueCard("Pedal first").textContent).not.toContain("the analysis called it")
+    expect(queueCard("Pedal first").textContent).not.toContain("Mind the pedal")
+
+    // and the editor still opens on the name it has, with no analysis name to go back to
+    clickButton(queueCard("Pedal first"), "Edit")
+    expect(reviewPane().querySelector('input[type="text"]').value).toEqual("Pedal first")
+    expect(reviewPane().textContent).not.toContain("Named by the analysis")
+    clickButton(reviewPane(), "Save")
+    await waitFor(() => flagsInForce(store.annotation(piece.id)).some(flag => flag.title == "Pedal first"),
+      {message: "the name kept through a second save"})
+  })
+
+  it("the tally never counts a dismissed flag as waiting, however its bars have changed", async function() {
+    let piece = await drillPiece(workhorseScore())
+    let record = store.annotation(piece.id)
+    let flag = flagsInForce(record)[0]
+    await decideFlags(piece.id, [dismissDecision({record, flag, by: "Ms Laurent", at: Date.now()})], store)
+
+    // the dismissed flag's bars have since changed: its place reads "check"
+    await store.updateAnnotation(piece.id, current => ({
+      ...current,
+      fingerprint: {
+        ...current.fingerprint,
+        bars: current.fingerprint.bars.map((hash, idx) =>
+          idx >= flag.startIndex && idx <= flag.endIndex ? `${hash}x` : hash),
+      },
+    }))
+    expect(reviewFlags(store.annotation(piece.id)).find(f => f.id == flag.id))
+      .toEqual(jasmine.objectContaining({status: "dismissed", place: "check"}))
+
+    mountReview(piece)
+    await waitFor(() => reviewPane(), {message: "the review pane"})
+
+    let tally = label => {
+      let labelEl = [...reviewPane().querySelectorAll(`.${reviewStyles.tally} div`)]
+        .find(el => el.textContent == label)
+      return labelEl.nextSibling.textContent
+    }
+    expect(tally("Waiting for you")).toEqual("0")
+    expect(tally("Dismissed")).toEqual("1")
+  })
+
   it("ticking 'Start this passage hands separately' saves apart; the preview line shows", async function() {
     let piece = await drillPiece(workhorseScore())
     mountReview(piece)
@@ -935,6 +1129,49 @@ describe("ReviewPane", function() {
       {message: "the evidence line"})
     expect(line.textContent).toContain("From your playing:")
     expect(line.textContent).toContain("slipped back 2 times")
+  })
+
+  // a hand alone played once and passed, as the programme writes it for the
+  // hand scaffold (no mark) or at a flag's request (requested)
+  let recordHandBar = async (piece, measure, extra={}) => {
+    let now = Date.now()
+    let barId = `${piece.id}:lower:${measure}-${measure}`
+    await store.recordAttempt({
+      item: {
+        id: barId, pieceId: piece.id, hand: "lower", startMeasure: measure, endMeasure: measure,
+        level: "bar", state: "learning", step: 0, due: now, last: now, s: 1, d: 5,
+        reps: 1, lapses: 0, streak: 1, lastGrade: 3, hits: 3, misses: 0, attempts: 1,
+        lastPracticed: now, elapsedMs: 3000, algo: 1, createdAt: now - 1000,
+        recent: [[now, 3, 3, 3]], ...extra,
+      },
+      review: {
+        itemId: barId, pieceId: piece.id, at: now, kind: "attempt", grade: 3, was: "learning",
+        columns: 3, clean: 3, misses: 0, stuck: 0, skipped: 0, hesitations: 0, mode: "wait", algo: 1,
+      },
+    })
+  }
+
+  it("a hand a flag's tick asked for is not read as the bar needing hands apart, but the scaffold's is", async function() {
+    let piece = await drillPiece(workhorseScore())
+    let flag = flagsInForce(store.annotation(piece.id))[0]
+
+    // the flagged bar's left hand was asked for; bar 2's too; bar 4's was the scaffold's
+    await recordHandBar(piece, flag.start, {requested: true})
+    await recordHandBar(piece, 2, {requested: true})
+    await recordHandBar(piece, 4)
+
+    mountReview(piece)
+    await waitFor(() => reviewPane(), {message: "the review pane"})
+
+    let plate = await waitFor(() => reviewPane().querySelector(`.${reviewStyles.trouble_plate}`),
+      {message: "the trouble spots"})
+    let spots = [...plate.querySelectorAll(`.${reviewStyles.trouble_item}`)].map(item => item.textContent)
+    expect(spots.length).toEqual(1)
+    expect(spots[0]).toContain("Bar 4")
+    expect(spots[0]).toContain("Needed hands apart last time")
+
+    // the flag's own card says nothing of its hand the flag asked for
+    expect(reviewPane().querySelector(`.${reviewStyles.trouble_line}`)).toBe(null)
   })
 
   it("the editor places an unplaced flag at the bars it shows, not the exporting copy's", async function() {

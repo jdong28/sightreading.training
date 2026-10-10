@@ -220,6 +220,21 @@ function decisionRange(decision) {
   return null
 }
 
+// the range of the flag a decision with none of its own governs (an accept,
+// dismiss or restore of a flag the log alone holds, which has no proposal to
+// name): that of the nearest decision of the same flag before it that has one,
+// else after it. Without it the decision would keep the exporting copy's
+// anchor, and read "check" on a copy whose bars merely differ in a corrected
+// note, or placed where its flag is not
+function governedRange(decisions, decision) {
+  let same = decisions
+    .filter(other => other != decision && other.flagId == decision.flagId && decisionRange(other))
+    .sort((a, b) => a.at - b.at)
+  let before = same.filter(other => other.at <= decision.at)
+  let sibling = before.length ? before[before.length - 1] : same[0]
+  return sibling ? decisionRange(sibling) : null
+}
+
 // whether an override carries a range at all, in either representation: a
 // placed decision's every range is rewritten to the local copy's bars, so
 // one naming printed bars alone is no exception, while a title-only edit
@@ -299,10 +314,13 @@ export function reanchorDecisions(file, record, song, alignment) {
   let report = {placed: 0, moved: 0, unplaced: 0, already: 0, total: file.decisions.length}
 
   for (let decision of file.decisions) {
-    let range = decisionRange(decision)
+    let range = decisionRange(decision) || governedRange(file.decisions, decision)
     let mapped = range ? mapRange(alignment, range.startIndex, range.endIndex) : null
     let place = mapped ? mapped.place : "placed"
     let next = unstamped(decision)
+    // a decision that names no bars at all (its flag is nowhere in the file)
+    // anchors nothing, rather than the exporting copy's bars
+    if (!range) { next.anchor = {bars: []} }
 
     if (place == "unplaced") {
       next.unplaced = {

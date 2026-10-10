@@ -572,6 +572,116 @@ describe("st/difficulty", () => {
       }
     })
 
+    // an even, stepwise piece: every bar moves by step in both hands (each
+    // bar a different walk, so none repeats another), save the bars named in
+    // `at`, which swap in the given upper/lower notes
+    const SCALE = ["C", "D", "E", "F", "G", "A", "B"]
+    function stepwiseBar(i, octave) {
+      let walks = [[0, 1, 2, 1], [2, 1, 0, 1], [0, 1, 0, 1], [3, 2, 1, 2], [1, 2, 3, 2]]
+      let start = i % 4
+      let walk = walks[i % 5]
+      return walk.map(step => ({name: `${SCALE[(start + step) % 7]}${octave}`}))
+    }
+
+    function stepwiseXML(at={}, barCount=16) {
+      let bars = Array.from({length: barCount}, (_, i) => at[i + 1] || {
+        upper: stepwiseBar(i, 4),
+        lower: stepwiseBar(i + 2, 3),
+      })
+      return pianoScore({bars})
+    }
+
+    function titlesOf(xml) {
+      return analyzePiece({song: parseMusicXML(xml), source: xml, at: 1}).proposals.map(p => p.title)
+    }
+
+    it("a stepwise piece whose widest leap is a fifth is not titled Wide leaps", () => {
+      let xml = stepwiseXML({9: {
+        upper: ["C4", "G4", "E4", "D4"].map(name => ({name})),
+        lower: stepwiseBar(10, 3),
+      }})
+      let analysis = analyzePiece({song: parseMusicXML(xml), source: xml, at: 1})
+      let leap = analysis.proposals.find(p => p.kinds[0] == "leaps")
+      expect(leap).toBeTruthy()
+      expect(leap.reasons[0]).toContain("leaps a fifth")
+      expect(leap.title).not.toMatch(/\bwide\b/i)
+      expect(leap.title).toEqual("The widest leaps in the right hand")
+    })
+
+    it("a one-staff stepwise piece with one fifth names it the widest leaps in this piece", () => {
+      let bars = Array.from({length: 16}, (_, i) => ({upper: stepwiseBar(i, 4)}))
+      bars[8] = {upper: ["C4", "G4", "E4", "D4"].map(name => ({name}))}
+      let xml = pianoScore({bars})
+      let leap = analyzePiece({song: parseMusicXML(xml), source: xml, at: 1}).proposals
+        .find(p => p.kinds[0] == "leaps")
+      expect(leap.title).toEqual("The widest leaps in this piece")
+    })
+
+    it("keeps the absolute title when the leap earns it, on the same even piece", () => {
+      let xml = stepwiseXML({9: {
+        upper: ["C4", "C5", "E4", "D4"].map(name => ({name})),
+        lower: stepwiseBar(10, 3),
+      }})
+      let leap = analyzePiece({song: parseMusicXML(xml), source: xml, at: 1}).proposals
+        .find(p => p.kinds[0] == "leaps")
+      expect(leap.reasons[0]).toContain("leaps an octave")
+      expect(leap.title).toEqual("Wide leaps in the right hand")
+    })
+
+    describe("hand feature titles on either side of their floor", () => {
+      // one passage over bar 2 whose only signal is `kind`, in bar 2's right
+      // hand, with bar 1 holding a feature `elsewhere` (a wider one, or none)
+      function leadTitle(kind, feature, {elsewhere=null, singleStaff=false}={}) {
+        let bar = (number, hand) => ({
+          number, indices: [number - 1, number - 1], beats: [number - 1, number],
+          hands: {upper: hand, lower: singleStaff ? null : {}},
+          density: {notes: 4, perBeat: 1, perSecond: null}, score: 1, top: [],
+        })
+        let target = bar(2, {[kind]: feature})
+        target.top = [{kind, hand: "upper", contribution: 1, detail: feature}]
+        let other = bar(1, elsewhere ? {[kind]: elsewhere} : {})
+        let passage = {start: 2, end: 2, run: [target], kinds: ["leaps"], hand: "upper", alsoAt: []}
+        return passageReasons(passage, {tempo: null, bars: [other, target]}).title
+      }
+
+      const NOTE_PAIR = {from: "C4", to: "G4", low: "C4", high: "G4"}
+      let sized = (semitones, extra={}) => ({...NOTE_PAIR, ...extra, semitones})
+
+      it("leaps: a minor sixth is relative, a major sixth is wide", () => {
+        expect(leadTitle("leap", sized(8))).toEqual("The widest leaps in the right hand")
+        expect(leadTitle("leap", sized(9))).toEqual("Wide leaps in the right hand")
+      })
+
+      it("stretches and reaches: an octave is relative, a minor ninth is wide", () => {
+        expect(leadTitle("span", sized(12))).toEqual("The widest stretches in the right hand")
+        expect(leadTitle("span", sized(13))).toEqual("A stretch in the right hand")
+        expect(leadTitle("reach", sized(12))).toEqual("The widest reaches in the right hand")
+        expect(leadTitle("reach", sized(13))).toEqual("A wide reach in the right hand")
+      })
+
+      it("chords: four notes are relative, five are big", () => {
+        expect(leadTitle("chordSize", 4)).toEqual("The biggest chords in the right hand")
+        expect(leadTitle("chordSize", 5)).toEqual("Big chords in the right hand")
+      })
+
+      it("sweeps: under two octaves is relative, two octaves is wide", () => {
+        expect(leadTitle("sweep", {semitones: 23, low: "C3", high: "B4"})).toEqual("The widest sweeps in the right hand")
+        expect(leadTitle("sweep", {semitones: 24, low: "C3", high: "C5"})).toEqual("Wide sweeps in the right hand")
+      })
+
+      it("says Among the widest when another bar of the hand has a wider one", () => {
+        expect(leadTitle("leap", sized(7), {elsewhere: sized(8)})).toEqual("Among the widest leaps in the right hand")
+        expect(leadTitle("leap", sized(7), {elsewhere: sized(7)})).toEqual("The widest leaps in the right hand")
+        expect(leadTitle("chordSize", 3, {elsewhere: 4})).toEqual("Among the biggest chords in the right hand")
+      })
+
+      it("speaks of this piece, not a hand, on a one-staff piece", () => {
+        expect(leadTitle("leap", sized(7), {singleStaff: true})).toEqual("The widest leaps in this piece")
+        expect(leadTitle("leap", sized(12), {singleStaff: true})).toEqual("Wide leaps")
+        expect(leadTitle("span", sized(7), {singleStaff: true})).toEqual("The widest stretches in this piece")
+      })
+    })
+
     it("names no hand on a one-staff piece", () => {
       let oneStaff = parseMusicXML(pianoScore({bars:
         Array.from({length: 16}, (_, i) =>
@@ -751,6 +861,37 @@ describe("st/difficulty", () => {
       let final = reviewFlags(cleared).find(f => f.id == flag.id)
       expect(final.title).toEqual(originalTitle)
       expect(final.givenTitle).toBeUndefined()
+    })
+
+    it("renaming a flag the teacher added gives no givenTitle: there is no analysis name to restore", () => {
+      let song = workhorseSong()
+      let record = annotationWith(null, "p1", analyzePiece({song, source: null, at: 1}))
+
+      let add = addDecision({
+        record, by: "Ms Laurent", at: 10,
+        flag: {
+          start: 1, end: 1, startIndex: 0, endIndex: 0, hand: "both", level: 1, kinds: [],
+          title: "Mind the pedal", reason: "", tip: "", apart: false,
+        },
+      })
+      record = withDecisions(record, [add])
+      let added = reviewFlags(record).find(f => f.id == add.flagId)
+      expect(added.givenTitle).toBeUndefined()
+
+      record = withDecisions(record, [
+        editDecision({record, flag: added, overrides: {title: "Pedal first"}, by: "Ms Laurent", at: 20}),
+      ])
+      let renamed = reviewFlags(record).find(f => f.id == add.flagId)
+      expect(renamed.title).toEqual("Pedal first")
+      expect(renamed.status).toEqual("added")
+      expect(renamed.givenTitle).toBeUndefined()
+
+      // a proposal the analysis named still keeps its name beside the teacher's
+      let proposed = reviewFlags(record).find(f => f.proposalSource == "score")
+      record = withDecisions(record, [
+        editDecision({record, flag: proposed, overrides: {title: "Mine"}, by: "Ms Laurent", at: 30}),
+      ])
+      expect(reviewFlags(record).find(f => f.id == proposed.id).givenTitle).toEqual(proposed.title)
     })
 
     it("editing the reason puts the teacher's sentence first, then the score's reasons; a blank reason keeps only the score's", () => {
@@ -1073,6 +1214,34 @@ describe("st/difficulty", () => {
       expect(acceptDecision({record, flag: scoreFlag, at: 5}).given.reasons).toEqual(scoreProposal.reasons)
       expect(acceptDecision({record, flag: claudeFlag, at: 5}).given.reasons)
         .toEqual(["The left hand crosses under the right."])
+    })
+
+    it("startApartBars reaches a flag's alsoAt copies too, with the same hand(s)", () => {
+      let flags = [
+        {apart: true, hand: "lower", start: 5, end: 6, alsoAt: [[17, 18], [21, 22]]},
+        {apart: true, hand: "both", start: 9, end: 9, alsoAt: [[13, 13]]},
+        {apart: false, hand: "upper", start: 1, end: 2, alsoAt: [[3, 4]]},
+      ]
+      let map = startApartBars(flags)
+
+      for (let bar of [5, 6, 17, 18, 21, 22]) { expect(map.get(bar)).toEqual(["lower"]) }
+      for (let bar of [9, 13]) { expect(map.get(bar)).toEqual(["upper", "lower"]) }
+      for (let bar of [1, 2, 3, 4, 7, 19]) { expect(map.has(bar)).toBe(false) }
+    })
+
+    it("a repeat's flag, ticked apart by the teacher, starts both copies hands apart", () => {
+      // the same dense run twice over: bars 17-19 repeat bars 5-7
+      let song = workhorseSong({denseAt: [5, 6, 7, 17, 18, 19], barCount: 24})
+      let record = annotationWith(null, "p1", analyzePiece({song, source: null, at: 1}))
+      let flag = flagsInForce(record).find(f => f.alsoAt)
+      expect(flag.alsoAt).toEqual([[17, 19]])
+
+      record = withDecisions(record, [
+        editDecision({record, flag, overrides: {apart: true}, by: "Ms Laurent", at: 10}),
+      ])
+      let map = startApartBars(flagsInForce(record))
+      for (let bar of [5, 6, 7]) { expect(map.has(bar)).toBe(true) }
+      for (let bar of [17, 18, 19]) { expect(map.get(bar)).toEqual(map.get(flag.start)) }
     })
   })
 
@@ -1557,6 +1726,79 @@ describe("st/difficulty", () => {
       expect(flagsInForce({...other, decisions}).some(flag => flag.id == reopened.id)).toBe(true)
     })
 
+    it("re-anchors a decision with no range of its own from the flag it governs", () => {
+      let song = parseMusicXML(pianoScore({bars: barsWithDense([9, 10, 11])}))
+      let record = annotationWith(null, "p1", analyzePiece({song, source: null, at: 1}))
+
+      // a flag the teacher added, then accepted: the accept names no range
+      // of its own (an added flag has no proposal to refer to)
+      let add = addDecision({
+        record, by: "Ms Laurent", at: 10,
+        flag: {
+          start: 9, end: 11, startIndex: 8, endIndex: 10, hand: "both", level: 2, kinds: [],
+          title: "Fast run", reason: "", tip: "", apart: false,
+        },
+      })
+      let withAdd = withDecisions(record, [add])
+      let added = reviewFlags(withAdd).find(f => f.id == add.flagId)
+      let accept = acceptDecision({record: withAdd, flag: added, by: "Ms Laurent", at: 20})
+      expect(accept.of).toBeUndefined()
+      expect(accept.given).toBeUndefined()
+
+      let file = flagsFileFor(withDecisions(withAdd, [accept]), {title: "t"}, song, {by: "Ms Laurent", at: 100})
+
+      // the student's copy has a corrected note in bar 9: it still aligns, so
+      // the flag is placed, but its bars no longer hash as the teacher's did
+      let correctedBars = barsWithDense([9, 10, 11])
+      correctedBars[8] = {
+        ...correctedBars[8],
+        upper: [{name: "G4", duration: 0.25, type: "16th"}, ...correctedBars[8].upper.slice(1)],
+      }
+      let theirSong = parseMusicXML(pianoScore({bars: correctedBars}))
+      let theirs = annotationWith(null, "p2", analyzePiece({song: theirSong, source: null, at: 2}))
+      expect(theirs.fingerprint.bars[8]).not.toEqual(record.fingerprint.bars[8])
+
+      let {data} = readFlagsFile(JSON.stringify(file))
+      let {decisions, report} = reanchorDecisions(data, theirs, theirSong)
+      expect(report).toEqual({placed: 2, moved: 0, unplaced: 0, already: 0, total: 2})
+
+      // every decision of the flag is anchored on this copy's bars, the
+      // rangeless one too
+      for (let decision of decisions) {
+        expect(decision.anchor.bars).toEqual(theirs.fingerprint.bars.slice(8, 11))
+      }
+
+      let placed = reviewFlags({...theirs, decisions}).find(f => f.id == add.flagId)
+      expect(placed.status).toEqual("accepted")
+      expect(placed.place).toEqual("placed")
+    })
+
+    it("a decision with no range follows its flag when the flag can't be placed", () => {
+      let song = parseMusicXML(pianoScore({bars: barsWithDense([9, 10, 11])}))
+      let record = annotationWith(null, "p1", analyzePiece({song, source: null, at: 1}))
+      let add = addDecision({
+        record, by: "Ms Laurent", at: 10,
+        flag: {
+          start: 9, end: 11, startIndex: 8, endIndex: 10, hand: "both", level: 2, kinds: [],
+          title: "Fast run", reason: "", tip: "", apart: false,
+        },
+      })
+      let withAdd = withDecisions(record, [add])
+      let added = reviewFlags(withAdd).find(f => f.id == add.flagId)
+      let accept = acceptDecision({record: withAdd, flag: added, by: "Ms Laurent", at: 20})
+      let file = flagsFileFor(withDecisions(withAdd, [accept]), {title: "t"}, song, {by: "Ms Laurent", at: 100})
+
+      let otherSong = restSong(20)
+      let other = annotationWith(null, "p2", analyzePiece({song: otherSong, source: null, at: 2}))
+      let {data} = readFlagsFile(JSON.stringify(file))
+      let {decisions, report} = reanchorDecisions(data, other, otherSong)
+      expect(report).toEqual({placed: 0, moved: 0, unplaced: 2, already: 0, total: 2})
+
+      let waiting = reviewFlags({...other, decisions}).find(f => f.id == add.flagId)
+      expect(waiting.place).toEqual("unplaced")
+      expect(flagsInForce({...other, decisions}).some(f => f.id == add.flagId)).toBe(false)
+    })
+
     it("fileMatch is the fraction of the file's bars that align well; low for an unrelated piece", () => {
       let song = workhorseSong()
       let record = annotationWith(null, "p1", analyzePiece({song, source: null, at: 1}))
@@ -1570,12 +1812,13 @@ describe("st/difficulty", () => {
   })
 
   describe("trouble spots", () => {
-    function item({measure, hand = "both", reps = 0, lapses = 0, d = 0, paceMs, recentGrades = [], deliberate} = {}) {
+    function item({measure, hand = "both", reps = 0, lapses = 0, d = 0, paceMs, recentGrades = [], deliberate, requested} = {}) {
       return {
         pieceId: "p1", hand, startMeasure: measure, endMeasure: measure,
         reps, lapses, d, paceMs,
         recent: recentGrades.map((grade, idx) => [idx, null, null, grade]),
         ...(deliberate !== undefined ? {deliberate} : {}),
+        ...(requested !== undefined ? {requested} : {}),
       }
     }
 
@@ -1638,6 +1881,24 @@ describe("st/difficulty", () => {
       expect(scaffolded.signals.map(s => s.kind)).toContain("scaffold")
 
       expect(spots.find(s => s.start == 12)).toBeUndefined()
+    })
+
+    it("rule 5 skips a hand-alone item a flag's tick asked for, but not the scaffold's", () => {
+      let measures = Array.from({length: 6}, (_, i) => i + 1)
+      let requested = item({measure: 2, hand: "lower", reps: 1, requested: true})
+      let scaffold = item({measure: 4, hand: "upper", reps: 1})
+
+      let spots = troubleSpots({pieceId: "p1", items: [requested, scaffold], measures})
+      expect(spots.map(s => [s.start, s.hand])).toEqual([[4, "upper"]])
+      expect(spots[0].text).toEqual("Needed hands apart last time.")
+
+      // asked for, and failing on its own account, it is still a trouble spot,
+      // but not for having been asked for
+      let failing = item({measure: 2, hand: "lower", reps: 3, lapses: 2, requested: true})
+      let both = troubleSpots({pieceId: "p1", items: [failing], measures})
+      expect(both.length).toEqual(1)
+      expect(both[0].signals.map(s => s.kind)).toEqual(["lapses"])
+      expect(both[0].hand).toEqual("both")
     })
 
     it("words a merged suggestion from the strongest instance of each kind, not the first", () => {

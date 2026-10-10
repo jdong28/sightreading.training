@@ -567,6 +567,9 @@ export async function exportFlagsFile(pieceId, {by=""}={}, store=getAppStore()) 
   }
 }
 
+// lets the page paint and answer input before the next piece of a long scan
+const yieldToUi = () => new Promise(resolve => setTimeout(resolve, 0))
+
 // a flags file must align at least this well to apply to a piece, report
 // §3.3's threshold for "the same score" across editions
 const MIN_FLAGS_FILE_MATCH = 0.5
@@ -608,7 +611,13 @@ export async function importFlagsFile(text, store=getAppStore(), {pieceId}={}) {
         let bestPiece = null
         let bestMatch = 0
         for (let candidate of store.pieces()) {
-          let match = fileMatch(file, store.annotation(candidate.id))
+          // each alignment is its own task, so a large deck never holds the
+          // page up for the whole search; a piece never analysed (imported
+          // before annotations were kept) is analysed to be looked at, as
+          // the title match above does, not passed over as matching nothing
+          await yieldToUi()
+          let record = store.annotation(candidate.id) || await ensureAnnotation(candidate.id, store)
+          let match = fileMatch(file, record)
           if (match > bestMatch) { bestMatch = match; bestPiece = candidate }
           // nothing can beat every bar aligning, so the rest of the deck
           // isn't aligned at all (each alignment is a full bar-for-bar DP)

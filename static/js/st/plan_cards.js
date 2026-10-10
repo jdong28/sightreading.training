@@ -112,6 +112,7 @@ export class PlanDeck {
 
     this.index = null
     this.entry = null
+    this.entryRequested = false
 
     // the last graded review known of each of the piece's items, by item id,
     // which the hand scaffold reads the blamed hand from. The deck plans at
@@ -174,6 +175,17 @@ export class PlanDeck {
    */
   get scaffold() {
     return !!this.entry && this.entry.hand != this.sessionHand
+  }
+
+  /**
+   * @returns {boolean} whether the card shown is a hand alone a flag's tick
+   * asked for ("start this passage hands separately", decision 6) rather
+   * than the hand scaffold's: its item is marked requested
+   * (ItemRecord#requested), which the trouble spots' "needed hands apart"
+   * rule never counts as the bar's own failing
+   */
+  get requested() {
+    return this.scaffold && this.entryRequested
   }
 
   /** @returns {boolean} whether the piece has a measure to play */
@@ -277,6 +289,11 @@ export class PlanDeck {
     let previous = played && this.entry ? this.entry.itemId : null
     let {entry, state} = planNext({...this.planInput(), previous})
     this.entry = entry
+    // the hand a flag's tick stands in for the bar is that of its
+    // introduction; the hand scaffold's hand is read from a failed bar, which
+    // has no introduction (the bar is already learned together)
+    let intro = entry && state.startApartIntros && state.startApartIntros.get(entry.measure)
+    this.entryRequested = !!intro && intro.hand == entry.hand
     this.index = entry ? this.measures.indexOf(entry.measure) : null
     return state
   }
