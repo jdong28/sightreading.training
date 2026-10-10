@@ -964,6 +964,22 @@ export class LocalStore {
   }
 
   /**
+   * The bar log rows written at or after a time, whatever the piece or
+   * session, read from the database through the write queue (so a row just
+   * recorded is in), ordered as barLog's are: oldest first and by measure
+   * within a pass. For the practice record's Today (st/practice_day).
+   * @param {number} since ms
+   * @returns {Promise<BarLogRecord[]>}
+   */
+  barLogSince(since) {
+    return this.mutate(async () => {
+      let rows = await this.backend.getAllFrom("barLog", "at", since)
+      return rows.sort((a, b) => a.at - b.at || a.measure - b.measure ||
+        (a.itemId < b.itemId ? -1 : a.itemId > b.itemId ? 1 : 0))
+    })
+  }
+
+  /**
    * Appends the rows of a finished pass to the bar log in one write, nothing
    * at all when one is not valid (see validBarLog). A row of the same bar and
    * time replaces the stored one.

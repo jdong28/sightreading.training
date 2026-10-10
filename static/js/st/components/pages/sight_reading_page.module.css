@@ -484,3 +484,8 @@
         border-top: 0;
     }
 }
+
+/* the strip Rest leaves under the stat cards, see renderRestStrip */
+.trainer_main .rest_strip {
+    margin: 16px 0 0;
+}

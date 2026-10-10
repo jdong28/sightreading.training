@@ -157,39 +157,35 @@ pane in place of the drawer, Rest pausing in place rather than ending). This scr
 describes `/sheet-music` once a session is running, and every other page that shares the trainer
 (the exercises page above all).
 
-### 4. Session summary — `screens/salon-summary/SalonSummary.dc.html`
+### 4. Session summary — `screens/salon-summary/SalonSummary.dc.html` (retired: the rest strip)
 
-**Purpose:** shown when the user ends an endless session.
+**Purpose:** what the player is told when an endless session ends on the exercises page.
 
-**Layout:** centred card, `max-width: 740px`, `padding: 40px 44px 36px`, engraved treatment.
+The full-screen summary pop-up this prototype drew (a native `<dialog>` with four stat cards, the
+trouble rows and an insight sentence) was removed for being too intrusive: Rest no longer opens
+anything. The summary is now **Today's practice** (§7), a tab the player goes to, never one that
+opens by itself, and Rest leaves a quiet **rest strip** under the stat cards.
 
-**Components:** eyebrow (programme description) → "The session is *ended*" Bodoni `40px` →
-fleuron rule → four stat cards on `#f6efe1` (`minmax(128px,1fr)`) → "Notes that gave trouble":
-rows of note name (Bodoni `19px`, `min-width: 44px`), context label (`12px` `#5a5243`,
-`min-width: 96px`), a 5px accuracy rule on `#eee3cf` filled oxblood below ~75% and gilt above,
-and the percentage right-aligned → one italic insight sentence → actions: "Practise these notes"
-(primary, seeds the trainer with the weak notes), "New programme" (ghost), "See all progress →".
+**Components:** the strip is `EndedStrip`
+(`static/js/st/components/sight_reading/ended_strip.jsx`), the same strip the score page shows
+above the score once a session ends (§6): eyebrow "Session ended", the session's accuracy in Bodoni
+`30px` with "accuracy" in italic, a line of what it was ("1 minute · 47 notes read"), a line to
+"Today's practice →" (`/stats`) with the day's minutes ("6 of 10 minutes today", or "15 minutes
+today, goal 10 met"), and its actions: "Practise these notes" (ghost, only when a note missed is
+weak, and never on a page whose generator can't take a seed or after a chord session) and "Done".
 
-**State:** `showTrouble: boolean`, `tone: 'encouraging' | 'plain'` (suppresses the insight line).
+**Implementation:** `SightReadingPage#renderRestStrip`, from the `SessionRecord` Rest just wrote
+(`NoteStats#sessionRecord`, kept in `state.rested`: Begin, Done and Clear stats take the strip
+away). The minutes count the record by its id (`todayMinutes` in `st/practice_day.js`), as the cache
+holds the record only once its write lands. "Practise these notes" switches the trainer to Random
+notes focused on the weak notes (`troubleNotes` and `focusFromRows` in `st/session_summary.js`,
+weak below 75%; `SightReadingPage#practiseNotes`), staying at rest. The "This evening" list in the
+rail counts the same practice day as Today does (`localDay`, from 4 am).
 
-**Implementation:** the card is `SessionSummary`
-(`static/js/st/components/sight_reading/session_summary.jsx`), a native `<dialog>` the trainer
-opens at Rest from the `SessionRecord` it just wrote (`NoteStats#sessionRecord`), through the pure
-derivations of `static/js/st/session_summary.js` (which the four stat cards, the trouble rows, the
-weak-below-75% rule and the insight sentence all come from). The four stat cards are the live
-Elapsed/Accuracy/Notes read/Best streak, or, for a sitting with nothing detected (acoustic
-self-graded practice), the three live acoustic cards Elapsed/Passes/Clean. The context label next
-to each trouble row is its miss count. "Practise these notes" switches the trainer to Random
-notes focused on the weak rows alone, the ones drawn in oxblood
-(`SightReadingPage#practiseNotes`), and is hidden when nothing shown is weak or on a page whose
-generator can't take a seed (the sheet music generator). "New programme" is a link to `/setup` on
-the exercises page. "See all progress →" links to `/stats` until the progress screen (a later step)
-replaces it. This card is never shown on the sheet music page (§6): a restPauses page ends a
-session to the score itself, with its own ended strip, instead.
+### 5. Progress — `screens/salon-progress/SalonProgress.dc.html` (the practice record's "Last 14 days" tab)
 
-### 5. Progress — `screens/salon-progress/SalonProgress.dc.html`
-
-**Purpose:** practice history.
+**Purpose:** practice history. Statistics is the practice record (§7): this screen is its tab
+**Last 14 days**, at `/stats/last-14-days`, under the same tabs as Today.
 
 **Layout:** header + nav → title block → four headline cards → two columns
 `minmax(0,1fr) 300px`.
@@ -222,7 +218,8 @@ day's bar. By clef sums each session's own `clefs` counts, falling back to a cle
 note merges every spelling of a pitch class (`parseNoteOffset`) before taking a percentage, since a
 hit and a miss of the same note can arrive under different spellings. A backend account
 (`currentUser`) still sees the existing "Daily stats" page, unchanged; the route choice is
-`statsPageFor` in `st/components/pages/stats.jsx`.
+`statsPageFor` in `st/components/pages/stats.jsx`, which gives a local user the practice record
+(`PracticeRecordPage`, whose `last-14-days` route is this screen).
 
 ### 6. Sheet music, score first — Claude Design canvas "Score-First Sheet Music Page"
 (`https://claude.ai/artifact/CXadj5P7neXEb6sFQ4WRNy`, version `1791445219-6dee`, "the settled
@@ -342,8 +339,9 @@ many bars were played — plus Play on (resumes, the time since End session coun
 Done (dismisses the strip alone). Every bar played that session is tinted and labelled by its
 accuracy under the This session shade (`--salon-mark-clean/near/trouble`; the 80% line between
 "nearly" and "trouble" per build note 6's placeholder), which the toolbar offers only while `ended`
-is set. There is no full-screen summary dialog on this page (§4's implementation note): a restPauses
-page like this one never opens `SessionSummary`. The strip survives a reload: End session writes a
+is set. There is no rest strip or summary dialog on this page (§4): a restPauses page like this one ends a
+session to its own strip, the shared `EndedStrip`, which also links to Today's practice (§7) with the
+day's minutes. The strip survives a reload: End session writes a
 `scoreEnded` marker to the local store, and the page brings the strip back, its log rebuilt from
 the bar log (`sessionLogOf`) with Done alone, while the marker's piece is the one drilled, its
 session is a recent one and it ended on today's practice day; Begin, Play on and Done forget it.
@@ -355,6 +353,41 @@ near/trouble` for the session shade, both described above; `--salon-heat-tint-1.
 difficulty shade (reusing the existing heat ramp's steps as translucent fills over the engraving);
 `--salon-selected-tint` for a clicked bar's fill; `--salon-ghost-head` for the key pressed instead
 on a bar's note marks.
+
+### 7. Practice record: Today — Claude Design canvas "Practice Record"
+(`https://claude.ai/artifact/C5bEWXdKoWaNLz4nh3aviP`, Q4 A, Q5 A and Q11 A)
+
+**Purpose:** a summary of today's practice, the whole practice day from 4 am (every session, every
+piece), in place of the pop-up summary of §4. Statistics becomes the practice record, a row of tabs
+each at its own route (`TabNav` in `salon.jsx`, `RECORD_TABS` in `record_tabs.jsx`): **Today**
+(`/stats`, the index) and **Last 14 days** (§5, `/stats/last-14-days`). Today never opens by itself:
+the score page's ended strip and the exercises page's rest strip link to it, as does the header's
+Statistics entry.
+
+**Layout:** `.today_page`, as the Progress screen (`max-width: 1060px`, `padding: 26px 34px 44px`):
+title block "Today, *Monday 14 September*" (the practice day's date) → tabs → four stat cards → two
+columns `minmax(0,1fr) 300px` (one column at 760px and below): "Sessions today" and a plate per piece
+on the left, the rail on the right → a closing italic line.
+
+**Components:** the cards are Minutes (against the goal, with a track whose dashed tick is the goal),
+Sessions ("1 piece, 1 exercise"), Accuracy (accent, with the change on yesterday) and Bars learned
+(the bars named, or "Three clean passes in a row learns a bar"). Each piece's plate has a cell for
+each printed bar number, shaded by today's accuracy (`--salon-mark-clean/near/trouble`; unplayed
+bars `--salon-paper` with `--salon-rule-light`), a ◆ (`--salon-gilt-deep`) on a bar learned today,
+the trouble lines (the worst five, each told by beat, with "Open"), and the pills "Practise bars 3–9"
+(primary: free practice of the span of the bars under 80%, one bar a card in Random order, so the weakest
+come up most often; it sets the settings and goes to `/sheet-music` at rest, never beginning) and "Open
+the score". A bar's cell opens the score at that bar's window (`/sheet-music?bar=N`, used once). The rail
+has "Mistakes today" (wrong notes, skipped, hesitations, which are not in the %) and "Kept going wrong".
+The empty states are "The bench is *waiting*" and "Today's practice *fills in as you play*".
+
+**Implementation:** every figure is worked out in the pure module `st/practice_day.js`
+(`practiceDay`, with the rule for each in its comments) from the sessions, the day's rows of the bar log
+(`LocalStore#barLogSince`) and the bar items; `TodayPage`
+(`static/js/st/components/pages/today_page.jsx`) only paints it. A bar's figure for the day is the
+This-session rule (`barTotals` in `st/bar_progress.js`) over the day's rows, so the day and the ended strip
+never disagree about a bar. A mistake is told by its beat (`beatLabel`, as the bar window does), never by a
+note name. The first paint is from the cached sessions; the rows fill in the plates and rail once read.
 
 ## Interactions & behaviour
 
@@ -464,4 +497,5 @@ see the `patchStaffTwo` method in the trainer prototype for the exact failure mo
 ## Navigation
 
 Navigation between the prototypes follows the intended flow: onboarding → setup → trainer →
-summary → progress → setup.
+summary → progress → setup. In the app the summary is the rest strip and Today's practice (§4, §7),
+and progress is the practice record's Last 14 days tab.

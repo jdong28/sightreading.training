@@ -9,7 +9,7 @@ import DevMetricsPanel from "st/components/sight_reading/dev_metrics_panel"
 import SelfGradeRow from "st/components/sight_reading/self_grade_row"
 import SelfGradeReceipt from "st/components/sight_reading/self_grade_receipt"
 import PlateFeedback from "st/components/sight_reading/plate_feedback"
-import {SessionSummary} from "st/components/sight_reading/session_summary"
+import {EndedStrip} from "st/components/sight_reading/ended_strip"
 import Hotkeys from "st/components/hotkeys"
 
 import styles from "./sight_reading_page.module.css"
@@ -19,6 +19,7 @@ import devMetricsStyles from "st/components/sight_reading/dev_metrics_panel.modu
 import {noteName, parseNote, displayNoteName, romanNumeral} from "st/music"
 import {
   STAVES, GENERATORS, sheetMusicPiece, handTracks, handSetting, drilledRange, sectionDroppedPitches, RIGHT_HAND, LEFT_HAND,
+  plannedPractice, PROGRAMME_PRACTICE, FREE_PRACTICE,
 } from "st/data"
 import {pieceSong, pieceSource} from "st/sheet_music_deck"
 import {parseMusicXML} from "st/musicxml"
@@ -43,7 +44,8 @@ import {SELF_GRADES, SELF_GRADE_FLASH_MS} from "st/srs/self_grade"
 import {SELF_ASPECTS} from "st/srs/records"
 import {AGAIN} from "st/srs/grade"
 import {localDay} from "st/srs/schedule"
-import {sessionLogOf} from "st/bar_progress"
+import {sessionLogOf, minutesWords} from "st/bar_progress"
+import {todayMinutes, todayMinutesWords} from "st/practice_day"
 import {troubleNotes, focusFromRows} from "st/session_summary"
 
 import * as React from "react"
@@ -147,15 +149,11 @@ export const EXERCISES_PROGRAMME = {
   // than the legacy renderer; the score page leaves this unset, so its
   // engine cards and app-staff fallback are unaffected
   staffTwo: true,
-  // the session summary card's (st/components/sight_reading/session_summary)
-  // "Practise these notes" switches to this generator, focused on the rows
-  // shown (see practiseNotes); unset, as the score page leaves it, hides
-  // that pill, since the sheet music generator can't take a seed
+  // the rest strip's "Practise these notes" switches to this generator,
+  // focused on the notes missed (see practiseNotes); unset, as the score
+  // page leaves it, hides that pill, since the sheet music generator can't
+  // take a seed
   focusGenerator: GENERATORS.find(generator => generator.name == "random"),
-  // the session summary's "New programme" destination, a path rendered as
-  // a link; unset, as the score page leaves it, closes the card and opens
-  // the programme drawer instead (see newProgramme)
-  newProgramme: "/setup",
 
   // Optional:
   // idleTitle, the page title's {title, italic} while no piece is drilled, in
@@ -296,16 +294,12 @@ export default class SightReadingPage extends React.Component {
     // followHead)
     this.playedThisSegment = false
 
-    // the session summary card is a native <dialog>, but its own controls
-    // (eg. the "See all progress" link) aren't input/button/textarea, so
-    // Hotkeys would otherwise still send space/1-4 through to the drill
-    // underneath while it's open
     this.keyMap = {
-      " ": e => { if (!this.state.summary && !this.scoreAtRest()) { this.skipCurrentNote() } },
-      "1": e => { if (!this.state.summary && !this.scoreAtRest()) { this.selfGradeHotkey(1) } },
-      "2": e => { if (!this.state.summary && !this.scoreAtRest()) { this.selfGradeHotkey(2) } },
-      "3": e => { if (!this.state.summary && !this.scoreAtRest()) { this.selfGradeHotkey(3) } },
-      "4": e => { if (!this.state.summary && !this.scoreAtRest()) { this.selfGradeHotkey(4) } },
+      " ": e => { if (!this.scoreAtRest()) { this.skipCurrentNote() } },
+      "1": e => { if (!this.scoreAtRest()) { this.selfGradeHotkey(1) } },
+      "2": e => { if (!this.scoreAtRest()) { this.selfGradeHotkey(2) } },
+      "3": e => { if (!this.scoreAtRest()) { this.selfGradeHotkey(3) } },
+      "4": e => { if (!this.scoreAtRest()) { this.selfGradeHotkey(4) } },
     }
 
     // the key the user picked, drawn unless the generator sets its own
@@ -374,9 +368,10 @@ export default class SightReadingPage extends React.Component {
       pausedMs: 0,
       pausedAt: null,
 
-      // the session summary card (st/components/sight_reading/session_summary),
-      // opened by Rest alone: null, or {record, eyebrow} (see openSummary)
-      summary: null,
+      // the record of the session Rest just wrote, for the rest strip under
+      // the stat cards (see renderRestStrip): null until Rest, and again
+      // once Begin, Done or Clear stats
+      rested: null,
 
       // the source MusicXML of the drilled piece, for the programme's
       // engine: {piece, status: "loading" | "ready" | "missing" | "failed",
@@ -1094,8 +1089,7 @@ export default class SightReadingPage extends React.Component {
       session: true,
       heldNotes: {},
       touchedNotes: {},
-      // defensive only: the modal normally hides Begin
-      summary: null,
+      rested: null,
     })
     this.followHead()
   }
@@ -1118,7 +1112,7 @@ export default class SightReadingPage extends React.Component {
     if (this.state.session) {
       this.restartSession()
     } else {
-      this.setState({stats: this.closeSession()})
+      this.setState({stats: this.closeSession(), rested: null})
     }
   }
 
@@ -1146,21 +1140,8 @@ export default class SightReadingPage extends React.Component {
       // built from exactly what was written, never read back: a second
       // record could miss a flashing self grade recordSession already
       // flushed into this one (sibling PR #54)
-      this.openSummary(recorded.session)
+      this.setState({rested: recorded.session})
     }
-  }
-
-  // Opens the session summary card from the record just written. The
-  // eyebrow is the trainer's own title at the moment of Rest, since the
-  // record keeps no key signature to rebuild it from
-  openSummary(session) {
-    let {title, italic} = this.titleParts()
-    let eyebrow = [title, italic].filter(Boolean).join(" · ")
-    this.setState({summary: {record: session, eyebrow}})
-  }
-
-  closeSummary() {
-    this.setState({summary: null})
   }
 
   // Begin, on a restPauses page (the setup pane, the bar pop-up's or the
@@ -1337,18 +1318,18 @@ export default class SightReadingPage extends React.Component {
     this.setState({ended: null, endedRestored: false})
   }
 
-  // "Practise these notes": closes the card and switches to the programme's
-  // focusGenerator (eg. Random notes), focused on the card's weak rows
-  // (focusFromRows), same staff and key, staying at rest. Unreachable
-  // without a focusGenerator (the pill is hidden, see renderSummary) or
-  // without a weak row (chord sessions have none)
+  // "Practise these notes": clears the rest strip and switches to the
+  // programme's focusGenerator (eg. Random notes), focused on the strip's
+  // weak rows (focusFromRows), same staff and key, staying at rest.
+  // Unreachable without a focusGenerator (the pill is hidden, see
+  // renderRestStrip) or without a weak row (chord sessions have none)
   practiseNotes() {
-    let summary = this.state.summary
-    if (!summary) { return }
+    let rested = this.state.rested
+    if (!rested) { return }
 
-    let focus = focusFromRows(troubleNotes(summary.record))
+    let focus = focusFromRows(troubleNotes(rested))
 
-    this.closeSummary()
+    this.setState({rested: null})
 
     // only notes mode has anything to seed (chord sessions have no rows,
     // so this is unreachable, but the generator switch below assumes it)
@@ -1359,15 +1340,6 @@ export default class SightReadingPage extends React.Component {
 
     let settings = this.state.currentGenerator == generator ? this.state.currentGeneratorSettings : {}
     this.setGenerator(generator, {...settings, focus})
-  }
-
-  // "New programme" where the programme has no destination of its own (see
-  // EXERCISES_PROGRAMME.newProgramme): closes the card and opens the
-  // programme drawer, eg. the score page, which can't pick a piece from
-  // /setup
-  newProgramme() {
-    this.closeSummary()
-    this.openSettings()
   }
 
   startClock() {
@@ -1933,7 +1905,14 @@ export default class SightReadingPage extends React.Component {
     let settings = this.currentSettings()
     let section = this.currentPieceSection()
     if (section) {
-      settings = {...settings, pieceTitle: section.pieceTitle}
+      // the practice that ran is kept with the session (the setting itself
+      // is unset by default, and unset settings aren't recorded), so the
+      // practice record can say "today's programme"
+      settings = {
+        ...settings,
+        pieceTitle: section.pieceTitle,
+        practice: plannedPractice(settings) ? PROGRAMME_PRACTICE : FREE_PRACTICE,
+      }
     }
 
     let session = this.state.stats.sessionRecord({
@@ -1943,7 +1922,7 @@ export default class SightReadingPage extends React.Component {
       // the session clock, Begin to now, less time paused (restPauses
       // pages only; pausedMs is always 0 elsewhere): activeSeconds leaves
       // out pauses too, but acoustic mode barely marks activity at all, so
-      // this is the only clock the summary card and progress screen can
+      // this is the only clock the rest strip and the practice record can
       // read (see the elapsedSeconds doc on SessionRecord in st/storage)
       elapsedSeconds: Math.floor((Date.now() - this.state.sessionStartedAt - this.state.pausedMs) / 1000),
     })
@@ -2005,6 +1984,7 @@ export default class SightReadingPage extends React.Component {
                 {this.renderSelfGrade()}
                 {this.renderTransport()}
                 {this.renderStatCards()}
+                {this.renderRestStrip()}
               </div>
               {this.programme.SessionRail ? <this.programme.SessionRail
                 settings={this.currentSettings()}
@@ -2052,7 +2032,6 @@ export default class SightReadingPage extends React.Component {
       {this.renderDevMetrics()}
 
       <Hotkeys keyMap={this.keyMap} />
-      {this.renderSummary()}
     </div>;
   }
 
@@ -2090,28 +2069,40 @@ export default class SightReadingPage extends React.Component {
       onBegin={this.begin}
       onPlayOn={this.playOn}
       onSkipReadThrough={this.skipReadThrough}
-      onDismissEnded={this.dismissEnded} />
+      onDismissEnded={this.dismissEnded}
+      openBar={this.props.openBar}
+      onBarOpened={this.props.onBarOpened} />
   }
 
-  // The session summary card (st/components/sight_reading/session_summary),
-  // opened by Rest alone (see openSummary). Rendered last, after the stat
-  // cards, so existing specs that find the Accuracy card with
-  // el.querySelector("[role=button]") keep finding it
-  renderSummary() {
-    if (!this.state.summary) { return null }
+  // The quiet strip Rest leaves under the stat cards, where the pop-up
+  // summary was: the session's accuracy, a link to Today's practice
+  // (st/components/pages/today_page) with the day's minutes, and, for the
+  // exercises, "Practise these notes" when a note missed is weak. Built from
+  // the record Rest wrote (see restSession); Begin, Done and Clear stats take
+  // it away
+  renderRestStrip() {
+    let record = this.state.rested
+    if (!record) { return null }
 
-    let {record, eyebrow} = this.state.summary
+    let store = getAppStore()
+    let accuracy = accuracyPercent(record.notesRead, record.misses)
+    let minutes = todayMinutes(store.recentSessions(), {now: Date.now(), record})
+    let practise = this.programme.focusGenerator && this.state.currentGenerator?.mode == "notes" &&
+      troubleNotes(record).some(row => row.weak)
 
-    return <SessionSummary
-      record={record}
-      eyebrow={eyebrow}
-      onPractise={this.programme.focusGenerator ?
-        (this._practiseNotes ||= () => this.practiseNotes()) : null}
-      onNewProgramme={this.programme.newProgramme ?
-        null : (this._newProgramme ||= () => this.newProgramme())}
-      newProgrammeTo={this.programme.newProgramme}
-      onClose={this._closeSummary ||= () => this.closeSummary()}
-    />
+    return <EndedStrip
+      data-rest-strip
+      className={styles.rest_strip}
+      headline={accuracy == null ? "—" : `${accuracy}%`}
+      italic="accuracy"
+      detail={`${minutesWords(record.elapsedSeconds)} · ${record.notesRead || 0} ${record.notesRead == 1 ? "note" : "notes"} read`}
+      today={{words: todayMinutesWords(minutes, store.practiceSettings().dailyGoalMinutes)}}
+      actions={<>
+        {practise ? <Pill variant="ghost" onClick={this._practiseNotes ||= () => this.practiseNotes()}>
+          Practise these notes
+        </Pill> : null}
+        <Pill variant="ghost" onClick={this._doneRest ||= () => this.setState({rested: null})}>Done</Pill>
+      </>} />
   }
 
   // the developer metrics panel and its pill in the header, only when
@@ -2586,11 +2577,11 @@ export default class SightReadingPage extends React.Component {
     </div>
   }
 
-  // the last sessions started today saved to the local store, newest last
+  // the last sessions started in today's practice day (from 4 am, as the
+  // practice record counts it) saved to the local store, newest last
   eveningSessions() {
-    let now = new Date()
-    let today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
-    return getAppStore().recentSessions().filter(s => s.startedAt >= today).slice(-3)
+    let today = localDay(Date.now())
+    return getAppStore().recentSessions().filter(s => localDay(s.startedAt) == today).slice(-3)
   }
 
   renderRail() {

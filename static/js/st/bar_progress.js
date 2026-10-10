@@ -105,6 +105,60 @@ function markKind(share) {
 }
 
 /**
+ * What a log of passes says of each bar it played (§C3/§C4), before it is
+ * turned into a mark: the detected passes' columns and clean columns added up,
+ * and the self-graded passes counted apart. A log is a session's (the
+ * page's session log) or a whole day's (st/practice_day, from the bar log's
+ * rows through sessionLogOf).
+ * @param {Object[]} log the passes, see sessionMarks
+ * @returns {Map<number, {columns: number, clean: number, passes: number,
+ * selfPasses: number, selfClean: number}>} by printed bar number; passes
+ * counts the detected passes, columns and clean sum them
+ */
+export function barTotals(log) {
+  let totals = new Map()
+
+  for (let entry of log) {
+    for (let bar of entry.bars) {
+      let total = totals.get(bar.measure)
+      if (!total) {
+        total = {columns: 0, clean: 0, passes: 0, selfPasses: 0, selfClean: 0}
+        totals.set(bar.measure, total)
+      }
+
+      if (bar.columns == null) {
+        total.selfPasses += 1
+        if (bar.grade >= GOOD) { total.selfClean += 1 }
+      } else {
+        total.columns += bar.columns
+        total.clean += bar.clean
+        total.passes += 1
+      }
+    }
+  }
+
+  return totals
+}
+
+/**
+ * A bar's mark from its totals (barTotals): a bar with any detected pass is
+ * its accuracy, Σclean/Σcolumns, labelled "71%"; one with nothing but
+ * self-graded passes its share of clean passes, labelled "2 of 3 clean".
+ * @param {Object} total one entry of barTotals
+ * @returns {{kind: "clean"|"near"|"trouble", label: string, share: number,
+ * detected: boolean}} share is the 0-100 figure the kind is told from
+ */
+export function barMark(total) {
+  if (total.passes) {
+    let share = Math.round(100 * total.clean / total.columns)
+    return {kind: markKind(share), label: `${share}%`, share, detected: true}
+  }
+
+  let share = Math.round(100 * total.selfClean / total.selfPasses)
+  return {kind: markKind(share), label: `${total.selfClean} of ${total.selfPasses} clean`, share, detected: false}
+}
+
+/**
  * The session's marks on every bar it played (§C3/§C4): a detected bar's
  * accuracy over its passes in the log (Σclean/Σcolumns), labelled "71%"; a
  * self-graded-only bar's share of clean passes, labelled "2 of 3 clean".
@@ -114,39 +168,29 @@ function markKind(share) {
  * @returns {Map<number, {kind: "clean"|"near"|"trouble", label: string}>}
  */
 export function sessionMarks(log) {
-  let detected = new Map()
-  let self = new Map()
-
-  for (let entry of log) {
-    for (let bar of entry.bars) {
-      if (bar.columns == null) {
-        let s = self.get(bar.measure) || {passes: 0, clean: 0}
-        s.passes += 1
-        if (bar.grade >= GOOD) { s.clean += 1 }
-        self.set(bar.measure, s)
-      } else {
-        let d = detected.get(bar.measure) || {columns: 0, clean: 0}
-        d.columns += bar.columns
-        d.clean += bar.clean
-        detected.set(bar.measure, d)
-      }
-    }
-  }
-
   let marks = new Map()
-  for (let [measure, {columns, clean}] of detected) {
-    let accuracy = Math.round(100 * clean / columns)
-    marks.set(measure, {kind: markKind(accuracy), label: `${accuracy}%`})
-  }
-  // a bar with any detected pass this session keeps its accuracy label; the
-  // self-graded label is only for a bar with nothing but self-graded passes
-  for (let [measure, {passes, clean}] of self) {
-    if (detected.has(measure)) { continue }
-    let share = Math.round(100 * clean / passes)
-    marks.set(measure, {kind: markKind(share), label: `${clean} of ${passes} clean`})
+
+  for (let [measure, total] of barTotals(log)) {
+    let {kind, label} = barMark(total)
+    marks.set(measure, {kind, label})
   }
 
   return marks
+}
+
+/**
+ * Whether the bar became learned (learnedness 3) in the practice since a
+ * time: it reads 3 now and its history from before the time alone does not.
+ * Only the passes kept count (PASS_HISTORY), so a bar learned earlier whose
+ * every kept pass is since then reads as learned since.
+ * @param {Object|null} item the bar's single-bar item under one hand
+ * @param {number} since ms
+ * @returns {boolean}
+ */
+export function learnedSince(item, since) {
+  if (!item || learnedness(item) !== 3) { return false }
+  let before = {...item, passes: passHistory(item).filter(entry => entry[0] < since)}
+  return learnedness(before) !== 3
 }
 
 /**
@@ -184,8 +228,12 @@ export function sessionLogOf(rows) {
   return [...passes.values()]
 }
 
-// "Under a minute", "1 minute" or "N minutes", from elapsed seconds
-function minutesWords(seconds) {
+/**
+ * "Under a minute", "1 minute" or "N minutes", from elapsed seconds.
+ * @param {number} seconds
+ * @returns {string}
+ */
+export function minutesWords(seconds) {
   let minutes = Math.round((seconds || 0) / 60)
   if (minutes < 1) { return "Under a minute" }
   return minutes == 1 ? "1 minute" : `${minutes} minutes`

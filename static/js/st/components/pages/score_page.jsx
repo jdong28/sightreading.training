@@ -21,6 +21,7 @@
 // once the piece is in study)
 
 import * as React from "react"
+import {useSearchParams} from "react-router-dom"
 
 import SightReadingPage from "st/components/pages/sight_reading_page"
 import {ScoreView} from "st/components/sight_reading/score_view"
@@ -79,16 +80,30 @@ export const SCORE_PROGRAMME = {
   // of detection, while the instrument setting is acoustic
   selfGrading: true,
   pickPiece: programmeOf,
-  // no focusGenerator (the sheet music generator can't take a weak-note
-  // seed, see SightReadingPage#practiseNotes) and no newProgramme: the
-  // session summary is never shown on this page (restPauses)
+  // no focusGenerator: the sheet music generator can't take a weak-note
+  // seed, see SightReadingPage#practiseNotes. The page never rests into the
+  // exercises' rest strip (restPauses): its End session leaves the ended
+  // strip on the score instead
 }
 
 // the midi input's messages reach the trainer through the forwarded ref; a
-// spec may hand it another programme, eg. without the engine
-const ScorePage = React.forwardRef((props, ref) =>
-  <SightReadingPage ref={ref} programme={SCORE_PROGRAMME} {...props} />
-)
+// spec may hand it another programme, eg. without the engine.
+// /sheet-music?bar=N asks for bar N's window to be opened, which Today's bars
+// do: used once, then taken out of the address (replacing the history entry),
+// as the score view is drawn again after every Begin and End session
+const ScorePage = React.forwardRef((props, ref) => {
+  let [params, setParams] = useSearchParams()
+  let bar = params.get("bar")
+  let openBar = bar != null && /^\d+$/.test(bar) ? Number(bar) : undefined
+  let onBarOpened = React.useCallback(() => {
+    setParams(current => {
+      current.delete("bar")
+      return current
+    }, {replace: true})
+  }, [setParams])
+
+  return <SightReadingPage ref={ref} programme={SCORE_PROGRAMME} openBar={openBar} onBarOpened={onBarOpened} {...props} />
+})
 
 ScorePage.displayName = "ScorePage"
 

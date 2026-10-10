@@ -1,0 +1,71 @@
+/* the strip a session leaves: the score page's ended strip and the exercises
+   page's rest strip, see EndedStrip */
+.ended_strip {
+    display: flex;
+    align-items: center;
+    gap: 14px 22px;
+    flex-wrap: wrap;
+    background: var(--salon-paper);
+    border: 1px solid var(--salon-rule-strong);
+    border-top: var(--salon-double-rule);
+    padding: 12px 18px;
+    margin-bottom: 16px;
+}
+
+.ended_left {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.ended_eyebrow {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--salon-ink-muted);
+}
+
+.ended_headline {
+    font-family: var(--font-display);
+    font-size: 30px;
+    line-height: 1;
+    color: var(--salon-ink);
+}
+
+.ended_headline_italic {
+    font-size: 16px;
+    font-style: italic;
+    color: var(--salon-ink-soft);
+}
+
+.ended_detail {
+    flex: 1 1 360px;
+    min-width: 0;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--salon-ink-soft);
+}
+
+.ended_actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-left: auto;
+}
+
+.ended_today {
+    margin-top: 2px;
+}
+
+.ended_today a {
+    font-weight: 700;
+    color: var(--salon-gilt-deep);
+    text-decoration: none;
+    border-bottom: 1px solid var(--salon-gilt-light);
+}
+
+.ended_today a:hover {
+    color: var(--salon-oxblood);
+    border-bottom-color: var(--salon-oxblood);
+}
