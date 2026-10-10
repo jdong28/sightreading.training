@@ -321,7 +321,7 @@ describe("a bar's review (st/bar_review)", function() {
       expect(strip.cells.map(cell => cell.words)).toEqual(["first note", "on time", "2.5 s late", "on time"])
       expect(strip.band).toEqual({from: 37.5, to: 62.5})
       // 3000 ms against 500: five times late, the far edge, its dot beside the arrow
-      expect(strip.cells[2].left).toEqual(88)
+      expect(strip.cells[2].left).toEqual(76)
       expect(strip.cells[2].arrow).toEqual("»")
       expect(strip.cells[1].left).toEqual(50)
       expect(strip.caption).toEqual("Against a steady pulse at your own pace (0.50 s a beat): inside the shading is steady. Timing is not in the %.")

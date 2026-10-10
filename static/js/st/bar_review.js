@@ -34,8 +34,8 @@ export const STEADY_BAND = 0.25
 export const GHOST_RANGE = 6
 
 // how far from the centre of its cell, in half widths, the dot of a note
-// started far off the pulse stands beside its arrow
-const ARROW_REACH = 0.76
+// started far off the pulse stands, leaving room beside it for its arrow
+const ARROW_REACH = 0.52
 
 // notes of a strip are told in words under it up to this many, past it the
 // caption names the worst
