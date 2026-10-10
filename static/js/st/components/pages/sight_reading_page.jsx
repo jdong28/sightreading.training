@@ -42,6 +42,8 @@ import {
 import {SELF_GRADES, SELF_GRADE_FLASH_MS} from "st/srs/self_grade"
 import {SELF_ASPECTS} from "st/srs/records"
 import {AGAIN} from "st/srs/grade"
+import {localDay} from "st/srs/schedule"
+import {sessionLogOf} from "st/bar_progress"
 import {troubleNotes, focusFromRows} from "st/session_summary"
 
 import * as React from "react"
@@ -366,6 +368,9 @@ export default class SightReadingPage extends React.Component {
       paused: false,
       ended: null,
       sessionLog: [],
+      // the strip came back after a reload (see restoreEnded), whose session
+      // can't be played on: its paused stats are gone
+      endedRestored: false,
       pausedMs: 0,
       pausedAt: null,
 
@@ -412,6 +417,7 @@ export default class SightReadingPage extends React.Component {
   // TODO trigger this as watching component
   componentDidUpdate(prevProps, prevState) {
     this.syncMatcher()
+    this.restoreEnded()
 
     // the instrument setting toggled on a page that can self-grade: nothing
     // detected so far belongs to the rebuilt drill, and its stored mode comes
@@ -1165,8 +1171,50 @@ export default class SightReadingPage extends React.Component {
   // time a note can be played
   begin() {
     this.lastRecord = null
-    this.setState({ended: null, sessionLog: [], view: "session"})
+    this.forgetEnded()
+    this.setState({ended: null, sessionLog: [], endedRestored: false, view: "session"})
     this.beginSession()
+  }
+
+  // The score page keeps the session it ended (a scoreEnded record of the
+  // local store) so its strip can come back after a reload, until Begin,
+  // Play on or Done; see restoreEnded
+  forgetEnded() {
+    getAppStore().putScoreEnded(null)
+      .catch(err => console.warn("Couldn't forget the session that ended", err))
+  }
+
+  // Once the page knows its piece, brings back the strip of the session
+  // ended before a reload, with the log of its passes rebuilt from the bar
+  // log, when four things hold: the record exists, it is of the piece now
+  // drilled, its session is among the recent ones and it ended on today's
+  // practice day. Otherwise the record is forgotten. Done or Begin before it
+  // is read leave it alone. Its session's paused stats are gone, so the
+  // strip offers Done only (endedRestored)
+  restoreEnded() {
+    if (this.endedChecked || !this.programme.ScoreView || !this.state.currentGenerator) { return }
+    this.endedChecked = true
+
+    let store = getAppStore()
+    let pieceId = this.currentPieceSection()?.pieceId
+
+    store.scoreEnded().then(async marker => {
+      if (!marker) { return }
+
+      let session = marker.pieceId == pieceId && localDay(marker.at) == localDay(Date.now()) ?
+        store.recentSessions().find(recent => recent.id == marker.sessionId) : null
+      if (!session) {
+        await store.putScoreEnded(null)
+        return
+      }
+
+      let rows = await store.barLog({sessionId: marker.sessionId})
+      let state = this.state
+      if (this.unmounted || state.session || state.paused || state.ended || state.sessionLog.length ||
+          state.view != "score") { return }
+
+      this.setState({ended: session, sessionLog: sessionLogOf(rows), endedRestored: true})
+    }).catch(err => console.warn("Couldn't bring back the session that ended", err))
   }
 
   // Rest, on a restPauses page: pauses in place rather than ending the
@@ -1256,8 +1304,15 @@ export default class SightReadingPage extends React.Component {
     let ended = session || (this.state.sessionLog.length ? this.emptyEndedRecord() : null)
 
     this.setState({
-      session: false, paused: false, pausedMs, view: "score", ended,
+      session: false, paused: false, pausedMs, view: "score", ended, endedRestored: false,
     })
+
+    // only a session that was written can come back after a reload
+    let section = this.currentPieceSection()
+    if (session && section) {
+      getAppStore().putScoreEnded({sessionId: session.id, pieceId: section.pieceId, at: Date.now()})
+        .catch(err => console.warn("Couldn't keep the session that ended", err))
+    }
 
     let generator = this.currentNotesGenerator()
     let finishing = (generator && generator.finishing) || Promise.resolve()
@@ -1271,13 +1326,15 @@ export default class SightReadingPage extends React.Component {
   // counts as paused
   playOn() {
     let pausedAt = this.endedPausedAt ?? Date.now()
-    this.setState({ended: null, view: "session"})
+    this.forgetEnded()
+    this.setState({ended: null, endedRestored: false, view: "session"})
     this.resumeFrom(pausedAt)
   }
 
   // Done, from the session-ended strip: only the strip goes
   dismissEnded() {
-    this.setState({ended: null})
+    this.forgetEnded()
+    this.setState({ended: null, endedRestored: false})
   }
 
   // "Practise these notes": closes the card and switches to the programme's
@@ -2027,6 +2084,7 @@ export default class SightReadingPage extends React.Component {
       setTempo={this._setTempo ||= on => this.setTempo(on)}
       acoustic={this.selfGraded()}
       ended={this.state.ended}
+      canPlayOn={!this.state.endedRestored}
       sessionLog={this.state.sessionLog}
       idleTitle={this.programme.idleTitle}
       onBegin={this.begin}

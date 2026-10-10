@@ -69,6 +69,9 @@ export class ScoreView extends React.Component {
     // the record of the session just ended, or null at rest; see
     // SightReadingPage#endSession and NoteStats#sessionRecord
     ended: types.object,
+    // whether the ended strip offers Play on: not for one brought back after
+    // a reload, whose session can't resume
+    canPlayOn: types.bool,
     sessionLog: types.array,
     idleTitle: types.object,
     viewportHeight: types.number,
@@ -81,6 +84,7 @@ export class ScoreView extends React.Component {
 
   static defaultProps = {
     sessionLog: [],
+    canPlayOn: true,
   }
 
   constructor(props) {
@@ -302,7 +306,7 @@ export class ScoreView extends React.Component {
         {summary.detail}
       </div>
       <div className={styles.ended_actions}>
-        <Pill variant="ghost" onClick={this.props.onPlayOn}>Play on</Pill>
+        {this.props.canPlayOn && <Pill variant="ghost" onClick={this.props.onPlayOn}>Play on</Pill>}
         <Pill variant="primary" onClick={this.props.onDismissEnded}>Done</Pill>
       </div>
     </div>
