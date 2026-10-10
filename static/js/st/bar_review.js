@@ -262,24 +262,27 @@ function mostFrequent(keys) {
  * @param {boolean} [opts.engraved] the score is engraved, so the notes can
  * be marked on it
  * @param {number} [opts.now]
- * @returns {Object} {state, ...}: "never" (nothing played), "before" (played,
- * but not since the log began), "acoustic" (the newest pass was graded by
- * the player: tags) or "detected" (header, lines, strip, marks, see below)
+ * @returns {Object} {state, summary, ...}: "never" (nothing played), "before"
+ * (played, but not since the log began), "acoustic" (the newest pass was
+ * graded by the player: tags) or "detected" (header, lines, strip, marks, see
+ * below). summary is the worst line without its word about the score ("Beat
+ * 2 went wrong in all 3 of your last passes", or "Every note right in your
+ * last 3 passes"), null in every state but detected
  */
 export function barReview({rows, item=null, measure, barStart, give=false, engraved=false, now}) {
   let window = [...rows].sort((a, b) => a.at - b.at).slice(-BAR_REVIEW_WINDOW)
 
   if (!window.length) {
     return item && item.attempts > 0 ?
-      {state: "before", measure, text: "Beat-by-beat details start with the passes you play from now on. Earlier passes kept only their score."} :
-      {state: "never", measure}
+      {state: "before", measure, summary: null, text: "Beat-by-beat details start with the passes you play from now on. Earlier passes kept only their score."} :
+      {state: "never", measure, summary: null}
   }
 
   let newest = window[window.length - 1]
   if (newest.mode == "self") {
     let tags = newest.slipped || []
     return {
-      state: "acoustic", measure, tags: tags.map(upper),
+      state: "acoustic", measure, summary: null, tags: tags.map(upper),
       text: tags.length ?
         "Nothing is detected on an acoustic piano: these are your own \"What slipped?\" tags." : null,
     }
@@ -348,15 +351,19 @@ export function barReview({rows, item=null, measure, barStart, give=false, engra
 
   let lines = []
   let worst = ranked[0]
+  // the worst line as a sentence of its own, with no word about the score:
+  // what a lesson note keeps (st/lesson_notes)
+  let summary
   if (worst) {
+    summary = `${labelOf(worst)} ${PHRASE[worst.kind]} ${times(worst)}`
     let tail = !marked(worst) ? "." : habitual(worst) ? ", filled in on the score." : ", ringed on the score."
-    lines.push(`${labelOf(worst)} ${PHRASE[worst.kind]} ${times(worst)}${tail}`)
+    lines.push(`${summary}${tail}`)
 
     let others = ranked.slice(1, 3).map(group => lower(labelOf(group)))
     if (others.length) { lines.push(`Also ${others.join(" and ")}.`) }
   } else {
-    lines.push(`Every note right in your last ${m == 1 ? "pass" : `${m} passes`}.` +
-      (engraved ? " Nothing to colour on the score." : ""))
+    summary = `Every note right in your last ${m == 1 ? "pass" : `${m} passes`}`
+    lines.push(`${summary}.` + (engraved ? " Nothing to colour on the score." : ""))
   }
 
   // the note marks of the score
@@ -428,6 +435,7 @@ export function barReview({rows, item=null, measure, barStart, give=false, engra
   return {
     state: "detected",
     measure,
+    summary,
     pct,
     passes: m,
     header: {

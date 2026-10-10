@@ -926,7 +926,7 @@ const ALL_GENERATORS = [
         emptyLabel: "Pasted song notation",
         pieces: () => loadDeck().pieces,
         importFile: (fileName, data) => importMusicXMLPiece(fileName, data),
-        removePiece: id => removePiece(id),
+        removePiece: (id, opts) => removePiece(id, undefined, opts),
         exportLibrary: () => exportLibraryFile(),
         importLibrary: text => importLibraryFile(text),
         importFlags: text => importFlagsFile(text),

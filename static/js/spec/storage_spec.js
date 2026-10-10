@@ -11,6 +11,7 @@ import {
 
 import {compressSource, bytesToBase64, SOURCE_ENCODING} from "st/score_source"
 import {newItem, validBarLog} from "st/srs/records"
+import {newLessonNote} from "st/lesson_notes"
 import {GOOD} from "st/srs/grade"
 
 import {
@@ -902,6 +903,305 @@ describe("local store", function() {
     })
   })
 
+  describe("lesson notes", function() {
+    // a note on a bar of a piece, told by id and creation time so a spec can
+    // tell its notes apart
+    let barNote = (pieceId, id, at, extra={}) => ({
+      ...newLessonNote({
+        source: "bar", pieceId, pieceTitle: "Minuet", start: 3, end: 3, text: "Why this fingering?",
+        now: at,
+      }),
+      id, ...extra,
+    })
+    let generalNote = (id, at, extra={}) => ({
+      ...newLessonNote({source: "general", text: "How often should I practise?", now: at}), id, ...extra,
+    })
+
+    describe("schema upgrade", function() {
+      it("adds the lessonNotes store, empty, leaving every other store's records exactly as they were", async function() {
+        await deleteDB(TEST_DB_NAME)
+
+        // the version 6 database, with the bar log and before lesson notes
+        let db = await openDB(TEST_DB_NAME, 6, {
+          upgrade(db) {
+            db.createObjectStore("pieces", {keyPath: "id"})
+            db.createObjectStore("pieceSources", {keyPath: "pieceId"})
+            db.createObjectStore("sectionStats", {keyPath: ["pieceId", "startMeasure", "endMeasure"]})
+              .createIndex("pieceId", "pieceId")
+            db.createObjectStore("sessions", {keyPath: "id"}).createIndex("startedAt", "startedAt")
+            db.createObjectStore("meta", {keyPath: "key"})
+            db.createObjectStore("items", {keyPath: "id"}).createIndex("pieceId", "pieceId")
+            let reviews = db.createObjectStore("reviews", {keyPath: ["itemId", "at"]})
+            reviews.createIndex("pieceId", "pieceId")
+            db.createObjectStore("studies", {keyPath: "pieceId"})
+            db.createObjectStore("annotations", {keyPath: "pieceId"})
+            let barLog = db.createObjectStore("barLog", {keyPath: ["itemId", "at"]})
+            barLog.createIndex("itemId", "itemId")
+            barLog.createIndex("pieceId", "pieceId")
+          },
+        })
+
+        let minuet = pieceData("p1", "Minuet", 1000)
+        let item = {
+          id: "p1:both:1-4", pieceId: "p1", hand: "both", startMeasure: 1, endMeasure: 4,
+          level: "span", state: "tracked", step: 0, reps: 0, lapses: 0, streak: 0,
+          hits: 1, misses: 0, attempts: 1, lastPracticed: 1000, recent: [], algo: 0, createdAt: 1,
+        }
+        let review = {itemId: "p1:both:1-4", at: 1000, pieceId: "p1", kind: "legacy", hits: 1, misses: 0, attempts: 1}
+        let row = {
+          itemId: "p1:both:1-1", at: 1500, pieceId: "p1", hand: "both", measure: 1, sessionId: "s1",
+          mode: "wait", card: [1, 1], cardGrade: 3, columns: 2, clean: 1, grade: 2, reviewed: true,
+          beats: [0, 1], gaps: [null, 1], iois: [null, 500], pulse: 500, marks: [],
+        }
+        await db.put("pieces", minuet)
+        await db.put("items", item)
+        await db.put("reviews", review)
+        await db.put("barLog", row)
+        await db.put("studies", {pieceId: "p1"})
+        await db.put("meta", {key: DECK_MIGRATION_MARKER, migratedAt: 1, pieces: 0})
+        db.close()
+
+        let store = await open({keep: true})
+        expect(store.persistent).toBe(true)
+        expect(store.backend.db.version).toEqual(DB_VERSION)
+        expect(DB_VERSION).toEqual(7)
+        expect([...store.backend.db.objectStoreNames]).toContain("lessonNotes")
+        expect(store.backend.db.transaction("lessonNotes").store.indexNames.contains("pieceId")).toBe(true)
+
+        expect(store.lessonNotes()).toEqual([])
+        expect(store.pieces()).toEqual([minuet])
+        expect(store.items("p1")).toEqual([item])
+        expect(await store.reviews({pieceId: "p1"})).toEqual([review])
+        expect(await store.barLog({pieceId: "p1"})).toEqual([row])
+        expect(store.studies()).toEqual([{pieceId: "p1"}])
+      })
+    })
+
+    for (let persist of [true, false]) {
+      describe(persist ? "in IndexedDB" : "in memory", function() {
+        it("reads a note back at once and after reopening, in the order written, and refuses what isn't a note", async function() {
+          let store = await open({persist})
+          await store.putPiece(pieceData("a", "Minuet", 1000))
+          expect(store.lessonNotes()).toEqual([])
+
+          let late = barNote("a", "n2", 3000)
+          let early = barNote("a", "n1", 2000, {topic: "fingering", evidence: {at: 2000, accuracy: 75, line: "Beat 2 went wrong in all 3 of your last passes"}})
+          let any = generalNote("n3", 4000)
+          let flag = {...newLessonNote({source: "session", pieceId: "a", pieceTitle: "Minuet", start: 3, end: 4, now: 5000}), id: "n4"}
+          for (let note of [late, early, any, flag]) {
+            expect(await store.putLessonNote(note)).toEqual(note)
+          }
+
+          // synchronous, oldest first
+          expect(store.lessonNotes().map(note => note.id)).toEqual(["n1", "n2", "n3", "n4"])
+          expect(store.lessonNotes()[0]).toEqual(early)
+          expect(store.lessonNotes()[3].text).toEqual("")
+
+          if (persist) {
+            await store.close()
+            store = await open({keep: true})
+            expect(store.lessonNotes()).toEqual([early, late, any, flag])
+          }
+
+          // refused, and nothing written
+          let bad = [
+            {...late, id: "x1", status: "finished"},
+            {...late, id: "x2", text: 5},
+            {...late, id: "x3", text: "x".repeat(1001)},
+            {...late, id: "x4", start: 5, end: 4},
+            {...late, id: "x5", pieceId: null},
+            {...late, id: "x6", pieceId: "gone"},
+            {...late, id: "x7", status: "discussed"},
+            {...late, id: "x8", discussedAt: 5000},
+            {...late, id: "x9", topic: "tuning"},
+            {...late, id: "x10", hand: "left"},
+            {...late, id: "x11", start: null, end: null},
+            {...any, id: "x12", pieceId: "gone"},
+            null,
+          ]
+          for (let note of bad) {
+            await expectAsync(store.putLessonNote(note)).toBeRejected()
+          }
+          expect(store.lessonNotes().length).toEqual(4)
+
+          // a note of exactly the longest length is fine
+          await store.putLessonNote({...any, id: "n5", text: "x".repeat(1000)})
+          expect(store.lessonNotes().length).toEqual(5)
+        })
+
+        it("lands two quick updates, each built from the note the other left, and moves updatedAt forward", async function() {
+          let store = await open({persist})
+          await store.putPiece(pieceData("a", "Minuet", 1000))
+          let note = barNote("a", "n1", 2000)
+          await store.putLessonNote(note)
+
+          let builds = []
+          let kept = store.updateLessonNote("n1", stored => {
+            builds.push(["kept", stored.status, stored.keptAt])
+            return {...stored, keptAt: 7000}
+          })
+          let discussed = store.updateLessonNote("n1", stored => {
+            builds.push(["discussed", stored.status, stored.keptAt])
+            return {...stored, status: "discussed", discussedAt: 8000, answer: "Thumb under."}
+          })
+          let [first, second] = await Promise.all([kept, discussed])
+
+          // each saw the other's write: the second was built from the first
+          expect(builds).toEqual([["kept", "open", undefined], ["discussed", "open", 7000]])
+          expect(first.updatedAt).toBeGreaterThan(note.updatedAt)
+          expect(second.updatedAt).toBeGreaterThan(first.updatedAt)
+
+          let stored = store.lessonNotes()[0]
+          expect(stored).toEqual(jasmine.objectContaining({
+            status: "discussed", discussedAt: 8000, answer: "Thumb under.", keptAt: 7000,
+          }))
+          expect(stored.updatedAt).toEqual(second.updatedAt)
+
+          if (persist) {
+            await store.close()
+            expect((await open({keep: true})).lessonNotes()).toEqual([stored])
+          }
+
+          // an unknown id, an id changed and an invalid result are refused
+          await expectAsync(store.updateLessonNote("nope", n => n)).toBeRejected()
+          await expectAsync(store.updateLessonNote("n1", n => ({...n, id: "other"}))).toBeRejected()
+          await expectAsync(store.updateLessonNote("n1", n => ({...n, status: "discussed", discussedAt: undefined}))).toBeRejected()
+          expect(store.lessonNotes()[0]).toEqual(stored)
+        })
+
+        it("keeps a removed piece's notes unless asked to remove them, and never touches the other notes", async function() {
+          let store = await open({persist})
+          await store.putPiece(pieceData("a", "Minuet", 1000))
+          await store.putPiece(pieceData("b", "Waltz", 2000, ["E4"]))
+
+          // a2 is a note on the whole piece, g1 on no piece
+          let notes = [
+            barNote("a", "a1", 2000), {...generalNote("a2", 3000), pieceId: "a", pieceTitle: "Minuet"},
+            barNote("b", "b1", 4000), generalNote("g1", 5000),
+          ]
+          for (let note of notes) { await store.putLessonNote(note) }
+
+          expect(await store.deletePiece("a")).toBe(true)
+          expect(store.lessonNotes().map(note => note.id)).toEqual(["a1", "a2", "b1", "g1"])
+          expect(store.lessonNotes()[0].pieceTitle).toEqual("Minuet")
+
+          if (persist) {
+            await store.close()
+            store = await open({keep: true})
+            expect(store.lessonNotes().map(note => note.id)).toEqual(["a1", "a2", "b1", "g1"])
+          }
+
+          // the kept notes of a piece already gone are changed like any other
+          await store.updateLessonNote("a1", note => ({...note, keptAt: 9000}))
+          expect(store.lessonNotes()[0].keptAt).toEqual(9000)
+
+          await store.putPiece(pieceData("c", "Gigue", 3000, ["G4"]))
+          await store.putLessonNote(barNote("c", "c1", 6000))
+          expect(await store.deletePiece("c", {keepNotes: false})).toBe(true)
+          expect(store.lessonNotes().map(note => note.id)).toEqual(["a1", "a2", "b1", "g1"])
+
+          expect(await store.deletePiece("b", {keepNotes: false})).toBe(true)
+          expect(store.lessonNotes().map(note => note.id)).toEqual(["a1", "a2", "g1"])
+
+          if (persist) {
+            await store.close()
+            expect((await open({keep: true})).lessonNotes().map(note => note.id)).toEqual(["a1", "a2", "g1"])
+          }
+        })
+
+        it("exports the notes and merges them on import: new ones added, the newer copy kept, the piece remapped", async function() {
+          let source = await open({persist})
+          await source.putPiece(pieceData("a", "Minuet", 1000))
+          await source.putPiece(pieceData("z", "Zither", 4000, ["F4"]))
+          await source.putLessonNote(barNote("a", "n1", 2000))
+          await source.putLessonNote(barNote("a", "n2", 3000, {status: "dropped"}))
+          await source.putLessonNote(generalNote("n3", 4000))
+          await source.putLessonNote(barNote("z", "n4", 5000))
+
+          let exported = await source.exportLibrary()
+          expect(exported.version).toEqual(13)
+          expect(exported.lessonNotes.map(note => note.id)).toEqual(["n1", "n2", "n3", "n4"])
+
+          // into an empty store, only the notes of the pieces it brought
+          let empty = await open({persist})
+          let report = await empty.importLibrary(exported)
+          expect(report.addedPieces).toEqual(2)
+          expect(report.addedLessonNotes).toEqual(4)
+          expect(report.updatedLessonNotes).toEqual(0)
+          expect(empty.lessonNotes()).toEqual(source.lessonNotes())
+          // a dropped note stays stored, so a merge can't bring it back
+          expect(empty.lessonNotes().find(note => note.id == "n2").status).toEqual("dropped")
+
+          // into a store holding older and newer copies, and the piece under another id
+          let other = await open({persist})
+          await other.putPiece(pieceData("local", "Minuet", 1000))
+          await other.putLessonNote(barNote("local", "n1", 2000, {updatedAt: 2000, text: "Older words"}))
+          await other.putLessonNote(barNote("local", "n2", 3000, {updatedAt: 99000, status: "open", text: "Newer here"}))
+          let merged = await other.importLibrary({...exported, lessonNotes: exported.lessonNotes.map(note =>
+            note.id == "n1" ? {...note, updatedAt: 50000, text: "Newer words"} : note)})
+
+          expect(merged.existingPieces).toEqual(1)
+          expect(merged.addedLessonNotes).toEqual(2) // n3 and n4, and nothing for n2
+          expect(merged.updatedLessonNotes).toEqual(1)
+          let byId = id => other.lessonNotes().find(note => note.id == id)
+          // the newer copy replaced it, filed under the piece here
+          expect(byId("n1").text).toEqual("Newer words")
+          expect(byId("n1").pieceId).toEqual("local")
+          // the older copy didn't
+          expect(byId("n2").text).toEqual("Newer here")
+          expect(byId("n2").status).toEqual("open")
+          // the piece's note followed it, the note on no piece stayed so
+          expect(byId("n4").pieceId).toEqual("z")
+          expect(byId("n3").pieceId).toBe(null)
+        })
+
+        it("leaves out a note whose piece wasn't in the library, keeps a note on no piece, and reads a version 12 library as having none", async function() {
+          let store = await open({persist})
+          await store.putPiece(pieceData("a", "Minuet", 1000))
+          let library = {
+            format: LIBRARY_FORMAT, version: 13,
+            pieces: [pieceData("a", "Minuet", 1000)],
+            lessonNotes: [
+              barNote("a", "n1", 2000),
+              barNote("gone", "n2", 3000),
+              generalNote("n3", 4000),
+              {...generalNote("n4", 5000), text: 5},
+              null,
+            ],
+          }
+          let report = await store.importLibrary(library)
+          expect(report.addedLessonNotes).toEqual(2)
+          expect(store.lessonNotes().map(note => note.id)).toEqual(["n1", "n3"])
+
+          let old = await open({persist})
+          let result = await old.importLibrary({...library, version: 12})
+          expect(result.addedLessonNotes).toEqual(0)
+          expect(old.lessonNotes()).toEqual([])
+        })
+      })
+    }
+
+    it("names the lesson notes a library file brings", async function() {
+      let source = await open()
+      await source.putPiece(pieceData("a", "Minuet", 1000))
+      await source.putLessonNote(barNote("a", "n1", 2000))
+      await source.putLessonNote(generalNote("n2", 3000))
+
+      let exported = await source.exportLibrary()
+      let target = await open()
+      let result = await importLibraryFile(JSON.stringify(exported), target)
+      expect(result.message).toEqual("Added 1 piece and 2 lesson notes")
+      expect(target.lessonNotes().length).toEqual(2)
+
+      // and says nothing of them when there were none
+      let bare = await open()
+      let plain = await importLibraryFile(JSON.stringify({
+        format: LIBRARY_FORMAT, version: 12, pieces: [pieceData("b", "Waltz", 1000, ["E4"])],
+      }), bare)
+      expect(plain.message).toEqual("Added 1 piece")
+    })
+  })
+
   // acoustic mode: a self-graded review (st/srs/self_grade) goes through the
   // same store as any detected review
   describe("bar log", function() {
@@ -1062,13 +1362,13 @@ describe("local store", function() {
           expect(await store.scoreEnded()).toBe(null)
         })
 
-        it("exports at version 12 and imports as a union by key, remapped to the piece it matched", async function() {
+        it("exports at the library version and imports as a union by key, remapped to the piece it matched", async function() {
           let store = await open({persist})
           await store.putPiece(pieceData("a", "First", 1000))
           await store.recordBarLog([row("a", 1, 2000), row("a", 2, 2000)])
 
           let exported = await store.exportLibrary()
-          expect(exported.version).toEqual(12)
+          expect(exported.version).toEqual(LIBRARY_VERSION)
           expect(exported.barLog.map(r => [r.itemId, r.at])).toEqual([["a:both:1-1", 2000], ["a:both:2-2", 2000]])
 
           // a library holding the same song under another id: the rows follow the stored piece
@@ -1128,8 +1428,8 @@ describe("local store", function() {
 
       let exported = await store.exportLibrary()
       expect(exported.version).toEqual(LIBRARY_VERSION)
-      // version 11 libraries carry no bar log, and import as they are
-      expect(LIBRARY_VERSION).toEqual(12)
+      // version 12 libraries carry no lesson notes, and import as they are
+      expect(LIBRARY_VERSION).toEqual(13)
       expect(exported.reviews).toEqual([jasmine.objectContaining({mode: "self", grade: GOOD})])
 
       let other = await open()

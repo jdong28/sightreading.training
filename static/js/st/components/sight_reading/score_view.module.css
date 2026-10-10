@@ -295,3 +295,23 @@
     font-size: 13px;
     color: var(--salon-ink-muted);
 }
+
+/* the pin of a bar's notes for the next lesson on the grid of bars, where no
+   engraved score is drawn (st/components/score_sheet draws it on the score) */
+.pin {
+    position: absolute;
+    top: -6px;
+    right: -4px;
+    padding: 0 4px;
+    font-size: 9.5px;
+    font-weight: 700;
+    letter-spacing: .08em;
+    line-height: 1.5;
+    text-transform: none;
+    color: var(--salon-gilt-deep);
+    background: var(--salon-paper);
+    border: 1px solid var(--salon-gilt-mid);
+    border-radius: 0;
+    white-space: nowrap;
+    cursor: pointer;
+}

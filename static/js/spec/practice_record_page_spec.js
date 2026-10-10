@@ -179,17 +179,17 @@ describe("the practice record, Today", function() {
 
     let nav = el.querySelector('nav[aria-label="Practice record"]')
     let tabs = [...nav.querySelectorAll("a")]
-    expect(tabs.map(a => a.textContent)).toEqual(["Today", "Last 14 days"])
-    expect(tabs.map(a => a.getAttribute("href"))).toEqual(["/stats", "/stats/last-14-days"])
-    expect(tabs.map(a => a.getAttribute("aria-current"))).toEqual(["page", null])
+    expect(tabs.map(a => a.textContent)).toEqual(["Today", "For my lesson", "Last 14 days"])
+    expect(tabs.map(a => a.getAttribute("href"))).toEqual(["/stats", "/stats/for-my-lesson", "/stats/last-14-days"])
+    expect(tabs.map(a => a.getAttribute("aria-current"))).toEqual(["page", null, null])
     expect(el.querySelector("h1").textContent).toEqual("Today, Monday 14 September")
 
-    click(tabs[1])
+    click(tabs[2])
     expect(location.pathname).toEqual("/stats/last-14-days")
     expect(el.querySelector("h1").textContent).toEqual("Your progress")
     expect(statCard(el, "Evenings kept")).not.toBe(null)
     expect([...el.querySelectorAll("nav[aria-label='Practice record'] a")].map(a => a.getAttribute("aria-current")))
-      .toEqual([null, "page"])
+      .toEqual([null, null, "page"])
 
     click(link(el, "Today"))
     expect(location.pathname).toEqual("/stats")

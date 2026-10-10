@@ -2,14 +2,17 @@
 // session runs, in place of the default rail (SightReadingPage#renderRail).
 // Shows the session's progress through the piece, the programme's "Up
 // next" (or free practice's next few cards, in order), and "This evening"'s
-// last few passes from the page's session log.
+// last few passes from the page's session log. While a session runs, notes for
+// the next lesson (st/lesson_notes) are only quiet marks here: a pill that
+// flags the bars on the stand with no typing, and your note and the teacher's
+// answer for those bars as two lines, never a pop-up.
 
 import * as React from "react"
 import * as types from "prop-types"
 import classNames from "classnames"
 
 import {Plate, Pill, SectionLabel} from "st/components/salon"
-import {romanNumeral} from "st/music"
+import {romanNumeral, barsLabel} from "st/music"
 import {measureNumberList} from "st/song_sections"
 import {pieceSong} from "st/sheet_music_deck"
 import {getAppStore} from "st/storage"
@@ -17,11 +20,15 @@ import {pulledPassage, READ_THROUGH} from "st/srs/planner"
 import {TROUBLE_BELOW} from "st/bar_progress"
 import {selfWord} from "st/srs/self_grade"
 import {GOOD} from "st/srs/grade"
+import {newLessonNote, readEvidence, notesOnBars, answersOnBars, noteDate} from "st/lesson_notes"
 import {
   sheetMusicPiece, plannedPractice, orderOffered, programmePassages, introductionOrder, itemHand,
 } from "st/data"
 
 import styles from "./session_rail.module.css"
+
+// how long the flag's answer stays up, in ms
+const STATUS_MS = 4000
 
 const INTRODUCTION_LABELS = {"read through": "Read through", "hardest first": "Hardest first", "in score order": "In score order"}
 
@@ -64,8 +71,78 @@ export class SessionRail extends React.Component {
     elapsedSeconds: 0,
   }
 
+  state = {flagStatus: null}
+
+  componentWillUnmount() {
+    clearTimeout(this.statusTimer)
+    this.unmounted = true
+  }
+
   getStore() {
     return this.props.store || getAppStore()
+  }
+
+  // says something about the flag for a few seconds
+  say(flagStatus) {
+    if (this.unmounted) { return }
+
+    clearTimeout(this.statusTimer)
+    this.setState({flagStatus})
+    this.statusTimer = setTimeout(() => this.setState({flagStatus: null}), STATUS_MS)
+  }
+
+  // Flags the bars on the stand for the lesson with no words, the evidence
+  // read from the bar log. The pill is blurred at once, or the space bar
+  // (which skips a note) would press it again
+  flagForLesson(e) {
+    e.currentTarget.blur()
+
+    let {settings, generator} = this.props
+    let store = this.getStore()
+    let piece = sheetMusicPiece(settings)
+    let current = generator && generator.currentCard ? generator.currentCard() : null
+    if (!piece || !current || this.flagging) { return }
+
+    let {startMeasure: start, endMeasure: end} = current
+    let flagged = store.lessonNotes().some(note => note.status == "open" && note.source == "session" &&
+      note.text == "" && note.pieceId == piece.id && note.start == start && note.end == end)
+    if (flagged) {
+      this.say("Already flagged for your lesson.")
+      return
+    }
+
+    this.flagging = true
+    readEvidence(store, {pieceId: piece.id, hand: itemHand(settings.hand), start, end, song: pieceSong(piece)})
+      .then(evidence => store.putLessonNote(newLessonNote({
+        source: "session", pieceId: piece.id, pieceTitle: piece.title, start, end,
+        hand: itemHand(settings.hand), evidence,
+      })))
+      .then(() => this.say(`Flagged ${barsLabel(start, end)} for your lesson. Add words later, at rest.`))
+      .catch(err => {
+        console.warn("Couldn't flag the bars for the lesson", err)
+        this.say("Couldn't flag these bars for your lesson.")
+      })
+      .finally(() => { this.flagging = false })
+  }
+
+  // your note and the teacher's answer for the bars on the stand, the newest
+  // of each, as the rail's quiet lines
+  lessonLines(piece, start, end) {
+    if (!piece || start == null) { return [] }
+
+    let all = this.getStore().lessonNotes()
+    let [note] = notesOnBars(all, piece.id, start, end)
+    let [answer] = answersOnBars(all, piece.id, start, end)
+
+    return [
+      ...(note ? [{
+        id: note.id, label: `Your note · ${barsLabel(note.start, note.end)}`, text: note.text,
+      }] : []),
+      ...(answer ? [{
+        id: `answer-${answer.id}`, label: `Teacher, ${noteDate(answer.discussedAt)} · ${barsLabel(answer.start, answer.end)}`,
+        text: answer.answer, answer: true,
+      }] : []),
+    ]
   }
 
   render() {
@@ -127,8 +204,28 @@ export class SessionRail extends React.Component {
         </div>}
       </div>
 
+      {piece && startMeasure != null && this.renderFlag(piece, startMeasure, endMeasure)}
+
       {measures.length > 0 && this.renderPieceMap(measures, startMeasure, endMeasure)}
     </Plate>
+  }
+
+  renderFlag(piece, start, end) {
+    let lines = this.lessonLines(piece, start, end)
+
+    return <div className={styles.flag_group}>
+      <div className={styles.stand_row}>
+        <span className={styles.stand_text}>On the stand: {barsLabel(start, end)}</span>
+        <Pill variant="ghost" className={styles.flag_pill} onClick={e => this.flagForLesson(e)}>
+          ❧ Flag for lesson
+        </Pill>
+      </div>
+      {this.state.flagStatus && <p className={styles.flag_status} role="status">{this.state.flagStatus}</p>}
+      {lines.map(line => <div key={line.id} className={classNames(styles.lesson_line, {[styles.lesson_answer]: line.answer})}>
+        <span className={styles.lesson_label}>{line.label}</span>
+        <span className={styles.lesson_text}>{line.text}</span>
+      </div>)}
+    </div>
   }
 
   renderPieceMap(measures, standStart, standEnd) {
