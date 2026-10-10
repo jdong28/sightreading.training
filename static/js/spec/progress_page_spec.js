@@ -83,9 +83,9 @@ describe("progress page", function() {
   it("sits under the practice record's tabs, Last 14 days the one marked", function() {
     let el = renderProgress()
     let tabs = [...el.querySelectorAll('nav[aria-label="Practice record"] a')]
-    expect(tabs.map(a => a.textContent)).toEqual(["Today", "Last 14 days"])
-    expect(tabs.map(a => a.getAttribute("href"))).toEqual(["/stats", "/stats/last-14-days"])
-    expect(tabs.map(a => a.getAttribute("aria-current"))).toEqual([null, "page"])
+    expect(tabs.map(a => a.textContent)).toEqual(["Today", "For my lesson", "Last 14 days"])
+    expect(tabs.map(a => a.getAttribute("href"))).toEqual(["/stats", "/stats/for-my-lesson", "/stats/last-14-days"])
+    expect(tabs.map(a => a.getAttribute("aria-current"))).toEqual([null, null, "page"])
     expect(el.querySelector("h1").textContent).toEqual("Your progress")
   })
 

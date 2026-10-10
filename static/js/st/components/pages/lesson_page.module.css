@@ -1,0 +1,447 @@
+/* For my lesson, the practice record's tab of notes for the next lesson, see
+   st/components/pages/lesson_page */
+
+.lesson_page {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 1060px;
+    margin: 0 auto;
+    padding: 26px 34px 44px;
+    color: var(--salon-ink);
+
+    /* the layout answers to the page's own width, not the window's */
+    container-type: inline-size;
+}
+
+.italic {
+    font-style: italic;
+    font-weight: 400;
+    text-transform: none;
+    letter-spacing: 0;
+}
+
+.body_grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 280px;
+    gap: 22px;
+    align-items: start;
+}
+
+.main {
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+    min-width: 0;
+}
+
+.notes_plate,
+.add_plate {
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.group {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    margin-bottom: 18px;
+
+    &:last-child {
+        margin-bottom: 0;
+    }
+}
+
+/* a note: its bar on the left, its words and what the record says on the right */
+.note {
+    display: grid;
+    grid-template-columns: 200px minmax(0, 1fr);
+    gap: 16px;
+    padding-bottom: 16px;
+    border-bottom: var(--salon-hairline);
+    break-inside: avoid;
+
+    &:last-child {
+        border-bottom: 0;
+        padding-bottom: 0;
+    }
+
+    &.done .quote {
+        color: var(--salon-ink-soft);
+    }
+}
+
+.picture {
+    box-sizing: border-box;
+    width: 200px;
+    min-height: 120px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--salon-paper);
+    border: 1px solid var(--salon-rule-light);
+    overflow: hidden;
+}
+
+.placeholder {
+    padding: 8px;
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 15px;
+    color: var(--salon-ink-faint);
+    text-align: center;
+}
+
+.body {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+}
+
+.heading {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 2px 10px;
+}
+
+.place {
+    font-family: var(--font-display);
+    font-size: 20px;
+    color: var(--salon-ink);
+}
+
+.label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--salon-ink-muted);
+}
+
+.quote {
+    margin: 0;
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 20px;
+    line-height: 1.3;
+    color: var(--salon-ink);
+    overflow-wrap: anywhere;
+}
+
+.no_words {
+    margin: 0;
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 17px;
+    color: var(--salon-ink-soft);
+}
+
+.evidence {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--salon-ink-soft);
+}
+
+.actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 10px;
+}
+
+.action.action {
+    padding: 9px 14px;
+}
+
+.link {
+    padding: 0;
+    font-family: var(--font-ui);
+    font-size: 13px;
+    font-weight: 400;
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--salon-oxblood);
+    text-decoration: underline;
+    background: none;
+    border: 0;
+    cursor: pointer;
+}
+
+.edit_form {
+    margin-top: 4px;
+}
+
+.answer_form {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px 12px;
+    background: var(--salon-paper-warm);
+    border: 1px solid var(--salon-rule);
+}
+
+.answer_field {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.answer_field_label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--salon-oxblood);
+}
+
+.answer_text {
+    box-sizing: border-box;
+    width: 100%;
+    padding: 8px 10px;
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 16px;
+    line-height: 1.4;
+    color: var(--salon-ghost-ink);
+    background: var(--salon-paper);
+    border: 1px solid var(--salon-rule-strong);
+    border-radius: 0;
+}
+
+.answer_actions {
+    display: flex;
+    gap: 8px;
+}
+
+.teacher {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 8px 12px;
+    background: var(--salon-paper);
+    border: 1px solid var(--salon-rule);
+}
+
+.teacher_label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--salon-oxblood);
+}
+
+.teacher_text {
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 17px;
+    color: var(--salon-ink);
+    overflow-wrap: anywhere;
+}
+
+.earlier {
+    margin: 0;
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 15px;
+    color: var(--salon-ink-muted);
+}
+
+.discussed {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.nothing_open {
+    margin: 0;
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 17px;
+    color: var(--salon-ink-soft);
+}
+
+/* the right column: the since card, the buttons, the quote */
+.rail {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.since_label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--salon-ink-muted);
+}
+
+.since_value {
+    margin-top: 4px;
+    font-family: var(--font-display);
+    font-size: 34px;
+    line-height: 1.1;
+    color: var(--salon-ink);
+}
+
+.since_detail {
+    margin-top: 4px;
+    font-size: 12px;
+    color: var(--salon-ink-muted);
+}
+
+.rail_pill.rail_pill {
+    width: 100%;
+    min-height: 44px;
+    justify-content: center;
+}
+
+.quote_line {
+    margin: 4px 0 0;
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 15px;
+    line-height: 1.4;
+    color: var(--salon-ink-soft);
+}
+
+.dropped,
+.error {
+    margin: 0 0 14px;
+    padding: 9px 14px;
+    font-size: 13px;
+    background: var(--salon-paper-warm);
+    border: 1px solid var(--salon-rule);
+}
+
+.error {
+    color: var(--salon-oxblood);
+    border-color: var(--salon-weak-rule);
+    background: var(--salon-weak-ground);
+}
+
+.empty_plate {
+    max-width: 560px;
+    margin: 30px auto 0;
+    text-align: center;
+}
+
+.empty_title {
+    margin: 0 0 8px;
+    font-family: var(--font-display);
+    font-size: 32px;
+    font-weight: 400;
+}
+
+.empty_text {
+    margin: 0 0 18px;
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 17px;
+    color: var(--salon-ink-soft);
+}
+
+/* the printed sheet: blank lines for the teacher's answer under each open
+   note, and only the open notes (the app's header is hidden in
+   st/components/header.module.css) */
+[data-print="only"] {
+    display: none;
+}
+
+.print_head {
+    margin-bottom: 8px;
+}
+
+.print_title {
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: 26px;
+    font-weight: 400;
+}
+
+.print_since {
+    margin: 4px 0 0;
+    font-size: 13px;
+    color: var(--salon-ink-soft);
+}
+
+.answer_box {
+    flex-direction: column;
+    gap: 22px;
+    padding: 6px 10px 4px;
+    border: 1px solid var(--salon-ink-muted);
+}
+
+.answer_label {
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+}
+
+.answer_line {
+    display: block;
+    height: 18px;
+    border-bottom: 1px solid var(--salon-ink-muted);
+}
+
+@media print {
+    [data-print="hide"] {
+        display: none !important;
+    }
+
+    [data-print="only"] {
+        display: block;
+    }
+
+    .lesson_page {
+        max-width: none;
+        padding: 0;
+        color: #000;
+    }
+
+    .body_grid {
+        display: block;
+    }
+
+    .notes_plate {
+        border: 0;
+        box-shadow: none;
+        padding: 0;
+        background: none;
+    }
+
+    .note {
+        padding: 12px 0;
+        border-bottom: 1px solid #999;
+        break-inside: avoid;
+    }
+
+    .picture {
+        border-color: #999;
+    }
+}
+
+@media (max-width: 760px) {
+    .lesson_page {
+        padding: 20px 16px 36px;
+    }
+}
+
+@container (max-width: 760px) {
+    .body_grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+@container (max-width: 520px) {
+    .note {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .picture {
+        width: 100%;
+        max-width: 200px;
+    }
+}

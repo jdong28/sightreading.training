@@ -6,10 +6,11 @@
 // imported from, the practice records of spaced repetition (items, the log of
 // reviews and studies, see st/srs/records), the bar log (a row a bar of each
 // pass played through, see BarLogRecord), a piece's flagged passages
-// (annotations, see st/difficulty), practice sessions, and in meta the
+// (annotations, see st/difficulty), the notes for the next lesson
+// (lessonNotes, see st/lesson_notes), practice sessions, and in meta the
 // scheduler's and practice settings (st/srs/schedule).
-// init() loads the pieces, items, studies, annotations, recent sessions and
-// settings into an in-memory cache so the UI reads synchronously (eg. a
+// init() loads the pieces, items, studies, annotations, lesson notes, recent
+// sessions and settings into an in-memory cache so the UI reads synchronously (eg. a
 // generator's settings inputs on every render); a piece's source, the
 // reviews and the bar log are read on demand. Every
 // mutation is async, writes to the database first and only then updates the
@@ -40,6 +41,7 @@ import {
 } from "st/score_source"
 import {validAnnotation, cleanClaudeProposal} from "st/difficulty/records"
 import {withDecisions} from "st/difficulty/decisions"
+import {validLessonNote, lessonNoteForPiece} from "st/lesson_notes"
 
 export const DB_NAME = "sightreading"
 
@@ -53,7 +55,8 @@ export const DB_NAME = "sightreading"
 // 5: adds the annotations store, a piece's flagged passages (st/difficulty);
 // pieces stored before it are analysed on first open
 // 6: adds the barLog store, empty: nothing stored before is reinterpreted
-export const DB_VERSION = 6
+// 7: adds the lessonNotes store, empty
+export const DB_VERSION = 7
 
 // the localStorage deck used before the local store, migrated into the pieces
 // store once, see migrateLegacyDeck. The key itself is left in place
@@ -93,7 +96,9 @@ export const LIBRARY_FORMAT = "sightreading-library"
 // import as they are
 // 12: carries the bar log (barLog) of the pieces; version 11 libraries carry
 // none and import as they are
-export const LIBRARY_VERSION = 12
+// 13: carries the notes for the next lesson (lessonNotes); version 12
+// libraries carry none and import as they are
+export const LIBRARY_VERSION = 13
 
 // sessions started within this many days are loaded into the cache
 export const RECENT_SESSION_DAYS = 30
@@ -128,6 +133,8 @@ const STORES = {
     keyPath: ["itemId", "at"],
     indexes: {itemId: "itemId", sessionId: "sessionId", pieceId: "pieceId", at: "at"},
   },
+  // the notes for the next lesson, see LessonNoteRecord in st/lesson_notes
+  lessonNotes: {keyPath: "id", indexes: {pieceId: "pieceId"}},
 }
 
 /**
@@ -203,6 +210,7 @@ const STORES = {
  * @property {ReviewRecord[]} [reviews] since version 5
  * @property {StudyRecord[]} [studies] since version 5
  * @property {BarLogRecord[]} [barLog] since version 12
+ * @property {LessonNoteRecord[]} [lessonNotes] since version 13
  * @property {Object[]} [settings] the scheduler and practice settings records
  * (st/srs/schedule), since version 5
  * @property {SectionStatsRecord[]} [sectionStats] before version 5
@@ -225,6 +233,8 @@ const STORES = {
  * @property {number} updatedSections items replaced by more recently practiced ones
  * @property {number} addedReviews
  * @property {number} addedBarLog bar log rows added
+ * @property {number} addedLessonNotes lesson notes added
+ * @property {number} updatedLessonNotes lesson notes replaced by more recently changed ones
  * @property {number} addedStudies studies of pieces that had none
  * @property {number} addedAnnotations annotations added to a piece without one
  * @property {number} addedDecisions instructor decisions unioned into a piece's
@@ -319,6 +329,10 @@ async function upgradeSchema(db, oldVersion, newVersion, transaction) {
   if (oldVersion >= 1 && oldVersion < 6) {
     // starts empty: the passes played before it kept only their reviews
     createStore(db, "barLog")
+  }
+
+  if (oldVersion >= 1 && oldVersion < 7) {
+    createStore(db, "lessonNotes")
   }
 }
 
@@ -547,6 +561,8 @@ const byImportOrder = (a, b) =>
   (a.importedAt || 0) - (b.importedAt || 0) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
 
 const byStart = (a, b) => (a.startedAt || 0) - (b.startedAt || 0)
+
+const byCreated = (a, b) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
 
 const pieceContent = piece => `${piece.title}\n${JSON.stringify(piece.song)}`
 
@@ -779,11 +795,12 @@ export class LocalStore {
   }
 
   async loadCache() {
-    let [pieces, items, studies, annotations, sessions, scheduler, practice] = await Promise.all([
+    let [pieces, items, studies, annotations, lessonNotes, sessions, scheduler, practice] = await Promise.all([
       this.backend.getAll("pieces"),
       this.backend.getAll("items"),
       this.backend.getAll("studies"),
       this.backend.getAll("annotations"),
+      this.backend.getAll("lessonNotes"),
       this.backend.getAllFrom("sessions", "startedAt", Date.now() - RECENT_SESSION_DAYS * DAY),
       this.backend.get("meta", SCHEDULER_SETTINGS_KEY),
       this.backend.get("meta", PRACTICE_SETTINGS_KEY),
@@ -794,6 +811,7 @@ export class LocalStore {
       items,
       studies,
       annotations,
+      lessonNotes: lessonNotes.sort(byCreated),
       sessions: sessions.sort(byStart),
       settings: {
         scheduler: validSchedulerSettings(scheduler) ? scheduler : DEFAULT_SCHEDULER_SETTINGS,
@@ -932,6 +950,66 @@ export class LocalStore {
 
       return record
     })
+  }
+
+  /**
+   * Every note for the next lesson, whatever its status (dropped ones stay
+   * stored, see st/lesson_notes), oldest first.
+   * @returns {LessonNoteRecord[]}
+   */
+  lessonNotes() {
+    return this.cache.lessonNotes
+  }
+
+  /**
+   * Adds or replaces a lesson note. A note on a piece needs the piece to be
+   * stored.
+   * @param {LessonNoteRecord} note
+   * @returns {Promise<LessonNoteRecord>}
+   */
+  putLessonNote(note) {
+    return this.mutate(async () => {
+      if (!validLessonNote(note) || (note.pieceId !== null && !this.piece(note.pieceId))) {
+        throw new Error("Not a valid lesson note")
+      }
+
+      await this.backend.write([{store: "lessonNotes", put: note}])
+      this.cacheLessonNote(note)
+      return note
+    })
+  }
+
+  /**
+   * Changes a stored lesson note, built from the note as currently stored
+   * inside the same write (see updateAnnotation): two changes in a row both
+   * land. The note's updatedAt is moved on past the stored one, which a
+   * library merge keeps the newer by.
+   * @param {string} id
+   * @param {function(LessonNoteRecord): LessonNoteRecord} build
+   * @returns {Promise<LessonNoteRecord>}
+   */
+  updateLessonNote(id, build) {
+    return this.mutate(async () => {
+      let stored = this.cache.lessonNotes.find(note => note.id == id)
+      if (!stored) { throw new Error("No such lesson note") }
+
+      let built = build(stored)
+      let note = built && {...built, updatedAt: Math.max(Date.now(), stored.updatedAt + 1)}
+      if (!validLessonNote(note) || note.id != id) {
+        throw new Error("Not a valid lesson note")
+      }
+
+      await this.backend.write([{store: "lessonNotes", put: note}])
+      this.cacheLessonNote(note)
+      return note
+    })
+  }
+
+  cacheLessonNote(note) {
+    this.cache = {
+      ...this.cache,
+      lessonNotes: [...this.cache.lessonNotes.filter(n => n.id != note.id), note].sort(byCreated),
+    }
   }
 
   /**
@@ -1152,13 +1230,16 @@ export class LocalStore {
 
   /**
    * Removes a piece along with its source, items, reviews, bar log rows,
-   * study and the frozen section stats rows it had before items. The ended
-   * session the score page remembers is left to its own check of the piece
-   * (see SightReadingPage#restoreEnded).
+   * study and the frozen section stats rows it had before items. Its notes
+   * for the next lesson are kept (they carry the piece's title) unless
+   * keepNotes is false. The ended session the score page remembers is left
+   * to its own check of the piece (see SightReadingPage#restoreEnded).
    * @param {string} id
+   * @param {Object} [opts]
+   * @param {boolean} [opts.keepNotes] false removes the piece's lesson notes too
    * @returns {Promise<boolean>} whether there was such a piece
    */
-  deletePiece(id) {
+  deletePiece(id, {keepNotes=true}={}) {
     return this.mutate(async () => {
       if (!this.piece(id)) {
         return false
@@ -1172,6 +1253,7 @@ export class LocalStore {
 
       let deletes = (store, records) =>
         records.map(record => ({store, delete: recordKey(store, record)}))
+      let notes = keepNotes ? [] : this.cache.lessonNotes.filter(note => note.pieceId == id)
 
       await this.backend.write([
         {store: "pieces", delete: id},
@@ -1182,6 +1264,7 @@ export class LocalStore {
         ...deletes("reviews", reviews),
         ...deletes("barLog", bars),
         ...deletes("sectionStats", sections),
+        ...deletes("lessonNotes", notes),
       ])
 
       this.cache = {
@@ -1190,6 +1273,8 @@ export class LocalStore {
         items: this.cache.items.filter(item => item.pieceId != id),
         studies: this.cache.studies.filter(study => study.pieceId != id),
         annotations: this.cache.annotations.filter(a => a.pieceId != id),
+        lessonNotes: keepNotes ? this.cache.lessonNotes :
+          this.cache.lessonNotes.filter(note => note.pieceId != id),
       }
 
       return true
@@ -1375,8 +1460,8 @@ export class LocalStore {
   }
 
   /**
-   * The pieces with their sources, items, reviews, bar log, studies and every
-   * session, for a library file. What the score page remembers of the session
+   * The pieces with their sources, items, reviews, bar log, studies, lesson
+   * notes and every session, for a library file. What the score page remembers of the session
    * it ended (scoreEnded) is per device and not exported.
    * @returns {Promise<LibraryExport>}
    */
@@ -1401,6 +1486,7 @@ export class LocalStore {
         barLog,
         studies: this.cache.studies,
         annotations: this.cache.annotations,
+        lessonNotes: this.cache.lessonNotes,
         settings: [this.cache.settings.scheduler, this.cache.settings.practice],
         sessions: sessions.sort(byStart),
       }
@@ -1417,8 +1503,10 @@ export class LocalStore {
    * practiced more recently; the section stats of a library before
    * LIBRARY_VERSION 5 are read as tracked items with a legacy review, and
    * replace only the totals of a stored item. Reviews and bar log rows are a
-   * union by key, and a study is added to a piece without one. Sessions are added unless one of
-   * the same id is stored.
+   * union by key, and a study is added to a piece without one. A lesson note
+   * is filed under the piece it matched (a note whose piece was not imported
+   * is left out) and is a union by id, the more recently changed copy
+   * winning. Sessions are added unless one of the same id is stored.
    * @param {LibraryExport} data
    * @param {Object} [opts]
    * @param {number} [opts.maxPieces] the most pieces the library holds
@@ -1438,6 +1526,7 @@ export class LocalStore {
         addedPieces: 0, existingPieces: 0, invalidPieces: 0, fullPieces: 0, addedSources: 0,
         addedSections: 0, updatedSections: 0, addedReviews: 0, addedStudies: 0, addedAnnotations: 0,
         addedDecisions: 0, importedSettings: 0, addedSessions: 0, existingSessions: 0, addedBarLog: 0,
+        addedLessonNotes: 0, updatedLessonNotes: 0,
       }
 
       let importedPieces = data.version < 2 ?
@@ -1647,6 +1736,27 @@ export class LocalStore {
         }
       }
 
+      let lessonNotes = [...this.cache.lessonNotes]
+      for (let note of data.version >= 13 && Array.isArray(data.lessonNotes) ? data.lessonNotes : []) {
+        if (!validLessonNote(note)) { continue }
+
+        // a note on no piece in particular stays so, one on a piece follows it
+        let pieceId = note.pieceId === null ? null : pieceIds.get(note.pieceId)
+        if (pieceId === undefined) { continue }
+
+        let record = lessonNoteForPiece(note, pieceId)
+        let idx = lessonNotes.findIndex(n => n.id == record.id)
+        if (idx < 0) {
+          lessonNotes.push(record)
+          ops.push({store: "lessonNotes", put: record})
+          report.addedLessonNotes += 1
+        } else if (record.updatedAt > lessonNotes[idx].updatedAt) {
+          lessonNotes[idx] = record
+          ops.push({store: "lessonNotes", put: record})
+          report.updatedLessonNotes += 1
+        }
+      }
+
       let settings = {...this.cache.settings}
       for (let record of data.version >= 5 && Array.isArray(data.settings) ? data.settings : []) {
         let name = settingsName(record)
@@ -1687,6 +1797,7 @@ export class LocalStore {
         items,
         studies,
         annotations,
+        lessonNotes: lessonNotes.sort(byCreated),
         sessions: recentSessions.sort(byStart),
         settings,
       }
@@ -1717,7 +1828,7 @@ export class LocalStore {
 }
 
 const emptyCache = () => ({
-  pieces: [], items: [], studies: [], annotations: [], sessions: [],
+  pieces: [], items: [], studies: [], annotations: [], lessonNotes: [], sessions: [],
   settings: {scheduler: DEFAULT_SCHEDULER_SETTINGS, practice: DEFAULT_PRACTICE_SETTINGS},
 })
 

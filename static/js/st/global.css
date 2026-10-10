@@ -232,3 +232,15 @@ input[type='search'], input[type='url'], input:not([type]), select, textarea {
 .header_spacer {
     height: var(--header-height);
 }
+
+/* a printed page is plain paper without the fixed header or its spacer */
+@media print {
+    .header_spacer {
+        display: none;
+    }
+
+    body {
+        background-color: #fff;
+        background-image: none;
+    }
+}

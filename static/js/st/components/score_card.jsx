@@ -141,7 +141,7 @@ export class ScoreCard extends React.Component {
     loadEngines: types.func,
     // called with the error when the engine can't draw the card
     onError: types.func,
-    // called with {join, result} once a card is drawn
+    // called with {join, result} once a card is drawn (join null for an overview)
     onDrawn: types.func,
     // draws the card to be read, not played: no columns, no join, no marks;
     // its root is [data-score-overview], never [data-score-card], so it is
@@ -301,6 +301,8 @@ export class ScoreCard extends React.Component {
 
     if (this.props.overview) {
       this.shade()
+      // no columns to join, so it is told as soon as it is shaded
+      if (this.props.onDrawn) { this.props.onDrawn({join: null, result}) }
     } else {
       this.join()
     }

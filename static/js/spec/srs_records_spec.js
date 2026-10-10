@@ -461,7 +461,7 @@ describe("spaced repetition records", function() {
       let store = await open({keep: true})
       expect(store.persistent).toBe(true)
       expect(store.backend.db.version).toEqual(DB_VERSION)
-      expect(DB_VERSION).toEqual(6)
+      expect(DB_VERSION).toEqual(7)
 
       expect(store.items("p1")).toEqual([
         {
@@ -867,7 +867,7 @@ describe("spaced repetition records", function() {
       let file = await exportLibraryFile(store)
       let data = JSON.parse(file.text)
       expect(data.version).toEqual(LIBRARY_VERSION)
-      expect(LIBRARY_VERSION).toEqual(12)
+      expect(LIBRARY_VERSION).toEqual(13)
       expect(data.items.map(item => item.id)).toEqual(["a:both:1-1", "a:upper:1-1"])
       expect(data.reviews.map(review => [review.itemId, review.at])).toEqual([["a:both:1-1", 1000], ["a:upper:1-1", 2000]])
       expect(data.studies).toEqual([{pieceId: "a", status: "learning", startedAt: 900}])
@@ -897,7 +897,7 @@ describe("spaced repetition records", function() {
     })
 
     it("round trips read-through reviews and a study's plan (library version 11 on), and imports a version 10 library", async function() {
-      expect(LIBRARY_VERSION).toEqual(12)
+      expect(LIBRARY_VERSION).toEqual(13)
       let store = await open()
       await store.putPiece(pieceData("a", "First", 1000))
       let item = {...practicedItem("a", 1, 1, 1000), recent: [], passes: [[1000, 4, 4, null]]}

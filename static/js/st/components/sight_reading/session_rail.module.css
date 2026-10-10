@@ -263,3 +263,73 @@
     font-style: italic;
     color: var(--salon-ink-soft);
 }
+
+/* the flag for the lesson, and the notes on the bars on the stand: marks,
+   never an interruption (st/lesson_notes) */
+.flag_group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.stand_row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.stand_text {
+    font-size: 12.5px;
+    color: var(--salon-ink-soft);
+}
+
+.flag_pill.flag_pill {
+    padding: 8px 12px;
+    font-size: 10.5px;
+}
+
+.flag_status {
+    margin: 0;
+    padding: 8px 11px;
+    font-size: 12.5px;
+    line-height: 1.4;
+    color: var(--salon-paper);
+    background: var(--salon-ink-soft);
+}
+
+.lesson_line {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 7px 11px;
+    background: var(--salon-paper-warm);
+    border-left: 3px solid var(--salon-gilt-deep);
+
+    &.lesson_answer {
+        border-left-color: var(--salon-oxblood);
+    }
+}
+
+.lesson_label {
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--salon-gilt-deep);
+
+    .lesson_answer & {
+        color: var(--salon-oxblood);
+    }
+}
+
+.lesson_text {
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 15px;
+    line-height: 1.35;
+    color: var(--salon-ghost-ink);
+    overflow-wrap: anywhere;
+}

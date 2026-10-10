@@ -409,10 +409,11 @@ export async function addPiece(title, song, store=getAppStore(), {fileName, sour
   }
 }
 
-// Resolves to {} or {error}
-export async function removePiece(id, store=getAppStore()) {
+// Resolves to {} or {error}. keepNotes false removes the piece's notes for the
+// next lesson with it, the default keeps them (see LocalStore#deletePiece)
+export async function removePiece(id, store=getAppStore(), {keepNotes=true}={}) {
   try {
-    await store.deletePiece(id)
+    await store.deletePiece(id, {keepNotes})
   } catch (e) {
     return {error: `Couldn't remove the piece. ${storageErrorMessage(e)}`}
   }
@@ -492,6 +493,9 @@ export async function importLibraryFile(text, store=getAppStore()) {
   }
   if (report.addedSessions) {
     added.push(plural(report.addedSessions, "practice session"))
+  }
+  if (report.addedLessonNotes || report.updatedLessonNotes) {
+    added.push(plural(report.addedLessonNotes + report.updatedLessonNotes, "lesson note"))
   }
 
   let parts = [
