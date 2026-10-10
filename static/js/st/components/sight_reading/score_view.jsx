@@ -19,7 +19,10 @@ import {PassagePane} from "st/components/sight_reading/passage_pane"
 import {ReviewPane} from "st/components/sight_reading/review_pane"
 import {keyLabel} from "st/components/sight_reading/settings_panel"
 import {romanNumeral, barsLabel} from "st/music"
-import {measureNumberList, measureNumberRange} from "st/song_sections"
+import {measureNumberList, measureNumberRange, measureBeatRange} from "st/song_sections"
+import {barReview} from "st/bar_review"
+import {giveBars} from "st/score_give"
+import {itemId} from "st/srs/records"
 import {pieceSong, ensureAnnotation} from "st/sheet_music_deck"
 import {getAppStore} from "st/storage"
 import {flagsInForce} from "st/difficulty/records"
@@ -104,6 +107,9 @@ export class ScoreView extends React.Component {
       passageFlagId: null,
       reviewOpen: false,
       reviewFlagId: null,
+      // the clicked bar's rows of the bar log, {id, rows}, read when it is
+      // clicked and again when the hand changes (see loadBarRows)
+      barRows: null,
     }
   }
 
@@ -117,6 +123,10 @@ export class ScoreView extends React.Component {
     if ((piece && piece.id) != (prevPiece && prevPiece.id)) {
       this.setState({page: 0, pages: [], selectedBar: null, scoreFailed: false})
       this.ensureAnnotation()
+    }
+
+    if (this.state.selectedBar != null && this.props.settings.hand != prevProps.settings.hand) {
+      this.loadBarRows()
     }
 
     if (!prevProps.ended && this.props.ended) {
@@ -155,7 +165,66 @@ export class ScoreView extends React.Component {
   }
 
   selectBar(measure) {
-    this.setState(state => ({selectedBar: state.selectedBar == measure ? null : measure}))
+    this.setState(state => ({selectedBar: state.selectedBar == measure ? null : measure}), () => this.loadBarRows())
+  }
+
+  // Reads the clicked bar's rows of the bar log under the setup pane's hand,
+  // for what its window says lies behind its %. Rows are read on demand and
+  // never cached, so a bar clicked again reads them again; an answer to a bar
+  // or a hand no longer asked for is dropped
+  loadBarRows() {
+    let measure = this.state.selectedBar
+    let piece = sheetMusicPiece(this.props.settings)
+    if (measure == null || !piece) {
+      this.barRowsFor = null
+      return
+    }
+
+    let id = itemId({pieceId: piece.id, hand: itemHand(this.props.settings.hand), startMeasure: measure, endMeasure: measure})
+    this.barRowsFor = id
+    this.setState({barRows: null})
+
+    this.getStore().barLog({itemId: id}).then(rows => {
+      if (!this.unmounted && this.barRowsFor == id) { this.setState({barRows: {id, rows}}) }
+    }).catch(err => console.warn("Couldn't read the bar's log", err))
+  }
+
+  // The bars of the piece that ask for give, read from its stored score once
+  giveOf(source) {
+    if (!source || !source.musicXML) { return new Set() }
+    if (!this.give || this.give.musicXML != source.musicXML) {
+      this.give = {musicXML: source.musicXML, bars: giveBars(source.musicXML)}
+    }
+    return this.give.bars
+  }
+
+  // The clicked bar's window (st/bar_review) from the rows read for it, null
+  // until they are. Worked out again only when what it is made of changes,
+  // so the note marks handed to the score are the same object between
+  // renders
+  barReviewOf(piece, measure) {
+    let song = pieceSong(piece)
+    let id = itemId({pieceId: piece.id, hand: itemHand(this.props.settings.hand), startMeasure: measure, endMeasure: measure})
+    let loaded = this.state.barRows
+    if (!loaded || loaded.id != id) { return null }
+
+    let source = this.props.source
+    let engraved = !!(source && source.status == "ready" && source.musicXML) && !this.state.scoreFailed
+    let give = engraved && this.giveOf(source).has(measure)
+    let item = this.getStore().items(piece.id).find(i => i.id == id) || null
+    let inputs = [loaded.rows, item, measure, give, engraved]
+
+    if (!this.reviewMemo || this.reviewMemo.inputs.some((input, idx) => input !== inputs[idx])) {
+      this.reviewMemo = {
+        inputs,
+        value: barReview({
+          rows: loaded.rows, item, measure, barStart: measureBeatRange(song, measure, measure)[0], give, engraved,
+          now: Date.now(),
+        }),
+      }
+    }
+
+    return this.reviewMemo.value
   }
 
   practiseBar(measure) {
@@ -410,6 +479,15 @@ export class ScoreView extends React.Component {
     </div>
   }
 
+  // the clicked bar's note marks for the score, none once it is closed
+  selectedMarks(piece) {
+    let measure = this.state.selectedBar
+    if (measure == null) { return null }
+
+    let review = this.barReviewOf(piece, measure)
+    return review && review.marks || null
+  }
+
   renderBarPopup(piece, style) {
     let measure = this.state.selectedBar
     if (measure == null) { return null }
@@ -423,6 +501,7 @@ export class ScoreView extends React.Component {
       hand={hand}
       items={store.items(piece.id)}
       flags={flagsInForce(store.annotation(piece.id))}
+      review={this.barReviewOf(piece, measure)}
       style={style}
       onClose={() => this.setState({selectedBar: null})}
       onPractise={() => this.practiseBar(measure)} />
@@ -481,6 +560,7 @@ export class ScoreView extends React.Component {
           onPages={pages => this.setState(state => ({pages, page: Math.min(state.page, Math.max(0, pages.length - 1))}))}
           {...this.buildBarInfo(piece, song)}
           selected={this.state.selectedBar}
+          noteMarks={this.selectedMarks(piece)}
           onBar={measure => this.selectBar(measure)}
           onTag={measure => this.openPassageAt(measure)}
           renderPopup={style => this.renderBarPopup(piece, style)}

@@ -4,7 +4,7 @@
 .popup {
     position: absolute;
     z-index: 5;
-    width: 300px;
+    width: 340px;
     max-width: 100%;
     box-sizing: border-box;
     margin: 6px 0;
@@ -230,4 +230,174 @@
     width: 100%;
     min-height: 44px;
     justify-content: center;
+}
+
+/* what lies behind the accuracy (st/bar_review): the words, the timing strip
+   and the chips of a bar graded by ear */
+.behind {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding-top: 10px;
+    border-top: var(--salon-hairline);
+}
+
+.behind_header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.behind_label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--salon-ink-muted);
+
+    &.behind_oxblood {
+        color: var(--salon-oxblood);
+    }
+}
+
+.behind_when {
+    font-size: 11px;
+    color: var(--salon-ink-muted);
+    text-align: right;
+}
+
+.behind_line,
+.behind_note {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.4;
+    color: var(--salon-ink-soft);
+}
+
+.behind_note {
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 14px;
+}
+
+.chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.chip {
+    font-size: 12px;
+    padding: 2px 9px;
+    border: 1px solid var(--salon-rule-strong);
+    border-radius: 999px;
+    color: var(--salon-ghost-ink);
+}
+
+.strip {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px 8px 7px;
+    background: var(--salon-paper-warm);
+    border: 1px solid var(--salon-rule-light);
+}
+
+.cells {
+    display: grid;
+    gap: 3px;
+}
+
+.cell {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+}
+
+.cell_label {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: .08em;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    color: var(--salon-ink-muted);
+}
+
+.track {
+    position: relative;
+    display: block;
+    height: 20px;
+}
+
+.band {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    background: var(--salon-learn-1);
+}
+
+.tick {
+    position: absolute;
+    left: 50%;
+    top: 2px;
+    bottom: 2px;
+    border-left: 2px solid var(--salon-gilt);
+}
+
+.dot {
+    position: absolute;
+    top: 50%;
+    width: 10px;
+    height: 10px;
+    margin: -5px 0 0 -5px;
+    box-sizing: border-box;
+    border-radius: 50%;
+    background: var(--salon-gilt-deep);
+
+    &.dot_first {
+        background: transparent;
+        border: 2px solid var(--salon-ink-faint);
+    }
+
+    &.dot_arrow {
+        width: auto;
+        height: auto;
+        margin: 0;
+        transform: translate(-100%, -50%);
+        background: transparent;
+        color: var(--salon-gilt-deep);
+        font-size: 13px;
+        font-weight: 700;
+        line-height: 1;
+    }
+}
+
+.cell_words {
+    font-size: 10px;
+    line-height: 1.25;
+    text-align: center;
+    color: var(--salon-ink-soft);
+    overflow-wrap: anywhere;
+}
+
+.cell_skipped .cell_words,
+.cell_held .cell_words,
+.cell_first .cell_words {
+    color: var(--salon-ink-muted);
+    font-style: italic;
+}
+
+.cell_off .cell_words {
+    color: var(--salon-gilt-deep);
+    font-weight: 700;
+}
+
+.strip_caption {
+    margin: 0;
+    font-size: 11px;
+    line-height: 1.35;
+    color: var(--salon-ink-muted);
 }
