@@ -1011,6 +1011,108 @@ describe("sheet music deck", function() {
     })
   })
 
+  describe("opening a flags file against the whole deck", function() {
+    // the specs' stores share one database, so the deck opened for a test
+    // replaces the exporting device's
+    let source, store
+    beforeEach(async function() {
+      source = await openTestStore()
+    })
+
+    afterEach(async function() {
+      await source.close()
+      if (store) { await store.close() }
+      store = null
+    })
+
+    // a flags file of one accepted decision on the workhorse score, and then
+    // the empty deck of another device to open it in
+    let exportedWorkhorse = async () => {
+      let {piece} = await importMusicXMLPiece("workhorse.musicxml", workhorseScore(), source)
+      await decideFlags(piece.id,
+        [acceptDecision({
+          record: source.annotation(piece.id), flag: flagsInForce(source.annotation(piece.id))[0],
+          by: "Ms Laurent", at: Date.now(),
+        })], source)
+      let text = (await exportFlagsFile(piece.id, {by: "Ms Laurent"}, source)).text
+      store = await openTestStore()
+      return text
+    }
+
+    // the same score stored under another title, as a piece imported before
+    // annotations were kept is: with no record
+    let putUnanalysed = (id, title, xml) => store.putPiece({
+      id, title, song: songToJSON(parseMusicXML(xml)), importedAt: Date.now(),
+    }, {source: xml})
+
+    it("yields to the event loop between the deck's pieces, finding what it did before", async function() {
+      let exported = await exportedWorkhorse()
+
+      // a deck whose pieces are all analysed and none of them titled as the
+      // file is, the matching one last, so every piece is aligned against
+      for (let [name, xml] of [
+        ["minuet", pickupScore()], ["waltz", LITTLE_WALTZ_XML], ["key change", keyChangeScore()],
+        ["reverie", reverieOpening()],
+      ]) {
+        await importMusicXMLPiece(`${name}.musicxml`, xml, store)
+      }
+      let {piece: match} = await importMusicXMLPiece("workhorse.musicxml", workhorseScore(), store)
+      await store.putPiece({...store.piece(match.id), title: "Same score, another title"})
+      let ids = store.pieces().map(piece => piece.id)
+      expect(ids.length).toEqual(5)
+
+      // a macrotask counter ticking alongside, read as each piece is looked at
+      let ticks = 0
+      let running = true
+      let tick = () => { ticks++; if (running) { setTimeout(tick, 0) } }
+      setTimeout(tick, 0)
+
+      let seen = []
+      let annotation = store.annotation.bind(store)
+      spyOn(store, "annotation").and.callFake(id => {
+        if (ids.includes(id) && seen.length < ids.length) { seen.push([id, ticks]) }
+        return annotation(id)
+      })
+
+      let {piece, error, message} = await importFlagsFile(exported, store)
+      running = false
+
+      expect(error).toBeUndefined()
+      expect(piece.id).toEqual(match.id)
+      expect(message).toContain("1 placed")
+
+      // the loop was left between one piece and the next, not run through
+      expect(seen.map(([id]) => id)).toEqual(ids)
+      seen.slice(1).forEach(([, at], idx) => expect(at).toBeGreaterThan(seen[idx][1]))
+    })
+
+    it("finds the matching piece in the deck when it was never analysed", async function() {
+      let exported = await exportedWorkhorse()
+      await importMusicXMLPiece("minuet.musicxml", pickupScore(), store)
+      let unanalysed = await putUnanalysed("old", "Same score, another title", workhorseScore())
+      expect(store.annotation(unanalysed.id)).toBe(null)
+
+      let {piece, error, message} = await importFlagsFile(exported, store)
+      expect(error).toBeUndefined()
+      expect(piece.id).toEqual("old")
+      expect(message).toContain("1 placed")
+
+      let record = store.annotation("old")
+      expect(record).toBeTruthy()
+      expect(record.decisions.length).toEqual(1)
+      expect(flagsInForce(record).some(flag => flag.status == "accepted")).toBe(true)
+    })
+
+    it("still says nothing in the deck matches when an unanalysed piece is another score", async function() {
+      let exported = await exportedWorkhorse()
+      await putUnanalysed("minuet", "Minuet", pickupScore())
+
+      let {piece, error} = await importFlagsFile(exported, store)
+      expect(piece).toBeUndefined()
+      expect(error).toContain("No piece in the deck matches")
+    })
+  })
+
   describe("sheet music generator", function() {
     // the generator reads the app's store, so swap in the specs' one
     let store, appStore

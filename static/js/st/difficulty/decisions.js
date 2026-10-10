@@ -425,7 +425,9 @@ function buildFlag(record, {proposal, given, group}) {
 
   if (overrideFlag) {
     if (Object.prototype.hasOwnProperty.call(overrideFlag, "title")) {
-      givenTitle = title
+      // only a name the analysis gave is worth keeping beside the teacher's:
+      // a flag the log alone holds has no analysis name to restore
+      if (proposal || given) { givenTitle = title }
       title = overrideFlag.title
     }
     if (Object.prototype.hasOwnProperty.call(overrideFlag, "tip")) { tip = overrideFlag.tip }
@@ -560,7 +562,8 @@ export function reviewFlags(record) {
  * hand(s) each names: a flag of one hand gives that hand alone; a flag of
  * both gives the right hand first, then the left, the same order a
  * both-hands "practise hands separately" pill already offers
- * (handPillHand in passage_pane.jsx).
+ * (handPillHand in passage_pane.jsx). A flag's repeats (its alsoAt ranges)
+ * are the same passage, so the tick reaches them too.
  * @param {Object[]} flags flags in force (st/difficulty/records.flagsInForce)
  * @returns {Map<number, string[]>} measure number -> hand(s), only flags
  * ticked "start this passage hands separately"
@@ -570,8 +573,10 @@ export function startApartBars(flags) {
   for (let flag of flags) {
     if (!flag.apart) { continue }
     let hands = flag.hand == "both" ? ["upper", "lower"] : [flag.hand]
-    for (let number = flag.start; number <= flag.end; number++) {
-      map.set(number, hands)
+    for (let [from, to] of [[flag.start, flag.end], ...(flag.alsoAt || [])]) {
+      for (let number = from; number <= to; number++) {
+        map.set(number, hands)
+      }
     }
   }
   return map

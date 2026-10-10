@@ -126,8 +126,10 @@ export function troubleSpots({pieceId, items = [], measures = [], flags = []}) {
     let signals = ["both", "upper", "lower"].flatMap(hand => signalsOf(entry[hand], medianPace))
 
     // rule 5: a hand-alone item the hand scaffold made (not the player's
-    // own deliberate choice) marks the bar in trouble, whatever its reps
-    let scaffold = ["upper", "lower"].map(hand => entry[hand]).find(item => item && !item.deliberate)
+    // own deliberate choice, nor one a flag's tick asked for, which says
+    // nothing of how the bar went) marks the bar in trouble, whatever its reps
+    let scaffold = ["upper", "lower"].map(hand => entry[hand])
+      .find(item => item && !item.deliberate && !item.requested)
     if (scaffold) { signals.push({kind: "scaffold", hand: scaffold.hand}) }
 
     if (signals.length) {

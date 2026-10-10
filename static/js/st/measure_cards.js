@@ -616,13 +616,15 @@ export class MeasureCardGenerator {
    * and deliberate (see ItemRecord) for a hand alone the player chose,
    * which is any but the hand scaffold's own stand-in card (see
    * PlanDeck#scaffold; a deck without that getter, eg. MeasureCardDeck, is
-   * never the scaffold)
-   * @returns {{pieceId: string, hand: string, deliberate?: boolean}}
+   * never the scaffold), or requested for a hand alone a flag asked for (see
+   * PlanDeck#requested)
+   * @returns {{pieceId: string, hand: string, deliberate?: boolean, requested?: boolean}}
    */
   writtenUnder() {
     let {pieceId, hand} = this.deck
     let deliberate = hand != "both" && !this.deck.scaffold
-    return {pieceId, hand, ...(deliberate ? {deliberate} : {})}
+    let requested = hand != "both" && !!this.deck.requested
+    return {pieceId, hand, ...(deliberate ? {deliberate} : {}), ...(requested ? {requested} : {})}
   }
 
   // Writes the pass to the store once the hit for its last column has been

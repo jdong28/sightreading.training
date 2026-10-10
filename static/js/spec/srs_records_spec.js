@@ -173,6 +173,11 @@ describe("spaced repetition records", function() {
       expect(validItem({...lower, deliberate: "yes"})).toBe(false)
       expect(validItem(lower)).toBe(true)
 
+      // requested marks a hand-alone item a flag's tick asked for
+      expect(validItem({...lower, requested: true})).toBe(true)
+      expect(validItem({...lower, requested: false})).toBe(false)
+      expect(validItem({...lower, requested: "yes"})).toBe(false)
+
       expect(validReview(legacyReview(section("p", 1, 4)))).toBe(true)
       expect(validReview({...legacyReview(section("p", 1, 4)), grade: 3})).toBe(false)
       expect(validReview(attempt("p", 1, 1, 5, {grade: 5}))).toBe(false)
@@ -242,6 +247,18 @@ describe("spaced repetition records", function() {
       // scaffold's own pass
       let again = itemWithPractice(marked, {hits: 1, misses: 0, at: 3000})
       expect(again.deliberate).toBe(true)
+    })
+
+    it("marks a hand-alone item requested once a pass a flag asked for is written to it, sticky and apart from deliberate", function() {
+      let lower = newItem({pieceId: "p", hand: "lower", startMeasure: 1, endMeasure: 1}, 10)
+      let marked = itemWithPractice(lower, {hits: 1, misses: 0, at: 2000, requested: true})
+      expect(marked.requested).toBe(true)
+      expect(marked.deliberate).toBeUndefined()
+
+      let both = newItem({pieceId: "p", startMeasure: 1, endMeasure: 1}, 10)
+      expect(itemWithPractice(both, {hits: 1, misses: 0, at: 2000, requested: true}).requested).toBeUndefined()
+
+      expect(itemWithPractice(marked, {hits: 1, misses: 0, at: 3000}).requested).toBe(true)
     })
 
     it("appends a pass tuple to passes, seeded from recent on the first write", function() {
@@ -803,6 +820,44 @@ describe("spaced repetition records", function() {
 
       expect(store.item(lowerId)).toEqual(jasmine.objectContaining({hits: 20, deliberate: true}))
       expect(store.item(upperId)).toEqual(jasmine.objectContaining({deliberate: true}))
+      expect(store.items().every(validItem)).toBe(true)
+    })
+
+    it("keeps a hand-alone item's requested marker sticky through a library merge", async function() {
+      let store = await open()
+      await store.putPiece(pieceData("local", "Same notes", 1000, ["F4"]))
+
+      let lowerId = itemId({pieceId: "local", hand: "lower", startMeasure: 1, endMeasure: 1})
+      let upperId = itemId({pieceId: "local", hand: "upper", startMeasure: 2, endMeasure: 2})
+      await store.recordAttempt({
+        item: {...practicedItem("local", 1, 1, 1000, {hand: "lower", id: lowerId}), requested: true},
+        review: attempt("local", 1, 1, 1000, {itemId: lowerId}),
+      })
+      await store.recordAttempt({
+        item: practicedItem("local", 2, 2, 1000, {hand: "upper", id: upperId}),
+        review: attempt("local", 2, 2, 1000, {itemId: upperId}),
+      })
+
+      let remoteId = (hand, m) => itemId({pieceId: "remote", hand, startMeasure: m, endMeasure: m})
+      let library = {
+        format: LIBRARY_FORMAT,
+        version: LIBRARY_VERSION,
+        pieces: [pieceData("remote", "Same notes", 1000, ["F4"])],
+        items: [
+          // newer and unmarked: replaces the stored item, keeps its mark
+          practicedItem("remote", 1, 1, 5000, {hand: "lower", id: remoteId("lower", 1), hits: 20}),
+          // older, marked elsewhere: marks the stored item without replacing it
+          {...practicedItem("remote", 2, 2, 500, {hand: "upper", id: remoteId("upper", 2)}), requested: true},
+        ],
+        reviews: [],
+        studies: [],
+      }
+
+      let result = await importLibraryFile(JSON.stringify(library), store)
+      expect(result.report.updatedSections).toEqual(1)
+
+      expect(store.item(lowerId)).toEqual(jasmine.objectContaining({hits: 20, requested: true}))
+      expect(store.item(upperId)).toEqual(jasmine.objectContaining({requested: true}))
       expect(store.items().every(validItem)).toBe(true)
     })
   })

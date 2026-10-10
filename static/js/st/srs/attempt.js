@@ -238,15 +238,20 @@ function totalsOf(columns) {
  * by default
  * @param {boolean} [opts.deliberate] a hand alone the player chose, see
  * ItemRecord
+ * @param {boolean} [opts.requested] a hand alone a flag asked for, see
+ * ItemRecord
  * @returns {Object[]}
  */
-export function passPractice(pass, {pieceId, hand, at=pass.lastAt, deliberate}) {
+export function passPractice(pass, {pieceId, hand, at=pass.lastAt, deliberate, requested}) {
   if (!pass.played) { return [] }
 
   return passRanges(pass.card).flatMap(({startMeasure, endMeasure, indices}) => {
     let totals = totalsOf(indices.map(idx => pass.columns[idx]))
     if (!totals.hits && !totals.misses) { return [] }
-    return [{pieceId, hand, startMeasure, endMeasure, ...totals, at, ...(deliberate ? {deliberate} : {})}]
+    return [{
+      pieceId, hand, startMeasure, endMeasure, ...totals, at,
+      ...(deliberate ? {deliberate} : {}), ...(requested ? {requested} : {}),
+    }]
   })
 }
 
@@ -433,11 +438,13 @@ export function gradeRange({mode, pace, columns: cardColumns}, indices, current)
  * @param {string} [opts.sessionId]
  * @param {boolean} [opts.deliberate] a hand alone the player chose, see
  * ItemRecord
+ * @param {boolean} [opts.requested] a hand alone a flag asked for, see
+ * ItemRecord
  * @returns {{id: string, build: function(ItemRecord|null): {item: ItemRecord, review: ReviewRecord}}[]}
  * the item id of each attempt, and its item as the attempt leaves it and its
  * review, from the stored item of the id
  */
-export function passAttempts(pass, {pieceId, hand, at=pass.lastAt, sessionId, deliberate}) {
+export function passAttempts(pass, {pieceId, hand, at=pass.lastAt, sessionId, deliberate, requested}) {
   if (!pass.complete || !pass.graded || !pass.played || !pass.drill) { return [] }
 
   let grading = passGrading(pass)
@@ -452,7 +459,7 @@ export function passAttempts(pass, {pieceId, hand, at=pass.lastAt, sessionId, de
       let collected = indices.map(idx => pass.columns[idx])
       let totals = totalsOf(collected)
 
-      let record = itemWithPractice(current, {...totals, at, deliberate})
+      let record = itemWithPractice(current, {...totals, at, deliberate, requested})
       record.recent = [...current.recent, [at, graded.columns, graded.clean, graded.grade]]
         .slice(-RECENT_ATTEMPTS)
       if (startMeasure == endMeasure) {
@@ -562,9 +569,11 @@ function selfElapsedOf(pass, range, total) {
  * @param {string} [opts.sessionId]
  * @param {boolean} [opts.deliberate] a hand alone the player chose, see
  * ItemRecord
+ * @param {boolean} [opts.requested] a hand alone a flag asked for, see
+ * ItemRecord
  * @returns {{id: string, build: function(ItemRecord|null): {item: ItemRecord, review: ReviewRecord}}[]}
  */
-export function selfAttempts(pass, {pieceId, hand, at=pass.lastAt, sessionId, deliberate}) {
+export function selfAttempts(pass, {pieceId, hand, at=pass.lastAt, sessionId, deliberate, requested}) {
   if (!pass.selfGrade || !pass.graded) { return [] }
 
   let {grade, slipped} = pass.selfGrade
@@ -581,7 +590,7 @@ export function selfAttempts(pass, {pieceId, hand, at=pass.lastAt, sessionId, de
         let current = stored || newItem(itemRange, at)
         let firstSight = !current || current.attempts == 0 && !current.recent.length
 
-        let record = itemWithPractice(current, {hits: 0, misses: 0, at, elapsedMs, played: true, deliberate})
+        let record = itemWithPractice(current, {hits: 0, misses: 0, at, elapsedMs, played: true, deliberate, requested})
         record.recent = [...current.recent, [at, null, null, grade]].slice(-RECENT_ATTEMPTS)
         if (range.startMeasure == range.endMeasure) {
           record.passes = withPass(current, [at, null, null, grade])
@@ -622,9 +631,11 @@ export function selfAttempts(pass, {pieceId, hand, at=pass.lastAt, sessionId, de
  * @param {string[]} [opts.also] item ids written as practice too
  * @param {boolean} [opts.deliberate] a hand alone the player chose, see
  * ItemRecord
+ * @param {boolean} [opts.requested] a hand alone a flag asked for, see
+ * ItemRecord
  * @returns {Object[]}
  */
-export function selfPractice(pass, {pieceId, hand, at=pass.lastAt, also, deliberate}={}) {
+export function selfPractice(pass, {pieceId, hand, at=pass.lastAt, also, deliberate, requested}={}) {
   if (!pass.selfGrade) { return [] }
 
   let selectedBars = pass.selfGrade.bars ?? pass.card.measures
@@ -643,6 +654,7 @@ export function selfPractice(pass, {pieceId, hand, at=pass.lastAt, also, deliber
         startMeasure: range.startMeasure, endMeasure: range.endMeasure,
         hits: 0, misses: 0, played: true, at,
         ...(deliberate ? {deliberate} : {}),
+        ...(requested ? {requested} : {}),
         ...(elapsedMs !== undefined ? {elapsedMs} : {}),
       }
     })
