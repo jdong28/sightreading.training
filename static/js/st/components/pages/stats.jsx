@@ -23,15 +23,16 @@ import {
 ChartJS.register(LinearScale, CategoryScale, PointElement, LineElement, Tooltip, Legend)
 
 import {getSession} from "st/app"
-import ProgressPage from "st/components/pages/progress_page"
+import PracticeRecordPage from "st/components/pages/practice_record_page"
 
 // the page /stats renders: the backend "Daily stats" page for an account
-// (currentUser), the local Progress screen otherwise. session is whatever
-// getSession() returns (null before init in specs)
+// (currentUser), the local practice record (Today, and the Progress screen as
+// its Last 14 days) otherwise. session is whatever getSession() returns (null
+// before init in specs)
 export function statsPageFor(session, pageProps) {
   return session && session.currentUser ?
     <StatsPage {...pageProps} /> :
-    <ProgressPage />
+    <PracticeRecordPage />
 }
 
 export default class StatsPage extends React.Component {

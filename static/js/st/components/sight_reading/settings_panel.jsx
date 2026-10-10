@@ -18,6 +18,7 @@ import {noteName, parseNote, barsHeading} from "st/music"
 import * as types from "prop-types"
 
 import {ENABLE_PRESETS} from "st/globals"
+import {generatorLabel, staffLabel} from "st/exercise_labels"
 
 import {getSession} from "st/app"
 
@@ -30,13 +31,7 @@ export function keyLabel(key) {
   return key.isChromatic() ? key.name() : key.name().replace(/b$/, "♭")
 }
 
-export function generatorLabel(generator) {
-  return generator.label || generator.name
-}
-
-export function staffLabel(staff) {
-  return staff.name.charAt(0).toUpperCase() + staff.name.slice(1)
-}
+export {generatorLabel, staffLabel}
 
 function SettingsGroup({label, aside, className, children}) {
   return <section className={classNames(styles.group, className)}>

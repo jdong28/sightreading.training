@@ -5,8 +5,12 @@ import {
 import {ChordGenerator, MultiKeyChordGenerator} from "st/chord_generators"
 import {
   STAVES, GENERATORS, SHEET_MUSIC_GENERATOR, SHEET_MUSIC_STORAGE_KEY, LEGACY_SHEET_MUSIC_STORAGE_KEY,
-  WHOLE_SECTION,
+  WHOLE_SECTION, FREE_PRACTICE, BOTH_HANDS, RIGHT_HAND, LEFT_HAND, troublePracticeSettings, scoreSettingsForPiece,
 } from "st/data"
+import {RANDOM_ORDER} from "st/measure_cards"
+import {importMusicXMLPiece} from "st/sheet_music_deck"
+import {setAppStore} from "st/storage"
+import {openTestStore, dynamicsOpening} from "spec/helpers"
 import Keyboard from "st/components/keyboard"
 
 import {
@@ -226,6 +230,83 @@ describe("octave numbering", function() {
       }))
       expect(generatorDefaultSettings(sheetMusic(), treble()).measuresPerCard)
         .toEqual(WHOLE_SECTION)
+    })
+  })
+
+  // what Today (st/practice_day) writes before it goes to the score page
+  describe("the settings Today hands the score page", function() {
+    let store, previous, saved, piece, other, xml
+
+    beforeEach(async function() {
+      saved = window.localStorage.getItem(SHEET_MUSIC_STORAGE_KEY)
+      window.localStorage.removeItem(SHEET_MUSIC_STORAGE_KEY)
+      store = await openTestStore()
+      previous = setAppStore(store)
+      xml = await (await fetch("/tools/fingerings/tests/fixture/score.musicxml")).text()
+      piece = (await importMusicXMLPiece("fixture.musicxml", xml, store)).piece
+      other = (await importMusicXMLPiece("other.musicxml", dynamicsOpening({title: "Other Study"}), store)).piece
+    })
+
+    afterEach(function() {
+      setAppStore(previous)
+      store.close()
+      if (saved == null) {
+        window.localStorage.removeItem(SHEET_MUSIC_STORAGE_KEY)
+      } else {
+        window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, saved)
+      }
+    })
+
+    let stored = settings => window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify(settings))
+
+    describe("troublePracticeSettings", function() {
+      it("sets one bar as free practice and the whole section as one card", function() {
+        let settings = {piece: piece.id, hand: BOTH_HANDS, startMeasure: 1, endMeasure: 4, measuresPerCard: 2, order: RANDOM_ORDER}
+
+        let one = troublePracticeSettings(settings, [3, 3])
+        expect(one).toEqual({...settings, practice: FREE_PRACTICE, startMeasure: 3, endMeasure: 3, measuresPerCard: WHOLE_SECTION})
+      })
+
+      it("sets a span one bar a card in Random order, keeping the hand", function() {
+        let settings = {piece: piece.id, hand: LEFT_HAND, startMeasure: 1, endMeasure: 4, measuresPerCard: WHOLE_SECTION}
+
+        let span = troublePracticeSettings(settings, [3, 9])
+        expect(span.practice).toEqual(FREE_PRACTICE)
+        expect([span.startMeasure, span.endMeasure]).toEqual([3, 9])
+        expect(span.measuresPerCard).toEqual(1)
+        expect(span.order).toEqual(RANDOM_ORDER)
+        expect(span.hand).toEqual(LEFT_HAND)
+        expect(span.piece).toEqual(piece.id)
+      })
+
+      it("clamps the span to the piece", function() {
+        let settings = {piece: piece.id, hand: BOTH_HANDS, startMeasure: 1, endMeasure: 4}
+
+        let span = troublePracticeSettings(settings, [0, 40])
+        expect([span.startMeasure, span.endMeasure]).toEqual([1, 16])
+      })
+    })
+
+    describe("scoreSettingsForPiece", function() {
+      it("keeps the stored settings of the same piece", function() {
+        stored({piece: piece.id, startMeasure: 5, endMeasure: 7, hand: RIGHT_HAND, practice: FREE_PRACTICE, measuresPerCard: 2})
+
+        let settings = scoreSettingsForPiece(piece.id)
+        expect(settings.piece).toEqual(piece.id)
+        expect([settings.startMeasure, settings.endMeasure]).toEqual([5, 7])
+        expect(settings.hand).toEqual(RIGHT_HAND)
+        expect(settings.measuresPerCard).toEqual(2)
+      })
+
+      it("takes the defaults of a piece picked in place of the stored one, as the setup pane picks it", function() {
+        stored({piece: piece.id, startMeasure: 5, endMeasure: 7, hand: RIGHT_HAND, practice: FREE_PRACTICE})
+
+        let settings = scoreSettingsForPiece(other.id)
+        expect(settings.piece).toEqual(other.id)
+        expect([settings.startMeasure, settings.endMeasure]).toEqual([1, 4])
+        expect(settings.hand).toEqual(BOTH_HANDS)
+        expect(settings.practice).toBe(null)
+      })
     })
   })
 

@@ -12,7 +12,6 @@ import NoteList from "st/note_list"
 import staffStyles from "st/components/staff.module.css"
 import pageStyles from "st/components/pages/sight_reading_page.module.css"
 import drawerStyles from "st/components/sight_reading/programme_drawer.module.css"
-import summaryStyles from "st/components/sight_reading/session_summary.module.css"
 import {setAppStore} from "st/storage"
 import {importMusicXMLPiece, addPiece, ensureAnnotation} from "st/sheet_music_deck"
 import {parseMusicXML} from "st/musicxml"
@@ -1177,6 +1176,8 @@ describe("sight reading page", function() {
     let [session] = store.recentSessions()
     expect(session.generator).toEqual("sheet music")
     expect(session.settings.pieceTitle).toEqual("Salon Octet")
+    // the practice that ran is kept, though the setting itself isn't set by default
+    expect(session.settings.practice).toEqual(FREE_PRACTICE)
     expect(session.notesRead).toEqual(1)
     // the card's columns carry their own clefs and the measure cards count
     // them: one hit and one miss in each clef of the grand staff, the wrong
@@ -1185,6 +1186,22 @@ describe("sight reading page", function() {
 
     let stats = store.sectionStats(piece.id).find(s => s.startMeasure == 1 && s.endMeasure == 4)
     expect(stats && [stats.hits, stats.misses]).toEqual([1, 1])
+  })
+
+  it("records which practice ran: today's programme when none was set, free practice when it was", async function() {
+    let {piece} = await importMusicXMLPiece("salon_octet.musicxml", octetXML, store)
+
+    // no practice set: the piece opens on today's programme
+    window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+      piece: piece.id, startMeasure: 1, endMeasure: 4, hand: BOTH_HANDS, measuresPerCard: 1,
+    }))
+    let el = renderScoreView()
+    click(buttonNamed(el, "Begin"))
+    play(page.state.notes.currentColumn())
+    click(buttonNamed(el, "End session"))
+    await waitFor(() => store.recentSessions().length == 1, "the session to be saved")
+    expect(store.recentSessions()[0].settings.practice).toEqual("programme")
+    expect(store.recentSessions()[0].settings.pieceTitle).toEqual("Salon Octet")
   })
 
   // A piece the engine can't draw, stored without its score or failing to be
@@ -3320,7 +3337,7 @@ describe("sight reading page", function() {
     })
   })
 
-  // the session clock the summary card and progress screen will read, which
+  // the session clock the rest strip and the practice record read, which
   // activeSeconds can't stand in for (see NoteStats#sessionRecord)
   describe("session summary record", function() {
     it("carries the session clock from Begin to Rest", async function() {
@@ -3425,10 +3442,29 @@ describe("sight reading page", function() {
     })
   })
 
-  // the session summary card (st/components/sight_reading/session_summary),
-  // built from the record "session summary record" above writes
-  describe("session summary card", function() {
-    it("opens at Rest with the session's own figures", async function() {
+  // Q11 (practice record design, owner's decision 10 Oct 2026): Rest on the
+  // exercises page no longer opens the summary dialog; a quiet strip says
+  // what the session was and links to Today's practice (/stats)
+  describe("the rest strip", function() {
+    it("opens no dialog at Rest: a quiet strip gives the session's accuracy and links to Today's practice", function() {
+      let el = renderPage()
+      click(buttonNamed(el, "Begin"))
+
+      let column = page.state.notes.currentColumn()
+      play([WRONG_NOTE])
+      play(column)
+      click(buttonNamed(el, "Rest"))
+
+      expect(el.querySelector("dialog")).toBe(null)
+      let strip = el.querySelector("[data-rest-strip]")
+      expect(strip).not.toBe(null)
+      expect(strip.textContent).toContain("Session ended")
+      expect(strip.textContent).toContain("50%")
+      let today = [...strip.querySelectorAll("a")].find(a => a.textContent.includes("Today's practice"))
+      expect(today.getAttribute("href")).toEqual("/stats")
+    })
+
+    it("gives the session's own figures and the day's minutes, counting the record just written once", async function() {
       jasmine.clock().install()
       clockInstalled = true
       jasmine.clock().mockDate(new Date(2026, 8, 14, 20))
@@ -3441,42 +3477,65 @@ describe("sight reading page", function() {
       tick(65000)
       click(buttonNamed(el, "Rest"))
 
-      let dialog = el.querySelector("dialog")
-      expect(dialog.open).toBe(true)
-      expect(dialog.querySelector("h1").textContent).toEqual("The session is ended")
-      expect(statValue(dialog, "Elapsed")).toEqual("1:05")
-      expect(statValue(dialog, "Notes read")).toEqual("1")
-      expect(statValue(dialog, "Best streak")).toEqual("1")
+      let strip = () => el.querySelector("[data-rest-strip]")
+      expect(strip().textContent).toContain("100%")
+      expect(strip().textContent).toContain("1 minute · 1 note read")
+      expect(strip().textContent).toContain("Today's practice → · 1 of 10 minutes today")
 
+      // the session is stored and cached by now, and the strip still counts it once
       await waitFor(() => store.recentSessions().length == 1, "the session to be saved")
+      flushSync(() => {})
+      expect(strip().textContent).toContain("1 of 10 minutes today")
+
       let record = store.recentSessions()[0]
       expect(record.elapsedSeconds).toEqual(65)
       expect(record.notesRead).toEqual(1)
       expect(record.bestStreak).toEqual(1)
     })
 
-    it("opens nothing at Rest, page hide, Clear stats or unmount when there's nothing to show", function() {
+    it("says the goal is met once the day's minutes reach it", async function() {
+      jasmine.clock().install()
+      clockInstalled = true
+      jasmine.clock().mockDate(new Date(2026, 8, 14, 20))
+
+      // an earlier evening session of ten minutes
+      await store.putSession({
+        id: "earlier", startedAt: +new Date(2026, 8, 14, 18), endedAt: +new Date(2026, 8, 14, 18, 10),
+        staff: "treble", generator: "random", notesRead: 5, misses: 0, bestStreak: 5, elapsedSeconds: 600, notes: {},
+      })
+
+      let el = renderPage()
+      click(buttonNamed(el, "Begin"))
+      play(page.state.notes.currentColumn())
+      flushSync(() => jasmine.clock().tick(65000))
+      click(buttonNamed(el, "Rest"))
+
+      expect(el.querySelector("[data-rest-strip]").textContent).toContain("11 minutes today, goal 10 met")
+    })
+
+    it("has no strip at Rest, page hide, Clear stats or unmount when nothing was played", function() {
       let el = renderPage()
 
       click(buttonNamed(el, "Begin"))
       click(buttonNamed(el, "Rest"))
-      expect(page.state.summary).toBe(null)
+      expect(page.state.rested).toBe(null)
+      expect(el.querySelector("[data-rest-strip]")).toBe(null)
       expect(el.querySelector("dialog")).toBe(null)
 
       click(buttonNamed(el, "Begin"))
       play(page.state.notes.currentColumn())
       flushSync(() => window.dispatchEvent(new Event("pagehide")))
-      expect(page.state.summary).toBe(null)
+      expect(page.state.rested).toBe(null)
 
       flushSync(() => page.clearStats())
-      expect(page.state.summary).toBe(null)
+      expect(page.state.rested).toBe(null)
 
       play(page.state.notes.currentColumn())
       expect(() => flushSync(() => root.unmount())).not.toThrow()
       root = null
     })
 
-    it("shows a 50%, oxblood trouble row for a column missed then played", function() {
+    it("offers Practise these notes for a note read at 50%, and not after a clean session", function() {
       let el = renderPage()
       click(buttonNamed(el, "Begin"))
 
@@ -3485,28 +3544,21 @@ describe("sight reading page", function() {
       play(column)
       click(buttonNamed(el, "Rest"))
 
-      let dialog = el.querySelector("dialog")
-      let rows = [...dialog.querySelectorAll(`.${summaryStyles.trouble_row}`)]
-      expect(rows.length).toEqual(1)
-      expect(rows[0].querySelector(`.${summaryStyles.trouble_percent}`).textContent).toEqual("50%")
-      let fill = rows[0].querySelector(`.${summaryStyles.fill}`)
-      expect(fill.style.width).toEqual("50%")
-      expect(fill.dataset.weak).toEqual("true")
-      expect(buttonNamed(dialog, "Practise these notes")).not.toBeUndefined()
-    })
+      let strip = el.querySelector("[data-rest-strip]")
+      expect(buttonNamed(strip, "Practise these notes")).not.toBeUndefined()
+      expect(buttonNamed(strip, "Done")).not.toBeUndefined()
 
-    it("shows no trouble section or practise pill after a clean session", function() {
-      let el = renderPage()
       click(buttonNamed(el, "Begin"))
       play(page.state.notes.currentColumn())
       click(buttonNamed(el, "Rest"))
 
-      let dialog = el.querySelector("dialog")
-      expect(dialog.textContent).not.toContain("Notes that gave trouble")
-      expect(buttonNamed(dialog, "Practise these notes")).toBeUndefined()
+      let clean = el.querySelector("[data-rest-strip]")
+      expect(clean.textContent).toContain("100%")
+      expect(buttonNamed(clean, "Practise these notes")).toBeUndefined()
+      expect(el.textContent).not.toContain("Notes that gave trouble")
     })
 
-    it("practises these notes: seeds Random notes with the weak rows, staying at rest", function() {
+    it("practises these notes: seeds Random notes with the weak notes, staying at rest, the strip gone", function() {
       let el = renderPage()
       click(buttonNamed(el, "Begin"))
 
@@ -3518,10 +3570,9 @@ describe("sight reading page", function() {
       let staffBefore = page.state.currentStaff
       let keyBefore = page.state.keySignature
 
-      let dialog = el.querySelector("dialog")
-      click(buttonNamed(dialog, "Practise these notes"))
+      click(buttonNamed(el.querySelector("[data-rest-strip]"), "Practise these notes"))
 
-      expect(el.querySelector("dialog")).toBe(null)
+      expect(el.querySelector("[data-rest-strip]")).toBe(null)
       expect(page.state.session).toBe(false)
       expect(page.state.currentStaff).toBe(staffBefore)
       expect(page.state.keySignature).toBe(keyBefore)
@@ -3547,7 +3598,7 @@ describe("sight reading page", function() {
       play(column)
       click(buttonNamed(el, "Rest"))
 
-      click(buttonNamed(el.querySelector("dialog"), "Practise these notes"))
+      click(buttonNamed(el.querySelector("[data-rest-strip]"), "Practise these notes"))
 
       let seeded = Object.keys(page.state.currentGeneratorSettings.focus)
       expect(seeded.length).toBeGreaterThan(0)
@@ -3568,41 +3619,35 @@ describe("sight reading page", function() {
       expect(page.state.notes.generator.notes.length).toBeGreaterThan(focusedPool)
     })
 
-    it("links New programme to /setup and See all progress to /stats", function() {
+    it("takes the strip away with Done, with Begin and with Clear stats at rest", function() {
       let el = renderPage()
+      let rest = () => {
+        click(buttonNamed(el, "Begin"))
+        play(page.state.notes.currentColumn())
+        click(buttonNamed(el, "Rest"))
+        expect(el.querySelector("[data-rest-strip]")).not.toBe(null)
+      }
+
+      rest()
+      click(buttonNamed(el.querySelector("[data-rest-strip]"), "Done"))
+      expect(el.querySelector("[data-rest-strip]")).toBe(null)
+      expect(page.state.rested).toBe(null)
+
+      rest()
       click(buttonNamed(el, "Begin"))
+      expect(el.querySelector("[data-rest-strip]")).toBe(null)
+      expect(page.state.session).toBe(true)
+
+      // a second sitting in the same visit gets its own strip
       play(page.state.notes.currentColumn())
       click(buttonNamed(el, "Rest"))
+      expect(el.querySelector("[data-rest-strip]")).not.toBe(null)
 
-      let dialog = el.querySelector("dialog")
-      let newProgramme = [...dialog.querySelectorAll("a")].find(a => a.textContent == "New programme")
-      expect(newProgramme.getAttribute("href")).toEqual("/setup")
-      let progress = [...dialog.querySelectorAll("a")].find(a => a.textContent.includes("See all progress"))
-      expect(progress.getAttribute("href")).toEqual("/stats")
+      flushSync(() => page.clearStats())
+      expect(el.querySelector("[data-rest-strip]")).toBe(null)
     })
 
-    it("on the score page, never opens the session summary, and the ended strip has no Practise these notes or New programme", async function() {
-      let {piece} = await importMusicXMLPiece("salon_octet.musicxml", octetXML, store)
-      window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
-        piece: piece.id, startMeasure: 1, endMeasure: 8, hand: BOTH_HANDS, practice: FREE_PRACTICE, measuresPerCard: "all",
-      }))
-
-      // restPauses pages (the score page) have no Drawer and never open the
-      // session summary dialog: Rest pauses in place, and End session shows
-      // the ended strip instead (score-first design)
-      let el = renderScoreView()
-      click(buttonNamed(el, "Begin"))
-      play(page.state.notes.currentColumn())
-      click(buttonNamed(el, "End session"))
-
-      expect(el.querySelector("dialog")).toBe(null)
-      expect(buttonNamed(el, "Practise these notes")).toBeUndefined()
-      expect(buttonNamed(el, "New programme")).toBeUndefined()
-      expect(buttonNamed(el, "Play on")).toBeDefined()
-      expect(buttonNamed(el, "Done")).toBeDefined()
-    })
-
-    it("after a chord miss, shows the four cards but no trouble rows or practise pill", function() {
+    it("after a chord miss shows a strip with no practise pill", function() {
       window.localStorage.setItem(DRILL_STORAGE_KEY, JSON.stringify({staff: "chord", generator: "random"}))
       let el = renderPage()
       let press = note => flushSync(() => page.pressNote(note))
@@ -3613,53 +3658,56 @@ describe("sight reading page", function() {
       release(WRONG_NOTE)
       click(buttonNamed(el, "Rest"))
 
-      let dialog = el.querySelector("dialog")
-      expect(dialog.open).toBe(true)
-      for (let label of ["Elapsed", "Accuracy", "Notes read", "Best streak"]) {
-        expect(statValue(dialog, label)).withContext(label).toBeDefined()
-      }
-      expect(dialog.textContent).not.toContain("Notes that gave trouble")
-      expect(buttonNamed(dialog, "Practise these notes")).toBeUndefined()
-    })
-
-    it("ignores space and the grade hotkeys on window while it's open", function() {
-      let el = renderPage()
-      click(buttonNamed(el, "Begin"))
-      play(page.state.notes.currentColumn())
-      click(buttonNamed(el, "Rest"))
-
-      expect(el.querySelector("dialog")).not.toBe(null)
-
-      let notesBefore = page.state.notes
-      flushSync(() => document.body.dispatchEvent(new KeyboardEvent("keydown", {keyCode: 32, bubbles: true})))
-      expect(page.state.notes).toBe(notesBefore)
-
-      flushSync(() => document.body.dispatchEvent(new KeyboardEvent("keydown", {keyCode: 49, bubbles: true})))
-      expect(page.state.notes).toBe(notesBefore)
-    })
-
-    it("closes on Esc or the dismiss ×, and Begin then starts a fresh session", function() {
-      let el = renderPage()
-      click(buttonNamed(el, "Begin"))
-      play(page.state.notes.currentColumn())
-      click(buttonNamed(el, "Rest"))
-
-      let dialog = el.querySelector("dialog")
-      flushSync(() => dialog.dispatchEvent(new Event("cancel", {cancelable: true})))
+      let strip = el.querySelector("[data-rest-strip]")
+      expect(strip).not.toBe(null)
+      expect(strip.textContent).toContain("Session ended")
+      expect(buttonNamed(strip, "Practise these notes")).toBeUndefined()
       expect(el.querySelector("dialog")).toBe(null)
-
-      click(buttonNamed(el, "Begin"))
-      expect(page.state.session).toBe(true)
-      play(page.state.notes.currentColumn())
-      click(buttonNamed(el, "Rest"))
-
-      let dialog2 = el.querySelector("dialog")
-      click(dialog2.querySelector(`.${summaryStyles.dismiss}`))
-      expect(el.querySelector("dialog")).toBe(null)
-
-      click(buttonNamed(el, "Begin"))
-      expect(page.state.session).toBe(true)
     })
+
+    it("on the score page, End session shows the ended strip with its link to Today and no rest strip", async function() {
+      let {piece} = await importMusicXMLPiece("salon_octet.musicxml", octetXML, store)
+      window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+        piece: piece.id, startMeasure: 1, endMeasure: 8, hand: BOTH_HANDS, practice: FREE_PRACTICE, measuresPerCard: "all",
+      }))
+
+      // restPauses pages (the score page) never rest into the strip: Rest
+      // pauses in place, and End session shows the ended strip instead
+      let el = renderScoreView()
+      click(buttonNamed(el, "Begin"))
+      play(page.state.notes.currentColumn())
+      click(buttonNamed(el, "End session"))
+
+      expect(el.querySelector("dialog")).toBe(null)
+      expect(el.querySelector("[data-rest-strip]")).toBe(null)
+      expect(el.textContent).toContain("Session ended")
+      expect([...el.querySelectorAll("a")].find(a => a.textContent.includes("Today's practice")).getAttribute("href")).toEqual("/stats")
+      expect(el.textContent).toContain("of 10 minutes today")
+      expect(buttonNamed(el, "Practise these notes")).toBeUndefined()
+      expect(buttonNamed(el, "New programme")).toBeUndefined()
+      expect(buttonNamed(el, "Play on")).toBeDefined()
+      expect(buttonNamed(el, "Done")).toBeDefined()
+    })
+  })
+
+  // the rail's "This evening" is the practice day the record counts (from
+  // 4 am, st/srs/schedule localDay), not the calendar day
+  it("lists the sessions of today's practice day, from 4 am, in the evening list", async function() {
+    let session = (id, startedAt) => ({
+      id, startedAt, endedAt: startedAt + 60000, staff: "treble", generator: "random",
+      notesRead: 3, misses: 1, bestStreak: 3, notes: {},
+    })
+
+    // 23:30, and half past midnight is still that evening's practice day
+    await store.putSession(session("late", +new Date(2026, 8, 13, 23, 30)))
+
+    jasmine.clock().install()
+    clockInstalled = true
+    jasmine.clock().mockDate(new Date(2026, 8, 14, 0, 30))
+
+    let el = renderPage()
+    let rows = [...el.querySelectorAll("ol li")].map(li => li.textContent)
+    expect(rows).toEqual(["ITreble staff, Random notes75% accuracy"])
   })
 
   describe("matching the notes played", function() {

@@ -1,8 +1,10 @@
 import * as React from "react"
 import {renderToStaticMarkup} from "react-dom/server"
-import {MemoryRouter} from "react-router-dom"
+import {createRoot} from "react-dom/client"
+import {flushSync} from "react-dom"
+import {MemoryRouter, Routes, Route} from "react-router-dom"
 
-import {Plate, StatCard, Pill, SectionLabel, TitleBlock, PullQuote, FleuronRule, AccuracyRule} from "st/components/salon"
+import {Plate, StatCard, Pill, SectionLabel, TitleBlock, PullQuote, FleuronRule, AccuracyRule, TabNav} from "st/components/salon"
 import styles from "st/components/salon.module.css"
 
 let renderElement = (...elements) => {
@@ -75,5 +77,41 @@ describe("salon primitives", function() {
     let weak = renderElement(React.createElement(AccuracyRule, {percent: 57, weak: true}))
       .querySelector(`.${styles.accuracy_rule}`)
     expect(weak.getAttribute("data-weak")).toEqual("true")
+  })
+  describe("TabNav", function() {
+    let tabs = [{to: "/stats", label: "Today", end: true}, {to: "/stats/last-14-days", label: "Last 14 days", count: 2}]
+
+    let root, container
+    afterEach(function() {
+      if (root) { flushSync(() => root.unmount()); container.remove(); root = null }
+    })
+
+    let render = path => {
+      container = document.createElement("div")
+      document.body.appendChild(container)
+      root = createRoot(container)
+      flushSync(() => root.render(React.createElement(MemoryRouter, {initialEntries: [path]},
+        React.createElement(Routes, {}, React.createElement(Route, {
+          path: "/stats/*", element: React.createElement(TabNav, {label: "Practice record", tabs}),
+        })))))
+      return container
+    }
+
+    it("renders each tab as a link in a labelled nav, only the active one marked", function() {
+      let el = render("/stats")
+      let nav = el.querySelector("nav")
+      expect(nav.getAttribute("aria-label")).toEqual("Practice record")
+
+      let links = [...nav.querySelectorAll("a")]
+      expect(links.map(a => a.getAttribute("href"))).toEqual(["/stats", "/stats/last-14-days"])
+      expect(links.map(a => a.getAttribute("aria-current"))).toEqual(["page", null])
+      expect(links.map(a => a.classList.contains(styles.active))).toEqual([true, false])
+    })
+
+    it("marks the tab under the path, and an index tab only on its own path", function() {
+      let links = [...render("/stats/last-14-days").querySelectorAll("a")]
+      expect(links.map(a => a.getAttribute("aria-current"))).toEqual([null, "page"])
+      expect(links[1].querySelector(`.${styles.tab_count}`).textContent).toEqual("2")
+    })
   })
 })

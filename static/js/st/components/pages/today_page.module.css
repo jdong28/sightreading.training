@@ -1,0 +1,447 @@
+/* Today, the practice record's first tab, see st/components/pages/today_page */
+
+.today_page {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 1060px;
+    margin: 0 auto;
+    padding: 26px 34px 44px;
+    color: var(--salon-ink);
+}
+
+.headline_grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 14px;
+    margin-bottom: 22px;
+}
+
+.card_caption {
+    margin-top: 6px;
+    font-family: var(--font-ui);
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 1.4;
+    color: var(--salon-ink-muted);
+}
+
+/* the minutes card's track of the goal */
+.goal_track {
+    position: relative;
+    height: 5px;
+    margin-top: 12px;
+    background: var(--salon-track);
+}
+
+.goal_fill {
+    height: 100%;
+    background: var(--salon-gilt);
+}
+
+.goal_tick {
+    position: absolute;
+    top: -3px;
+    bottom: -3px;
+    width: 0;
+    border-left: 1px dashed var(--salon-ink-muted);
+}
+
+.today_body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 300px;
+    gap: 22px;
+    align-items: start;
+
+    &.one_column {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+.main_column {
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+    min-width: 0;
+}
+
+.piece_plate {
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.header_italic {
+    font-style: italic;
+    font-weight: 400;
+    text-transform: none;
+    letter-spacing: 0;
+}
+
+/* the sessions of the day */
+.session_list {
+    display: flex;
+    flex-direction: column;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.session_row {
+    display: grid;
+    grid-template-columns: 52px minmax(0, 1fr) auto 84px;
+    align-items: baseline;
+    gap: 12px;
+    padding: 9px 0;
+    border-top: var(--salon-hairline);
+
+    &:first-child {
+        border-top: 0;
+    }
+}
+
+.session_time {
+    font-family: var(--font-display);
+    font-size: 15px;
+    color: var(--salon-ink-muted);
+}
+
+.session_what {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 2px 8px;
+    min-width: 0;
+}
+
+.session_title {
+    font-family: var(--font-display);
+    font-size: 17px;
+    color: var(--salon-ink);
+}
+
+.session_italic {
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 15px;
+    color: var(--salon-ink-soft);
+}
+
+.session_small {
+    flex-basis: 100%;
+    font-family: var(--font-ui);
+    font-size: 12px;
+    color: var(--salon-ink-muted);
+}
+
+.session_minutes {
+    font-family: var(--font-ui);
+    font-size: 13px;
+    color: var(--salon-ink-soft);
+    white-space: nowrap;
+}
+
+.session_figure {
+    font-family: var(--font-display);
+    font-size: 16px;
+    text-align: right;
+    color: var(--salon-ink);
+    white-space: nowrap;
+
+    &.weak {
+        color: var(--salon-oxblood);
+    }
+}
+
+/* a piece's bars, shaded by the day's accuracy */
+.bars {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(30px, 1fr));
+    gap: 4px;
+}
+
+.bar_cell {
+    position: relative;
+    box-sizing: border-box;
+    height: 36px;
+    padding: 0;
+    font-family: var(--font-display);
+    font-size: 13px;
+    color: var(--salon-ink-soft);
+    background: var(--salon-paper);
+    border: 1px solid var(--salon-rule-light);
+    border-radius: 0;
+    cursor: pointer;
+
+    &.clean {
+        background: var(--salon-mark-clean);
+        border-color: var(--salon-rule-strong);
+    }
+
+    &.near {
+        background: var(--salon-mark-near);
+        border-color: var(--salon-rule-strong);
+    }
+
+    &.trouble {
+        background: var(--salon-mark-trouble);
+        border-color: var(--salon-rule-strong);
+    }
+
+    &:hover {
+        border-color: var(--salon-gilt);
+    }
+
+    &:focus-visible {
+        outline: 2px solid var(--salon-oxblood);
+        outline-offset: 1px;
+    }
+}
+
+.learned_mark {
+    position: absolute;
+    top: 1px;
+    right: 3px;
+    font-size: 8px;
+    line-height: 1;
+    color: var(--salon-gilt-deep);
+}
+
+.legend {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 4px 16px;
+    margin-top: 10px;
+    font-family: var(--font-ui);
+    font-size: 11px;
+    color: var(--salon-ink-muted);
+}
+
+.legend_learned span {
+    color: var(--salon-gilt-deep);
+}
+
+.trouble_list {
+    display: flex;
+    flex-direction: column;
+    margin: 14px 0 0;
+    padding: 0;
+    list-style: none;
+}
+
+.trouble_row {
+    display: grid;
+    grid-template-columns: 52px 56px minmax(0, 1fr) auto;
+    align-items: baseline;
+    gap: 6px 12px;
+    padding: 8px 0;
+    border-top: var(--salon-hairline);
+}
+
+.trouble_bar {
+    font-family: var(--font-display);
+    font-size: 15px;
+    color: var(--salon-ink);
+}
+
+.trouble_label {
+    font-family: var(--font-display);
+    font-size: 15px;
+    color: var(--salon-ink-soft);
+
+    .trouble_row[data-kind="trouble"] & {
+        color: var(--salon-oxblood);
+    }
+}
+
+.trouble_text {
+    min-width: 0;
+    font-family: var(--font-ui);
+    font-size: 13px;
+    line-height: 1.45;
+    color: var(--salon-ink-soft);
+}
+
+.trouble_open {
+    padding: 0;
+    font-family: var(--font-ui);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--salon-gilt-deep);
+    background: none;
+    border: 0;
+    border-bottom: 1px solid var(--salon-gilt-light);
+    cursor: pointer;
+}
+
+.trouble_more {
+    padding: 8px 0 0;
+    border-top: var(--salon-hairline);
+    font-family: var(--font-ui);
+    font-size: 12px;
+    font-style: italic;
+    color: var(--salon-ink-muted);
+}
+
+.piece_actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 10px 14px;
+    margin-top: 16px;
+}
+
+.practise {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 5px;
+}
+
+.practise_note {
+    font-family: var(--font-ui);
+    font-size: 11px;
+    color: var(--salon-ink-muted);
+}
+
+/* the rail */
+.rail {
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+    min-width: 0;
+}
+
+.rail_section {
+    display: flex;
+    flex-direction: column;
+    gap: 11px;
+}
+
+.mistake_list,
+.habit_list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.mistake_row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 5px 10px;
+    font-family: var(--font-ui);
+    font-size: 13px;
+    color: var(--salon-ink-soft);
+}
+
+.mistake_label {
+    min-width: 0;
+}
+
+.mistake_count {
+    font-family: var(--font-display);
+    text-align: right;
+}
+
+.mistake_rule {
+    grid-column: 1 / -1;
+    display: block;
+    height: 5px;
+    background: var(--salon-track);
+}
+
+.mistake_fill {
+    display: block;
+    height: 100%;
+    background: var(--salon-oxblood);
+
+    .mistake_row[data-kind="hesitated"] & {
+        background: var(--salon-gilt);
+    }
+}
+
+.habit_row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    font-family: var(--font-ui);
+    font-size: 13px;
+    color: var(--salon-ink-soft);
+}
+
+.habit_times {
+    flex: none;
+    color: var(--salon-oxblood);
+}
+
+.closing {
+    margin: 26px 0 0;
+    text-align: center;
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 17px;
+    color: var(--salon-ink-soft);
+}
+
+/* the empty states */
+.empty_plate {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding: 40px 26px;
+    text-align: center;
+}
+
+.empty_title {
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: 26px;
+    font-weight: 400;
+    color: var(--salon-ink);
+}
+
+.empty_text {
+    margin: 0 0 6px;
+    max-width: 440px;
+    font-family: var(--font-ui);
+    font-size: 14px;
+    line-height: 1.55;
+    color: var(--salon-ink-soft);
+}
+
+@media (max-width: 760px) {
+    .today_page {
+        padding: 26px 16px 44px;
+    }
+
+    .today_body {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .session_row {
+        grid-template-columns: 46px minmax(0, 1fr) auto;
+    }
+
+    .session_what {
+        grid-row: 1 / span 2;
+    }
+
+    .session_figure {
+        grid-column: 3;
+        grid-row: 2;
+    }
+
+    .trouble_row {
+        grid-template-columns: 50px 50px minmax(0, 1fr);
+    }
+
+    .trouble_open {
+        grid-column: 3;
+        justify-self: start;
+    }
+}

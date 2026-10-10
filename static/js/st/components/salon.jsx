@@ -4,7 +4,7 @@
 import * as React from "react"
 import * as types from "prop-types"
 import classNames from "classnames"
-import {Link} from "react-router-dom"
+import {Link, NavLink} from "react-router-dom"
 
 import styles from "./salon.module.css"
 
@@ -167,5 +167,33 @@ TitleBlock.propTypes = {
   title: types.node,
   italic: types.node,
   after: types.node,
+  className: types.string,
+}
+
+// A row of tabs drawn as links, each tab its own route: the active one is
+// oxblood under a rule, and carries aria-current="page". end matches the
+// tab's path exactly (a tab at the index of the others)
+export function TabNav({label, tabs, className}) {
+  return <nav aria-label={label} className={classNames(styles.tab_nav, className)}>
+    {tabs.map(tab =>
+      <NavLink
+        key={tab.to}
+        to={tab.to}
+        end={!!tab.end}
+        className={({isActive}) => classNames(styles.tab, {[styles.active]: isActive})}>
+        {tab.label}
+        {tab.count != null ? <span className={styles.tab_count}>{tab.count}</span> : null}
+      </NavLink>)}
+  </nav>
+}
+
+TabNav.propTypes = {
+  label: types.string.isRequired,
+  tabs: types.arrayOf(types.shape({
+    to: types.string.isRequired,
+    label: types.node.isRequired,
+    end: types.bool,
+    count: types.number,
+  })).isRequired,
   className: types.string,
 }

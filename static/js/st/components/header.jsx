@@ -23,7 +23,7 @@ export const NAV_LINKS = [
   {to: "/play-along", label: "Play along"},
   {to: "/ear-training/interval-melodies", section: "/ear-training", label: "Ear training"},
   {to: "/flash-cards/note-math", section: "/flash-cards", label: "Flash cards"},
-  {to: "/stats", label: "Statistics", end: true},
+  {to: "/stats", label: "Statistics"},
   {to: "/about", label: "Guide", end: true},
 ]
 

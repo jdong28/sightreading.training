@@ -51,6 +51,7 @@ describe("header", function() {
   })
 
   for (let [path, label] of [
+    ["/stats/last-14-days", "Statistics"],
     ["/ear-training/melody-playback", "Ear training"],
     ["/flash-cards/chord-identification", "Flash cards"],
     ["/play-along/recent", "Play along"],
