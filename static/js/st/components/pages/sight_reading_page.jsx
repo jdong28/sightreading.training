@@ -1992,6 +1992,7 @@ export default class SightReadingPage extends React.Component {
       settings={this.currentSettings()}
       setSettings={this.setCurrentSettings}
       staff={this.state.currentStaff}
+      columnStaff={this.columnStaff()}
       keySignature={this.state.keySignature}
       generator={this.currentNotesGenerator()}
       source={this.state.engineSource}

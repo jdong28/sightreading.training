@@ -484,6 +484,48 @@ describe("the score view at rest (st/components/sight_reading/score_view)", func
   // without a stored source, or an engraving failure, falls back to a bar
   // grid rather than the paginated engraving, at rest same as in session
   // (st/components/pages/sight_reading_page, AGENTS.md)
+  // the setup pane's "Section has N columns" counts what the session will
+  // draw and judge: every onset while the engine draws the piece, only those
+  // on the app staff while its fallback does
+  describe("the section's column hint", function() {
+    // a treble-only piece, 4 onsets a bar over bars 1-2, two below the
+    // treble staff's A3
+    let lowTreble = () => pianoScore({title: "Low treble", bars: [
+      {upper: ["C4", "G3", "E4", "G4"].map(name => ({name}))},
+      {upper: ["F3", "D4", "E4", "C4"].map(name => ({name}))},
+    ]})
+
+    let hint = el => [...el.querySelectorAll("div")]
+      .find(div => div.children.length == 0 && /^Marked in gilt/.test(div.textContent)).textContent
+
+    it("counts every onset while the engine draws the piece", async function() {
+      await drillPiece(lowTreble(), {startMeasure: 1, endMeasure: 2})
+      let el = renderScorePage()
+      await waitFor(() => el.querySelectorAll('button[aria-label^="Bar "]').length > 0, {message: "the score to draw"})
+
+      expect(page.engineCards()).toBe(true)
+      expect(hint(el)).toContain("Section has 8 columns")
+      // and it is what the session judges
+      expect(page.currentCard().card.columns.length).toBe(8)
+    })
+
+    it("counts what the app staff keeps while it draws in the engine's place", async function() {
+      let xml = lowTreble()
+      let song = parseMusicXML(xml)
+      let piece = await store.putPiece({id: "old", title: "Low treble", importedAt: 1000, song: songToJSON(song)})
+      window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
+        piece: piece.id, hand: "both hands", measuresPerCard: "all", practice: "free practice",
+        startMeasure: 1, endMeasure: 2,
+      }))
+
+      let el = renderScorePage()
+      await waitFor(() => page.state.engineSource?.status == "missing", {message: "the missing source"})
+
+      expect(page.engineCards()).toBe(false)
+      expect(hint(el)).toContain("Section has 6 columns")
+    })
+  })
+
   describe("fallback states", function() {
     it("shows a grid of bars with no stored source", async function() {
       let xml = workhorseScore()
