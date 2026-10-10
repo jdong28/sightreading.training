@@ -53,6 +53,12 @@ describe("notes for the next lesson on the score page, mounted", function() {
   })
 
   afterEach(function() {
+    // a session left running keeps counting every note of every NoteStats
+    // (st/measure_cards), which the next specs would see
+    let generator = page && page.state && page.state.notes && page.state.notes.generator
+    if (generator && generator.stop) { generator.stop() }
+    page = null
+
     if (root) { flushSync(() => root.unmount()); root = null }
     if (container) { container.remove(); container = null }
     setAppStore(previous)
@@ -822,6 +828,7 @@ describe("the For my lesson tab, mounted", function() {
       click(button("Discussed…"))
       click(button("Save"))
       await ready(() => store.lessonNotes()[0].status == "discussed")
+      await ready(() => container.textContent.includes("Discussed · "))
       expect(store.lessonNotes()[0].answer).toEqual("")
       expect(article(note.id).textContent).not.toContain("Teacher")
     })
@@ -834,6 +841,7 @@ describe("the For my lesson tab, mounted", function() {
 
       click(button("Keep for next time"))
       await ready(() => store.lessonNotes()[0].keptAt)
+      await ready(() => article(note.id).textContent.includes("kept for next time"))
       let stored = store.lessonNotes()[0]
       expect(stored.status).toEqual("open")
       expect(stored.keptAt).toBeGreaterThan(Date.now() - 5000)
@@ -849,7 +857,7 @@ describe("the For my lesson tab, mounted", function() {
 
       click(buttons("Drop")[0])
       await ready(() => store.lessonNotes().find(n => n.id == note.id).status == "dropped")
-      expect(article(note.id)).toBe(null)
+      await ready(() => article(note.id) == null)
       expect(container.querySelector('[role="status"]').textContent).toEqual("Dropped. Undo")
       expect(tabs()[1]).toEqual("For my lesson1")
 
@@ -857,6 +865,7 @@ describe("the For my lesson tab, mounted", function() {
       click(button("Undo"))
       await ready(() => store.lessonNotes().find(n => n.id == note.id).status == "open")
       await ready(() => article(note.id))
+      await ready(() => !container.querySelector('[role="status"]'))
       expect(container.querySelector('[role="status"]')).toBe(null)
 
       // dropped again, and the page left: it never comes back
@@ -887,7 +896,7 @@ describe("the For my lesson tab, mounted", function() {
       type(container.querySelector("textarea"), "Where do I breathe here?")
       click(button("Save note"))
       await ready(() => store.lessonNotes().find(n => n.id == flag.id).text == "Where do I breathe here?")
-      expect(article(flag.id).textContent).not.toContain("No words yet")
+      await ready(() => !article(flag.id).textContent.includes("No words yet"))
       expect(article(flag.id).textContent).toContain("“Where do I breathe here?”")
       expect(store.lessonNotes().find(n => n.id == flag.id).evidence).toEqual(evidence)
 
@@ -898,6 +907,7 @@ describe("the For my lesson tab, mounted", function() {
       type(article(wordy.id).querySelector("textarea"), "A typo in my note")
       click([...article(wordy.id).querySelectorAll("button")].find(b => b.textContent == "Save note"))
       await ready(() => store.lessonNotes().find(n => n.id == wordy.id).text == "A typo in my note")
+      await ready(() => article(wordy.id).textContent.includes("“A typo in my note”"))
       expect(store.lessonNotes().find(n => n.id == wordy.id).topic).toEqual("fingering")
     })
 
