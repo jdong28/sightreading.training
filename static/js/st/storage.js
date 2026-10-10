@@ -553,6 +553,17 @@ function validSectionStats(stats) {
     (stats.elapsedMs === undefined || isCount(stats.elapsedMs))
 }
 
+// the item given, with the hand-alone marks (ItemRecord#deliberate,
+// ItemRecord#requested) the other copy of it has and it lacks; the same object
+// when it lacks none
+function withMarks(item, other) {
+  let marks = {}
+  for (let mark of ["deliberate", "requested"]) {
+    if (other[mark] && !item[mark]) { marks[mark] = true }
+  }
+  return Object.keys(marks).length ? {...item, ...marks} : item
+}
+
 // the stored fields of a piece, dropping anything else
 function pieceRecord(piece, importedAt) {
   let record = {
@@ -1171,6 +1182,8 @@ export class LocalStore {
    * recorded none (st/srs/attempt)
    * @param {boolean} [practice.deliberate] a hand alone played by the
    * player's choice, which marks its item (ItemRecord#deliberate)
+   * @param {boolean} [practice.requested] a hand alone played at a flag's
+   * request, which marks its item (ItemRecord#requested)
    * @param {Array} [practice.pass] a single-bar range's pass tuple
    * ([columns, clean, grade|null]) for the item's passes history (see
    * ItemRecord#passes, itemWithPractice), eg. a bar demoted from an attempt
@@ -1188,10 +1201,10 @@ export class LocalStore {
   }
 
   // the item of the practiced range with the practice added
-  practicedItem({pieceId, hand="both", startMeasure, endMeasure, hits, misses, at=Date.now(), elapsedMs, played, deliberate, pass}) {
+  practicedItem({pieceId, hand="both", startMeasure, endMeasure, hits, misses, at=Date.now(), elapsedMs, played, deliberate, requested, pass}) {
     let range = {pieceId, hand, startMeasure, endMeasure}
     let current = this.item(itemId(range)) || newItem(range, at)
-    let item = itemWithPractice(current, {hits, misses, at, elapsedMs, played, deliberate, pass})
+    let item = itemWithPractice(current, {hits, misses, at, elapsedMs, played, deliberate, requested, pass})
 
     if (!validItem(item)) {
       throw new Error("Not a valid section practice")
@@ -1385,9 +1398,9 @@ export class LocalStore {
 
       // an imported item: added, or replacing the stored one when practiced
       // more recently. totalsOnly keeps the rest of the stored item. A hand
-      // alone the player chose (ItemRecord#deliberate) stays marked whichever
-      // copy wins, so a library merge never loses it. Returns whether the
-      // item was taken
+      // alone the player chose (ItemRecord#deliberate) or a flag asked for
+      // (ItemRecord#requested) stays marked whichever copy wins, so a library
+      // merge never loses it. Returns whether the item was taken
       let mergeItem = (record, {totalsOnly=false}={}) => {
         let idx = itemIndex.get(record.id)
         if (idx === undefined) {
@@ -1402,14 +1415,15 @@ export class LocalStore {
             delete current.elapsedMs
             items[idx] = elapsedMs === undefined ? current : {...current, elapsedMs}
           } else {
-            items[idx] = items[idx].deliberate && !record.deliberate ? {...record, deliberate: true} : record
+            items[idx] = withMarks(record, items[idx])
           }
           report.updatedSections += 1
         } else {
-          // the copy kept isn't newer, but an older deliberate copy still
-          // marks it: not a replacement, so it isn't counted as one
-          if (record.deliberate && !items[idx].deliberate) {
-            items[idx] = {...items[idx], deliberate: true}
+          // the copy kept isn't newer, but an older marked copy still marks
+          // it: not a replacement, so it isn't counted as one
+          let marked = withMarks(items[idx], record)
+          if (marked !== items[idx]) {
+            items[idx] = marked
             changedItems.add(record.id)
           }
           return false

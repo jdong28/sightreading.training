@@ -268,10 +268,15 @@ export class ReviewPane extends React.Component {
   draftFor(flag) {
     let teacherLine = flag.lines.find(line => line.source == "teacher")
 
+    // an analysis's flag shows a name of the teacher's own only: blank means
+    // "keep the analysis's". A flag the log alone holds has no name but its
+    // own, which a save must write again or lose
+    let named = flag.givenTitle !== undefined || !flag.proposalSource
+
     return {
       ...this.draftRange(flag.start, flag.end),
       hand: flag.hand, level: flag.level, kinds: flag.kinds,
-      title: flag.givenTitle !== undefined ? flag.title : "",
+      title: named ? flag.title : "",
       reason: teacherLine ? teacherLine.text : "",
       tip: flag.tip,
       apart: flag.apart,
@@ -386,16 +391,21 @@ export class ReviewPane extends React.Component {
     })
   }
 
+  // a drag across the strip refines the range of the passage being marked:
+  // whatever "Add a passage" opened the editor on and the teacher has typed
+  // since stays, only the bars change
   onPick(start, end) {
-    this.setState({
+    this.setState(state => ({
       picking: false,
       selectedId: null,
       draft: {
-        adding: true,
+        ...(state.draft && state.draft.adding ? state.draft : {
+          adding: true,
+          hand: "both", level: 1, kinds: [], title: "", reason: "", tip: "", apart: false,
+        }),
         ...this.draftRange(start, end),
-        hand: "both", level: 1, kinds: [], title: "", reason: "", tip: "", apart: false,
       },
-    })
+    }))
   }
 
   updateDraft(fields) {
@@ -465,8 +475,9 @@ export class ReviewPane extends React.Component {
   // ---- render ----
 
   renderTally(flags) {
-    let waiting = flags.filter(flag =>
-      flag.status == "waiting" || flag.place == "check" || flag.place == "unplaced").length
+    // a dismissed flag is decided, whatever has since happened to its bars
+    let waiting = flags.filter(flag => flag.status != "dismissed" &&
+      (flag.status == "waiting" || flag.place == "check" || flag.place == "unplaced")).length
     let counts = {
       accepted: flags.filter(flag => flag.status == "accepted").length,
       edited: flags.filter(flag => flag.status == "edited").length,

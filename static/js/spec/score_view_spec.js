@@ -6,7 +6,7 @@ import {MemoryRouter} from "react-router-dom"
 import ScorePage from "st/components/pages/score_page"
 import {PassagePane} from "st/components/sight_reading/passage_pane"
 import {ReviewPane} from "st/components/sight_reading/review_pane"
-import {importMusicXMLPiece, songToJSON} from "st/sheet_music_deck"
+import {importMusicXMLPiece, songToJSON, decideFlags} from "st/sheet_music_deck"
 import {parseMusicXML} from "st/musicxml"
 import {setAppStore} from "st/storage"
 import {SHEET_MUSIC_STORAGE_KEY, BOTH_HANDS, FREE_PRACTICE, WHOLE_SECTION} from "st/data"
@@ -20,7 +20,7 @@ import barStripStyles from "st/components/bar_strip.module.css"
 import sheetStyles from "st/components/score_sheet.module.css"
 
 import {flagsInForce} from "st/difficulty/records"
-import {withDecisions} from "st/difficulty/decisions"
+import {withDecisions, dismissDecision, reviewFlags} from "st/difficulty/decisions"
 
 import {openTestStore, pianoScore} from "spec/helpers"
 
@@ -871,6 +871,122 @@ describe("ReviewPane", function() {
     await waitFor(() => reviewPane().textContent.includes("Teacher"), {message: "the Teacher chip"})
   })
 
+  // a drag across the strip's cells, as a real one captures the pointer on
+  // the cell it started in
+  let dragStrip = (fromIdx, toIdx) => {
+    let cells = [...reviewPane().querySelectorAll(`.${barStripStyles.cell}`)]
+    let from = cells[fromIdx]
+    let to = cells[toIdx]
+    let middle = cell => {
+      let rect = cell.getBoundingClientRect()
+      return rect.left + rect.width / 2
+    }
+    let drag = (type, clientX) => flushSync(() => from.dispatchEvent(
+      new PointerEvent(type, {bubbles: true, pointerId: 1, clientX})))
+
+    drag("pointerdown", middle(from))
+    drag("pointermove", middle(to))
+    drag("pointerup", middle(to))
+  }
+
+  let queueCard = text => [...reviewPane().querySelectorAll(`.${reviewStyles.queue_card}`)]
+    .find(card => card.textContent.includes(text))
+
+  it("dragging the strip after 'Add a passage' keeps what was already typed, changing only the bars", async function() {
+    let piece = await drillPiece(workhorseScore())
+    mountReview(piece)
+    await waitFor(() => reviewPane(), {message: "the review pane"})
+
+    clickButton(reviewPane(), "Add a passage")
+    let nameInput = await waitFor(() => reviewPane().querySelector('input[type="text"]'), {message: "the name field"})
+    changeValue(nameInput, "Typed name")
+    let textareas = () => [...reviewPane().querySelectorAll("textarea")]
+    let setTextarea = (idx, value) => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set.call(textareas()[idx], value)
+      flushSync(() => textareas()[idx].dispatchEvent(new Event("input", {bubbles: true})))
+    }
+    setTextarea(0, "Typed reason")
+    clickButton(reviewPane(), "Left")
+    clickButton(reviewPane(), "Hard")
+    clickButton(reviewPane(), "leaps")
+
+    dragStrip(0, 3)
+
+    let startBar = reviewPane().querySelector('input[aria-label="start bar"]')
+    let endBar = reviewPane().querySelector('input[aria-label="end bar"]')
+    expect([startBar.value, endBar.value]).toEqual(["1", "4"])
+    expect(reviewPane().querySelector('input[type="text"]').value).toEqual("Typed name")
+    expect(textareas()[0].value).toEqual("Typed reason")
+
+    clickButton(reviewPane(), "Save")
+    let added = await waitFor(() =>
+      flagsInForce(store.annotation(piece.id)).find(flag => flag.sources.includes("teacher")),
+      {message: "the teacher's added flag"})
+    expect([added.start, added.end, added.title, added.hand, added.level, added.kinds])
+      .toEqual([1, 4, "Typed name", "lower", 2, ["leaps"]])
+    expect(added.lines[0].text).toEqual("Typed reason")
+  })
+
+  it("a flag the teacher added and then renames shows no analysis name, and the editor keeps its name", async function() {
+    let piece = await drillPiece(workhorseScore())
+    mountReview(piece)
+    await waitFor(() => reviewPane(), {message: "the review pane"})
+
+    clickButton(reviewPane(), "Add a passage")
+    let nameInput = await waitFor(() => reviewPane().querySelector('input[type="text"]'), {message: "the name field"})
+    changeValue(nameInput, "Mind the pedal")
+    clickButton(reviewPane(), "Save")
+    await waitFor(() => queueCard("Mind the pedal"), {message: "the added flag's card"})
+
+    clickButton(queueCard("Mind the pedal"), "Edit")
+    nameInput = await waitFor(() => reviewPane().querySelector('input[type="text"]'), {message: "the editor"})
+    expect(nameInput.value).toEqual("Mind the pedal")
+    changeValue(nameInput, "Pedal first")
+    clickButton(reviewPane(), "Save")
+
+    await waitFor(() => queueCard("Pedal first"), {message: "the renamed card"})
+    expect(queueCard("Pedal first").textContent).not.toContain("the analysis called it")
+    expect(queueCard("Pedal first").textContent).not.toContain("Mind the pedal")
+
+    // and the editor still opens on the name it has, with no analysis name to go back to
+    clickButton(queueCard("Pedal first"), "Edit")
+    expect(reviewPane().querySelector('input[type="text"]').value).toEqual("Pedal first")
+    expect(reviewPane().textContent).not.toContain("Named by the analysis")
+    clickButton(reviewPane(), "Save")
+    await waitFor(() => flagsInForce(store.annotation(piece.id)).some(flag => flag.title == "Pedal first"),
+      {message: "the name kept through a second save"})
+  })
+
+  it("the tally never counts a dismissed flag as waiting, however its bars have changed", async function() {
+    let piece = await drillPiece(workhorseScore())
+    let record = store.annotation(piece.id)
+    let flag = flagsInForce(record)[0]
+    await decideFlags(piece.id, [dismissDecision({record, flag, by: "Ms Laurent", at: Date.now()})], store)
+
+    // the dismissed flag's bars have since changed: its place reads "check"
+    await store.updateAnnotation(piece.id, current => ({
+      ...current,
+      fingerprint: {
+        ...current.fingerprint,
+        bars: current.fingerprint.bars.map((hash, idx) =>
+          idx >= flag.startIndex && idx <= flag.endIndex ? `${hash}x` : hash),
+      },
+    }))
+    expect(reviewFlags(store.annotation(piece.id)).find(f => f.id == flag.id))
+      .toEqual(jasmine.objectContaining({status: "dismissed", place: "check"}))
+
+    mountReview(piece)
+    await waitFor(() => reviewPane(), {message: "the review pane"})
+
+    let tally = label => {
+      let labelEl = [...reviewPane().querySelectorAll(`.${reviewStyles.tally} div`)]
+        .find(el => el.textContent == label)
+      return labelEl.nextSibling.textContent
+    }
+    expect(tally("Waiting for you")).toEqual("0")
+    expect(tally("Dismissed")).toEqual("1")
+  })
+
   it("ticking 'Start this passage hands separately' saves apart; the preview line shows", async function() {
     let piece = await drillPiece(workhorseScore())
     mountReview(piece)
@@ -967,6 +1083,49 @@ describe("ReviewPane", function() {
       {message: "the evidence line"})
     expect(line.textContent).toContain("From your playing:")
     expect(line.textContent).toContain("slipped back 2 times")
+  })
+
+  // a hand alone played once and passed, as the programme writes it for the
+  // hand scaffold (no mark) or at a flag's request (requested)
+  let recordHandBar = async (piece, measure, extra={}) => {
+    let now = Date.now()
+    let barId = `${piece.id}:lower:${measure}-${measure}`
+    await store.recordAttempt({
+      item: {
+        id: barId, pieceId: piece.id, hand: "lower", startMeasure: measure, endMeasure: measure,
+        level: "bar", state: "learning", step: 0, due: now, last: now, s: 1, d: 5,
+        reps: 1, lapses: 0, streak: 1, lastGrade: 3, hits: 3, misses: 0, attempts: 1,
+        lastPracticed: now, elapsedMs: 3000, algo: 1, createdAt: now - 1000,
+        recent: [[now, 3, 3, 3]], ...extra,
+      },
+      review: {
+        itemId: barId, pieceId: piece.id, at: now, kind: "attempt", grade: 3, was: "learning",
+        columns: 3, clean: 3, misses: 0, stuck: 0, skipped: 0, hesitations: 0, mode: "wait", algo: 1,
+      },
+    })
+  }
+
+  it("a hand a flag's tick asked for is not read as the bar needing hands apart, but the scaffold's is", async function() {
+    let piece = await drillPiece(workhorseScore())
+    let flag = flagsInForce(store.annotation(piece.id))[0]
+
+    // the flagged bar's left hand was asked for; bar 2's too; bar 4's was the scaffold's
+    await recordHandBar(piece, flag.start, {requested: true})
+    await recordHandBar(piece, 2, {requested: true})
+    await recordHandBar(piece, 4)
+
+    mountReview(piece)
+    await waitFor(() => reviewPane(), {message: "the review pane"})
+
+    let plate = await waitFor(() => reviewPane().querySelector(`.${reviewStyles.trouble_plate}`),
+      {message: "the trouble spots"})
+    let spots = [...plate.querySelectorAll(`.${reviewStyles.trouble_item}`)].map(item => item.textContent)
+    expect(spots.length).toEqual(1)
+    expect(spots[0]).toContain("Bar 4")
+    expect(spots[0]).toContain("Needed hands apart last time")
+
+    // the flag's own card says nothing of its hand the flag asked for
+    expect(reviewPane().querySelector(`.${reviewStyles.trouble_line}`)).toBe(null)
   })
 
   it("the editor places an unplaced flag at the bars it shows, not the exporting copy's", async function() {

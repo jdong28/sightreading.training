@@ -863,6 +863,37 @@ describe("st/difficulty", () => {
       expect(final.givenTitle).toBeUndefined()
     })
 
+    it("renaming a flag the teacher added gives no givenTitle: there is no analysis name to restore", () => {
+      let song = workhorseSong()
+      let record = annotationWith(null, "p1", analyzePiece({song, source: null, at: 1}))
+
+      let add = addDecision({
+        record, by: "Ms Laurent", at: 10,
+        flag: {
+          start: 1, end: 1, startIndex: 0, endIndex: 0, hand: "both", level: 1, kinds: [],
+          title: "Mind the pedal", reason: "", tip: "", apart: false,
+        },
+      })
+      record = withDecisions(record, [add])
+      let added = reviewFlags(record).find(f => f.id == add.flagId)
+      expect(added.givenTitle).toBeUndefined()
+
+      record = withDecisions(record, [
+        editDecision({record, flag: added, overrides: {title: "Pedal first"}, by: "Ms Laurent", at: 20}),
+      ])
+      let renamed = reviewFlags(record).find(f => f.id == add.flagId)
+      expect(renamed.title).toEqual("Pedal first")
+      expect(renamed.status).toEqual("added")
+      expect(renamed.givenTitle).toBeUndefined()
+
+      // a proposal the analysis named still keeps its name beside the teacher's
+      let proposed = reviewFlags(record).find(f => f.proposalSource == "score")
+      record = withDecisions(record, [
+        editDecision({record, flag: proposed, overrides: {title: "Mine"}, by: "Ms Laurent", at: 30}),
+      ])
+      expect(reviewFlags(record).find(f => f.id == proposed.id).givenTitle).toEqual(proposed.title)
+    })
+
     it("editing the reason puts the teacher's sentence first, then the score's reasons; a blank reason keeps only the score's", () => {
       let song = workhorseSong()
       let analysis = analyzePiece({song, source: null, at: 1})
@@ -1113,6 +1144,34 @@ describe("st/difficulty", () => {
       let afterDismiss = startApartBars(flagsInForce(record))
       expect(afterDismiss.has(5)).toBeFalsy()
       expect(afterDismiss.get(20)).toEqual(["upper", "lower"])
+    })
+
+    it("startApartBars reaches a flag's alsoAt copies too, with the same hand(s)", () => {
+      let flags = [
+        {apart: true, hand: "lower", start: 5, end: 6, alsoAt: [[17, 18], [21, 22]]},
+        {apart: true, hand: "both", start: 9, end: 9, alsoAt: [[13, 13]]},
+        {apart: false, hand: "upper", start: 1, end: 2, alsoAt: [[3, 4]]},
+      ]
+      let map = startApartBars(flags)
+
+      for (let bar of [5, 6, 17, 18, 21, 22]) { expect(map.get(bar)).toEqual(["lower"]) }
+      for (let bar of [9, 13]) { expect(map.get(bar)).toEqual(["upper", "lower"]) }
+      for (let bar of [1, 2, 3, 4, 7, 19]) { expect(map.has(bar)).toBe(false) }
+    })
+
+    it("a repeat's flag, ticked apart by the teacher, starts both copies hands apart", () => {
+      // the same dense run twice over: bars 17-19 repeat bars 5-7
+      let song = workhorseSong({denseAt: [5, 6, 7, 17, 18, 19], barCount: 24})
+      let record = annotationWith(null, "p1", analyzePiece({song, source: null, at: 1}))
+      let flag = flagsInForce(record).find(f => f.alsoAt)
+      expect(flag.alsoAt).toEqual([[17, 19]])
+
+      record = withDecisions(record, [
+        editDecision({record, flag, overrides: {apart: true}, by: "Ms Laurent", at: 10}),
+      ])
+      let map = startApartBars(flagsInForce(record))
+      for (let bar of [5, 6, 7]) { expect(map.has(bar)).toBe(true) }
+      for (let bar of [17, 18, 19]) { expect(map.get(bar)).toEqual(map.get(flag.start)) }
     })
   })
 
@@ -1504,6 +1563,79 @@ describe("st/difficulty", () => {
       expect(flagsInForce({...other, decisions}).some(flag => flag.id == reopened.id)).toBe(true)
     })
 
+    it("re-anchors a decision with no range of its own from the flag it governs", () => {
+      let song = parseMusicXML(pianoScore({bars: barsWithDense([9, 10, 11])}))
+      let record = annotationWith(null, "p1", analyzePiece({song, source: null, at: 1}))
+
+      // a flag the teacher added, then accepted: the accept names no range
+      // of its own (an added flag has no proposal to refer to)
+      let add = addDecision({
+        record, by: "Ms Laurent", at: 10,
+        flag: {
+          start: 9, end: 11, startIndex: 8, endIndex: 10, hand: "both", level: 2, kinds: [],
+          title: "Fast run", reason: "", tip: "", apart: false,
+        },
+      })
+      let withAdd = withDecisions(record, [add])
+      let added = reviewFlags(withAdd).find(f => f.id == add.flagId)
+      let accept = acceptDecision({record: withAdd, flag: added, by: "Ms Laurent", at: 20})
+      expect(accept.of).toBeUndefined()
+      expect(accept.given).toBeUndefined()
+
+      let file = flagsFileFor(withDecisions(withAdd, [accept]), {title: "t"}, song, {by: "Ms Laurent", at: 100})
+
+      // the student's copy has a corrected note in bar 9: it still aligns, so
+      // the flag is placed, but its bars no longer hash as the teacher's did
+      let correctedBars = barsWithDense([9, 10, 11])
+      correctedBars[8] = {
+        ...correctedBars[8],
+        upper: [{name: "G4", duration: 0.25, type: "16th"}, ...correctedBars[8].upper.slice(1)],
+      }
+      let theirSong = parseMusicXML(pianoScore({bars: correctedBars}))
+      let theirs = annotationWith(null, "p2", analyzePiece({song: theirSong, source: null, at: 2}))
+      expect(theirs.fingerprint.bars[8]).not.toEqual(record.fingerprint.bars[8])
+
+      let {data} = readFlagsFile(JSON.stringify(file))
+      let {decisions, report} = reanchorDecisions(data, theirs, theirSong)
+      expect(report).toEqual({placed: 2, moved: 0, unplaced: 0, already: 0, total: 2})
+
+      // every decision of the flag is anchored on this copy's bars, the
+      // rangeless one too
+      for (let decision of decisions) {
+        expect(decision.anchor.bars).toEqual(theirs.fingerprint.bars.slice(8, 11))
+      }
+
+      let placed = reviewFlags({...theirs, decisions}).find(f => f.id == add.flagId)
+      expect(placed.status).toEqual("accepted")
+      expect(placed.place).toEqual("placed")
+    })
+
+    it("a decision with no range follows its flag when the flag can't be placed", () => {
+      let song = parseMusicXML(pianoScore({bars: barsWithDense([9, 10, 11])}))
+      let record = annotationWith(null, "p1", analyzePiece({song, source: null, at: 1}))
+      let add = addDecision({
+        record, by: "Ms Laurent", at: 10,
+        flag: {
+          start: 9, end: 11, startIndex: 8, endIndex: 10, hand: "both", level: 2, kinds: [],
+          title: "Fast run", reason: "", tip: "", apart: false,
+        },
+      })
+      let withAdd = withDecisions(record, [add])
+      let added = reviewFlags(withAdd).find(f => f.id == add.flagId)
+      let accept = acceptDecision({record: withAdd, flag: added, by: "Ms Laurent", at: 20})
+      let file = flagsFileFor(withDecisions(withAdd, [accept]), {title: "t"}, song, {by: "Ms Laurent", at: 100})
+
+      let otherSong = restSong(20)
+      let other = annotationWith(null, "p2", analyzePiece({song: otherSong, source: null, at: 2}))
+      let {data} = readFlagsFile(JSON.stringify(file))
+      let {decisions, report} = reanchorDecisions(data, other, otherSong)
+      expect(report).toEqual({placed: 0, moved: 0, unplaced: 2, already: 0, total: 2})
+
+      let waiting = reviewFlags({...other, decisions}).find(f => f.id == add.flagId)
+      expect(waiting.place).toEqual("unplaced")
+      expect(flagsInForce({...other, decisions}).some(f => f.id == add.flagId)).toBe(false)
+    })
+
     it("fileMatch is the fraction of the file's bars that align well; low for an unrelated piece", () => {
       let song = workhorseSong()
       let record = annotationWith(null, "p1", analyzePiece({song, source: null, at: 1}))
@@ -1517,12 +1649,13 @@ describe("st/difficulty", () => {
   })
 
   describe("trouble spots", () => {
-    function item({measure, hand = "both", reps = 0, lapses = 0, d = 0, paceMs, recentGrades = [], deliberate} = {}) {
+    function item({measure, hand = "both", reps = 0, lapses = 0, d = 0, paceMs, recentGrades = [], deliberate, requested} = {}) {
       return {
         pieceId: "p1", hand, startMeasure: measure, endMeasure: measure,
         reps, lapses, d, paceMs,
         recent: recentGrades.map((grade, idx) => [idx, null, null, grade]),
         ...(deliberate !== undefined ? {deliberate} : {}),
+        ...(requested !== undefined ? {requested} : {}),
       }
     }
 
@@ -1585,6 +1718,24 @@ describe("st/difficulty", () => {
       expect(scaffolded.signals.map(s => s.kind)).toContain("scaffold")
 
       expect(spots.find(s => s.start == 12)).toBeUndefined()
+    })
+
+    it("rule 5 skips a hand-alone item a flag's tick asked for, but not the scaffold's", () => {
+      let measures = Array.from({length: 6}, (_, i) => i + 1)
+      let requested = item({measure: 2, hand: "lower", reps: 1, requested: true})
+      let scaffold = item({measure: 4, hand: "upper", reps: 1})
+
+      let spots = troubleSpots({pieceId: "p1", items: [requested, scaffold], measures})
+      expect(spots.map(s => [s.start, s.hand])).toEqual([[4, "upper"]])
+      expect(spots[0].text).toEqual("Needed hands apart last time.")
+
+      // asked for, and failing on its own account, it is still a trouble spot,
+      // but not for having been asked for
+      let failing = item({measure: 2, hand: "lower", reps: 3, lapses: 2, requested: true})
+      let both = troubleSpots({pieceId: "p1", items: [failing], measures})
+      expect(both.length).toEqual(1)
+      expect(both[0].signals.map(s => s.kind)).toEqual(["lapses"])
+      expect(both[0].hand).toEqual("both")
     })
 
     it("words a merged suggestion from the strongest instance of each kind, not the first", () => {
