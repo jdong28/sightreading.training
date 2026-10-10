@@ -333,7 +333,7 @@ describe("ScoreSheet's scale", function() {
   let overlays = () => [...container.querySelectorAll("button[aria-label^=\"Bar \"]")]
   let settled = () => sheet && !sheet.state.drawing && sheet.state.pages.length > 0
 
-  let mount = async (musicXML, {width=1100, scale}={}) => {
+  let mount = async (musicXML, {width=1100, scale, viewportHeight=1240}={}) => {
     widths = []
     pages = []
     container = document.createElement("div")
@@ -343,7 +343,7 @@ describe("ScoreSheet's scale", function() {
     let render = extra => flushSync(() => {
       root.render(React.createElement(ScoreSheet, {
         ref: instance => { sheet = instance },
-        musicXML, fromMeasure: 1, toMeasure: 16, engine: "osmd", loadEngines: spyEngines, viewportHeight: 1240,
+        musicXML, fromMeasure: 1, toMeasure: 16, engine: "osmd", loadEngines: spyEngines, viewportHeight,
         onPages: found => { pages = found }, scale, ...extra,
       }))
     })
@@ -410,6 +410,34 @@ describe("ScoreSheet's scale", function() {
       let numbers = found[scale].flatMap(page => page.measures.map(measure => measure.number))
       expect(numbers.length).withContext(`${scale}%: bars across the pages`).toEqual(16)
       expect([...new Set(numbers)].sort((a, b) => a - b)).toEqual(Array.from({length: 16}, (_, i) => i + 1))
+    }
+  })
+
+  it("puts at least two whole systems on every page but the last, at every scale and window height", async function() {
+    let systemsOn = page => page.bands.length
+    for (let viewportHeight of [600, 900, 1240]) {
+      let render = await mount(await fixture(), {scale: 60, viewportHeight})
+      let counts = {}
+
+      for (let scale of [60, 80, 100, 120, 150]) {
+        if (scale != 60) { await drawnAfter(render, {scale, viewportHeight}) }
+        expect(pages.length).withContext(`${scale}% at ${viewportHeight}`).toBeGreaterThan(0)
+        pages.slice(0, -1).forEach((page, idx) => {
+          expect(systemsOn(page)).withContext(`${scale}% at ${viewportHeight}, page ${idx + 1}`).toBeGreaterThanOrEqual(2)
+        })
+        counts[scale] = pages[0].bands.length
+
+        // the pages are still cut between systems and cover the drawing
+        for (let idx = 1; idx < pages.length; idx++) { expect(pages[idx].top).toEqual(pages[idx - 1].bottom) }
+        expect(pages[0].top).toEqual(0)
+      }
+
+      // a smaller scale still fits more where the window allows
+      expect(counts[60]).withContext(`systems on page 1 at 60% against 150% at ${viewportHeight}`).toBeGreaterThanOrEqual(counts[150])
+
+      flushSync(() => root.unmount())
+      container.remove()
+      root = container = sheet = null
     }
   })
 

@@ -23,7 +23,7 @@ import classNames from "classnames"
 
 import {enqueueDraw} from "st/components/score_card"
 import {
-  scorePages, barOverlays, engraveWidthFor, ENGRAVE_MAX_WIDTH, PAGE_CHROME_PX, MIN_PAGE_PX, SCORE_SCALE,
+  scorePages, barOverlays, engraveWidthFor, ENGRAVE_MAX_WIDTH, PAGE_CHROME_PX, MIN_PAGE_PX, MIN_PAGE_SYSTEMS, SCORE_SCALE,
 } from "st/score_render/score_pages"
 
 import styles from "./score_sheet.module.css"
@@ -219,7 +219,7 @@ export class ScoreSheet extends React.Component {
     let displayBudget = Math.max(MIN_PAGE_PX, viewportHeight - headerHeight() - PAGE_CHROME_PX)
     let budget = ratio ? displayBudget / ratio : displayBudget
 
-    let pages = scorePages(this.result.measures, {height: naturalHeight, budget})
+    let pages = scorePages(this.result.measures, {height: naturalHeight, budget, minSystems: MIN_PAGE_SYSTEMS})
     this.setState({pages}, () => {
       if (this.props.onPages) { this.props.onPages(pages) }
       this.showPage()

@@ -1,6 +1,6 @@
 import {
   systemsOf, systemBands, scorePages, barOverlays, pageOfBar,
-  SPACE, ENGRAVE_MAX_WIDTH, PAGE_CHROME_PX, SCORE_SCALE, clampScale, engraveWidthFor,
+  SPACE, ENGRAVE_MAX_WIDTH, PAGE_CHROME_PX, MIN_PAGE_SYSTEMS, SCORE_SCALE, clampScale, engraveWidthFor,
 } from "st/score_render/score_pages"
 import {loadScoreEngines} from "st/score_render/load"
 
@@ -90,6 +90,34 @@ describe("score pages", function() {
       expect(pages.map(p => p.measures.map(m => m.number))).toEqual([[1], [2], [3]])
       expect(pages[0]).toEqual(jasmine.objectContaining({top: 0}))
       expect(pages[2].bottom).toEqual(6500)
+    })
+
+    it("puts at least minSystems systems on every page but the last, past the budget if it must", function() {
+      // five systems of 100 under a budget that holds one
+      let measures = systemsAt([[0, 100], [300, 100], [600, 100], [900, 100], [1200, 100]])
+      let numbers = pages => pages.map(p => p.measures.map(m => m.number))
+
+      expect(numbers(scorePages(measures, {height: 1500, budget: 50}))).toEqual([[1], [2], [3], [4], [5]])
+      expect(numbers(scorePages(measures, {height: 1500, budget: 50, minSystems: 2}))).toEqual([[1, 2], [3, 4], [5]])
+      expect(numbers(scorePages(measures, {height: 1500, budget: 50, minSystems: 3}))).toEqual([[1, 2, 3], [4, 5]])
+      expect(MIN_PAGE_SYSTEMS).toEqual(2)
+    })
+
+    it("still fits more than minSystems where the budget allows, and cuts every page between systems", function() {
+      let measures = systemsAt([[0, 100], [300, 100], [600, 100], [900, 100], [1200, 100]])
+      let pages = scorePages(measures, {height: 1500, budget: 1000, minSystems: 2})
+
+      expect(pages.map(p => p.measures.map(m => m.number))).toEqual([[1, 2, 3], [4, 5]])
+      expect(pages[1].top).toEqual(pages[0].bottom)
+      expect(pages[1].bottom).toEqual(1500)
+    })
+
+    it("lets the last page, or a piece of one system, hold one system", function() {
+      let three = systemsAt([[0, 100], [300, 100], [600, 100]])
+      expect(scorePages(three, {height: 800, budget: 10, minSystems: 2}).map(p => p.measures.length)).toEqual([2, 1])
+
+      let one = systemsAt([[0, 100]])
+      expect(scorePages(one, {height: 300, budget: 10, minSystems: 2}).map(p => p.measures.length)).toEqual([1])
     })
 
     it("gives one page from 0 to the full height with a single system", function() {

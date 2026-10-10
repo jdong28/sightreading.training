@@ -234,9 +234,11 @@ describe("the score view at rest (st/components/sight_reading/score_view)", func
       expect(barsOnPage1).toBeGreaterThan(0)
       expect(barsOnPage1).toBeLessThan(16)
       expect(buttonNamed(el, "‹ Previous page").disabled).toBe(true)
+      // a page holds two systems at the least, so the piece's last bar, alone on
+      // its system, is never on the first
+      expect(el.querySelector('button[aria-label="Bar 16"]')).toBeFalsy()
 
       click(buttonNamed(el, "Next page ›"))
-      expect(el.querySelector('button[aria-label="Bar 16"]')).toBeFalsy()
       // keep clicking through to the last page, which always ends on bar 16
       while (!buttonNamed(el, "Next page ›").disabled) { click(buttonNamed(el, "Next page ›")) }
       expect(el.querySelector('button[aria-label="Bar 16"]')).toBeTruthy()
@@ -789,6 +791,43 @@ describe("the score view at rest (st/components/sight_reading/score_view)", func
         expect(dialog(container).getAttribute("aria-label")).toEqual("Bar 3 stats")
         near(dialog(container).getBoundingClientRect().top, bar(3).getBoundingClientRect().bottom + POPUP_MARGIN, 2,
           "the pop-up under bar 3")
+      })
+
+      // the grand-staff lines on the page shown: the distinct tops of its bars
+      let systemsShown = () => new Set(barButtons().map(b => Math.round(b.getBoundingClientRect().top))).size
+
+      it("shows at least two grand-staff lines on every page but the last, at every scale", async function() {
+        // puppeteer's 600 px window gives a page the least budget there is
+        await mountScale()
+
+        for (let scale of [150, 100, 120, 60, 80]) {
+          await engraved(() => setSlider(scale))
+          let {pages} = pageNow()
+          while (!previous().disabled) { click(previous()) }
+
+          for (let page = 1; page <= pages; page++) {
+            let shown = pageNow()
+            expect(shown.page).toEqual(page)
+            if (page < pages) {
+              expect(systemsShown()).withContext(`${scale}%: page ${page} of ${pages}`).toBeGreaterThanOrEqual(2)
+            } else {
+              expect(systemsShown()).toBeGreaterThanOrEqual(1)
+            }
+            if (!next().disabled) { click(next()) }
+          }
+        }
+      }, 60000)
+
+      it("fits at least as many lines on a page at a smaller scale", async function() {
+        await mountScale()
+        let lines = {}
+        for (let scale of [150, 100, 60]) {
+          await engraved(() => setSlider(scale))
+          lines[scale] = systemsShown()
+        }
+        expect(lines[100]).toBeGreaterThanOrEqual(lines[150])
+        expect(lines[60]).toBeGreaterThanOrEqual(lines[100])
+        expect(lines[150]).toBeGreaterThanOrEqual(2)
       })
 
       it("applies the same page rule when the window re-engraves the score at another width", async function() {

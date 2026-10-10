@@ -50,6 +50,11 @@ export const PAGE_CHROME_PX = 320
 // the least a page's budget is ever let shrink to
 export const MIN_PAGE_PX = 280
 
+// the fewest systems the score page puts on a page (a piece's last page, or
+// a piece of one system, may hold fewer): a page that long is taller than
+// the window's budget at a large scale, never a smaller engraving
+export const MIN_PAGE_SYSTEMS = 2
+
 /**
  * One system number per measure (by index order): a new one whenever a
  * measure's box sits far enough from the previous measure's to be a new
@@ -119,16 +124,21 @@ function buildPage(bands: SystemBand[], top: number, bottom: number, index: numb
 /**
  * The whole piece's pages (score-first design §D5): whole systems, taken
  * greedily while the page's natural height (the next cut less its top) fits
- * the budget, always at least one; cut between two systems at the midpoint
+ * the budget, always at least minSystems (a page that many systems tall
+ * overruns the budget; only the last page may hold fewer); cut between two systems at the midpoint
  * of the first's bottom and the second's top. The first page starts at 0
  * and the last ends at the svg's natural height, whatever its last
  * system's own band says.
  * @param measures the whole piece's
  * @param opts.height the drawn svg's natural height (CSS px)
- * @param opts.budget the most natural px a page may hold
+ * @param opts.budget the most natural px a page may hold beyond its first
+ * minSystems systems
+ * @param opts.minSystems the fewest systems on any page but the last, 1 by
+ * default
  */
 export function scorePages(
-  measures: CardMeasure[], {height, budget}: {height: number, budget: number},
+  measures: CardMeasure[],
+  {height, budget, minSystems = 1}: {height: number, budget: number, minSystems?: number},
 ): ScorePage[] {
   const bands = systemBands(measures)
   if (!bands.length) { return [] }
@@ -141,7 +151,7 @@ export function scorePages(
 
   for (let i = 0; i < bands.length; i++) {
     const cut = cutAfter(i)
-    const overflow = cut - pageTop > budget && i > startIdx
+    const overflow = cut - pageTop > budget && i - startIdx >= minSystems
 
     if (overflow) {
       const prevCut = cutAfter(i - 1)
