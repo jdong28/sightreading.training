@@ -361,6 +361,34 @@ describe("srs attempt", function() {
     expect(together.every(({item}) => item.deliberate === undefined)).toBe(true)
   })
 
+  it("marks the item requested only when asked, never on a hands-together item, and apart from deliberate", function() {
+    play(pass, 3000)
+    play(pass, 3500)
+    play(pass, 4000)
+    play(pass, 4500)
+
+    let marked = attemptsOf(pass, {hand: "lower", requested: true})
+    expect(marked.every(({item}) => item.requested && item.deliberate === undefined)).toBe(true)
+
+    let unmarked = attemptsOf(pass, {hand: "lower"})
+    expect(unmarked.every(({item}) => item.requested === undefined)).toBe(true)
+
+    let together = attemptsOf(pass, {requested: true})
+    expect(together.every(({item}) => item.requested === undefined)).toBe(true)
+  })
+
+  it("carries requested onto a practice stint only when given", function() {
+    play(pass, 3000, {misses: [["G4"]]})
+    play(pass, 3500)
+
+    let marked = passPractice(pass, {pieceId: "p", hand: "lower", requested: true})
+    expect(marked.length).toBeGreaterThan(0)
+    expect(marked.every(stint => stint.requested)).toBe(true)
+
+    let unmarked = passPractice(pass, {pieceId: "p", hand: "lower"})
+    expect(unmarked.every(stint => stint.requested === undefined)).toBe(true)
+  })
+
   it("carries deliberate onto a practice stint only when given", function() {
     play(pass, 3000, {misses: [["G4"]]})
     play(pass, 3500)
@@ -468,6 +496,19 @@ describe("srs attempt", function() {
 
       let unmarkedPractice = selfPractice(pass, {pieceId: "p", hand: "lower", at: 5000})
       expect(unmarkedPractice.every(stint => stint.deliberate === undefined)).toBe(true)
+    })
+
+    it("carries requested onto a self-graded attempt and its leftover practice only when given", function() {
+      pass.selfGrade = {grade: HARD, bars: [2]}
+      let marked = selfAttemptsOf(pass, {at: 5000, hand: "lower", requested: true})
+      expect(marked.every(({item}) => item.requested)).toBe(true)
+
+      let practice = selfPractice(pass, {pieceId: "p", hand: "lower", at: 5000, requested: true})
+      expect(practice.length).toBeGreaterThan(0)
+      expect(practice.every(stint => stint.requested)).toBe(true)
+
+      let unmarkedPractice = selfPractice(pass, {pieceId: "p", hand: "lower", at: 5000})
+      expect(unmarkedPractice.every(stint => stint.requested === undefined)).toBe(true)
     })
   })
 })

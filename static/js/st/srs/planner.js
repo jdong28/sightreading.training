@@ -112,7 +112,9 @@
 // read by the session hand's own item, so it is always played with the
 // session's hand. These
 // hand items are scaffold items too (PlanDeck#scaffold is entry.hand !=
-// sessionHand), so they are never marked deliberate, and mostOverduePiece
+// sessionHand), so they are never marked deliberate but requested
+// (ItemRecord#requested, PlanDeck#requested), which the trouble spots' rule
+// of the scaffold skips; mostOverduePiece
 // already counts one while its bar has no hands-together item and stops
 // once it does, without reading flags. The rest rule below counts these
 // hands' attempts like any other, so a bar introduced hands apart rests

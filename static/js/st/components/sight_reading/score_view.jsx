@@ -51,6 +51,7 @@ export class ScoreView extends React.Component {
     settings: types.object.isRequired,
     setSettings: types.func.isRequired,
     staff: types.object,
+    columnStaff: types.object,
     keySignature: types.object,
     generator: types.object,
     source: types.object,
@@ -461,6 +462,7 @@ export class ScoreView extends React.Component {
       settings={this.props.settings}
       setSettings={this.props.setSettings}
       staff={this.props.staff}
+      columnStaff={this.props.columnStaff}
       store={this.getStore()}
       generator={this.props.generator}
       pickPiece={this.props.pickPiece}
