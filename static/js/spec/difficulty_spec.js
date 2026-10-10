@@ -15,8 +15,8 @@ import {
 } from "st/difficulty/decisions"
 import {barSimilarity, alignBars, mapRange} from "st/difficulty/align"
 import {
-  FLAGS_FORMAT, FLAGS_VERSION, MAX_FLAGS_FILE_BYTES, MAX_FLAGS_FILE_DECISIONS,
-  flagsFileFor, readFlagsFile, fileMatch, reanchorDecisions,
+  FLAGS_FORMAT, FLAGS_VERSION, DECISIONS_FILE_VERSION, MAX_FLAGS_FILE_BYTES, MAX_FLAGS_FILE_DECISIONS,
+  MAX_FLAGS_FILE_PROPOSALS, flagsFileFor, readFlagsFile, fileMatch, reanchorDecisions, reanchorProposals,
 } from "st/difficulty/flags_file"
 import {troubleSpots} from "st/difficulty/trouble"
 
@@ -1004,6 +1004,76 @@ describe("st/difficulty", () => {
       expect(afterDismiss.has(5)).toBeFalsy()
       expect(afterDismiss.get(20)).toEqual(["upper", "lower"])
     })
+
+    function claudeProposal(over={}) {
+      return {
+        id: "claude:13-14:0badf00d", source: "claude",
+        start: 13, end: 14, startIndex: 12, endIndex: 13,
+        hand: "both", level: 2, kinds: ["reading"],
+        title: "The quiet return", reason: "The left hand crosses under the right.",
+        reasons: ["The left hand crosses under the right."], tip: "Left hand alone first.",
+        ...over,
+      }
+    }
+
+    function withClaude(song) {
+      let record = annotationWith(null, "p1", analyzePiece({song, source: null, at: 1}))
+      return {...record, proposals: [...record.proposals, claudeProposal()]}
+    }
+
+    it("a Claude proposal's reasons read as Claude's, waiting, decided, and from `given`", () => {
+      let record = withClaude(workhorseSong())
+      let waiting = reviewFlags(record).find(f => f.id == "claude:13-14:0badf00d")
+      expect(waiting.lines).toEqual([{source: "claude", text: "The left hand crosses under the right."}])
+
+      let accepted = withDecisions(record, [acceptDecision({record, flag: waiting, by: "Ms Laurent", at: 5})])
+      let decided = reviewFlags(accepted).find(f => f.id == "claude:13-14:0badf00d")
+      expect(decided.proposalSource).toEqual("claude")
+      expect(decided.lines[0]).toEqual({source: "claude", text: "The left hand crosses under the right."})
+
+      // the proposal is gone (a later run, or a student's copy that never had it)
+      let dropped = {...accepted, proposals: accepted.proposals.filter(p => p.source != "claude")}
+      let fallback = reviewFlags(dropped).find(f => f.title == "The quiet return")
+      expect(fallback.proposalSource).toEqual("claude")
+      expect(fallback.sources).toContain("claude")
+      expect(fallback.sources).not.toContain("score")
+      expect(fallback.lines[0]).toEqual({source: "claude", text: "The left hand crosses under the right."})
+    })
+
+    it("a waiting Claude proposal is out of force until a person accepts or edits it", () => {
+      let record = withClaude(workhorseSong())
+      let id = "claude:13-14:0badf00d"
+      let inForceNow = r => flagsInForce(r).some(f => f.id == id)
+      expect(inForceNow(record)).toBe(false)
+
+      let flag = reviewFlags(record).find(f => f.id == id)
+      let accepted = withDecisions(record, [acceptDecision({record, flag, at: 5})])
+      expect(inForceNow(accepted)).toBe(true)
+
+      let edited = withDecisions(record, [editDecision({record, flag, overrides: {level: 3}, at: 5})])
+      expect(inForceNow(edited)).toBe(true)
+
+      let dismissed = withDecisions(accepted, [dismissDecision({record: accepted, flag, at: 6})])
+      expect(inForceNow(dismissed)).toBe(false)
+
+      let restored = withDecisions(dismissed, [restoreDecision({record: dismissed, flag, at: 7})])
+      expect(reviewFlags(restored).find(f => f.id == id).status).toEqual("accepted")
+      expect(inForceNow(restored)).toBe(true)
+
+      // the score analysis's own waiting proposals stay in force, as shipped
+      expect(flagsInForce(record).some(f => f.proposalSource == "score" && f.status == "waiting")).toBe(true)
+    })
+
+    it("a decision made on a review flag keeps the proposal's reasons in `given`", () => {
+      let record = withClaude(workhorseSong())
+      let scoreFlag = reviewFlags(record).find(f => f.proposalSource == "score")
+      let claudeFlag = reviewFlags(record).find(f => f.proposalSource == "claude")
+      let scoreProposal = record.proposals.find(p => p.id == scoreFlag.id)
+
+      expect(acceptDecision({record, flag: scoreFlag, at: 5}).given.reasons).toEqual(scoreProposal.reasons)
+      expect(acceptDecision({record, flag: claudeFlag, at: 5}).given.reasons)
+        .toEqual(["The left hand crosses under the right."])
+    })
   })
 
   describe("align", () => {
@@ -1140,7 +1210,8 @@ describe("st/difficulty", () => {
 
       let file = flagsFileFor(record, {title: "Rêverie"}, song, {by: "Ms Laurent", at: 100})
       expect(file.format).toEqual(FLAGS_FORMAT)
-      expect(file.version).toEqual(FLAGS_VERSION)
+      expect(file.version).toEqual(DECISIONS_FILE_VERSION)
+      expect(file.version).toEqual(1)
       expect(file.by).toEqual("Ms Laurent")
       expect(file.exportedAt).toEqual(100)
       expect(file.piece.title).toEqual("Rêverie")
@@ -1148,10 +1219,102 @@ describe("st/difficulty", () => {
       expect(file.piece.fingerprint.sketches).toEqual(record.fingerprint.sketches)
       expect(file.piece.fingerprint.numbers.length).toEqual(record.fingerprint.bars.length)
       expect(file.decisions).toEqual(record.decisions)
+      expect("proposals" in file).toBe(false)
 
+      // a version 1 file reads with no proposals
       let {data, error} = readFlagsFile(JSON.stringify(file))
       expect(error).toBeUndefined()
-      expect(data).toEqual(file)
+      expect(data).toEqual({...file, proposals: []})
+    })
+
+    describe("version 2: Claude's proposals", () => {
+      function claudeFile(over={}, proposalOver=[{}, {start: 9, end: 10, startIndex: 8, endIndex: 9, id: "claude:9-10:aaaaaaaa"}]) {
+        let song = workhorseSong()
+        let record = annotationWith(null, "p1", analyzePiece({song, source: null, at: 1}))
+        let base = flagsFileFor(record, {title: "t"}, song, {by: "Claude", at: 100})
+        let proposals = proposalOver.map(extra => ({
+          id: "claude:13-14:0badf00d", source: "claude",
+          start: 13, end: 14, startIndex: 12, endIndex: 13,
+          hand: "both", level: 2, kinds: ["reading"],
+          title: "The quiet return", reason: "The left hand crosses under the right.",
+          reasons: ["The left hand crosses under the right."], tip: "Left hand alone first.",
+          evidence: [{bar: 13, index: 12, hand: "lower", notes: ["C3"], what: "the climb"}],
+          citations: [{url: "https://example.com/a", title: "A page", says: "It is hard.", quote: "", sourceBars: "", verified: false}],
+          claude: {confidence: "high", analysis: "agrees", analysisNote: "Same bars."},
+          ...extra,
+        }))
+        let run = {
+          source: "claude", model: "claude-opus-5-5", effort: "high", web: true,
+          promptVersion: 1, schemaVersion: 1, compactVersion: 1, cli: "2.1.296", at: 100,
+        }
+        return {...base, version: 2, proposals, run, ...over}
+      }
+
+      it("reads proposals and the run block", () => {
+        let {data, error} = readFlagsFile(JSON.stringify(claudeFile()))
+        expect(error).toBeUndefined()
+        expect(data.proposals.length).toEqual(2)
+        expect(data.run.model).toEqual("claude-opus-5-5")
+        expect(data.proposals[0].citations[0].verified).toBe(false)
+      })
+
+      it("reads a version 1 file as having no proposals", () => {
+        let file = claudeFile({version: 1})
+        let {data} = readFlagsFile(JSON.stringify(file))
+        expect(data.proposals).toEqual([])
+        expect(data.run).toBeUndefined()
+      })
+
+      it("drops what isn't a Claude proposal that holds, and keeps the rest", () => {
+        let file = claudeFile({}, [
+          {},
+          {id: "score:1-2:x", source: "score", start: 1, end: 2, startIndex: 0, endIndex: 1},
+          {id: "claude:bad", level: 9},
+          {id: "claude:far", start: 15, end: 30, startIndex: 14, endIndex: 29},
+          {id: "claude:links", start: 3, end: 4, startIndex: 2, endIndex: 3, citations: [
+            {url: "javascript:alert(1)", title: "Bad", says: "", quote: "", sourceBars: ""},
+            {url: "https://example.com/1", title: "One", says: "", quote: "", sourceBars: ""},
+            {url: "https://example.com/2", title: "Two", says: "", quote: "", sourceBars: ""},
+            {url: "http://example.com/3", title: "Three", says: "", quote: "", sourceBars: ""},
+            {url: "https://example.com/4", title: "Four", says: "", quote: "", sourceBars: ""},
+          ]},
+        ])
+        let {data} = readFlagsFile(JSON.stringify(file))
+        expect(data.proposals.map(p => p.id)).toEqual(["claude:13-14:0badf00d", "claude:links"])
+        let links = data.proposals[1].citations
+        expect(links.map(c => c.title)).toEqual(["One", "Two", "Three"])
+        expect(links.every(c => c.verified === false)).toBe(true)
+      })
+
+      it("refuses more than MAX_FLAGS_FILE_PROPOSALS proposals", () => {
+        let file = claudeFile({}, Array.from({length: MAX_FLAGS_FILE_PROPOSALS + 1}, (_, i) => ({id: `claude:${i}`})))
+        expect(readFlagsFile(JSON.stringify(file)).error).toContain("too large")
+      })
+
+      it("refuses version 3 as made by a newer version", () => {
+        expect(FLAGS_VERSION).toEqual(2)
+        expect(readFlagsFile(JSON.stringify(claudeFile({version: 3}))).error).toContain("newer version")
+      })
+
+      it("re-anchors a proposal and its evidence bars onto a copy that gained a pickup bar", () => {
+        let song = workhorseSong()
+        let record = annotationWith(null, "p1", analyzePiece({song, source: null, at: 1}))
+        let {data} = readFlagsFile(JSON.stringify(claudeFile()))
+
+        // the same score, but the local copy has no shift: placed as it is
+        let same = reanchorProposals(data, record, song)
+        expect(same.report).toEqual({placed: 2, moved: 0, unplaced: 0})
+        expect(same.proposals[0].start).toEqual(13)
+        expect(same.proposals[0].evidence[0].index).toEqual(12)
+
+        // a proposal with a shifted claim keeps what Claude named, offset with it
+        let shifted = {...data, proposals: [{
+          ...data.proposals[0],
+          claude: {...data.proposals[0].claude, shift: 1, claimed: {start: 12, end: 13}},
+        }]}
+        let out = reanchorProposals(shifted, record, song)
+        expect(out.proposals[0].claude.claimed).toEqual({start: 12, end: 13})
+      })
     })
 
     it("readFlagsFile refuses non-JSON, another format, a newer version, an oversized file and too many decisions", () => {

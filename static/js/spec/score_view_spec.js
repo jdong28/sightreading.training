@@ -6,7 +6,7 @@ import {MemoryRouter} from "react-router-dom"
 import ScorePage from "st/components/pages/score_page"
 import {PassagePane} from "st/components/sight_reading/passage_pane"
 import {ReviewPane} from "st/components/sight_reading/review_pane"
-import {importMusicXMLPiece, songToJSON} from "st/sheet_music_deck"
+import {importMusicXMLPiece, importFlagsFile, exportFlagsFile, songToJSON} from "st/sheet_music_deck"
 import {parseMusicXML} from "st/musicxml"
 import {setAppStore} from "st/storage"
 import {SHEET_MUSIC_STORAGE_KEY, BOTH_HANDS, FREE_PRACTICE, WHOLE_SECTION} from "st/data"
@@ -19,7 +19,7 @@ import reviewStyles from "st/components/sight_reading/review_pane.module.css"
 import barStripStyles from "st/components/bar_strip.module.css"
 
 import {flagsInForce} from "st/difficulty/records"
-import {withDecisions} from "st/difficulty/decisions"
+import {withDecisions, reviewFlags, acceptDecision} from "st/difficulty/decisions"
 
 import {openTestStore, pianoScore} from "spec/helpers"
 
@@ -235,6 +235,30 @@ describe("the score view at rest (st/components/sight_reading/score_view)", func
       click(buttonLabelled(el, "Bar 5"))
       click(buttonLabelled(dialog(el), "Close bar stats"))
       expect(dialog(el)).toBe(null)
+    })
+
+    it("leaves a waiting Claude proposal out of the bar pop-up until a person accepts it", async function() {
+      let {container: el, piece} = await renderFixture()
+      let proposal = {
+        id: "claude:2-3:0badf00d", source: "claude", start: 2, end: 3, startIndex: 1, endIndex: 2,
+        hand: "both", level: 2, kinds: ["reading"], title: "Claude's pick", reason: "A crossing.",
+        reasons: ["A crossing."], tip: "Slowly.",
+      }
+      await store.updateAnnotation(piece.id, record => ({...record, proposals: [...record.proposals, proposal]}))
+      flushSync(() => page.forceUpdate())
+
+      click(buttonLabelled(el, "Bar 2"))
+      expect(dialog(el).textContent).not.toContain("Passage")
+      click(buttonLabelled(dialog(el), "Close bar stats"))
+
+      let flag = reviewFlags(store.annotation(piece.id)).find(f => f.id == proposal.id)
+      await store.updateAnnotation(piece.id, record =>
+        withDecisions(record, [acceptDecision({record, flag, at: 5})]))
+      flushSync(() => page.forceUpdate())
+
+      click(buttonLabelled(el, "Bar 2"))
+      expect(dialog(el).textContent).toContain("Passage")
+      expect(dialog(el).textContent).toContain("Hard")
     })
 
     it("Practise bar N sets free practice on that bar alone and begins", async function() {
@@ -534,6 +558,28 @@ describe("PassagePane", function() {
   it("renders nothing without a flagged passage", function() {
     mountPane([], {settings: {piece: "", hand: BOTH_HANDS}})
     expect(container.querySelector("aside")).toBe(null)
+  })
+
+  it("marks a Claude passage's reason with a Claude chip", async function() {
+    let piece = await drillPiece(workhorseScore())
+    let proposal = {
+      id: "claude:3-4:0badf00d", source: "claude", start: 3, end: 4, startIndex: 2, endIndex: 3,
+      hand: "both", level: 2, kinds: ["reading"], title: "Claude's pick", reason: "A crossing.",
+      reasons: ["A crossing."], tip: "Slowly.",
+    }
+    await store.updateAnnotation(piece.id, record => ({...record, proposals: [...record.proposals, proposal]}))
+    await store.updateAnnotation(piece.id, record => withDecisions(record, [
+      acceptDecision({record, flag: reviewFlags(record).find(f => f.id == proposal.id), at: 5}),
+    ]))
+
+    let flags = flagsInForce(store.annotation(piece.id))
+    let claude = flags.find(f => f.id == proposal.id)
+    mountPane(flags, {settings: {piece: piece.id, hand: BOTH_HANDS}})
+    clickRow(pane(), claude)
+
+    let line = [...pane().querySelectorAll("li")].find(li => li.textContent.includes("A crossing."))
+    expect(line.textContent).toContain("Claude")
+    expect(line.textContent).not.toContain("Score")
   })
 
   it("shows the selected passage's detail and the flagged list", async function() {
@@ -971,6 +1017,216 @@ describe("ReviewPane", function() {
       flagsInForce(store.annotation(piece.id)).find(f => f.sources.includes("player")),
       {message: "the promoted trouble spot"})
     expect(promoted.status).toEqual("waiting")
+  })
+
+
+  // Claude's proposals (the offline command, tools/claude-flags): waiting
+  // for a person, outside what shapes practice until one decides
+  describe("Claude's proposals", function() {
+    let claudeProposal = (start, end, over={}) => ({
+      id: `claude:${start}-${end}:0badf00d`, source: "claude",
+      start, end, startIndex: start - 1, endIndex: end - 1,
+      hand: "both", level: 2, kinds: ["reading"],
+      title: `Claude's ${start}`, reason: `The crossing in bar ${start}.`,
+      reasons: [`The crossing in bar ${start}.`], tip: "Left hand alone first.",
+      evidence: [{bar: start, index: start - 1, hand: "lower", notes: ["C3"], what: "the climb"}],
+      citations: [
+        {url: "https://example.com/one", title: "One page", says: "It is hard.", quote: "", sourceBars: "", verified: false},
+        {url: "https://example.com/two", title: "Two page", says: "A famous trap.", quote: "", sourceBars: "", verified: false},
+      ],
+      claude: {confidence: "high", analysis: "agrees", analysisNote: "Same bars."},
+      ...over,
+    })
+
+    let seedClaude = async (piece, proposals) => {
+      await store.updateAnnotation(piece.id, record => ({...record, proposals: [...record.proposals, ...proposals]}))
+    }
+
+    // the queue card named by its title
+    let card = title => {
+      let pane = reviewPane()
+      return pane && [...pane.querySelectorAll("li")].find(li => {
+        let heading = li.querySelector(`.${reviewStyles.queue_card_title}`)
+        return heading && heading.textContent == title
+      })
+    }
+
+    let claudeFlags = () => reviewFlags(store.annotation(currentPiece.id)).filter(f => f.proposalSource == "claude")
+    let currentPiece
+
+    let setUp = async (proposals=[claudeProposal(3, 4), claudeProposal(13, 14)]) => {
+      currentPiece = await drillPiece(workhorseScore())
+      await seedClaude(currentPiece, proposals)
+      mountReview(currentPiece)
+      await waitFor(() => reviewPane() && card("Claude's 3"), {message: "Claude's cards"})
+      return currentPiece
+    }
+
+    it("shows a card with the Claude chip, its reason, the agreement and sources not yet verified", async function() {
+      await setUp()
+      let first = card("Claude's 3")
+
+      expect(first.querySelector(`.${reviewStyles.source_chip_claude}`).textContent.trim()).toEqual("Claude")
+      expect(first.textContent).toContain("The crossing in bar 3.")
+      expect(first.textContent).toContain("Score analysis agrees · Same bars.")
+      expect(first.textContent).toContain("not yet verified")
+      expect(first.textContent).toContain("Waiting for you")
+
+      let links = [...first.querySelectorAll("a")]
+      expect(links.map(a => a.getAttribute("href"))).toEqual(["https://example.com/one", "https://example.com/two"])
+      expect(links.every(a => a.target == "_blank" && a.rel == "noopener noreferrer")).toBe(true)
+      expect(reviewPane().querySelector("button a")).toBe(null)
+
+      // each waiting card counts in the tally, but nothing in force changes
+      let waiting = reviewPane().querySelector(`.${reviewStyles.tally}`).textContent
+      expect(waiting).toMatch(/Waiting for you\s*3/)
+      expect(flagsInForce(store.annotation(currentPiece.id)).some(f => f.proposalSource == "claude")).toBe(false)
+    })
+
+    it("accepting puts it in force with a Claude line chip; editing, dismissing and restoring follow", async function() {
+      await setUp()
+
+      clickButton(card("Claude's 3"), "Accept")
+      await waitFor(() => card("Claude's 3").textContent.includes("❖ Accepted"), {message: "accepted"})
+      let inForce = flagsInForce(store.annotation(currentPiece.id)).find(f => f.title == "Claude's 3")
+      expect(inForce.status).toEqual("accepted")
+      expect(inForce.lines[0]).toEqual({source: "claude", text: "The crossing in bar 3."})
+
+      // edit: Hardest, and a name of the teacher's own
+      clickButton(card("Claude's 3"), "Edit")
+      let nameInput = await waitFor(() => reviewPane().querySelector('input[type="text"]'), {message: "the name field"})
+      changeValue(nameInput, "The crossing")
+      clickButton(reviewPane(), "Hardest")
+      clickButton(reviewPane(), "Save")
+      await waitFor(() => flagsInForce(store.annotation(currentPiece.id)).some(f => f.title == "The crossing"),
+        {message: "edited"})
+      let edited = flagsInForce(store.annotation(currentPiece.id)).find(f => f.title == "The crossing")
+      expect(edited.level).toEqual(3)
+      expect(card("The crossing").textContent).toContain("Renamed; the analysis called it “Claude's 3”")
+
+      clickButton(card("The crossing"), "Dismiss")
+      await waitFor(() => !flagsInForce(store.annotation(currentPiece.id)).some(f => f.title == "The crossing"),
+        {message: "dismissed"})
+
+      clickButton(card("The crossing"), "Restore")
+      await waitFor(() => flagsInForce(store.annotation(currentPiece.id)).some(f => f.title == "The crossing"),
+        {message: "restored in force as edited"})
+      expect(claudeFlags().find(f => f.title == "The crossing").level).toEqual(3)
+    })
+
+    it("dismissing a waiting proposal and restoring it leaves it waiting, out of force", async function() {
+      await setUp()
+
+      clickButton(card("Claude's 13"), "Dismiss")
+      await waitFor(() => card("Claude's 13").textContent.includes("Restore"), {message: "dismissed"})
+      expect(claudeFlags().find(f => f.start == 13).status).toEqual("dismissed")
+
+      clickButton(card("Claude's 13"), "Restore")
+      await waitFor(() => card("Claude's 13").textContent.includes("Waiting for you"), {message: "waiting again"})
+      expect(claudeFlags().find(f => f.start == 13).status).toEqual("waiting")
+      expect(flagsInForce(store.annotation(currentPiece.id)).some(f => f.start == 13 && f.proposalSource == "claude")).toBe(false)
+    })
+
+    let flagsFileInput = () => reviewPane().querySelector('input[type="file"]')
+    let openFile = async (text, name="x.flags.json") => {
+      let input = flagsFileInput()
+      Object.defineProperty(input, "files", {value: [new File([text], name)], configurable: true})
+      flushSync(() => input.dispatchEvent(new Event("change", {bubbles: true})))
+    }
+
+    it("opens a version 2 file through the pane's input, and its cards appear without a reload", async function() {
+      let piece = await drillPiece(workhorseScore())
+      mountReview(piece)
+      await waitFor(() => reviewPane(), {message: "the review pane"})
+      expect(card("Claude's 3")).toBeFalsy()
+
+      let exported = JSON.parse((await exportFlagsFile(piece.id, {by: "Claude"}, store)).text)
+      let file = {
+        ...exported, version: 2, decisions: [], proposals: [claudeProposal(3, 4), claudeProposal(13, 14)],
+        run: {source: "claude", model: "claude-opus-5-5", effort: "high", web: true,
+          promptVersion: 1, schemaVersion: 1, compactVersion: 1, cli: "2.1.296", at: 1},
+      }
+      await openFile(JSON.stringify(file))
+
+      await waitFor(() => card("Claude's 3") && card("Claude's 13"), {message: "the cards"})
+      expect(reviewPane().textContent).toContain("Opened Claude’s proposals for “Workhorse”: 2 passages to review")
+    })
+
+    it("exports a version 1 file after accepting, which another install opens with its reason and chip", async function() {
+      await setUp()
+      clickButton(card("Claude's 3"), "Accept")
+      await waitFor(() => card("Claude's 3").textContent.includes("❖ Accepted"), {message: "accepted"})
+
+      let created = []
+      let originalCreate = URL.createObjectURL
+      spyOn(URL, "createObjectURL").and.callFake(blob => { created.push(blob); return originalCreate(blob) })
+      spyOn(URL, "revokeObjectURL")
+      spyOn(HTMLAnchorElement.prototype, "click")
+      clickButton(reviewPane(), "Export flags file")
+      await waitFor(() => created.length > 0, {message: "the download"})
+
+      let text = await created[0].text()
+      let data = JSON.parse(text)
+      expect(data.version).toEqual(1)
+      expect(data.proposals).toBeUndefined()
+      let decision = data.decisions.find(d => d.action == "accept")
+      expect(decision.of.source).toEqual("claude")
+      expect(decision.given.reasons).toEqual(["The crossing in bar 3."])
+
+      // a second install holds the same piece, with no Claude proposals
+      flushSync(() => root.unmount())
+      container.remove()
+      let other = await openTestStore()
+      let {piece: theirs} = await importMusicXMLPiece("piece.musicxml", workhorseScore(), other)
+      let result = await importFlagsFile(text, other, {pieceId: theirs.id})
+      expect(result.error).toBeUndefined()
+
+      let arrived = flagsInForce(other.annotation(theirs.id)).find(f => f.title == "Claude's 3")
+      expect(arrived.status).toEqual("accepted")
+      expect(arrived.lines[0]).toEqual({source: "claude", text: "The crossing in bar 3."})
+
+      setAppStore(other)
+      mountReview(theirs, {store: other})
+      await waitFor(() => card("Claude's 3"), {message: "the card on the second install"})
+      expect(card("Claude's 3").querySelector(`.${reviewStyles.source_chip_claude}`).textContent.trim()).toEqual("Claude")
+      await other.close()
+    }, 20000)
+
+    it("says where a shifted proposal's notes were found, and draws no horizontal overflow at 380px with a long link", async function() {
+      let longUrl = "https://example.com/" + "a-very-long-path-segment/".repeat(8) + "end"
+      await setUp([
+        claudeProposal(3, 4, {
+          claude: {confidence: "medium", analysis: "new", analysisNote: "", shift: 1, claimed: {start: 2, end: 3}},
+          citations: [{url: longUrl, title: "A long page title ".repeat(6), says: "x".repeat(200), quote: "", sourceBars: "", verified: false}],
+        }),
+      ])
+
+      let first = card("Claude's 3")
+      expect(first.textContent).toContain("Claude named bars 2–3; the notes it quoted are in bars 3–4")
+      expect(first.textContent).toContain("New to the score analysis")
+
+      container.style.width = "380px"
+      let pane = reviewPane()
+      let wide = el => el.scrollWidth > el.clientWidth + 1
+      expect(wide(pane)).toBe(false)
+      expect(wide(first)).toBe(false)
+      expect([...first.querySelectorAll("*")].filter(wide)).toEqual([])
+    })
+
+    it("never draws a link that isn't http or https, nor markup in Claude's words", async function() {
+      let unsafe = claudeProposal(3, 4, {
+        title: "<img src=x onerror=alert(1)>",
+        citations: [{url: "javascript:alert(1)", title: "Bad", says: "", quote: "", sourceBars: "", verified: false}],
+      })
+      await seedClaude(await drillPiece(workhorseScore()), [])
+      currentPiece = await drillPiece(workhorseScore())
+      await store.updateAnnotation(currentPiece.id, record => ({...record, proposals: [...record.proposals, unsafe]}))
+      mountReview(currentPiece)
+      await waitFor(() => reviewPane() && reviewPane().textContent.includes("<img src=x"), {message: "the card"})
+
+      expect(reviewPane().querySelector("a")).toBe(null)
+      expect(reviewPane().querySelector("img")).toBe(null)
+    })
   })
 
   // at the test harness's default (narrower than 900px) viewport, the

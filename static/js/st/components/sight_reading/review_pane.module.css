@@ -186,6 +186,52 @@
     padding: 1px 5px;
 }
 
+.claude_details {
+    min-width: 0;
+    margin-top: 6px;
+}
+
+.claude_line {
+    font-size: 12px;
+    color: var(--salon-gilt-ink);
+    margin: 4px 0 0;
+    overflow-wrap: anywhere;
+}
+
+.citations {
+    list-style: none;
+    margin: 6px 0 0;
+    padding: 0;
+}
+
+.citation {
+    font-size: 12px;
+    color: var(--salon-ink-soft);
+    margin: 0 0 4px;
+    min-width: 0;
+    overflow-wrap: anywhere;
+
+    a { color: var(--salon-gilt-deep); }
+}
+
+.citation_quote {
+    display: block;
+    font-style: italic;
+    color: var(--salon-ink-muted);
+}
+
+.claude_unverified {
+    font-size: 11px;
+    font-style: italic;
+    color: var(--salon-ink-muted);
+    margin: 2px 0 0;
+}
+
+.source_chip_claude {
+    color: var(--salon-gilt-ink);
+    border-color: var(--salon-gilt);
+}
+
 .place_line, .trouble_line {
     font-size: 12px;
     color: var(--salon-ink-muted);

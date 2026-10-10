@@ -143,7 +143,9 @@ function givenFor(flag) {
   if (!flag.proposalSource) { return undefined }
   return {
     title: flag.title,
-    reasons: flag.reasons || (flag.reason ? [flag.reason] : []),
+    reasons: flag.reasons || (flag.lines
+      ? flag.lines.filter(line => line.source == flag.proposalSource).map(line => line.text)
+      : (flag.reason ? [flag.reason] : [])),
     tip: flag.tip,
     level: flag.level,
     kinds: flag.kinds || [],
@@ -390,6 +392,17 @@ function contentFrom(source) {
   }
 }
 
+// what a Claude proposal carries beyond a score one's content (st/difficulty/
+// records#validClaudeProposal): the notes it quoted, its sources (never
+// verified by the app) and its own reading of the analysis
+function extrasOf(proposal) {
+  let extras = {}
+  for (let key of ["evidence", "citations", "claude"]) {
+    if (proposal[key] !== undefined) { extras[key] = proposal[key] }
+  }
+  return extras
+}
+
 // one review flag: a proposal (live or, via `given`, dropped) folded with
 // its decisions, or a flag the log alone holds (an add)
 function buildFlag(record, {proposal, given, group}) {
@@ -404,7 +417,7 @@ function buildFlag(record, {proposal, given, group}) {
     proposalSource = proposal.source
   } else if (given) {
     base = contentFrom(given)
-    proposalSource = "score"
+    proposalSource = ((group || []).find(d => d.of) || {of: {source: "score"}}).of.source
   } else {
     base = contentFrom(addedFlag)
     teacherLine = addedFlag.reason || null
@@ -442,7 +455,7 @@ function buildFlag(record, {proposal, given, group}) {
 
   let lines = []
   if (teacherLine) { lines.push({source: "teacher", text: teacherLine}) }
-  for (let reason of base.reasons || []) { lines.push({source: "score", text: reason}) }
+  for (let reason of base.reasons || []) { lines.push({source: proposalSource || "score", text: reason}) }
 
   let sources = new Set()
   if (proposalSource) { sources.add(proposalSource) }
@@ -460,6 +473,7 @@ function buildFlag(record, {proposal, given, group}) {
     strength: proposal ? proposal.strength : undefined,
     place: placeFor(record, group, {startIndex, endIndex}),
     ...(movedFrom ? {movedFrom} : {}),
+    ...(proposal ? extrasOf(proposal) : {}),
     by,
     proposalSource,
   }
@@ -472,11 +486,12 @@ function waitingFlag(proposal) {
     startIndex: proposal.startIndex, endIndex: proposal.endIndex,
     hand: proposal.hand, level: proposal.level, kinds: proposal.kinds || [],
     title: proposal.title,
-    lines: (proposal.reasons || []).map(text => ({source: "score", text})),
+    lines: (proposal.reasons || []).map(text => ({source: proposal.source, text})),
     tip: proposal.tip, apart: false,
     alsoAt: proposal.alsoAt, strength: proposal.strength,
     place: "placed", by: "",
     proposalSource: proposal.source,
+    ...extrasOf(proposal),
   }
 }
 
