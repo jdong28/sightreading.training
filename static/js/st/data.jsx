@@ -27,7 +27,10 @@ import {
 
 import {getAppStore} from "st/storage"
 import {PlanDeck, PlanGenerator} from "st/plan_cards"
-import {inStudy, passagesForHand, pulledPassage, READ_FIRST, INTRODUCTION_ORDERS} from "st/srs/planner"
+import {
+  inStudy, passagesForHand, pulledPassage, passageBarsOf, READ_FIRST, INTRODUCTION_ORDERS,
+  PASSAGE_BARS, MIN_PASSAGE_BARS, MAX_PASSAGE_BARS,
+} from "st/srs/planner"
 import {flagsInForce} from "st/difficulty/records"
 import {startApartBars} from "st/difficulty/decisions"
 
@@ -144,10 +147,26 @@ export function programmeOffered(settings) {
 }
 
 // Whether the settings play today's programme: when picked, else by default
-// for a piece in study
+// for any piece but one whose study the player shelved, a piece never
+// practised included (its first card begins its study)
 export function plannedPractice(settings, store=getAppStore()) {
   if (settings.practice == FREE_PRACTICE || !programmeOffered(settings)) { return false }
-  return settings.practice == PROGRAMME_PRACTICE || inStudy(store.study(settings.piece))
+  if (settings.practice == PROGRAMME_PRACTICE) { return true }
+
+  let study = store.study(settings.piece)
+  return !study || inStudy(study)
+}
+
+// The bars a new passage of tonight's study takes, from the settings
+// (st/srs/planner passageBarsOf)
+export function passageBarsSetting(settings) {
+  return passageBarsOf(Number(settings.passageBars))
+}
+
+// Whether the settings' programme plays tonight's study: today's programme
+// with both hands, whose new material is learned a passage at a time
+export function studyOffered(settings, store=getAppStore()) {
+  return plannedPractice(settings, store) && itemHand(settings.hand) == "both"
 }
 
 // The settings' piece's flagged passages in force (st/difficulty),
@@ -257,6 +276,8 @@ export function planGenerator(staff, settings) {
     handCard: apart ? handCard : null,
     cardMeasures: planCardMeasures(settings),
     store,
+    study: hand == "both",
+    passageBars: passageBarsSetting(settings),
     order: introductionOrder(settings),
     passages: () => programmePassages(settings, store),
     startApart: () => startApartBars(sheetMusicPassages(settings, store)),
@@ -940,6 +961,16 @@ const ALL_GENERATORS = [
           "first and In score order start at the beginning. Read through and Hardest first " +
           "bring in a repeat of a flagged passage right after it.",
         visible: settings => orderOffered(settings),
+      },
+      {
+        name: "passageBars",
+        label: "bars per passage",
+        type: "measure",
+        default: PASSAGE_BARS,
+        bounds: () => ({min: MIN_PASSAGE_BARS, max: MAX_PASSAGE_BARS, caption: "bars"}),
+        value: settings => passageBarsSetting(settings),
+        hint: "New passages take this many bars; the one in progress keeps its own.",
+        visible: settings => studyOffered(settings),
       },
       {
         name: "passage",

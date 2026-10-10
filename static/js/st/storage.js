@@ -81,7 +81,10 @@ export const LIBRARY_FORMAT = "sightreading-library"
 // line trilling only its marked note until their score is imported again
 // 10: annotations may carry the instructor's decisions (st/difficulty/decisions);
 // version 9 libraries carry none and import as they are
-export const LIBRARY_VERSION = 10
+// 11: reviews may be read-throughs (kind "read-through", never scheduled) and
+// studies may carry a study plan; version 10 libraries carry neither and
+// import as they are
+export const LIBRARY_VERSION = 11
 
 // sessions started within this many days are loaded into the cache
 export const RECENT_SESSION_DAYS = 30

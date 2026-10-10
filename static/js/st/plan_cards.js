@@ -24,18 +24,28 @@
 // of a READ_THROUGH entry is practice alone, whatever its hand or drill
 // mode: the pass is marked at the card it is dealt
 // (PlanGenerator#startCard), and every one of its attempts, the multi-bar
-// card's range included, is practiceOnly; the pass continuing an abandoned
-// one is never graded at all (AttemptPass#graded).
+// card's range included, is written as a "read-through" review (st/srs/
+// records), which no schedule reads, with its items' practice alone
+// (PlanGenerator#passRecords); the pass continuing an abandoned one is never
+// graded at all (AttemptPass#graded).
+//
+// Played hands together the deck also offers tonight's study (PlanDeck's
+// study option, st/srs/planner): the cards of its passages are the entries'
+// own measures, not a card anchored on a bar, and what the plan has reached
+// is the study's record, which PlanGenerator#writeStudy keeps up to date
+// after every card whose items were written (the one place a study's plan is
+// written) and which the deck reads from its own last write until the store
+// has it (PlanDeck#studyRecord).
 
 import {getAppStore} from "st/storage"
 import {MeasureCardGenerator, sectionCard} from "st/measure_cards"
 import {itemId, newItem, itemWithPractice} from "st/srs/records"
 import {scheduledAttempt} from "st/srs/schedule"
-import {passAttempts, selfAttempts} from "st/srs/attempt"
+import {passAttempts, selfAttempts, selfPractice} from "st/srs/attempt"
 import {
-  planNext, planState, planSummary, studyStatus, anchoredCard, introduction,
+  planNext, planState, planSummary, studyStatus, studyAfterPass, studyView, anchoredCard, introduction,
   entryStatus, cardCaption, entryCaption, planUpcoming, upNextWords,
-  WAIT, READ_THROUGH, SCORE_ORDER,
+  WAIT, READ_THROUGH, STUDY, SCORE_ORDER, PASSAGE_BARS, MAX_PASSAGE_BARS,
 } from "st/srs/planner"
 
 // keeps the later of each item's graded reviews
@@ -75,11 +85,21 @@ export class PlanDeck {
    * @param {function(): Map<number, string[]>|null} [opts.startApart] decision
    * 6's input (st/difficulty/decisions.startApartBars), read fresh at every
    * plan so a decision saved at rest takes effect at the next card
+   * @param {boolean} [opts.study] whether new material is tonight's study
+   * (st/srs/planner) rather than a bar at a time, for a session hands together
+   * @param {number} [opts.passageBars] the bars a passage of the study takes
    */
   constructor(measures, {pieceId, hand="both", handMeasures=null, handCard=null,
       cardMeasures=1, now=Date.now, store, passages=() => [], order=SCORE_ORDER,
-      passagesReady=null, startApart=() => null}) {
+      passagesReady=null, startApart=() => null, study=false, passageBars=PASSAGE_BARS}) {
     this.pieceId = pieceId
+    this.study = study
+    this.passageBars = passageBars
+    // the study record the generator has written and the store may not yet
+    // hold, see studyRecord
+    this.pendingStudy = null
+    // the one-card plans of a study entry's own measures, by measure list
+    this.studyCards = new Map()
     this.sessionHand = hand
     this.cardMeasures = cardMeasures
     this.now = now
@@ -93,6 +113,7 @@ export class PlanDeck {
 
     let numbers = measures.map(measure => measure.number)
     let byNumber = new Map(measures.map(measure => [measure.number, measure]))
+    this.byNumber = byNumber
     this.measures = measures.filter(measure => measure.columns.length).map(measure => measure.number)
     this.cards = this.measures.map(measure =>
       sectionCard(anchoredCard(numbers, measure, cardMeasures).map(n => byNumber.get(n))))
@@ -121,6 +142,9 @@ export class PlanDeck {
     // that can split is failing, planning again from it when it lands; its
     // own passes keep it up to date from there
     this.reviews = new Map()
+    // whether the card played last was a card of the study, which sends the
+    // next study card after the due reviews (see planNext)
+    this.previousStudy = false
     // whether a card is being played, which the generator keeps up to date:
     // the plan made again after the read waits rather than throw a pass away
     this.playing = () => false
@@ -202,8 +226,40 @@ export class PlanDeck {
   get card() {
     if (this.index == null) { return null }
 
-    let {hand, measure} = this.entry
-    return hand == this.sessionHand ? this.cards[this.index] : this.handCard(hand, measure)
+    let {hand, measure, measures} = this.entry
+    if (hand != this.sessionHand) { return this.handCard(hand, measure) }
+    return measures ? this.studyCard(measures) : this.cards[this.index]
+  }
+
+  /**
+   * The card of the measures a study entry plays, built the first time
+   * @param {number[]} measures bar numbers in score order
+   * @returns {MeasureCard}
+   */
+  studyCard(measures) {
+    let key = measures.join()
+    if (!this.studyCards.has(key)) {
+      this.studyCards.set(key, sectionCard(measures.map(number => this.byNumber.get(number))))
+    }
+    return this.studyCards.get(key)
+  }
+
+  /**
+   * @returns {number} the most columns any card the programme can show
+   * holds, for the staff's buffer: the most in a run of as many measures as
+   * a card takes, or as a passage and its lead-in
+   */
+  maxCardColumns() {
+    if (this.mostColumns == null) {
+      let size = Math.max(this.cardMeasures, MAX_PASSAGE_BARS + 1)
+      let counts = this.measures.map(number => this.byNumber.get(number).columns.length)
+      let most = 0
+      for (let from = 0; from < counts.length; from++) {
+        most = Math.max(most, counts.slice(from, from + size).reduce((sum, count) => sum + count, 0))
+      }
+      this.mostColumns = most
+    }
+    return this.mostColumns
   }
 
   /**
@@ -243,6 +299,15 @@ export class PlanDeck {
     return [...items, ...[...this.pending.values()].filter(item => !stored.has(item.id))]
   }
 
+  /**
+   * @returns {StudyRecord|null} the piece's study as last written, by the
+   * generator or in the store: a write made at one card is the plan of the
+   * next before the store has it
+   */
+  studyRecord() {
+    return this.pendingStudy || this.getStore().study(this.pieceId)
+  }
+
   /** @returns {PlanInput} what the planner plans from now */
   planInput() {
     let store = this.getStore()
@@ -250,6 +315,8 @@ export class PlanDeck {
       measures: this.measures, passages: this.passages(), order: this.order, hand: this.sessionHand,
     })
     this.lastRoles = built.roles
+
+    let record = this.studyRecord()
 
     return {
       pieceId: this.pieceId,
@@ -265,7 +332,9 @@ export class PlanDeck {
       practice: store.practiceSettings(),
       cardMeasures: this.cardMeasures,
       introduce: built.introduce,
-      readThrough: built.readThrough,
+      readThrough: built.readThrough && !(record && record.readThrough == "skipped"),
+      study: this.study ? {record, flags: this.passages(), order: this.order, passageBars: this.passageBars} : null,
+      previousStudy: this.previousStudy,
     }
   }
 
@@ -287,6 +356,7 @@ export class PlanDeck {
    */
   advance(played=true) {
     let previous = played && this.entry ? this.entry.itemId : null
+    this.previousStudy = !!(played && this.entry && this.entry.reason == STUDY)
     let {entry, state} = planNext({...this.planInput(), previous})
     this.entry = entry
     // the hand a flag's tick stands in for the bar is that of its
@@ -320,9 +390,22 @@ export class PlanDeck {
     return planSummary(this.planInput())
   }
 
-  /** @returns {string} the piece's study status the items give, see studyStatus */
-  studyStatus() {
-    return studyStatus(this.planInput())
+  /**
+   * @param {Object} [plan] a study plan to read the status by, in place of
+   * the stored one (see studyAfterPass)
+   * @returns {string} the piece's study status the items give, see studyStatus
+   */
+  studyStatus(plan=null) {
+    let input = this.planInput()
+    if (plan && input.study) {
+      input = {...input, study: {...input.study, record: {...input.study.record, plan}}}
+    }
+    return studyStatus(input)
+  }
+
+  /** @returns {Object|null} tonight's study as the setup pane and the score show it, see studyView */
+  studyView() {
+    return studyView(this.planInput())
   }
 }
 
@@ -498,9 +581,24 @@ export class PlanGenerator extends MeasureCardGenerator {
    * the bar's passage role (st/srs/planner introduction()) read for a NEW entry
    */
   upNext(count) {
-    let previous = this.deck.entry ? this.deck.entry.itemId : null
-    return planUpcoming({...this.deck.planInput(), previous}, count).map(entry =>
-      ({measure: entry.measure, words: upNextWords(entry, this.deck.passageOf(entry.measure))}))
+    let {entry} = this.deck
+    let previous = entry ? entry.itemId : null
+    let previousStudy = !!entry && entry.reason == STUDY
+    return planUpcoming({...this.deck.planInput(), previous, previousStudy}, count).map(upcoming => ({
+      measure: upcoming.measure,
+      words: upNextWords(upcoming, this.deck.passageOf(upcoming.measure)),
+      ...(upcoming.reason == STUDY ? {bars: [upcoming.measures[0], upcoming.measures[upcoming.measures.length - 1]]} : {}),
+    }))
+  }
+
+  /** @returns {Object|null} tonight's study, see PlanDeck#studyView */
+  study() {
+    return this.deck.studyView()
+  }
+
+  /** @returns {number} see PlanDeck#maxCardColumns */
+  maxCardColumns() {
+    return this.deck.maxCardColumns()
   }
 
   // the planner is told how the pass went before it plans the next card:
@@ -547,10 +645,31 @@ export class PlanGenerator extends MeasureCardGenerator {
     }
 
     if (items.length) {
-      this.markStudy(opts.at)
+      this.writeStudy(entry, opts.at)
     }
 
     return opts
+  }
+
+  /**
+   * As MeasureCardGenerator#passRecords, save that a READ_THROUGH card
+   * (AttemptPass#readThrough) is written as "read-through" reviews: a graded
+   * pass logs one with the items' practice alone (see passAttempts), a
+   * self-graded pass's bars the "Where?" question left out only practice;
+   * a pass abandoned or continued is practice as for any card
+   * @param {AttemptPass} pass
+   * @param {Object} opts as for passAttempts
+   * @returns {{attempts: Object[], practice: Object[]}}
+   */
+  passRecords(pass, opts) {
+    if (pass.readThrough) {
+      let attempts = (pass.selfGrade ? selfAttempts : passAttempts)(pass, {...opts, kind: "read-through"})
+      if (attempts.length) {
+        return {attempts, practice: pass.selfGrade ? selfPractice(pass, opts) : []}
+      }
+    }
+
+    return super.passRecords(pass, opts)
   }
 
   /**
@@ -559,8 +678,9 @@ export class PlanGenerator extends MeasureCardGenerator {
    * practice alone outright, every one of its attempts; that a hand alone
    * the scaffold offers climbs its own ladder from the bar's failure, so it
    * is on schedule unless the queue offered its rung before it came due (the
-   * WAIT reason of st/srs/planner, whatever drill mode it is played in),
-   * where the rule for any other card applies; and that a bar resting until
+   * WAIT reason of st/srs/planner, or a STUDY card of stage II or a hand
+   * apart start flagged early, whatever drill mode it is played in), where
+   * the rule for any other card applies; and that a bar resting until
    * the next sitting is left as it is wherever it is played, so a card
    * anchored on a neighbour writes it as practice alone however the pass went
    * @param {AttemptPass} pass complete
@@ -583,27 +703,83 @@ export class PlanGenerator extends MeasureCardGenerator {
     let resting = planState(this.deck.planInput()).resting
     let rested = pass.card.measures.filter(measure => resting.has(measure)).map(barId)
 
+    // a hand alone the study plays before its rung comes due is held to the
+    // same rule as a rung the queue brings early, or hands played in a row
+    // would climb the ladder again
     let entry = this.deck.entry
     let apart = entry && entry.hand != this.deck.sessionHand
-    let offSchedule = apart && entry.reason != WAIT ? [] : super.practiceOnly(pass, opts)
+    let early = entry && (entry.reason == WAIT || (entry.reason == STUDY && entry.early))
+    let offSchedule = apart && !early ? [] : super.practiceOnly(pass, opts)
 
     pass.practiceOnly = [...new Set([...rested, ...offSchedule])]
     return pass.practiceOnly
   }
 
-  // The piece is in study once a card of its programme is played: learning
-  // until each of its measures has been scheduled, then maintaining
-  markStudy(time) {
-    let store = this.deck.getStore()
-    let study = store.study(this.deck.pieceId)
-    let status = this.deck.studyStatus()
-    if (study && (study.status == status || study.status == "shelved")) { return }
+  /**
+   * Writes the piece's study once a card of its programme is written: the
+   * piece is in study from then on, learning until it is learned, and with
+   * tonight's study its plan is brought up to date (see studyAfterPass). One
+   * record is written, merged with the one stored, and a study the player
+   * shelved is left as it is.
+   * @param {PlanEntry|null} entry the card played
+   * @param {number} time when it was written
+   */
+  writeStudy(entry, time) {
+    let {deck} = this
+    let record = deck.studyRecord()
+    if (record && record.status == "shelved") { return }
 
-    this.studying = Promise.resolve(this.studying).then(() => store.putStudy({
-      ...study,
-      pieceId: this.deck.pieceId,
+    let plan = studyAfterPass(deck.planInput(), {entry, at: time})
+    let status = deck.studyStatus(plan)
+    if (record && record.status == status && (!plan || sameValue(record.plan, plan))) { return }
+
+    this.putStudy({
+      ...record,
+      pieceId: deck.pieceId,
       status,
-      startedAt: study ? study.startedAt : time,
-    })).catch(err => console.warn("Couldn't save the study", err))
+      startedAt: record ? record.startedAt : time,
+      ...(plan ? {plan} : {}),
+    })
   }
+
+  /**
+   * Skips the whole-piece read-through (any hand), which is then never
+   * offered again for the piece, and plans the card that follows it.
+   * @param {number} [time] when it was skipped
+   */
+  skipReadThrough(time=this.now()) {
+    let {deck} = this
+    let record = deck.studyRecord()
+
+    this.putStudy({
+      ...record,
+      pieceId: deck.pieceId,
+      status: record ? record.status : "learning",
+      startedAt: record ? record.startedAt : time,
+      readThrough: "skipped",
+    })
+
+    deck.advance(false)
+    this.startCard()
+  }
+
+  // stores a study, the deck planning from it at once (PlanDeck#studyRecord)
+  putStudy(study) {
+    let {deck} = this
+    deck.pendingStudy = study
+    this.studying = Promise.resolve(this.studying)
+      .then(() => deck.getStore().putStudy(study))
+      .then(() => { if (deck.pendingStudy === study) { deck.pendingStudy = null } })
+      .catch(err => console.warn("Couldn't save the study", err))
+  }
+}
+
+// whether two plain records hold the same values, whatever the order of keys
+function sameValue(a, b) {
+  if (a === b) { return true }
+  if (!a || !b || typeof a != "object" || typeof b != "object") { return false }
+
+  let keys = Object.keys(a)
+  return Array.isArray(a) == Array.isArray(b) && keys.length == Object.keys(b).length &&
+    keys.every(key => sameValue(a[key], b[key]))
 }

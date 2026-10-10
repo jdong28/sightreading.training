@@ -19,7 +19,7 @@ import {acceptDecision, dismissDecision, reviewFlags} from "st/difficulty/decisi
 
 import {
   pieceSection, pieceSectionMeasures, sheetMusicSection, sheetMusicPieceSettings, sheetMusicStaffFor,
-  sheetMusicKeyFor, measuresDescription, SHEET_MUSIC_GENERATOR, BOTH_HANDS, RIGHT_HAND, LEFT_HAND
+  sheetMusicKeyFor, measuresDescription, SHEET_MUSIC_GENERATOR, BOTH_HANDS, RIGHT_HAND, LEFT_HAND, FREE_PRACTICE
 } from "st/data"
 
 import {setAppStore} from "st/storage"
@@ -1328,13 +1328,15 @@ describe("sheet music deck", function() {
       let pieceInput = generator.inputs.find(i => i.name == "piece")
 
       let {piece} = await importMusicXMLPiece("reverie.musicxml", reverieOpening())
-      let {settings, staff} = pieceInput.pick({}, piece.id)
-      expect([settings.piece, settings.startMeasure, settings.endMeasure, settings.hand]).toEqual([piece.id, 1, 4, BOTH_HANDS])
+      let {settings: picked, staff} = pieceInput.pick({}, piece.id)
+      expect([picked.piece, picked.startMeasure, picked.endMeasure, picked.hand]).toEqual([piece.id, 1, 4, BOTH_HANDS])
       expect(staff).toEqual("grand")
+      // the section's start measure sets the key in free practice; the programme plays the whole piece
+      let settings = {...picked, practice: FREE_PRACTICE}
       expect(generator.keySignature(settings).name()).toEqual("F")
 
       let changing = (await importMusicXMLPiece("key_change.musicxml", keyChangeScore())).piece
-      let changingSettings = pieceInput.pick({}, changing.id).settings
+      let changingSettings = {...pieceInput.pick({}, changing.id).settings, practice: FREE_PRACTICE}
       expect(generator.keySignature(changingSettings).name()).toEqual("F")
       expect(generator.keySignature({...changingSettings, startMeasure: 3}).name()).toEqual("E")
 

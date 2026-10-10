@@ -22,7 +22,7 @@ export const ITEM_STATES = [
   "learning", "review", "relearning", "merged", "split", "tracked", "suspended",
 ]
 
-export const REVIEW_KINDS = ["attempt", "legacy", "implied"]
+export const REVIEW_KINDS = ["attempt", "legacy", "implied", "read-through"]
 
 // what a self-graded review's optional "What slipped?" tags may name
 export const SELF_ASPECTS = ["notes", "rhythm", "tempo", "fingering", "musicality"]
@@ -109,6 +109,10 @@ export const PASS_HISTORY = 8
  * (hits, misses, attempts, elapsedMs) and no grade. An "attempt" (one pass
  * through the item's columns) and an "implied" review (credit from a larger
  * attempt) carry the grade and the raw measurements it was worked out from.
+ * A "read-through" review has an attempt's shape and is graded the same way,
+ * but is never scheduled: the first reading of a new piece's bars (tonight's
+ * study, st/srs/planner) is logged, yet neither the scheduler nor replay
+ * reads it, and its item gets practice totals and a pass alone.
  *
  * staffMisses splits the attempt's misses by hand: for each score staff
  * ("upper", "lower", the staves of column.staves), the misses blamed on a
@@ -174,6 +178,14 @@ export const PASS_HISTORY = 8
  * @property {string} pieceId
  * @property {string} status one of STUDY_STATUSES
  * @property {number} startedAt
+ * @property {string} [readThrough] "skipped" once the player has skipped the
+ * whole-piece read-through (any hand)
+ * @property {Object} [plan] tonight's study (st/srs/planner), only the
+ * milestones: {createdAt, known: [start, end][] (bars scheduled before the
+ * plan, never laid out), passages: [{start, end, from: "score"|"flag:<id>",
+ * openedAt, stage 1-4, stageAt (when the stage began, evidence counts after
+ * it), flowedAt?}] in the order opened, at most one without flowedAt,
+ * learnedAt?}. Written only by PlanGenerator#writeStudy
  * @property {Object} [map] {algo, basis: "musicxml"|"song", computedAt,
  * measures, numbersHash, phrases: [start, end][], sections: [start, end][],
  * strengths: number[], edited}
@@ -266,7 +278,7 @@ export function validReview(review) {
       isCount(review.attempts)
   }
 
-  if (review.kind == "attempt" && review.mode == "self") {
+  if ((review.kind == "attempt" || review.kind == "read-through") && review.mode == "self") {
     return [1, 2, 3, 4].includes(review.grade) &&
       (review.was == "new" || ITEM_STATES.includes(review.was)) &&
       optional(review.r, isTime) &&
@@ -297,6 +309,30 @@ export function validReview(review) {
     review.hits === undefined && review.attempts === undefined && review.slipped === undefined
 }
 
+const isBarRange = range => Array.isArray(range) && range.length == 2 &&
+  range.every(Number.isInteger) && range[0] <= range[1]
+
+// a passage of a study plan: opened with a stage 1-4 begun at stageAt, and
+// flowed (the optional flowedAt) only once through the last stage
+const validStudyPassage = passage => !!passage && typeof passage == "object" &&
+  Number.isInteger(passage.start) && Number.isInteger(passage.end) && passage.start <= passage.end &&
+  typeof passage.from == "string" && passage.from != "" &&
+  isTime(passage.openedAt) && oneOf([1, 2, 3, 4])(passage.stage) && isTime(passage.stageAt) &&
+  optional(passage.flowedAt, isTime)
+
+/**
+ * @param {*} plan
+ * @returns {boolean} whether plan has the shape of a study's plan, see
+ * StudyRecord: at most one of its passages is still open
+ */
+export function validStudyPlan(plan) {
+  return !!plan && typeof plan == "object" && isTime(plan.createdAt) &&
+    Array.isArray(plan.known) && plan.known.every(isBarRange) &&
+    Array.isArray(plan.passages) && plan.passages.every(validStudyPassage) &&
+    plan.passages.filter(passage => passage.flowedAt === undefined).length <= 1 &&
+    optional(plan.learnedAt, isTime)
+}
+
 /**
  * @param {*} study
  * @returns {boolean} whether study has the shape of a stored study
@@ -305,6 +341,8 @@ export function validStudy(study) {
   return !!study && typeof study == "object" &&
     typeof study.pieceId == "string" && study.pieceId != "" &&
     STUDY_STATUSES.includes(study.status) && isTime(study.startedAt) &&
+    optional(study.plan, validStudyPlan) &&
+    optional(study.readThrough, value => value == "skipped") &&
     optional(study.map, map => !!map && typeof map == "object")
 }
 

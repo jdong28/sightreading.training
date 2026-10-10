@@ -1955,7 +1955,13 @@ describe("today's programme on the staff", function() {
       expect(itemOf(0).attempts).toEqual(1)
       expect(itemOf(1).attempts).toEqual(1)
       expect(scheduled(itemOf(0))).toBe(false)
-      expect(await store.reviews({pieceId: piece.id})).toEqual([])
+      // each reading is logged, as a read-through that nothing schedules
+      let read = await store.reviews({pieceId: piece.id})
+      expect(read.map(review => [review.itemId, review.kind])).toEqual([
+        [`${piece.id}:both:0-0`, "read-through"], [`${piece.id}:both:0-1`, "read-through"],
+        [`${piece.id}:both:1-1`, "read-through"],
+      ])
+      expect(itemOf(0).recent).toEqual([])
       expect(store.study(piece.id)).toEqual(jasmine.objectContaining({status: "learning"}))
       expect(generator.caption()).toMatch(/1 bar left to read through$/)
       expect(deck.entry).toEqual(jasmine.objectContaining({reason: READ_THROUGH, measure: 2}))
@@ -2032,9 +2038,15 @@ describe("today's programme on the staff", function() {
       await generator.finishing
       await generator.studying
 
-      expect(await store.reviews({pieceId: piece.id})).toEqual([])
+      // a read-through review of the card and of each bar, and no attempt
+      let read = await store.reviews({pieceId: piece.id})
+      expect(read.map(review => [review.itemId, review.kind, review.mode])).toEqual([
+        [`${piece.id}:both:0-0`, "read-through", "self"], [`${piece.id}:both:0-1`, "read-through", "self"],
+        [`${piece.id}:both:1-1`, "read-through", "self"],
+      ])
       expect(store.item(`${piece.id}:both:0-0`).attempts).toEqual(1)
       expect(store.item(`${piece.id}:both:1-1`).attempts).toEqual(1)
+      expect(store.item(`${piece.id}:both:1-1`).recent).toEqual([])
       expect(generator.selfReceipt().when).toBe(null)
     })
 
@@ -2558,14 +2570,16 @@ describe("today's programme on the staff", function() {
       expect(store.items(piece.id)).toEqual([])
       expect(programmeOffered(settingsFor())).toBe(true)
       expect(input("practice").visible(settingsFor())).toBe(true)
-      expect(input("practice").value(settingsFor())).toEqual(FREE_PRACTICE)
+      // the programme is the default, so a new piece opens on it
+      expect(input("practice").value(settingsFor())).toEqual(PROGRAMME_PRACTICE)
+      expect(plannedPractice(settingsFor())).toBe(true)
       expect(programmeOffered(settingsFor({piece: ""}))).toBe(false)
 
       let generator = SHEET_MUSIC_GENERATOR.create(grand, null, settingsFor({practice: PROGRAMME_PRACTICE}))
       generators.push(generator)
       expect(generator instanceof PlanGenerator).toBe(true)
       await generator.ready
-      expect(generator.statusLine()).toEqual("New · bar 0")
+      expect(generator.statusLine()).toEqual("Study · I Read · bars 0–1")
 
       let notes = new NoteList([], {generator})
       notes.fillBuffer(8)
@@ -2577,9 +2591,9 @@ describe("today's programme on the staff", function() {
       expect(plannedPractice(settingsFor())).toBe(true)
     })
 
-    it("keeps free practice for a practised piece until it is in study", async function() {
+    it("plays the programme by default for a practised piece, free practice only once its study is shelved", async function() {
       // free practice schedules the measures it plays
-      let generator = SHEET_MUSIC_GENERATOR.create(grand, null, settingsFor())
+      let generator = SHEET_MUSIC_GENERATOR.create(grand, null, settingsFor({practice: FREE_PRACTICE}))
       generators.push(generator)
       let notes = new NoteList([], {generator})
       notes.fillBuffer(4)
@@ -2587,14 +2601,18 @@ describe("today's programme on the staff", function() {
       for (let i = 0; i < 3; i++) { notes = hit(notes, stats) }
       await generator.finishing
 
-      expect(plannedPractice(settingsFor())).toBe(false)
-      expect(input("practice").value(settingsFor())).toEqual(FREE_PRACTICE)
-      expect(plannedPractice(settingsFor({practice: PROGRAMME_PRACTICE}))).toBe(true)
+      expect(plannedPractice(settingsFor())).toBe(true)
+      expect(input("practice").value(settingsFor())).toEqual(PROGRAMME_PRACTICE)
+      expect(plannedPractice(settingsFor({practice: FREE_PRACTICE}))).toBe(false)
 
       await store.putStudy({pieceId: piece.id, status: "learning", startedAt: NOW})
       expect(plannedPractice(settingsFor())).toBe(true)
       expect(input("practice").value(settingsFor())).toEqual(PROGRAMME_PRACTICE)
-      expect(plannedPractice(settingsFor({practice: FREE_PRACTICE}))).toBe(false)
+
+      await store.putStudy({pieceId: piece.id, status: "shelved", startedAt: NOW})
+      expect(plannedPractice(settingsFor())).toBe(false)
+      expect(input("practice").value(settingsFor())).toEqual(FREE_PRACTICE)
+      expect(plannedPractice(settingsFor({practice: PROGRAMME_PRACTICE}))).toBe(true)
     })
 
     it("opens a picked piece in its own default practice", async function() {
@@ -2605,8 +2623,12 @@ describe("today's programme on the staff", function() {
       expect(picked.practice).toBe(null)
       expect(plannedPractice(picked)).toBe(true)
 
+      // a piece never practised opens on the programme too, one whose study is shelved on free practice
       let back = input("piece").pick({...picked, practice: PROGRAMME_PRACTICE}, other.id).settings
       expect(back.practice).toBe(null)
+      expect(plannedPractice(back)).toBe(true)
+
+      await store.putStudy({pieceId: other.id, status: "shelved", startedAt: NOW})
       expect(plannedPractice(back)).toBe(false)
     })
 
@@ -2669,7 +2691,7 @@ describe("today's programme on the staff", function() {
         grand, null, settingsFor({practice: PROGRAMME_PRACTICE, introduce: "in score order"}))
       generators.push(scoreOrder)
       await scoreOrder.ready
-      expect(scoreOrder.statusLine()).toEqual("New · bar 0")
+      expect(scoreOrder.statusLine()).toEqual("Study · I Read · bar 0")
     })
   })
 })

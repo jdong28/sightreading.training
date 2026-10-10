@@ -286,6 +286,17 @@ or free practice's section and card-order picks), Cards (Hand, Bars per card) an
 Scroll, speed, Keep tempo); a footer states the session in one italic line and begins it. Settings
 apply as they're picked; there is no separate apply step.
 
+**Tonight's study** (programme, both hands, in the Session group): a "Tonight's study" sub-label, a
+read-through row ("Read-through first · n bars left" with a ghost "Skip it" pill) while one is
+pending, the passage line (the passage's bars in the display face, its origin, and "III of IV" or
+"next" in the small-caps aside), the four stage rows in the onboarding page's numbered-row style
+(the current stage's numeral and name in oxblood, `aria-current="step"`, passed stages ending in a
+gilt ❖), the path of passages (the one in progress in oxblood, a flowed one with a gilt ❖) and a
+"Bars per passage" number picker. Once learned, one line ("Learned ❖ · the programme keeps it from
+here") replaces the rows. On the score the passage in progress takes a 4px oxblood top border with a
+tag at its first bar, and each passage that flows a gilt one; the session rail's aside reads
+"Tonight's study" and a ghost "Skip the read-through" pill sits under its clock while one is played.
+
 **Session** (`Session.dc.html`, build note 4): Begin clears the strip and the session log and shows
 the trainer's own card, transport and stat cards, with a `SessionRail` ("This session") beside it in
 place of the default rail — the session's clock and progress through the piece, the programme's "Up

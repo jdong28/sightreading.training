@@ -15,6 +15,8 @@
     display: flex;
     align-items: baseline;
     justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 2px 12px;
     padding-bottom: 11px;
     border-bottom: var(--salon-double-rule);
 }
@@ -80,6 +82,13 @@
     top: 0;
     bottom: 0;
     background: var(--salon-gilt);
+}
+
+/* the ghost pill under the clock that skips the read-through */
+.skip_pill.skip_pill {
+    margin-top: 12px;
+    padding: 5px 12px;
+    font-size: 12px;
 }
 
 .map_group {

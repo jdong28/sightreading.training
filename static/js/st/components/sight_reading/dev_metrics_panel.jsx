@@ -400,6 +400,7 @@ export default class DevMetricsPanel extends React.Component {
         {self && ` (${selfWord(review.grade)}, self-graded)`}
         {review.was && ` (was ${review.was})`} · {review.mode || "—"}{review.speed != null && ` ${review.speed}`}
         {review.algo != null && ` · algo ${review.algo}`}
+        {review.kind == "read-through" && " · read-through, not scheduled"}
       </h3>
       {self ?
         <p className={styles.counts}>

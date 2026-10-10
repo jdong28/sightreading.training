@@ -313,3 +313,123 @@
         color: var(--salon-nav-ink);
     }
 }
+
+/* tonight's study: the read-through row, the passage and its four stages */
+
+.read_row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    font-size: 13px;
+    padding: 7px 10px;
+    background: var(--salon-paper-warm);
+    border: 1px solid var(--salon-rule);
+}
+
+.passage_line {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.passage_bars {
+    font-family: var(--font-display);
+    font-size: 17px;
+}
+
+.passage_stage {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--salon-ink-muted);
+    white-space: nowrap;
+}
+
+/* the numbered rows of the onboarding page, a little closer together */
+.steps {
+    display: flex;
+    flex-direction: column;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.step {
+    display: flex;
+    gap: 12px;
+    align-items: baseline;
+    padding: 8px 2px;
+    border-bottom: var(--salon-hairline);
+
+    &:last-child {
+        border-bottom: none;
+    }
+}
+
+.numeral {
+    font-family: var(--font-display);
+    font-size: 17px;
+    color: var(--salon-ink-muted);
+    min-width: 26px;
+}
+
+.step_text {
+    flex: 1;
+    min-width: 0;
+    font-size: 13px;
+    line-height: 1.4;
+    color: var(--salon-ink);
+}
+
+.stage_name {
+    display: block;
+}
+
+.step_sub {
+    display: block;
+    font-size: 11.5px;
+    color: var(--salon-ink-muted);
+}
+
+.step_current .numeral,
+.step_current .stage_name {
+    color: var(--salon-oxblood);
+}
+
+.step_current .stage_name {
+    font-weight: 700;
+}
+
+.passed {
+    color: var(--salon-gilt);
+    font-size: 13px;
+}
+
+.path {
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--salon-ink-muted);
+}
+
+.path_current {
+    color: var(--salon-oxblood);
+    font-weight: 700;
+}
+
+.path_count {
+    margin-top: 2px;
+}
+
+/* the picker of a passage's bars, set off from the path above it */
+.study_size {
+    margin-top: 8px;
+}
+
+.learned {
+    font-family: var(--font-display);
+    font-size: 16px;
+    color: var(--salon-ink);
+}

@@ -16,7 +16,8 @@
 // 3. a review due today, lowest predicted recall first, after a warm-up of
 //    the two likeliest recalled;
 // 4. a new measure, the next not yet seen in the piece's introduction order
-//    (PlanInput#introduce, score order without one), while fewer than
+//    (PlanInput#introduce, score order without one; played hands together,
+//    tonight's study below takes its place), while fewer than
 //    LADDER_CAP items are on the ladder, the ones resting counted, new cards
 //    are at most half the cards played and the due reviews fit in
 //    REVIEW_SHARE of the time left to the target (with nothing else to do,
@@ -35,12 +36,46 @@
 // graded on one yet, so a bar merely touched as a practice-only neighbour (a
 // read-through's lead-in) or read through is still its own to introduce next.
 //
+// Tonight's study (PlanInput#study, state.study, the STUDY reason): played
+// hands together on a piece of more than one playable bar, new material is
+// learned a passage at a time rather than a bar at a time. The passages are
+// laid out from the piece's flags in the introduction order given
+// (layoutPassages: the pulled passage first, its repeats after it, then the
+// rest in score order, each run split into passages of at most passageBars).
+// A passage goes through four stages, each worked out from the items alone,
+// so a reload resumes the same card: I READ, each bar of the passage not yet
+// scheduled once, in cards kept inside the passage (a bar's hand alone where
+// a flag started it apart); II HANDS, only for a bar the hand scaffold split,
+// that hand alone until it holds; III TOGETHER, a forward chain from the
+// passage's first bar, R1, R1-2, R1-3 and so on, each one clean pass longer
+// than the last, a pass that slips dropping to the first bar that slipped,
+// played alone until clean, before the chain resumes; IV FLOW, the passage
+// from its lead-in (the bar before it, the seam), two passes running graded
+// good or easy. A split bar shows stage II until its hand holds, whatever
+// stage the passage is at. The passage rests until the next sitting when one
+// of its bars rests (above), when in stage III a bar slips STUDY_SLIPS times
+// in the sitting, or when in stage IV STUDY_SLIPS flow passes fail in it; no
+// further passage opens meanwhile. Only the milestones are stored
+// (StudyRecord#plan: the bars known before the plan, each passage opened with
+// its stage and when the stage began, when it flowed, when the piece was
+// learned), and the chain and the flow are told from the recent attempts and
+// passes of the items after the stage began. Once every passage has flowed
+// the piece is learned: the programme is maintenance alone and its study
+// status reads "maintaining". The study takes rule 4's place in the queue: it
+// goes ahead of the due reviews after the warm-up fifth, then takes turns
+// with them (the card just played being a study card sends the next after
+// the reviews), drops the ladder rungs its card already contains (the card
+// grades them) and, with nothing else left, opens the next passage. A
+// passage opens only where a new bar would have been offered. No rule of the
+// study touches grading, FSRS or replay.
+//
 // Read through first: a piece new to the programme (none of its single
 // measures of the session's hand ever scheduled) is read through once before
 // any of it is learned, one bar at a time in score order, each played as
 // practice alone (PlanInput#readThrough, state.toRead, the READ_THROUGH
-// reason): no review is written, so a bar's first graded review comes at its
-// second reading, when it is introduced. A read-through left part way
+// reason): a "read-through" review is logged, which the scheduler and replay
+// never read, so a bar's first graded review comes at its second reading,
+// when it is introduced. The player may skip it (StudyRecord#readThrough). A read-through left part way
 // resumes at the first bar not yet played, from the items' attempts alone,
 // and a piece with a bar already scheduled, or one of a single playable bar
 // (whose card loops, so nothing of it would ever be graded), never reads
@@ -181,6 +216,7 @@ export const EARLY = "early"
 export const RUN_THROUGH = "run-through"
 export const WAIT = "wait"
 export const READ_THROUGH = "read-through"
+export const STUDY = "study"
 
 // the introduction order a piece's new bars arrive in, see introduction()
 export const READ_FIRST = "read through"
@@ -201,6 +237,22 @@ export const SCAFFOLD_MISSES = 2
 export const REST_FAILURES = 3
 
 export const STUDYING = ["learning", "maintaining"]
+
+// the stages of tonight's study, see the header
+export const READ = 1
+export const HANDS = 2
+export const TOGETHER = 3
+export const FLOW = 4
+export const STAGE_NAMES = {[READ]: "Read", [HANDS]: "Hands", [TOGETHER]: "Together", [FLOW]: "Flow"}
+
+// the bars a passage takes, by default, at least and at most
+export const PASSAGE_BARS = 4
+export const MIN_PASSAGE_BARS = 2
+export const MAX_PASSAGE_BARS = 6
+
+// the slips of one bar (stage III) or failed flow passes (stage IV) in a
+// sitting after which a passage rests until the next
+export const STUDY_SLIPS = 3
 
 const ON_LADDER = ["learning", "relearning"]
 
@@ -265,6 +317,13 @@ export function onScheduleMeasures(card, itemOf, now) {
  * new bars should arrive (see introduction()), score order when left out
  * @property {boolean} [readThrough] whether the piece is read through once
  * before any of its bars not yet scheduled are learned
+ * @property {{record: StudyRecord|null, flags: Object[], order: string,
+ * passageBars: number}|null} [study] tonight's study, given for a session
+ * played hands together (see the header): the piece's stored study, its
+ * flags in force (st/difficulty flagsInForce, hardest first), the
+ * introduction order and the bars a passage takes
+ * @property {boolean} [previousStudy] whether the card just played was a
+ * STUDY entry, which sends the next study card after the due reviews
  * @property {Map<number, string[]>} [startApart] bars a flag ticked "start
  * this passage hands separately" asks to introduce hands apart (decision 6,
  * st/difficulty/decisions.startApartBars), each with the hand(s) it names,
@@ -275,12 +334,20 @@ export function onScheduleMeasures(card, itemOf, now) {
  * The next measure to practise and the state of the programme.
  * @typedef {Object} PlanEntry
  * @property {string} reason one of RETRY, LADDER, REVIEW, NEW, EARLY,
- * RUN_THROUGH, WAIT, READ_THROUGH
+ * RUN_THROUGH, WAIT, READ_THROUGH, STUDY
  * @property {number} measure
  * @property {string} itemId
  * @property {ItemRecord|null} item null for a measure never scheduled
  * @property {string} hand the session's hand, or the hand alone of a bar
  * the hand scaffold offers
+ * @property {number[]} [measures] the bars of the card, given while tonight's
+ * study applies (never for a READ_THROUGH entry): the study's own card, or the
+ * entry's bar among the scheduled bars and the current passage
+ * @property {number} [stage] STUDY only, one of READ, HANDS, TOGETHER, FLOW
+ * @property {{start: number, end: number, from: string, words: string|null}} [passage]
+ * STUDY only: the passage the card belongs to
+ * @property {boolean} [early] STUDY only: a hand alone played before its
+ * rung comes due, which the off-schedule rule applies to
  */
 
 /**
@@ -611,6 +678,341 @@ function startApartCaptionFor({hands, heldIndex}) {
   return `${currentCap} alone, then ${remaining[0] == "lower" ? "the left" : "the right"}`
 }
 
+
+/**
+ * A passage's bar count the setting gives, kept from MIN_PASSAGE_BARS to
+ * MAX_PASSAGE_BARS, PASSAGE_BARS when it isn't a number.
+ * @param {*} value
+ * @returns {number}
+ */
+export const passageBarsOf = value =>
+  Math.min(MAX_PASSAGE_BARS, Math.max(MIN_PASSAGE_BARS, Math.floor(value) || PASSAGE_BARS))
+
+/**
+ * A run of bars split into balanced chunks of at most size: as few chunks as
+ * the size allows, the earlier ones the larger.
+ * @param {number[]} run
+ * @param {number} size
+ * @returns {number[][]}
+ */
+export function splitRun(run, size) {
+  let count = Math.ceil(run.length / size)
+  let base = Math.floor(run.length / count)
+  let extra = run.length % count
+
+  let chunks = []
+  let from = 0
+  for (let chunk = 0; chunk < count; chunk++) {
+    let length = base + (chunk < extra ? 1 : 0)
+    chunks.push(run.slice(from, from + length))
+    from += length
+  }
+  return chunks
+}
+
+/**
+ * The passages tonight's study learns a piece in, in learning order.
+ * First the passages the order pulls forward (READ_FIRST the hardest flag,
+ * HARDEST_FIRST every flag at PASSAGE_LEVEL or above, SCORE_ORDER none), each
+ * followed by its repeats (a flag's alsoAt ranges); then the rest in score
+ * order, each run of bars that share their first counting flag (or have
+ * none) a group, a flag's repeats following its group once its last bar has
+ * been laid out. Every group is split into runs contiguous among the
+ * playable bars, then into balanced chunks of at most passageBars.
+ * @param {Object} opts
+ * @param {number[]} opts.measures the playable bars, in score order
+ * @param {Object[]} [opts.flags] flags in force, hardest first
+ * @param {string} [opts.order] one of INTRODUCTION_ORDERS
+ * @param {string} [opts.hand] the session's hand
+ * @param {number} [opts.passageBars]
+ * @param {number[]} [opts.exclude] bars never laid out: those known, in a
+ * passage already opened, or set aside
+ * @returns {{start: number, end: number, from: string}[]} from is "score" or
+ * `flag:${flag.id}`
+ */
+export function layoutPassages({measures, flags=[], order=READ_FIRST, hand="both", passageBars=PASSAGE_BARS, exclude=[]}) {
+  let size = passageBarsOf(passageBars)
+  let index = new Map(measures.map((measure, idx) => [measure, idx]))
+  let counting = passagesForHand(flags, hand)
+  let covered = new Set(exclude)
+  let passages = []
+
+  let barsIn = (from, to) => measures.filter(measure => measure >= from && measure <= to)
+  let fromOf = flag => `flag:${flag.id}`
+  let repeatsOf = flag => (flag.alsoAt || []).flatMap(([from, to]) => barsIn(from, to))
+
+  let take = (bars, from) => {
+    let runs = []
+    for (let measure of bars) {
+      if (covered.has(measure) || !index.has(measure)) { continue }
+
+      let run = runs[runs.length - 1]
+      if (run && index.get(measure) == index.get(run[run.length - 1]) + 1) {
+        run.push(measure)
+      } else {
+        runs.push([measure])
+      }
+      covered.add(measure)
+    }
+
+    for (let run of runs) {
+      for (let chunk of splitRun(run, size)) {
+        passages.push({start: chunk[0], end: chunk[chunk.length - 1], from})
+      }
+    }
+  }
+
+  let pulled = order == HARDEST_FIRST ? counting.filter(flag => flag.level >= PASSAGE_LEVEL) :
+    order == READ_FIRST ? [pulledPassage(counting)].filter(Boolean) : []
+  for (let flag of pulled) {
+    take(barsIn(flag.start, flag.end), fromOf(flag))
+    take(repeatsOf(flag), fromOf(flag))
+  }
+
+  // a bar's first counting flag, found once per flag rather than per bar
+  let flagBars = new Map(counting.map(flag => [flag, new Set(barsIn(flag.start, flag.end))]))
+  let flagOf = measure => counting.find(flag => flagBars.get(flag).has(measure)) || null
+
+  let group = []
+  let groupFlag = null
+  let flush = () => {
+    if (!group.length) { return }
+
+    let last = group[group.length - 1]
+    take(group, groupFlag ? fromOf(groupFlag) : "score")
+    if (groupFlag) {
+      let own = barsIn(groupFlag.start, groupFlag.end)
+      if (own[own.length - 1] == last) { take(repeatsOf(groupFlag), fromOf(groupFlag)) }
+    }
+    group = []
+  }
+
+  for (let measure of measures) {
+    if (covered.has(measure)) {
+      flush()
+      continue
+    }
+
+    let flag = flagOf(measure)
+    if (group.length && flag !== groupFlag) { flush() }
+    groupFlag = flag
+    group.push(measure)
+  }
+  flush()
+
+  return passages
+}
+
+// the history a bar's item keeps of its passes, practice alone included, or
+// of its graded attempts where it keeps no passes: [at, columns, clean, grade]
+const historyOf = item => item ? (item.passes ?? item.recent) : []
+
+// whether a pass at a range was a clean one: every column hit without a
+// slip, or for a self-graded pass (no columns) graded good or better
+const cleanPass = ([, columns, clean, grade]) =>
+  columns == null ? grade != null && grade >= GOOD : columns > 0 && clean == columns
+
+// whether a flow pass counts: graded good or better where it was graded,
+// else played clean (a pass written as practice alone has no grade)
+const flowPass = entry => entry[3] != null ? entry[3] >= GOOD : cleanPass(entry)
+
+const barsBetween = (measures, start, end) => measures.filter(measure => measure >= start && measure <= end)
+
+/**
+ * Tonight's study as the items leave it (see the header), for planState.
+ * @param {Object} state planState so far
+ * @param {Object} opts
+ * @param {Object} opts.study PlanInput#study
+ * @param {ItemRecord[]} opts.items the piece's items, any hand
+ * @returns {Object} {plan, known, passages, current, next, upcoming, learned, levels,
+ * flowed}: the stored plan (null before one is written), the bars known,
+ * a view of each passage opened, the one in progress, the passage that would
+ * open next, the passages still to open, whether the piece is learned, the
+ * flags by passage origin and the count of passages flowed
+ */
+function deriveStudy(state, {study: {record, flags=[], order=READ_FIRST, passageBars=PASSAGE_BARS}, items}) {
+  let {pieceId, hand, now, measures} = state
+  let plan = record && record.plan || null
+  let rangeId = (start, end) => itemId({pieceId, hand, startMeasure: start, endMeasure: end})
+
+  let byId = new Map(items.filter(item => item.hand == hand).map(item => [item.id, item]))
+  let singles = items.filter(item => item.startMeasure == item.endMeasure && !item.beats)
+  let handItems = new Map(singles.filter(item => STAVES.includes(item.hand))
+    .map(item => [`${item.hand}:${item.startMeasure}`, item]))
+  let touched = new Map()
+  for (let item of singles) {
+    if (item.lastPracticed > now) { continue }
+    touched.set(item.startMeasure, Math.max(touched.get(item.startMeasure) || 0, item.lastPracticed))
+  }
+  let levels = new Map(flags.map(flag => [`flag:${flag.id}`, flag]))
+
+  let known = new Set(plan ? (plan.known || []).flatMap(([start, end]) => barsBetween(measures, start, end)) :
+    [...state.liveMeasures])
+  let opened = plan ? plan.passages : []
+  let openedBars = new Set(opened.flatMap(passage => barsBetween(measures, passage.start, passage.end)))
+  let upcoming = layoutPassages({
+    measures, flags, order, hand, passageBars,
+    exclude: [...known, ...openedBars, ...state.setAside],
+  })
+
+  let lastTouch = bars => Math.max(0, ...bars.map(measure => touched.get(measure) || 0))
+  let history = (start, end) => {
+    let item = start == end ? state.byMeasure.get(start) : byId.get(rangeId(start, end))
+    return start == end ? historyOf(item) : item ? item.recent : []
+  }
+
+  let view = (passage, isOpen) => {
+    let bars = barsBetween(measures, passage.start, passage.end)
+    let flowedAt = isOpen ? passage.flowedAt || null : null
+    let base = {start: passage.start, end: passage.end, from: passage.from, bars, open: isOpen}
+
+    // a stored passage no bar of which can be played any more (the study was
+    // imported for another edition) has nothing left to learn
+    if (!bars.length) {
+      return {
+        ...base, lead: null, openedAt: passage.openedAt ?? null, stage: FLOW, stageAt: now, effective: null,
+        flowedAt: flowedAt ?? now, handsPlayed: [], resting: false, restReason: null, lastFlow: false,
+        slipped: null, card: null,
+      }
+    }
+
+    let first = measures.indexOf(bars[0])
+    let lead = first > 0 ? measures[first - 1] : null
+    let stage = isOpen ? passage.stage : READ
+    let stageAt = isOpen ? passage.stageAt : now
+    let openedAt = isOpen ? passage.openedAt : now
+    let scaffolded = bars.filter(measure => state.scaffolds.has(measure))
+
+    if (stage == READ && bars.every(measure => state.liveMeasures.has(measure))) {
+      stage = HANDS
+      stageAt = lastTouch(bars)
+    }
+    if (stage == HANDS && !scaffolded.length) {
+      stage = TOGETHER
+      stageAt = lastTouch(bars)
+    }
+
+    // the passes since the stage began at a chain of the passage's first
+    // bars, or at a range
+    let chain = length => history(bars[0], bars[length - 1]).filter(([at]) => at > stageAt && at <= now)
+    let flowBars = lead != null ? [lead, ...bars] : bars
+    let flowPasses = () => history(flowBars[0], flowBars[flowBars.length - 1])
+      .filter(([at]) => at > stageAt && at <= now)
+
+    if (stage == TOGETHER && !flowedAt) {
+      let whole = chain(bars.length).find(cleanPass)
+      if (whole) {
+        stage = FLOW
+        stageAt = whole[0]
+      }
+    }
+
+    let flows = []
+    if (stage == FLOW && !flowedAt) {
+      flows = flowPasses()
+      for (let idx = 1; idx < flows.length; idx++) {
+        if (flowPass(flows[idx]) && flowPass(flows[idx - 1])) {
+          flowedAt = flows[idx][0]
+          break
+        }
+      }
+    }
+
+    // a split bar sends the passage back to stage II until its hand holds
+    let effective = flowedAt ? null : stage >= HANDS && scaffolded.length ? HANDS : stage
+
+    let restingBars = bars.filter(measure => state.resting.has(measure))
+    if (effective == FLOW && lead != null && state.resting.has(lead)) { restingBars.push(lead) }
+
+    let since = Math.max(stageAt, state.sitting.startedAt)
+    let sitting = ([at]) => at > since && at <= now
+    let slipped = stage == TOGETHER ?
+      bars.find(measure => historyOf(state.byMeasure.get(measure))
+        .filter(entry => sitting(entry) && !cleanPass(entry)).length >= STUDY_SLIPS) : undefined
+    let failedFlows = stage == FLOW && !flowedAt ? flows.filter(entry => sitting(entry) && !flowPass(entry)).length : 0
+
+    let restReason = flowedAt ? null : restingBars.length ? "bar" : slipped != null ? "slips" :
+      failedFlows >= STUDY_SLIPS ? "flow" : null
+    let resting = restReason != null
+
+    let handsPlayed = bars.flatMap(measure => STAVES.flatMap(staff => {
+      let own = handItems.get(`${staff}:${measure}`)
+      return own && historyOf(own).some(([at]) => at >= openedAt && at <= now) ? [{measure, hand: staff}] : []
+    }))
+
+    let card = null
+    if (!flowedAt && !resting) {
+      let plain = {hand, early: false}
+      if (effective == READ) {
+        let measure = bars.find(bar => !state.liveMeasures.has(bar))
+        let intro = state.startApartIntros.get(measure)
+        card = intro ?
+          {
+            measures: [measure], hand: intro.hand, item: intro.item,
+            itemId: intro.item ? intro.item.id : itemId({pieceId, hand: intro.hand, startMeasure: measure, endMeasure: measure}),
+            early: !!intro.item && scheduled(intro.item) && intro.item.due > now,
+          } :
+          {
+            ...plain, measures: anchoredCard(bars, measure, state.cardMeasures),
+            item: state.byMeasure.get(measure) || null, itemId: rangeId(measure, measure),
+          }
+      } else if (effective == HANDS) {
+        let slots = state.ladder.filter(slot => slot.hand != hand && bars.includes(slot.measure))
+          .sort((a, b) => a.due - b.due || state.order.get(a.measure) - state.order.get(b.measure))
+        let slot = slots.find(candidate => candidate.id != state.previous) || slots[0]
+        card = slot && {measures: [slot.measure], hand: slot.hand, item: slot.item, itemId: slot.id, early: slot.due > now}
+      } else if (effective == TOGETHER) {
+        // the longest chain with a clean pass since the stage began, and the
+        // next one longer to play, but for a bar that slipped in the chain
+        // last played, which is played alone until clean
+        let longest = 0
+        for (let length = bars.length; length >= 1; length--) {
+          if (chain(length).some(cleanPass)) {
+            longest = length
+            break
+          }
+        }
+
+        let target = bars.slice(0, Math.min(bars.length, longest + 1))
+        let passes = chain(target.length)
+        let lastPass = passes[passes.length - 1]
+        let dropTo = null
+        if (lastPass && !cleanPass(lastPass)) {
+          let failing = target.find(measure => historyOf(state.byMeasure.get(measure))
+            .some(entry => entry[0] == lastPass[0] && !cleanPass(entry)))
+          let cleaned = failing != null && historyOf(state.byMeasure.get(failing))
+            .some(entry => entry[0] > lastPass[0] && entry[0] <= now && cleanPass(entry))
+          if (failing != null && !cleaned) { dropTo = failing }
+        }
+
+        let cardBars = dropTo != null ? [dropTo] : target
+        let id = rangeId(cardBars[0], cardBars[cardBars.length - 1])
+        card = {...plain, measures: cardBars, item: byId.get(id) || null, itemId: id, dropped: dropTo != null}
+      } else if (effective == FLOW) {
+        let id = rangeId(flowBars[0], flowBars[flowBars.length - 1])
+        card = {...plain, measures: flowBars, item: byId.get(id) || null, itemId: id}
+      }
+    }
+
+    let lastFlow = stage == FLOW && !flowedAt && flows.length > 0 && flowPass(flows[flows.length - 1])
+
+    return {
+      ...base, lead, openedAt: isOpen ? passage.openedAt : null, stage, stageAt, effective, flowedAt,
+      handsPlayed, resting, restReason, lastFlow, slipped: slipped ?? null, card,
+    }
+  }
+
+  let passages = opened.map(passage => view(passage, true))
+  let current = passages.find(passage => !passage.flowedAt) || null
+  let next = current || !upcoming.length ? null : view(upcoming[0], false)
+  let learned = !!(plan && plan.learnedAt) || (!current && !upcoming.length)
+
+  return {
+    plan, known, passages, current, next, upcoming, learned, levels,
+    flowed: passages.filter(passage => passage.flowedAt).length,
+  }
+}
+
 /**
  * Everything the queue is picked from: the piece's single measure items of
  * the hand in the measures given, grouped by what the scheduler has them
@@ -624,6 +1026,7 @@ export function planState({
   pieceId, items, measures, hand="both", now, settings=DEFAULT_SCHEDULER_SETTINGS,
   practice=DEFAULT_PRACTICE_SETTINGS, cardMeasures=1, previous=null, handMeasures=null,
   split=true, lastReviews=new Map(), introduce=null, readThrough=false, startApart=null,
+  study=null, previousStudy=false,
 }) {
   let order = new Map(measures.map((measure, idx) => [measure, idx]))
   let single = item => item.pieceId == pieceId && item.startMeasure == item.endMeasure &&
@@ -766,14 +1169,28 @@ export function planState({
   let targetMs = practice.sessionMinutes * MINUTE
   let elapsedMs = now - sitting.startedAt
 
-  return {
+  let state = {
     pieceId, hand, now, settings, order, byMeasure, recent, today, endOfToday,
     live, awake, failing, ladder, laddered, review, dueReviews, unseen, offerable, toRead, resting,
     scaffolds, sitting,
     startApartIntros, startApartCaptions,
     cardMs, targetMs, elapsedMs,
+    measures, cardMeasures: Math.max(1, Math.floor(cardMeasures) || 1), previous, previousStudy,
+    liveMeasures, setAside,
+    study: null,
     complete: elapsedMs >= targetMs || (!ladder.length && !dueReviews.length && !unseen.length),
   }
+
+  // tonight's study, for a session hands together on a piece of more than one
+  // playable bar (a single bar's card loops, so nothing of it would be graded)
+  if (study && hand == "both" && measures.length > 1) {
+    state.study = deriveStudy(state, {study, items: items.filter(item => item.pieceId == pieceId)})
+
+    // the programme isn't complete while a passage is still being learned
+    if (!state.study.learned && elapsedMs < targetMs) { state.complete = false }
+  }
+
+  return state
 }
 
 // whether the item's next rung is the immediate retry after an again
@@ -822,11 +1239,27 @@ function candidates(state, {avoid}) {
   // place of a new measure, in score order, until every bar has been played
   let reading = toRead.length > 0
   let readEntry = reading ? [{reason: READ_THROUGH, slot: newSlot(state, toRead[0], state.hand)}] : []
-  let newEntry = !reading && offerNew ? newMeasures.slice(0, 1).map(slot => ({reason: NEW, slot})) : []
+
+  // tonight's study takes the place of a new measure: the passage in
+  // progress goes on whatever the limits, one to open only where a new
+  // measure would be offered. The rungs its card contains are graded in it
+  let study = activeStudy(state)
+  let studyEntry = []
+  if (study && !reading) {
+    let passage = study.current || (offerNew ? study.next : null)
+    if (passage && passage.card) {
+      studyEntry = [{reason: STUDY, slot: studySlot(passage, study.levels)}]
+      let {card} = passage
+      rungs = rungs.filter(slot => !(slot.hand == card.hand && card.measures.includes(slot.measure)))
+    }
+  }
+  let newEntry = study ? studyEntry :
+    !reading && offerNew ? newMeasures.slice(0, 1).map(slot => ({reason: NEW, slot})) : []
 
   // past the warm-up fifth of the session, new material the limits allow is
-  // interleaved with the due reviews rather than waiting for them all
-  let interleave = !warmUp && state.elapsedMs >= state.targetMs / 5
+  // interleaved with the due reviews rather than waiting for them all, save
+  // that a study card just played sends the next after them
+  let interleave = !warmUp && state.elapsedMs >= state.targetMs / 5 && !(study && state.previousStudy)
 
   return [
     ...readEntry,
@@ -838,6 +1271,78 @@ function candidates(state, {avoid}) {
     ...runThrough.map(slot => ({reason: RUN_THROUGH, slot})),
     ...waiting.map(slot => ({reason: WAIT, slot})),
   ]
+}
+
+// the study while it has something left to learn, else null: a piece learned
+// is played as the programme always was
+const activeStudy = state => state.study && !state.study.learned ? state.study : null
+
+// the queue slot of a passage's card, see deriveStudy
+function studySlot(passage, levels) {
+  let {card} = passage
+  return {
+    id: card.itemId, measure: card.measures[0], hand: card.hand, item: card.item, retry: false,
+    measures: card.measures, stage: passage.effective, early: !!card.early,
+    passage: {start: passage.start, end: passage.end, from: passage.from, words: studyPassageWords(passage, levels)},
+  }
+}
+
+// the words of a passage's origin in the status line: its flag's level where
+// it lies inside the flag, else the flag it repeats; none for a passage of
+// the score alone
+function studyPassageWords(passage, levels) {
+  let flag = levels && levels.get(passage.from)
+  if (!flag) { return null }
+
+  if (passage.start >= flag.start && passage.end <= flag.end) {
+    return PASSAGE_LEVEL_WORDS[flag.level] || null
+  }
+  return `repeats ${barsWords(flag.start, flag.end)}`
+}
+
+// the bars of a card of an entry played while the study is on: the study's
+// own, a hand alone just its bar, else the entry's bar with the contiguous
+// scheduled bars and the passage in progress (with its lead-in) around it,
+// as many as a card takes, so a card never reaches a bar still to be learned
+function clippedCard(state, slot) {
+  if (slot.measures) { return slot.measures }
+  if (slot.hand != state.hand) { return [slot.measure] }
+
+  let {current} = state.study
+  let allowed = new Set([
+    ...state.liveMeasures,
+    ...(current ? current.bars : []),
+    ...(current && current.lead != null ? [current.lead] : []),
+    slot.measure,
+  ])
+
+  let {measures} = state
+  let idx = measures.indexOf(slot.measure)
+  let from = idx
+  let to = idx
+  while (from > 0 && allowed.has(measures[from - 1])) { from-- }
+  while (to < measures.length - 1 && allowed.has(measures[to + 1])) { to++ }
+  return anchoredCard(measures.slice(from, to + 1), slot.measure, state.cardMeasures)
+}
+
+// the entry of a queue candidate
+function entryOf({reason, slot}, state) {
+  let entry = {
+    reason,
+    measure: slot.measure,
+    itemId: slot.id,
+    item: slot.item || null,
+    hand: slot.hand,
+  }
+
+  if (activeStudy(state) && reason != READ_THROUGH) {
+    entry.measures = clippedCard(state, slot)
+  }
+  if (reason == STUDY) {
+    Object.assign(entry, {stage: slot.stage, passage: slot.passage, early: !!slot.early})
+  }
+
+  return entry
 }
 
 // the queue slot of a measure never scheduled, under the hand given
@@ -873,28 +1378,28 @@ export function planNext(input) {
   }
 
   // a piece whose every measure waits past the target: its first new one
-  // still offered this sitting, unless every bar it has in progress rests
-  // until the next sitting
+  // (the next passage of the study) still offered this sitting, unless every
+  // bar it has in progress rests until the next sitting, or a read-through
+  // is still to be played
   let allResting = state.resting.size > 0 && !state.awake.length
-  let [first] = state.offerable
-  if (!next && first != null && !allResting) {
-    next = {reason: NEW, slot: newSlot(state, first, introHand(state, first))}
+  let study = activeStudy(state)
+  if (study) {
+    let open = !study.current && study.next && study.next.card
+    if (!next && open && !allResting && !state.toRead.length) {
+      next = {reason: STUDY, slot: studySlot(study.next, study.levels)}
+    }
+  } else {
+    let [first] = state.offerable
+    if (!next && first != null && !allResting) {
+      next = {reason: NEW, slot: newSlot(state, first, introHand(state, first))}
+    }
   }
 
   if (!next) {
     return {entry: null, complete: state.complete, state}
   }
 
-  let {slot} = next
-  let entry = {
-    reason: next.reason,
-    measure: slot.measure,
-    itemId: slot.id,
-    item: slot.item || null,
-    hand: slot.hand,
-  }
-
-  return {entry, complete: state.complete, state}
+  return {entry: entryOf(next, state), complete: state.complete, state}
 }
 
 /**
@@ -918,10 +1423,11 @@ export function planUpcoming(input, count) {
 
   let seen = new Set()
   let upcoming = []
-  for (let {reason, slot} of list) {
+  for (let candidate of list) {
+    let {slot} = candidate
     if (slot.id == input.previous || seen.has(slot.measure)) { continue }
     seen.add(slot.measure)
-    upcoming.push({reason, measure: slot.measure, itemId: slot.id, item: slot.item || null, hand: slot.hand})
+    upcoming.push(entryOf(candidate, state))
     if (upcoming.length >= count) { break }
   }
 
@@ -938,8 +1444,9 @@ function roleSuffix(passage) {
  * The session rail's "Up next" words for a preview entry (see planUpcoming):
  * "New" (plus the bar's passage role, see passageWords), "Again, in a
  * moment" (RETRY), "Once more" (LADDER/WAIT), "Review" (REVIEW/EARLY),
- * "Run-through" (RUN_THROUGH) or "Read-through" (READ_THROUGH), with
- * " · right hand" or " · left hand" appended for a hand alone.
+ * "Run-through" (RUN_THROUGH), "Read-through" (READ_THROUGH) or "Study ·
+ * III Together" (STUDY), with " · right hand" or " · left hand" appended for
+ * a hand alone.
  * @param {PlanEntry} entry
  * @param {PassageRole} [passage] the entry's bar's role (see
  * PlanDeck#passageOf), read only for a NEW entry
@@ -956,6 +1463,7 @@ export function upNextWords(entry, passage=null) {
     case EARLY: words = "Review"; break
     case RUN_THROUGH: words = "Run-through"; break
     case READ_THROUGH: words = "Read-through"; break
+    case STUDY: words = `Study · ${ROMAN[entry.stage]} ${STAGE_NAMES[entry.stage]}`; break
     default: words = "Once more"
   }
 
@@ -988,12 +1496,110 @@ export function planSummary(input) {
 
 /**
  * The study status of a piece: learning while any of its measures has not
- * been scheduled, then maintaining.
+ * been scheduled (while tonight's study applies, until every passage has
+ * flowed), then maintaining.
  * @param {PlanInput} input
  * @returns {string}
  */
 export function studyStatus(input) {
-  return planState(input).unseen.length ? "learning" : "maintaining"
+  let state = planState(input)
+  if (state.study) { return state.study.learned ? "maintaining" : "learning" }
+  return state.unseen.length ? "learning" : "maintaining"
+}
+
+// the ranges of consecutive bars among measures that bars cover, as
+// [start, end] pairs
+function rangesOf(bars, measures) {
+  let covered = new Set(bars)
+  let ranges = []
+  let run = null
+  for (let measure of measures) {
+    if (!covered.has(measure)) {
+      run = null
+    } else if (run) {
+      run[1] = measure
+    } else {
+      run = [measure, measure]
+      ranges.push(run)
+    }
+  }
+  return ranges
+}
+
+/**
+ * The plan of tonight's study to store once a pass has been written: the
+ * stored plan (or a new one) with the entry's passage opened if it is new,
+ * and every passage's stage, when it began and when it flowed as the items
+ * now tell them, and the time the piece was learned. A new plan counts the
+ * bars scheduled before the pass as known, the bars of a study card and its
+ * passage not among them. Only milestones are stored (see StudyRecord#plan):
+ * every card is worked out from the items again.
+ * @param {PlanInput} input as the pass leaves the items
+ * @param {Object} opts
+ * @param {PlanEntry|null} [opts.entry] the card played
+ * @param {number} opts.at when it was written
+ * @returns {Object|null} the plan, null when the study doesn't apply
+ */
+export function studyAfterPass(input, {entry=null, at}) {
+  let state = planState(input)
+  if (!state.study) { return null }
+
+  let plan = state.study.plan ? structuredClone(state.study.plan) : null
+  let studied = entry && entry.reason == STUDY
+  if (!plan) {
+    let played = new Set(!studied ? [] : [
+      ...entry.measures,
+      ...barsBetween(state.measures, entry.passage.start, entry.passage.end),
+    ])
+    let known = [...state.liveMeasures].filter(measure => !played.has(measure))
+    plan = {createdAt: at, known: rangesOf(known, state.measures), passages: []}
+  }
+
+  if (studied && !plan.passages.some(({start, end}) => start == entry.passage.start && end == entry.passage.end)) {
+    let {start, end, from} = entry.passage
+    plan.passages.push({start, end, from, openedAt: at, stage: READ, stageAt: at})
+  }
+
+  let derived = planState({...input, study: {...input.study, record: {...input.study.record, plan}}}).study
+  plan.passages = plan.passages.map((passage, idx) => {
+    let view = derived.passages[idx]
+    let milestones = {...passage, stage: view.stage, stageAt: view.stageAt}
+    if (view.flowedAt) { milestones.flowedAt = view.flowedAt }
+    return milestones
+  })
+
+  if (derived.learned && !plan.learnedAt) { plan.learnedAt = at }
+  return plan
+}
+
+/**
+ * What the setup pane and the score show of tonight's study.
+ * @param {PlanInput} input
+ * @returns {{learned: boolean, readThroughLeft: number, passage: Object|null,
+ * path: {start: number, end: number, flowed: boolean, current: boolean}[] (the
+ * passages in the order they are learned, current the one in progress or, with
+ * none, the next to open),
+ * flowed: number, total: number}|null} null when the study doesn't apply;
+ * passage is the view of the one in progress or next to open (deriveStudy),
+ * with the words of its origin
+ */
+export function studyView(input) {
+  let state = planState(input)
+  let {study} = state
+  if (!study) { return null }
+
+  let passage = study.current || study.next
+  return {
+    learned: study.learned,
+    readThroughLeft: state.toRead.length,
+    passage: passage && {...passage, words: studyPassageWords(passage, study.levels)},
+    path: [
+      ...study.passages.map(view => ({start: view.start, end: view.end, flowed: !!view.flowedAt, current: view === study.current})),
+      ...study.upcoming.map(({start, end}, idx) => ({start, end, flowed: false, current: !study.current && idx == 0})),
+    ],
+    flowed: study.flowed,
+    total: study.passages.length + study.upcoming.length,
+  }
 }
 
 /**
@@ -1055,6 +1661,10 @@ export function inStudy(study) {
 
 const HAND_WORDS = {both: "hands together", upper: "right hand", lower: "left hand"}
 
+const ROMAN = {[READ]: "I", [HANDS]: "II", [TOGETHER]: "III", [FLOW]: "IV"}
+
+const capital = words => `${words[0].toUpperCase()}${words.slice(1)}`
+
 export function daysAgo(then, now) {
   let days = localDay(now) - localDay(then)
   return days <= 0 ? "today" : days == 1 ? "yesterday" : `${days} days ago`
@@ -1087,7 +1697,8 @@ function passageWords(passage) {
 /**
  * The status line of an entry, eg. "Review · bar 11 · hands together · last
  * played 4 days ago", "New · bar 17", "New · bar 69 · hardest passage",
- * "Read-through · bar 3", "Once more · bar 11".
+ * "Read-through · bar 3", "Once more · bar 11", "Study · III Together ·
+ * bars 5–7 · hardest passage".
  * @param {PlanEntry} entry
  * @param {Object} opts
  * @param {number} opts.now
@@ -1111,6 +1722,13 @@ export function entryStatus(entry, {now, complete=false, passage=null}={}) {
     case READ_THROUGH:
       parts = ["Read-through", bar]
       break
+    case STUDY: {
+      let card = entry.measures
+      parts = ["Study", `${ROMAN[entry.stage]} ${STAGE_NAMES[entry.stage]}`, barsWords(card[0], card[card.length - 1])]
+      if (entry.hand != "both") { parts.push(hand) }
+      if (entry.passage && entry.passage.words) { parts.push(entry.passage.words) }
+      return [...(complete ? ["Programme complete"] : []), ...parts].join(" · ")
+    }
     case REVIEW:
     case EARLY: {
       parts = ["Review", bar, hand]
@@ -1150,10 +1768,43 @@ export function entryCaption(item, now) {
 }
 
 // "87 bars left to read through", "1 bar left to read through", or
-// "read-through done · new bars next" once every bar has been played
-function readThroughCaption(toRead) {
-  if (!toRead) { return "read-through done · new bars next" }
+// "read-through done · new bars next" (tonight's study, when it applies)
+// once every bar has been played
+function readThroughCaption(toRead, studying) {
+  if (!toRead) { return `read-through done · ${studying ? "tonight's study" : "new bars"} next` }
   return `${toRead} ${toRead == 1 ? "bar" : "bars"} left to read through`
+}
+
+// the caption after a card of tonight's study: where the passage goes next
+function studyCaption(entry, item, state) {
+  let {study} = state
+  let view = study && study.passages.find(passage =>
+    passage.start == entry.passage.start && passage.end == entry.passage.end)
+  if (!view) { return entryCaption(item, state.now) }
+
+  let bars = barsWords(view.start, view.end)
+  if (view.flowedAt) {
+    if (study.learned) { return "Learned ❖ · the programme keeps it from here" }
+    return `${capital(bars)} ${view.bars.length == 1 ? "flows" : "flow"}`
+  }
+  if (view.resting) { return `${capital(bars)} rest until your next sitting` }
+
+  let {card} = view
+  switch (view.effective) {
+    case HANDS:
+      return `${capital(HAND_WORDS[card.hand])} alone, then together`
+    case TOGETHER:
+      if (card.dropped) { return `Bar ${card.measures[0]} alone, then on` }
+      if (entry.stage != TOGETHER) { return `Together next, from bar ${view.bars[0]}` }
+      return `Together next · ${barsWords(card.measures[0], card.measures[card.measures.length - 1])}`
+    case FLOW: {
+      let flow = card.measures
+      if (entry.stage != FLOW) { return `Now ${barsWords(flow[0], flow[flow.length - 1])} twice without a stop` }
+      return view.lastFlow ? "1 of 2 · once more without a stop" : "Not yet · again, without a stop"
+    }
+    default:
+      return entryCaption(item, state.now)
+  }
 }
 
 /**
@@ -1163,13 +1814,15 @@ function readThroughCaption(toRead) {
  * rests until your next sitting"; the hand scaffold offering it a hand alone
  * next, eg. "Left hand alone, then together"; the scaffold done with it,
  * "hands together next"; else when it comes back (entryCaption).
- * @param {PlanEntry} entry the card's
+ * @param {PlanEntry} entry the card's; one of tonight's study is captioned by
+ * where its passage goes next (studyCaption)
  * @param {ItemRecord|null} item the entry's item as the attempt left it
  * @param {Object} state planState after the attempt
  * @returns {string|null}
  */
 export function cardCaption(entry, item, state) {
-  if (entry.reason == READ_THROUGH) { return readThroughCaption(state.toRead.length) }
+  if (entry.reason == READ_THROUGH) { return readThroughCaption(state.toRead.length, !!state.study) }
+  if (entry.reason == STUDY) { return studyCaption(entry, item, state) }
 
   let {measure} = entry
   if (state.resting.has(measure)) { return `Bar ${measure} rests until your next sitting` }

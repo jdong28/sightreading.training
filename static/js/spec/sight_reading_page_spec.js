@@ -14,7 +14,7 @@ import pageStyles from "st/components/pages/sight_reading_page.module.css"
 import drawerStyles from "st/components/sight_reading/programme_drawer.module.css"
 import summaryStyles from "st/components/sight_reading/session_summary.module.css"
 import {setAppStore} from "st/storage"
-import {importMusicXMLPiece, addPiece} from "st/sheet_music_deck"
+import {importMusicXMLPiece, addPiece, ensureAnnotation} from "st/sheet_music_deck"
 import {parseMusicXML} from "st/musicxml"
 import {
   GENERATORS, SHEET_MUSIC_STORAGE_KEY, BOTH_HANDS, RIGHT_HAND, WHOLE_SECTION, FREE_PRACTICE, STAVES
@@ -443,7 +443,7 @@ describe("sight reading page", function() {
     let {piece} = await importMusicXMLPiece("salon_octet.musicxml", octetXML, store)
 
     window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
-      piece: piece.id, startMeasure: 1, endMeasure: 8, hand: BOTH_HANDS, measuresPerCard: "2",
+      piece: piece.id, startMeasure: 1, endMeasure: 8, hand: BOTH_HANDS, practice: FREE_PRACTICE, measuresPerCard: "2",
     }))
 
     let el = renderScorePage()
@@ -499,7 +499,7 @@ describe("sight reading page", function() {
 
     window.localStorage.setItem(SCORE_DRILL_STORAGE_KEY, JSON.stringify({mode: "scroll"}))
     window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
-      piece: piece.id, startMeasure: 1, endMeasure: 8, hand: BOTH_HANDS, measuresPerCard: "all",
+      piece: piece.id, startMeasure: 1, endMeasure: 8, hand: BOTH_HANDS, practice: FREE_PRACTICE, measuresPerCard: "all",
     }))
 
     renderScorePage()
@@ -522,7 +522,7 @@ describe("sight reading page", function() {
     let {piece} = await importMusicXMLPiece("salon_octet.musicxml", octetXML, store)
 
     window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
-      piece: piece.id, startMeasure: 1, endMeasure: 8, hand: BOTH_HANDS, measuresPerCard: "2",
+      piece: piece.id, startMeasure: 1, endMeasure: 8, hand: BOTH_HANDS, practice: FREE_PRACTICE, measuresPerCard: "2",
     }))
 
     let el = renderScorePage()
@@ -547,7 +547,7 @@ describe("sight reading page", function() {
     let {piece} = await importMusicXMLPiece("salon_octet.musicxml", octetXML, store)
 
     window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
-      piece: piece.id, startMeasure: 1, endMeasure: 8, hand: BOTH_HANDS,
+      piece: piece.id, startMeasure: 1, endMeasure: 8, hand: BOTH_HANDS, practice: FREE_PRACTICE,
       measuresPerCard: "all", order: RANDOM_ORDER,
     }))
 
@@ -570,7 +570,7 @@ describe("sight reading page", function() {
     let {piece} = await importMusicXMLPiece("salon_octet.musicxml", octetXML, store)
 
     window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
-      piece: piece.id, startMeasure: 2, endMeasure: 5, hand: BOTH_HANDS, measuresPerCard: "all",
+      piece: piece.id, startMeasure: 2, endMeasure: 5, hand: BOTH_HANDS, practice: FREE_PRACTICE, measuresPerCard: "all",
     }))
 
     // tonight's session (the setup pane) carries the section and card
@@ -626,7 +626,7 @@ describe("sight reading page", function() {
     let {piece} = await importMusicXMLPiece("salon_octet.musicxml", octetXML, store)
 
     window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
-      piece: piece.id, startMeasure: 12, endMeasure: 30, hand: BOTH_HANDS, measuresPerCard: "9",
+      piece: piece.id, startMeasure: 12, endMeasure: 30, hand: BOTH_HANDS, practice: FREE_PRACTICE, measuresPerCard: "9",
     }))
 
     // tonight's session (the setup pane) carries the section settings now
@@ -987,7 +987,7 @@ describe("sight reading page", function() {
 
     window.localStorage.setItem(DRILL_STORAGE_KEY, JSON.stringify({staff: "treble", generator: "random", key: "C"}))
     window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
-      piece: piece.id, startMeasure: 1, endMeasure: 4, hand: BOTH_HANDS,
+      piece: piece.id, startMeasure: 1, endMeasure: 4, hand: BOTH_HANDS, practice: FREE_PRACTICE,
     }))
 
     let el = renderScorePage()
@@ -1010,7 +1010,7 @@ describe("sight reading page", function() {
 
     window.localStorage.setItem(DRILL_STORAGE_KEY, JSON.stringify({key: "D"}))
     window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
-      piece: piece.id, startMeasure: 1, endMeasure: 4, hand: BOTH_HANDS,
+      piece: piece.id, startMeasure: 1, endMeasure: 4, hand: BOTH_HANDS, practice: FREE_PRACTICE,
     }))
 
     // tonight's session (the setup pane) carries the key hint now
@@ -1040,7 +1040,8 @@ describe("sight reading page", function() {
     expect(page.state.currentStaff.name).toEqual("treble")
     expect(page.state.keySignature.name()).toEqual("F")
 
-    // the E major section
+    // the E major section, picked in free practice: the programme plays the whole piece
+    click(buttonNamed(pane, "Free practice"))
     typeNumber(pane, "start bar", "3")
     expect(page.state.keySignature.name()).toEqual("E")
 
@@ -1053,7 +1054,7 @@ describe("sight reading page", function() {
     let {piece} = await importMusicXMLPiece("f_sharp.musicxml", keyChangeScore({keys: [6]}), store)
 
     window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
-      piece: piece.id, startMeasure: 1, endMeasure: 4, hand: BOTH_HANDS,
+      piece: piece.id, startMeasure: 1, endMeasure: 4, hand: BOTH_HANDS, practice: FREE_PRACTICE,
     }))
 
     renderScorePage()
@@ -1064,7 +1065,7 @@ describe("sight reading page", function() {
     let {piece} = await importMusicXMLPiece("salon_minuet.musicxml", minuetXML, store)
 
     window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
-      piece: piece.id, startMeasure: 1, endMeasure: 2, hand: BOTH_HANDS,
+      piece: piece.id, startMeasure: 1, endMeasure: 2, hand: BOTH_HANDS, practice: FREE_PRACTICE,
     }))
 
     // the setup pane replaces the drawer at rest on the score page (score-
@@ -1120,7 +1121,9 @@ describe("sight reading page", function() {
     let {piece} = await importMusicXMLPiece("salon_minuet.musicxml", minuetXML, store)
 
     window.localStorage.setItem(DRILL_STORAGE_KEY, JSON.stringify({staff: "grand", generator: "sheet music", key: "D"}))
-    let sheetMusicSettings = JSON.stringify({piece: piece.id, startMeasure: 1, endMeasure: 2, hand: BOTH_HANDS})
+    let sheetMusicSettings = JSON.stringify({
+      piece: piece.id, startMeasure: 1, endMeasure: 2, hand: BOTH_HANDS, practice: FREE_PRACTICE,
+    })
     window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, sheetMusicSettings)
 
     let el = renderPage()
@@ -1156,7 +1159,9 @@ describe("sight reading page", function() {
     flushSync(() => select.dispatchEvent(new Event("change", {bubbles: true})))
     flushSync(() => {})
 
-    // the opening four measures, both hands, on the grand staff
+    // free practice plays the opening four measures, both hands, on the grand
+    // staff: a piece picked opens on the programme
+    click(buttonNamed(el, "Free practice"))
     expect(page.state.currentStaff.name).toEqual("grand")
     expect([...page.state.notes.currentColumn()]).toEqual(["C3", "C5"])
 
@@ -1199,7 +1204,7 @@ describe("sight reading page", function() {
           let {piece} = await importMusicXMLPiece("salon_octet.musicxml", octetXML, store)
           window.localStorage.setItem(SCORE_DRILL_STORAGE_KEY, JSON.stringify({mode}))
           window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
-            piece: piece.id, startMeasure: 1, endMeasure: 8, hand: BOTH_HANDS, measuresPerCard: "all",
+            piece: piece.id, startMeasure: 1, endMeasure: 8, hand: BOTH_HANDS, practice: FREE_PRACTICE, measuresPerCard: "all",
           }))
 
           let el = renderPage(ScorePage, props)
@@ -1234,7 +1239,7 @@ describe("sight reading page", function() {
         spyOn(console, "warn")
         let {piece} = await importMusicXMLPiece("wide_range.musicxml", wideRangeXML, store)
         window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
-          piece: piece.id, startMeasure: 1, endMeasure: 1, hand: BOTH_HANDS, measuresPerCard: "all",
+          piece: piece.id, startMeasure: 1, endMeasure: 1, hand: BOTH_HANDS, practice: FREE_PRACTICE, measuresPerCard: "all",
         }))
 
         let el = renderPage(ScorePage, props)
@@ -1257,7 +1262,7 @@ describe("sight reading page", function() {
         spyOn(console, "warn")
         let {piece} = await importMusicXMLPiece("wide_range.musicxml", wideRangeXML, store)
         window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
-          piece: piece.id, startMeasure: 1, endMeasure: 1, hand: BOTH_HANDS, measuresPerCard: "all",
+          piece: piece.id, startMeasure: 1, endMeasure: 1, hand: BOTH_HANDS, practice: FREE_PRACTICE, measuresPerCard: "all",
         }))
 
         let el = renderPage(ScorePage, props)
@@ -1276,7 +1281,7 @@ describe("sight reading page", function() {
         spyOn(console, "warn")
         let {piece} = await importMusicXMLPiece("split_octave.musicxml", splitOctaveXML, store)
         window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
-          piece: piece.id, startMeasure: 1, endMeasure: 1, hand: BOTH_HANDS, measuresPerCard: "all",
+          piece: piece.id, startMeasure: 1, endMeasure: 1, hand: BOTH_HANDS, practice: FREE_PRACTICE, measuresPerCard: "all",
         }))
 
         let el = renderPage(ScorePage, props)
@@ -1300,7 +1305,7 @@ describe("sight reading page", function() {
         spyOn(console, "warn")
         let {piece} = await importMusicXMLPiece("bar_octave.musicxml", barOctaveXML, store)
         window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
-          piece: piece.id, startMeasure: 1, endMeasure: 2, hand: BOTH_HANDS, measuresPerCard: "1",
+          piece: piece.id, startMeasure: 1, endMeasure: 2, hand: BOTH_HANDS, practice: FREE_PRACTICE, measuresPerCard: "1",
           order: IN_ORDER,
         }))
 
@@ -1330,7 +1335,7 @@ describe("sight reading page", function() {
     it("keeps a note outside the grand staff's own range required, with no miss for it", async function() {
       let {piece} = await importMusicXMLPiece("wide_range.musicxml", wideRangeXML, store)
       window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
-        piece: piece.id, startMeasure: 1, endMeasure: 1, hand: BOTH_HANDS, measuresPerCard: "all",
+        piece: piece.id, startMeasure: 1, endMeasure: 1, hand: BOTH_HANDS, practice: FREE_PRACTICE, measuresPerCard: "all",
       }))
 
       let el = renderPage(ScorePage)
@@ -1404,7 +1409,7 @@ describe("sight reading page", function() {
     let renderNocturne = async (render, settings={}) => {
       let {piece} = await importMusicXMLPiece("nocturne.musicxml", nocturneBars5to6(), store)
       window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
-        piece: piece.id, startMeasure: 1, endMeasure: 2, hand: BOTH_HANDS, measuresPerCard: "all",
+        piece: piece.id, startMeasure: 1, endMeasure: 2, hand: BOTH_HANDS, practice: FREE_PRACTICE, measuresPerCard: "all",
         ...settings,
       }))
       return render()
@@ -1550,7 +1555,7 @@ describe("sight reading page", function() {
       let renderTrillLine = async (render, settings={}) => {
         let {piece} = await importMusicXMLPiece("trill_line.musicxml", trillLineScore(), store)
         window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
-          piece: piece.id, startMeasure: 1, endMeasure: 2, hand: BOTH_HANDS, measuresPerCard: "all",
+          piece: piece.id, startMeasure: 1, endMeasure: 2, hand: BOTH_HANDS, practice: FREE_PRACTICE, measuresPerCard: "all",
           ...settings,
         }))
         return render()
@@ -1596,7 +1601,7 @@ describe("sight reading page", function() {
         window.localStorage.setItem(SCORE_DRILL_STORAGE_KEY, JSON.stringify(drill))
       }
       window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
-        piece: piece.id, startMeasure: 1, endMeasure: 8, hand: BOTH_HANDS, ...settings,
+        piece: piece.id, startMeasure: 1, endMeasure: 8, hand: BOTH_HANDS, practice: FREE_PRACTICE, ...settings,
       }))
       let el = renderScorePage()
       click(buttonNamed(el, "Begin"))
@@ -1717,7 +1722,7 @@ describe("sight reading page", function() {
       it("carries the time on columns settled by a held key to the next column played", async function() {
         piece = (await importMusicXMLPiece("reverie.musicxml", reverieOpening(), store)).piece
         window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
-          piece: piece.id, startMeasure: 2, endMeasure: 3, hand: BOTH_HANDS, measuresPerCard: "2",
+          piece: piece.id, startMeasure: 2, endMeasure: 3, hand: BOTH_HANDS, practice: FREE_PRACTICE, measuresPerCard: "2",
         }))
         let el = renderScorePage()
         click(buttonNamed(el, "Begin"))
@@ -2460,7 +2465,7 @@ describe("sight reading page", function() {
 
       click(buttonNamed(el, "Begin"))
       expect(el.querySelector("h1").textContent).toContain("today's programme, both hands")
-      expect(plateStatus(el)).toEqual("New · bar 1")
+      expect(plateStatus(el)).toEqual("Study · I Read · bars 1–2")
       expect(el.textContent).toContain("measures 1–2")
     })
 
@@ -2498,7 +2503,7 @@ describe("sight reading page", function() {
       // bar 1 is the flagged bar itself here, so even in score order its
       // status still names the passage (introduction() marks it in every
       // order, see st/srs/planner)
-      expect(plateStatus(el)).toEqual("New · bar 1 · hardest passage")
+      expect(plateStatus(el)).toEqual("Study · I Read · bar 1 · hardest passage")
       click(buttonNamed(el, "End session"))
 
       // switching to free practice drops the order pills from tonight's
@@ -2536,7 +2541,8 @@ describe("sight reading page", function() {
       click(buttonNamed(el, "Begin"))
       let asides = [...el.querySelectorAll("aside")]
       expect(asides.some(aside => aside.textContent.includes("This session"))).toBe(true)
-      expect(el.textContent).not.toContain("Tonight's")
+      // the rail names tonight's study, but the setup pane's own heading is gone
+      expect(el.textContent).not.toContain("Tonight's session")
     })
 
     it("names each card and says when its measure comes back", async function() {
@@ -2553,7 +2559,7 @@ describe("sight reading page", function() {
       let anchor = store.item(`${piece.id}:both:1-1`)
       expect(anchor.state).not.toEqual("tracked")
       expect(caption(el).textContent).toMatch(/^♩ ≈ \d+ · no stops · (again in a moment|returns (tomorrow|in \d+ days))$/)
-      expect(plateStatus(el)).toEqual("New · bar 3")
+      expect(plateStatus(el)).toEqual("Study · I Read · bars 3–4")
 
       // measure 3 slips: it comes straight back
       play([WRONG_NOTE])
@@ -2561,7 +2567,9 @@ describe("sight reading page", function() {
       playPaced()
       await finished()
 
-      expect(caption(el).textContent).toMatch(/^♩ ≈ \d+ · no stops · again in a moment$/)
+      // the passage is read and goes on to its bars together, but the bar that
+      // slipped is played first
+      expect(caption(el).textContent).toMatch(/^♩ ≈ \d+ · no stops · Together next, from bar 1$/)
       expect(plateStatus(el)).toEqual("Once more · bar 3")
       expect(el.textContent).toContain("measures 3–4")
     })
@@ -2660,12 +2668,12 @@ describe("sight reading page", function() {
       expect(generator.deck.complete).toBe(false)
 
       click(buttonNamed(el, "Begin"))
-      expect(plateStatus(el)).toEqual("New · bar 5")
+      expect(plateStatus(el)).toEqual("Study · I Read · bars 5–6")
       expect(generator.currentCard().measures).toContain(5)
     })
 
     it("leaves free practice as it was", async function() {
-      let el = await renderProgramme({study: false})
+      let el = await renderProgramme({study: false, settings: {practice: FREE_PRACTICE}})
 
       expect(page.state.notes.generator instanceof PlanGenerator).toBe(false)
       expect(el.querySelector("aside").textContent).toContain("Free practice plays the bars you pick.")
@@ -2681,6 +2689,264 @@ describe("sight reading page", function() {
       flushSync(() => {})
       expect(page.state.notes.generator instanceof PlanGenerator).toBe(false)
       expect(page.state.notes.generator.currentCard().measures).toEqual([3, 4])
+    })
+
+    // tonight's study (st/srs/planner): the programme's new material, a
+    // passage at a time, in the setup pane, the score and the session rail
+    describe("tonight's study", function() {
+      // an analysis that flags nothing, so the piece starts with its study
+      // and no read-through
+      let unflagged = async () => {
+        let analysed = await ensureAnnotation(piece.id, store)
+        await store.putAnnotation({...analysed, proposals: []})
+      }
+      let rows = el => [...el.querySelectorAll("ol[aria-label='Stages of the passage'] li")]
+      let stageRow = (el, name) => rows(el).find(row => row.textContent.includes(name))
+      let pane = el => el.querySelector("aside").textContent
+
+      // plays the whole card shown, a column a hit, and waits for it to be written
+      let playCard = async () => {
+        let columns = page.state.notes.generator.currentCard().columns.length
+        for (let i = 0; i < columns; i++) { playHead() }
+        await finished()
+      }
+
+      // the page as a reload brings it, reading everything from the store
+      let remount = async () => {
+        flushSync(() => root.unmount())
+        container.remove()
+        let el = renderScoreView()
+        await page.state.notes?.generator?.ready
+        flushSync(() => {})
+        return el
+      }
+
+      it("opens a new piece on the programme, with the four stages of its first passage", async function() {
+        let el = await renderProgramme({study: false, seed: unflagged, settings: {introduce: READ_FIRST}})
+
+        expect(buttonNamed(el, "Today's programme").getAttribute("aria-pressed")).toEqual("true")
+        expect(buttonNamed(el, "Free practice").getAttribute("aria-pressed")).toEqual("false")
+        expect(pane(el)).toContain("Tonight's study")
+        expect(rows(el).map(row => row.textContent.replace(/\s+/g, " "))).toEqual([
+          "IReadeach bar once, at sight",
+          "IIHandsonly where a bar needs it",
+          "IIITogethergrowing from bar 1, a bar at a time",
+          "IVFlowbars 1–4, twice without a stop",
+        ])
+        expect(pane(el)).toContain("Bars 1–4next")
+        expect(picker(el, "bars per passage").value).toEqual("4")
+        expect(pane(el)).not.toContain("Read-through first")
+
+        click(buttonNamed(el, "Begin"))
+        expect(plateStatus(el)).toEqual("Study · I Read · bars 1–2")
+        expect(el.textContent).toContain("Tonight's study")
+        expect(buttonNamed(el, "Skip the read-through")).toBeUndefined()
+      })
+
+      it("marks the stage a passage is at, and reads stage II as not needed", async function() {
+        let el = await renderProgramme({study: false, seed: unflagged, settings: {introduce: READ_FIRST}})
+        click(buttonNamed(el, "Begin"))
+
+        await playCard()
+        await playCard()
+        expect(plateStatus(el)).toEqual("Study · III Together · bar 1")
+        click(buttonNamed(el, "End session"))
+
+        expect(stageRow(el, "Together").getAttribute("aria-current")).toEqual("step")
+        expect(rows(el).filter(row => row.hasAttribute("aria-current")).length).toEqual(1)
+        expect(stageRow(el, "Hands").textContent).toContain("not needed")
+        // the passed stages end in a gilt mark, the stages to come don't
+        expect(rows(el).map(row => row.textContent.includes("❖"))).toEqual([true, true, false, false])
+        expect(pane(el)).toContain("Bars 1–4III of IV")
+        expect(pane(el)).toContain("Path · 1–4 · 5–8")
+        expect(pane(el)).toContain("0 of 2 passages flow")
+      })
+
+      it("offers the read-through first, and skips it for good", async function() {
+        let el = await renderProgramme({
+          settings: {introduce: READ_FIRST}, seed: () => store.putAnnotation(flagRecordFor(piece)), study: false,
+        })
+
+        expect(pane(el)).toContain("Read-through first · 8 bars left")
+        click(buttonNamed(el, "Skip it"))
+        await page.state.notes.generator.studying
+        flushSync(() => {})
+        expect(pane(el)).not.toContain("Read-through first")
+        expect(store.study(piece.id)).toEqual(jasmine.objectContaining({readThrough: "skipped", status: "learning"}))
+
+        click(buttonNamed(el, "Begin"))
+        expect(plateStatus(el)).toMatch(/^Study · I Read · bar/)
+        click(buttonNamed(el, "End session"))
+
+        el = await remount()
+        expect(pane(el)).not.toContain("Read-through first")
+        click(buttonNamed(el, "Begin"))
+        expect(plateStatus(el)).toMatch(/^Study ·/)
+      })
+
+      it("skips the read-through from the session rail, writing the practice of the pass it abandons", async function() {
+        let el = await renderProgramme({
+          settings: {introduce: READ_FIRST}, seed: () => store.putAnnotation(flagRecordFor(piece)), study: false,
+        })
+
+        click(buttonNamed(el, "Begin"))
+        expect(plateStatus(el)).toMatch(/^Read-through · bar 1/)
+        let skip = buttonNamed(el, "Skip the read-through")
+        expect(skip).toBeDefined()
+
+        // the first column of the read-through card is played before the skip
+        let bar = () => store.item(`${piece.id}:both:1-1`)
+        expect(bar()).toBeFalsy()
+        playHead()
+        click(skip)
+        await page.state.notes.generator.studying
+        await page.state.notes.generator.finishing
+        flushSync(() => {})
+
+        expect(plateStatus(el)).toMatch(/^Study · I Read/)
+        expect(buttonNamed(el, "Skip the read-through")).toBeUndefined()
+        expect(bar().attempts).toEqual(1)
+        expect(await store.reviews({pieceId: piece.id})).toEqual([])
+        expect(store.study(piece.id).readThrough).toEqual("skipped")
+      })
+
+      it("changes the bars of the passages not yet opened with the bars per passage", async function() {
+        let el = await renderProgramme({study: false, seed: unflagged, settings: {introduce: SCORE_ORDER}})
+        click(buttonNamed(el, "Begin"))
+        await playCard()
+        click(buttonNamed(el, "End session"))
+        expect(pane(el)).toContain("Path · 1–4 · 5–8")
+
+        typeNumber(el, "bars per passage", "3")
+        expect(picker(el, "bars per passage").value).toEqual("3")
+        // the passage in progress keeps its own bars, the rest are laid out afresh
+        expect(pane(el)).toContain("Path · 1–4 · 5–6 · 7–8")
+        expect(JSON.parse(window.localStorage.getItem(SHEET_MUSIC_STORAGE_KEY)).passageBars).toEqual(3)
+      })
+
+      it("leaves one hand to the shipped queue, saying so", async function() {
+        let el = await renderProgramme({study: false, seed: unflagged})
+        click(buttonNamed(el, "Right hand"))
+
+        expect(rows(el)).toEqual([])
+        expect(pane(el)).not.toContain("Bars per passage")
+        expect(pane(el)).toContain("Tonight's study plays hands together; with one hand, new bars arrive one at a time.")
+
+        click(buttonNamed(el, "Begin"))
+        expect(plateStatus(el)).toMatch(/^New · bar 1/)
+      })
+
+      it("shows a learned piece as learned, with no stages", async function() {
+        let el = await renderProgramme({
+          study: false,
+          seed: () => store.putStudy({
+            pieceId: piece.id, status: "maintaining", startedAt: 1,
+            plan: {
+              createdAt: 1, known: [],
+              passages: [[1, 4], [5, 8]].map(([start, end]) =>
+                ({start, end, from: "score", openedAt: 1, stage: 4, stageAt: 2, flowedAt: 3})),
+              learnedAt: 4,
+            },
+          }),
+        })
+
+        expect(pane(el)).toContain("Learned ❖ · the programme keeps it from here")
+        expect(rows(el)).toEqual([])
+        click(buttonNamed(el, "Begin"))
+        expect(plateStatus(el)).not.toMatch(/^Study/)
+      })
+
+      it("pauses and resumes the same card, ends and plays on, and resumes at the stored stage on a second Begin", async function() {
+        let el = await renderProgramme({study: false, seed: unflagged, settings: {introduce: SCORE_ORDER}})
+        click(buttonNamed(el, "Begin"))
+        expect(plateStatus(el)).toEqual("Study · I Read · bars 1–2")
+
+        // Rest in the middle of the card, then Resume on the same card
+        playHead()
+        click(buttonNamed(el, "Rest"))
+        expect(page.state.paused).toBe(true)
+        click(buttonNamed(el, "Resume"))
+        expect(plateStatus(el)).toEqual("Study · I Read · bars 1–2")
+        // the pass finished after a Rest is never graded, so the card is dealt again
+        playHead()
+        await finished()
+        expect(plateStatus(el)).toEqual("Study · I Read · bars 1–2")
+        expect(await store.reviews({pieceId: piece.id})).toEqual([])
+        await playCard()
+        expect(plateStatus(el)).toEqual("Study · I Read · bars 3–4")
+
+        // End session, Play on: the study goes on from where it was
+        click(buttonNamed(el, "End session"))
+        await page.state.notes.generator.studying
+        expect(store.study(piece.id).plan.passages).toEqual([jasmine.objectContaining({start: 1, end: 4, stage: 1})])
+        click(buttonNamed(el, "Play on"))
+        expect(plateStatus(el)).toEqual("Study · I Read · bars 3–4")
+        await playCard()
+        expect(plateStatus(el)).toEqual("Study · III Together · bar 1")
+
+        // a second Begin in the same visit resumes at the stored stage
+        click(buttonNamed(el, "End session"))
+        click(buttonNamed(el, "Done"))
+        click(buttonNamed(el, "Begin"))
+        expect(plateStatus(el)).toEqual("Study · III Together · bar 1")
+        await page.state.notes.generator.studying
+        expect(store.study(piece.id).plan.passages).toEqual([jasmine.objectContaining({start: 1, end: 4, stage: 3})])
+      })
+
+      it("labels a read-through review in the developer metrics as not scheduled", async function() {
+        window.localStorage.setItem(DEV_METRICS_KEY, "open")
+        let el = await renderProgramme({
+          settings: {introduce: READ_FIRST}, seed: () => store.putAnnotation(flagRecordFor(piece)), study: false,
+        })
+        click(buttonNamed(el, "Begin"))
+        await playCard()
+
+        let panel = () => el.querySelector("[data-dev-metrics]")
+        click([...panel().querySelectorAll("[role=tab]")].find(b => b.textContent == "History"))
+        await waitFor(() => panel().textContent.includes("read-through, not scheduled"), "the read-through review")
+      })
+
+      it("names a study card of the session rail's up next by its bars and stage", async function() {
+        // bars 1-3 learned long ago and due, so the reviews come first and the study after them
+        let day = 24 * 3600 * 1000
+        let learned = async measure => {
+          let id = `${piece.id}:both:${measure}-${measure}`
+          let last = Date.now() - 5 * day
+          await store.recordAttempt({
+            item: {
+              id, pieceId: piece.id, hand: "both", startMeasure: measure, endMeasure: measure,
+              level: "bar", state: "review", step: 0, due: Date.now() - day, last, s: 3, d: 5,
+              reps: 3, lapses: 0, streak: 3, lastGrade: GOOD, hits: 3, misses: 0, attempts: 3,
+              lastPracticed: last, algo: 1, createdAt: last - day, recent: [[last, 1, 1, GOOD]],
+            },
+            review: {
+              itemId: id, pieceId: piece.id, at: last, kind: "attempt", grade: GOOD, was: "new",
+              columns: 1, clean: 1, misses: 0, stuck: 0, skipped: 0, hesitations: 0, mode: "wait", algo: 1,
+            },
+          })
+        }
+        let el = await renderProgramme({
+          study: false, settings: {introduce: SCORE_ORDER},
+          seed: async () => { await unflagged(); for (let m of [1, 2, 3]) { await learned(m) } },
+        })
+        click(buttonNamed(el, "Begin"))
+        expect(plateStatus(el)).toMatch(/^Review · bar \d/)
+
+        let rail = [...el.querySelectorAll("aside")].find(aside => aside.textContent.includes("This session"))
+        expect(rail.textContent).toContain("Tonight's study")
+        expect(rail.textContent).toContain("Up next")
+        expect(rail.textContent).toMatch(/Bar \dReview/)
+        expect(rail.textContent).toContain("Bars 4–5Study · I Read")
+      })
+
+      it("writes no plan for a session that played nothing", async function() {
+        let el = await renderProgramme({study: false, seed: unflagged})
+        click(buttonNamed(el, "Begin"))
+        click(buttonNamed(el, "End session"))
+        await page.state.notes.generator.studying
+        expect(store.study(piece.id)).toBeFalsy()
+        expect(await store.reviews({pieceId: piece.id})).toEqual([])
+      })
     })
   })
 
@@ -3027,7 +3293,7 @@ describe("sight reading page", function() {
     it("smudges the engine card's head column on a wrong note, keeping its missed mark", async function() {
       let {piece} = await importMusicXMLPiece("piece.musicxml", reverieOpening(), store)
       window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
-        piece: piece.id, startMeasure: 2, endMeasure: 4, hand: BOTH_HANDS, measuresPerCard: "all",
+        piece: piece.id, startMeasure: 2, endMeasure: 4, hand: BOTH_HANDS, practice: FREE_PRACTICE, measuresPerCard: "all",
       }))
 
       let el = renderPage(ScorePage)
@@ -3318,7 +3584,7 @@ describe("sight reading page", function() {
     it("on the score page, never opens the session summary, and the ended strip has no Practise these notes or New programme", async function() {
       let {piece} = await importMusicXMLPiece("salon_octet.musicxml", octetXML, store)
       window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
-        piece: piece.id, startMeasure: 1, endMeasure: 8, hand: BOTH_HANDS, measuresPerCard: "all",
+        piece: piece.id, startMeasure: 1, endMeasure: 8, hand: BOTH_HANDS, practice: FREE_PRACTICE, measuresPerCard: "all",
       }))
 
       // restPauses pages (the score page) have no Drawer and never open the
@@ -3421,7 +3687,7 @@ describe("sight reading page", function() {
         window.localStorage.setItem(SCORE_DRILL_STORAGE_KEY, JSON.stringify(drill))
       }
       window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
-        piece: piece.id, startMeasure: 1, endMeasure: 8, hand: BOTH_HANDS, ...settings,
+        piece: piece.id, startMeasure: 1, endMeasure: 8, hand: BOTH_HANDS, practice: FREE_PRACTICE, ...settings,
       }))
       let el = renderScorePage()
       click(buttonNamed(el, "Begin"))
@@ -4148,7 +4414,7 @@ describe("sight reading page", function() {
         window.localStorage.setItem(SCORE_DRILL_STORAGE_KEY, JSON.stringify(drill))
       }
       window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
-        piece: piece.id, startMeasure: 1, endMeasure: 8, hand: BOTH_HANDS, ...settings,
+        piece: piece.id, startMeasure: 1, endMeasure: 8, hand: BOTH_HANDS, practice: FREE_PRACTICE, ...settings,
       }))
       return renderPage(ScorePage, {programme: {...SCORE_PROGRAMME, engine: null, ScoreView: null}, acoustic: true})
     }
@@ -4158,7 +4424,7 @@ describe("sight reading page", function() {
     let renderAcousticWithView = async settings => {
       piece = (await importMusicXMLPiece("salon_octet.musicxml", octetXML, store)).piece
       window.localStorage.setItem(SHEET_MUSIC_STORAGE_KEY, JSON.stringify({
-        piece: piece.id, startMeasure: 1, endMeasure: 8, hand: BOTH_HANDS, ...settings,
+        piece: piece.id, startMeasure: 1, endMeasure: 8, hand: BOTH_HANDS, practice: FREE_PRACTICE, ...settings,
       }))
       return renderPage(ScorePage, {programme: {...SCORE_PROGRAMME, engine: null}, acoustic: true})
     }
