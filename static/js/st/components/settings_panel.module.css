@@ -10,9 +10,10 @@
     left: 0;
     top: var(--header-height);
     bottom: 0;
-    background: #D6D6D6;
+    background: var(--salon-paper);
     width: var(--settings-panel-width);
-    border-right: 2px solid var(--border-color);
+    border-right: 1px solid var(--salon-rule-strong);
+    box-shadow: 26px 0 54px -30px rgba(36,31,24,.45);
     z-index: 1;
 
     &:global(.slide_right-enter) {
@@ -37,13 +38,17 @@
 
     .settings_header {
         padding: 15px 20px;
-        background: var(--border-color);
+        background: var(--salon-paper-warm);
+        border-bottom: var(--salon-double-rule);
         color: var(--salon-ink);
         display: flex;
         align-items: center;
 
         h3 {
             margin: 0;
+            font-family: var(--font-display);
+            font-size: 22px;
+            font-weight: 400;
         }
 
         button {
@@ -57,29 +62,25 @@
         grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
     }
 
-    .toggle_option {
-        background: white;
-        border: 1px solid var(--border-color);
-        color: #444;
-
-        &.active {
-            color: color-mix(in oklab, var(--button-color), black 10%);
-            background: color-mix(in oklab, var(--button-color), white 80%);
-            border-color: var(--button-color);
-            box-shadow: 0 0 0 1px var(--button-color);
-        }
-    }
-
     .settings_group {
         padding: 0 10px;
 
         h4 {
-            font-weight: bold;
+            font-weight: 700;
+            letter-spacing: .2em;
             text-transform: uppercase;
-            color: #666;
-            font-size: 12px;
+            color: var(--salon-ink-muted);
+            font-size: 11px;
             margin: 0 10px;
             margin-bottom: 10px;
+        }
+
+        input[type=checkbox] {
+            accent-color: var(--salon-oxblood);
+        }
+
+        a.active {
+            font-weight: 700;
         }
     }
 }
