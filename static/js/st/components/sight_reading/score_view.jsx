@@ -88,7 +88,6 @@ export class ScoreView extends React.Component {
     canPlayOn: types.bool,
     sessionLog: types.array,
     idleTitle: types.object,
-    viewportHeight: types.number,
     onBegin: types.func.isRequired,
     onPlayOn: types.func.isRequired,
     onDismissEnded: types.func.isRequired,
@@ -748,7 +747,6 @@ export class ScoreView extends React.Component {
           toMeasure={toMeasure}
           engine={this.props.engine}
           loadEngines={this.props.loadEngines}
-          viewportHeight={this.props.viewportHeight}
           page={this.state.page}
           scale={this.state.scale}
           onPages={pages => this.onPages(pages)}

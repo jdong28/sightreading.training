@@ -93,7 +93,7 @@ describe("notes for the next lesson on the score page, mounted", function() {
     root = createRoot(container)
     flushSync(() => root.render(React.createElement(MemoryRouter, {initialEntries: entries},
       React.createElement(LocationProbe),
-      React.createElement(ScorePage, {ref: p => page = p, viewportHeight: 1240}))))
+      React.createElement(ScorePage, {ref: p => page = p}))))
     await waitFor(() => (!engraved || container.querySelector("[data-score-sheet] svg")) &&
       container.querySelector('button[aria-label^="Bar "]'), {message: "the score"})
     await paginated()

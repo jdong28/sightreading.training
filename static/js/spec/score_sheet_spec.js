@@ -7,7 +7,7 @@ import {loadScoreEngines} from "st/score_render/load"
 import {ENGRAVE_MAX_WIDTH, engraveWidthFor} from "st/score_render/score_pages"
 import sheetStyles from "st/components/score_sheet.module.css"
 
-import {dynamicsOpening} from "spec/helpers"
+import {dynamicsOpening, pianoScore} from "spec/helpers"
 
 let waitFor = async (test, {timeout=15000, message="the condition"}={}) => {
   let start = Date.now()
@@ -49,7 +49,7 @@ describe("ScoreSheet's bar labels (sr-score-sheet-label-box)", function() {
     flushSync(() => {
       root.render(React.createElement(ScoreSheet, {
         musicXML: dynamicsOpening(), fromMeasure: 0, toMeasure: 6, hand: "both",
-        engine: "osmd", loadEngines: loadScoreEngines, viewportHeight: 1240,
+        engine: "osmd", loadEngines: loadScoreEngines,
         barInfo, labels,
       }))
     })
@@ -116,7 +116,7 @@ describe("ScoreSheet's note marks", function() {
       root.render(React.createElement(ScoreSheet, {
         ref: instance => { sheet = instance },
         musicXML, fromMeasure: props.fromMeasure ?? 1, toMeasure: props.toMeasure ?? 16, engine: "osmd",
-        loadEngines: loadScoreEngines, viewportHeight: 1240, ...props, ...extra,
+        loadEngines: loadScoreEngines, ...props, ...extra,
       }))
     })
     render()
@@ -211,14 +211,15 @@ describe("ScoreSheet's note marks", function() {
   })
 
   it("draws no mark at all once the marks go, nor on a page where the bar isn't", async function() {
-    let render = await mount(await fixture(), {noteMarks: marks})
+    let render = await mount(await fixture(), {noteMarks: marks, scale: 150})
     expectMarksOnHeads()
 
     render({noteMarks: null})
     expect(container.querySelectorAll(`.${TROUBLE_CLASS}`).length).toEqual(0)
     expect(container.querySelectorAll("[data-mark]").length).toEqual(0)
 
-    // back, then on the other page, where those heads aren't
+    // back, then on the other page (the fixture is two pages at 150%: five systems and
+    // one), where those heads aren't
     render({noteMarks: marks})
     expectMarksOnHeads()
     await waitFor(() => sheet.state.pages.length > 1, {message: "two pages"})
@@ -333,7 +334,17 @@ describe("ScoreSheet's scale", function() {
   let overlays = () => [...container.querySelectorAll("button[aria-label^=\"Bar \"]")]
   let settled = () => sheet && !sheet.state.drawing && sheet.state.pages.length > 0
 
-  let mount = async (musicXML, {width=1100, scale, viewportHeight=1240}={}) => {
+  // a piece of many bars, whose pages (five systems each) the scale tells apart
+  let LONG_BARS = 40
+  let longScore = () => pianoScore({
+    title: "Long",
+    bars: Array.from({length: LONG_BARS}, (_, i) => ({
+      upper: ["C4", "D4", "E4", "F4"].map(name => ({name: name.replace(/\d/, 4 + (i % 2))})),
+      lower: ["C3", "D3", "E3", "F3"].map(name => ({name: name.replace(/\d/, 2 + (i % 2))})),
+    })),
+  })
+
+  let mount = async (musicXML, {width=1100, scale, to=16}={}) => {
     widths = []
     pages = []
     container = document.createElement("div")
@@ -343,7 +354,7 @@ describe("ScoreSheet's scale", function() {
     let render = extra => flushSync(() => {
       root.render(React.createElement(ScoreSheet, {
         ref: instance => { sheet = instance },
-        musicXML, fromMeasure: 1, toMeasure: 16, engine: "osmd", loadEngines: spyEngines, viewportHeight,
+        musicXML, fromMeasure: 1, toMeasure: to, engine: "osmd", loadEngines: spyEngines,
         onPages: found => { pages = found }, scale, ...extra,
       }))
     })
@@ -393,52 +404,68 @@ describe("ScoreSheet's scale", function() {
   })
 
   it("puts fewer pages and more bars on a page at a smaller scale, each bar on exactly one page", async function() {
-    let render = await mount(await fixture(), {scale: 60})
+    let render = await mount(longScore(), {scale: 60, to: LONG_BARS})
     let found = {60: pages}
     await drawnAfter(render, {scale: 100})
     found[100] = pages
     await drawnAfter(render, {scale: 150})
     found[150] = pages
 
-    expect(found[60].length).toBeLessThanOrEqual(found[100].length)
+    expect(found[60].length).toBeLessThan(found[100].length)
     expect(found[100].length).toBeLessThan(found[150].length)
     let first = scale => found[scale][0].measures.length
-    expect(first(60)).toBeGreaterThanOrEqual(first(100))
+    expect(first(60)).toBeGreaterThan(first(100))
     expect(first(100)).toBeGreaterThan(first(150))
 
     for (let scale of [60, 100, 150]) {
       let numbers = found[scale].flatMap(page => page.measures.map(measure => measure.number))
-      expect(numbers.length).withContext(`${scale}%: bars across the pages`).toEqual(16)
-      expect([...new Set(numbers)].sort((a, b) => a - b)).toEqual(Array.from({length: 16}, (_, i) => i + 1))
+      expect(numbers.length).withContext(`${scale}%: bars across the pages`).toEqual(LONG_BARS)
+      expect([...new Set(numbers)].sort((a, b) => a - b)).toEqual(Array.from({length: LONG_BARS}, (_, i) => i + 1))
     }
   })
 
-  it("puts at least two whole systems on every page but the last, at every scale and window height", async function() {
-    let systemsOn = page => page.bands.length
-    for (let viewportHeight of [600, 900, 1240]) {
-      let render = await mount(await fixture(), {scale: 60, viewportHeight})
-      let counts = {}
+  it("puts five whole systems on every page but the last, at every scale, whatever the window's height", async function() {
+    let render = await mount(longScore(), {scale: 60, to: LONG_BARS})
 
-      for (let scale of [60, 80, 100, 120, 150]) {
-        if (scale != 60) { await drawnAfter(render, {scale, viewportHeight}) }
-        expect(pages.length).withContext(`${scale}% at ${viewportHeight}`).toBeGreaterThan(0)
-        pages.slice(0, -1).forEach((page, idx) => {
-          expect(systemsOn(page)).withContext(`${scale}% at ${viewportHeight}, page ${idx + 1}`).toBeGreaterThanOrEqual(2)
-        })
-        counts[scale] = pages[0].bands.length
+    for (let scale of [60, 70, 80, 90, 100, 110, 120, 130, 140, 150]) {
+      if (scale != 60) { await drawnAfter(render, {scale}) }
+      expect(pages.length).withContext(`${scale}%`).toBeGreaterThan(0)
+      pages.slice(0, -1).forEach((page, idx) => {
+        expect(page.bands.length).withContext(`${scale}%, page ${idx + 1} of ${pages.length}`).toEqual(5)
+      })
+      let last = pages[pages.length - 1]
+      expect(last.bands.length).withContext(`${scale}%: the last page`).toBeGreaterThan(0)
+      expect(last.bands.length).toBeLessThanOrEqual(5)
 
-        // the pages are still cut between systems and cover the drawing
-        for (let idx = 1; idx < pages.length; idx++) { expect(pages[idx].top).toEqual(pages[idx - 1].bottom) }
-        expect(pages[0].top).toEqual(0)
-      }
+      // cut between systems, covering the drawing, from its top
+      for (let idx = 1; idx < pages.length; idx++) { expect(pages[idx].top).toEqual(pages[idx - 1].bottom) }
+      expect(pages[0].top).toEqual(0)
+      expect(last.bottom).toEqual(sheet.state.naturalHeight)
+    }
+  })
 
-      // a smaller scale still fits more where the window allows
-      expect(counts[60]).withContext(`systems on page 1 at 60% against 150% at ${viewportHeight}`).toBeGreaterThanOrEqual(counts[150])
-
+  it("cuts pages by no window's height: the same pages in a short window and a tall one", async function() {
+    let heights = {}
+    let spy
+    for (let innerHeight of [400, 2000]) {
+      if (!spy) { spy = spyOnProperty(window, "innerHeight") }
+      spy.and.returnValue(innerHeight)
+      await mount(longScore(), {scale: 100, to: LONG_BARS})
+      heights[innerHeight] = pages.map(page => page.measures.map(m => m.number))
       flushSync(() => root.unmount())
       container.remove()
       root = container = sheet = null
     }
+    expect(heights[400]).toEqual(heights[2000])
+    expect(heights[400][0].length).toBeGreaterThan(0)
+  })
+
+  it("never shrinks the engraving to fit: the page is as tall as its five systems, over the window", async function() {
+    await mount(longScore(), {scale: 150, to: LONG_BARS})
+    let box = container.querySelector(`.${sheetStyles.plate_box}`).getBoundingClientRect()
+    // five grand-staff lines at 150% are taller than the puppeteer window
+    expect(box.height).toBeGreaterThan(window.innerHeight)
+    expect(sheet.state.pages[0].bands.length).toEqual(5)
   })
 
   it("keeps every bar's overlay in the plate box, a later bar on a system to the right of the one before", async function() {

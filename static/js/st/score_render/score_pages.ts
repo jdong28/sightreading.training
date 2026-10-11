@@ -43,17 +43,10 @@ export function engraveWidthFor(width: number, scale: unknown): number {
 // band keeps above (3 spaces) and below (2 spaces) its measures' own boxes
 export const SPACE = 8
 
-// the title row, plate padding, toolbar, legend and pager's own height,
-// subtracted from the viewport to budget a page
-export const PAGE_CHROME_PX = 320
-
-// the least a page's budget is ever let shrink to
-export const MIN_PAGE_PX = 280
-
-// the fewest systems the score page puts on a page (a piece's last page, or
-// a piece of one system, may hold fewer): a page that long is taller than
-// the window's budget at a large scale, never a smaller engraving
-export const MIN_PAGE_SYSTEMS = 2
+// the systems the score page puts on a page, a grand-staff line each (a
+// piece's last page, or a piece of fewer, holds fewer): a page is as tall as
+// they are and the window scrolls, never a smaller engraving
+export const PAGE_SYSTEMS = 5
 
 /**
  * One system number per measure (by index order): a new one whenever a
@@ -122,47 +115,29 @@ function buildPage(bands: SystemBand[], top: number, bottom: number, index: numb
 }
 
 /**
- * The whole piece's pages (score-first design §D5): whole systems, taken
- * greedily while the page's natural height (the next cut less its top) fits
- * the budget, always at least minSystems (a page that many systems tall
- * overruns the budget; only the last page may hold fewer); cut between two systems at the midpoint
- * of the first's bottom and the second's top. The first page starts at 0
- * and the last ends at the svg's natural height, whatever its last
- * system's own band says.
+ * The whole piece's pages (score-first design §D5): perPage whole systems
+ * each, the last page the rest; cut between two systems at the midpoint of
+ * the first's bottom and the second's top. The first page starts at 0 and the
+ * last ends at the svg's natural height, whatever its last system's own band
+ * says. The window's height never cuts a page.
  * @param measures the whole piece's
  * @param opts.height the drawn svg's natural height (CSS px)
- * @param opts.budget the most natural px a page may hold beyond its first
- * minSystems systems
- * @param opts.minSystems the fewest systems on any page but the last, 1 by
- * default
+ * @param opts.perPage the systems to a page, PAGE_SYSTEMS by default
  */
 export function scorePages(
-  measures: CardMeasure[],
-  {height, budget, minSystems = 1}: {height: number, budget: number, minSystems?: number},
+  measures: CardMeasure[], {height, perPage = PAGE_SYSTEMS}: {height: number, perPage?: number},
 ): ScorePage[] {
   const bands = systemBands(measures)
   if (!bands.length) { return [] }
 
+  const size = Math.max(1, Math.floor(perPage))
   const cutAfter = (i: number) => i == bands.length - 1 ? height : (bands[i].bottom + bands[i + 1].top) / 2
 
   const pages: ScorePage[] = []
-  let startIdx = 0
-  let pageTop = 0
-
-  for (let i = 0; i < bands.length; i++) {
-    const cut = cutAfter(i)
-    const overflow = cut - pageTop > budget && i - startIdx >= minSystems
-
-    if (overflow) {
-      const prevCut = cutAfter(i - 1)
-      pages.push(buildPage(bands.slice(startIdx, i), pageTop, prevCut, pages.length))
-      pageTop = prevCut
-      startIdx = i
-    }
-
-    if (i == bands.length - 1) {
-      pages.push(buildPage(bands.slice(startIdx), pageTop, height, pages.length))
-    }
+  for (let start = 0; start < bands.length; start += size) {
+    const end = Math.min(bands.length, start + size)
+    const top = start == 0 ? 0 : cutAfter(start - 1)
+    pages.push(buildPage(bands.slice(start, end), top, cutAfter(end - 1), pages.length))
   }
 
   return pages

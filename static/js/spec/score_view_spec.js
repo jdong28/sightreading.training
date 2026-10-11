@@ -12,6 +12,7 @@ import {setAppStore} from "st/storage"
 import {loadScoreEngines} from "st/score_render/load"
 import {SHEET_MUSIC_STORAGE_KEY, BOTH_HANDS, RIGHT_HAND, FREE_PRACTICE, PROGRAMME_PRACTICE, WHOLE_SECTION} from "st/data"
 import {SCORE_DRILL_STORAGE_KEY} from "st/generators"
+import {newLessonNote} from "st/lesson_notes"
 import {SCORE_VIEW_NO_SOURCE, SCORE_VIEW_FAILED} from "st/components/sight_reading/score_view"
 import viewStyles from "st/components/sight_reading/score_view.module.css"
 import setupStyles from "st/components/sight_reading/setup_pane.module.css"
@@ -160,7 +161,7 @@ describe("the score view at rest (st/components/sight_reading/score_view)", func
       root = createRoot(container)
       flushSync(() => {
         root.render(React.createElement(MemoryRouter, {},
-          React.createElement(ScorePage, {ref: p => page = p, viewportHeight: 1240})))
+          React.createElement(ScorePage, {ref: p => page = p})))
       })
       flushSync(() => {})
 
@@ -232,7 +233,7 @@ describe("the score view at rest (st/components/sight_reading/score_view)", func
         root = createRoot(container)
         flushSync(() => {
           root.render(React.createElement(MemoryRouter, {},
-            React.createElement(ScorePage, {ref: p => page = p, viewportHeight: 1240, ...props})))
+            React.createElement(ScorePage, {ref: p => page = p, ...props})))
         })
         flushSync(() => {})
         await waitFor(() => container.querySelectorAll('button[aria-label^="Bar "]').length > 0,
@@ -651,23 +652,14 @@ describe("the score view at rest (st/components/sight_reading/score_view)", func
       expect(el.textContent).toContain("At rest")
       expect(el.querySelector("h1").textContent).toEqual("Fixture the score")
 
-      // paginated into whole systems, the first page first, the last to
-      // bar 16 (the exact split is score_pages_spec.js's own, pixel-precise
-      // test; this only checks the component wires pagination up correctly)
+      // paginated into whole systems, five to a page: the fixture's four are one
+      // page, bars 1-16 (the pages of a longer piece are in "the scale control")
       let pageLabel = el.querySelector(`.${viewStyles.page_label}`).textContent
-      expect(pageLabel).toMatch(/^Page 1 of \d+ · bars? 1(–\d+)?$/)
-      let barsOnPage1 = el.querySelectorAll('button[aria-label^="Bar "]').length
-      expect(barsOnPage1).toBeGreaterThan(0)
-      expect(barsOnPage1).toBeLessThan(16)
+      expect(pageLabel).toEqual("Page 1 of 1 · bars 1–16")
+      expect(el.querySelectorAll('button[aria-label^="Bar "]').length).toEqual(16)
       expect(buttonNamed(el, "‹ Previous page").disabled).toBe(true)
-      // a page holds two systems at the least, so the piece's last bar, alone on
-      // its system, is never on the first
-      expect(el.querySelector('button[aria-label="Bar 16"]')).toBeFalsy()
-
-      click(buttonNamed(el, "Next page ›"))
-      // keep clicking through to the last page, which always ends on bar 16
-      while (!buttonNamed(el, "Next page ›").disabled) { click(buttonNamed(el, "Next page ›")) }
-      expect(el.querySelector('button[aria-label="Bar 16"]')).toBeTruthy()
+      expect(buttonNamed(el, "Next page ›").disabled).toBe(true)
+      expect(buttonLabelled(el, "Bar 16")).toBeTruthy()
     })
 
     it("switches the shade's tints and legend, and offers This session only once a session has ended", async function() {
@@ -736,7 +728,7 @@ describe("the score view at rest (st/components/sight_reading/score_view)", func
       root = createRoot(container)
       flushSync(() => {
         root.render(React.createElement(MemoryRouter, {},
-          React.createElement(ScorePage, {ref: p => page = p, viewportHeight: 1240})))
+          React.createElement(ScorePage, {ref: p => page = p})))
       })
       flushSync(() => {})
       await waitFor(() => container.querySelectorAll('button[aria-label^="Bar "]').length > 0,
@@ -917,7 +909,7 @@ describe("the score view at rest (st/components/sight_reading/score_view)", func
     it("acoustic: the Tempo group shows the acoustic note; grading Clean three times learns the bar", async function() {
       let {container: el, piece} = await renderFixture({startMeasure: 1, endMeasure: 1})
       flushSync(() => root.render(React.createElement(MemoryRouter, {},
-        React.createElement(ScorePage, {ref: p => page = p, viewportHeight: 1240, acoustic: true}))))
+        React.createElement(ScorePage, {ref: p => page = p, acoustic: true}))))
       flushSync(() => {})
 
       expect(el.textContent).toContain("Acoustic piano: each card waits for your grade.")
@@ -960,10 +952,9 @@ describe("the score view at rest (st/components/sight_reading/score_view)", func
 
     // The score scale (st/score_render/score_pages SCORE_SCALE): the score is
     // engraved again at a width of 100 / scale times the column's, so bars to
-    // a system and page, the page count and every overlay follow it. The
-    // puppeteer window paginates against 600 px (SightReadingPage never
-    // hands ScoreView a viewportHeight), so these test how pages relate to
-    // one another, never an exact split
+    // a system and page, the page count and every overlay follow it. A page
+    // is five systems whatever the window, so the pages of the fixture (four
+    // systems at 100%) are one and the tests that turn pages use a longer piece
     describe("the scale control", function() {
       let widths
       // the bar pop-up's own margin above and below (bar_popup.module.css)
@@ -983,6 +974,18 @@ describe("the score view at rest (st/components/sight_reading/score_view)", func
           },
         }
       }
+
+      // a piece of many bars, whose pages (five systems each) the scale tells apart
+      const LONG_BARS = 40
+      let longScore = () => pianoScore({
+        title: "Long",
+        bars: Array.from({length: LONG_BARS}, (_, i) => ({
+          upper: ["C4", "D4", "E4", "F4"].map(name => ({name: name.replace(/\d/, 4 + (i % 2))})),
+          lower: ["C3", "D3", "E3", "F3"].map(name => ({name: name.replace(/\d/, 2 + (i % 2))})),
+        })),
+      })
+
+      let mountLong = () => mountScale({xml: longScore(), settings: {endMeasure: LONG_BARS}})
 
       let mountScale = async ({settings={}, xml=null, width=1440, stored=null, props={}}={}) => {
         widths = []
@@ -1007,7 +1010,7 @@ describe("the score view at rest (st/components/sight_reading/score_view)", func
         flushSync(() => {
           root.render(React.createElement(MemoryRouter, {},
             React.createElement(ScorePage, {
-              ref: p => page = p, viewportHeight: 1240, loadEngines: spyEngines, ...props,
+              ref: p => page = p, loadEngines: spyEngines, ...props,
             })))
         })
         flushSync(() => {})
@@ -1097,7 +1100,7 @@ describe("the score view at rest (st/components/sight_reading/score_view)", func
       })
 
       it("fits more bars on fewer pages at 60%, the header and the first bar and last bar shown agreeing", async function() {
-        await mountScale()
+        await mountLong()
         let before = pageNow()
 
         await engraved(() => { for (let i = 0; i < 4; i++) { click(smaller()) } })
@@ -1108,15 +1111,15 @@ describe("the score view at rest (st/components/sight_reading/score_view)", func
         expect(widths[widths.length - 1]).toEqual(1073)
 
         let now = pageNow()
-        expect(now.pages).toBeLessThanOrEqual(before.pages)
-        expect(now.numbers.length).toBeGreaterThanOrEqual(before.numbers.length)
+        expect(now.pages).toBeLessThan(before.pages)
+        expect(now.numbers.length).toBeGreaterThan(before.numbers.length)
         expect(now.page).toEqual(1)
         expect([now.first, now.last]).toEqual([now.numbers[0], now.numbers[now.numbers.length - 1]])
         expect(now.pager).toEqual(`Page 1 of ${now.pages}`)
       })
 
-      it("fits fewer bars on more pages up to 150%, to a last page holding bar 16", async function() {
-        await mountScale()
+      it("fits fewer bars on more pages up to 150%, to a last page holding the last bar", async function() {
+        await mountLong()
         let at100 = pageNow()
 
         await engraved(() => { for (let i = 0; i < 5; i++) { click(larger()) } })
@@ -1138,14 +1141,14 @@ describe("the score view at rest (st/components/sight_reading/score_view)", func
           expect([shown.first, shown.last]).toEqual([shown.numbers[0], shown.numbers[shown.numbers.length - 1]])
           shown.numbers.forEach(number => seen.add(number))
         }
-        expect(bar(16)).toBeTruthy()
+        expect(bar(LONG_BARS)).toBeTruthy()
         expect(pageNow().page).toEqual(now.pages)
         // every bar of the piece is on one page or another
-        expect([...seen].sort((a, b) => a - b)).toEqual(Array.from({length: 16}, (_, i) => i + 1))
+        expect([...seen].sort((a, b) => a - b)).toEqual(Array.from({length: LONG_BARS}, (_, i) => i + 1))
       })
 
       it("takes the slider as a native range, and Reset back to 100%", async function() {
-        await mountScale()
+        await mountLong()
         let at100 = pageNow()
 
         await engraved(() => setSlider(120))
@@ -1165,7 +1168,7 @@ describe("the score view at rest (st/components/sight_reading/score_view)", func
       })
 
       it("re-engraves at each step of a drag, drawing nothing for a step to the same scale", async function() {
-        await mountScale()
+        await mountLong()
         let draws = widths.length
 
         await engraved(() => setSlider(110))
@@ -1176,16 +1179,16 @@ describe("the score view at rest (st/components/sight_reading/score_view)", func
       })
 
       it("keeps the bar's pop-up open on the page holding its bar, re-anchored to it, through every scale", async function() {
-        await mountScale()
-        click(showBar(16))
+        await mountLong()
+        click(showBar(LONG_BARS))
         expect(dialog(container)).toBeTruthy()
 
         let anchored = scale => {
-          let button = bar(16)
-          expect(button).withContext(`${scale}%: bar 16 on the page shown`).toBeTruthy()
+          let button = bar(LONG_BARS)
+          expect(button).withContext(`${scale}%: bar on the page shown`).toBeTruthy()
           let pop = dialog(container)
           expect(pop).withContext(`${scale}%: the pop-up still open`).toBeTruthy()
-          expect(pop.getAttribute("aria-label")).toEqual("Bar 16 stats")
+          expect(pop.getAttribute("aria-label")).toEqual(`Bar ${LONG_BARS} stats`)
 
           let rect = button.getBoundingClientRect()
           let box = pop.getBoundingClientRect()
@@ -1208,7 +1211,7 @@ describe("the score view at rest (st/components/sight_reading/score_view)", func
       })
 
       it("keeps the pop-up of a bar on an earlier page, anchored there, when the scale goes up", async function() {
-        await mountScale()
+        await mountLong()
         click(bar(3))
         expect(dialog(container)).toBeTruthy()
 
@@ -1222,9 +1225,8 @@ describe("the score view at rest (st/components/sight_reading/score_view)", func
       // the grand-staff lines on the page shown: the distinct tops of its bars
       let systemsShown = () => new Set(barButtons().map(b => Math.round(b.getBoundingClientRect().top))).size
 
-      it("shows at least two grand-staff lines on every page but the last, at every scale", async function() {
-        // puppeteer's 600 px window gives a page the least budget there is
-        await mountScale()
+      it("shows five grand-staff lines on every page but the last, at every scale, scrolling the page", async function() {
+        await mountLong()
 
         for (let scale of [150, 100, 120, 60, 80]) {
           await engraved(() => setSlider(scale))
@@ -1235,30 +1237,28 @@ describe("the score view at rest (st/components/sight_reading/score_view)", func
             let shown = pageNow()
             expect(shown.page).toEqual(page)
             if (page < pages) {
-              expect(systemsShown()).withContext(`${scale}%: page ${page} of ${pages}`).toBeGreaterThanOrEqual(2)
+              expect(systemsShown()).withContext(`${scale}%: page ${page} of ${pages}`).toEqual(5)
             } else {
-              expect(systemsShown()).toBeGreaterThanOrEqual(1)
+              expect(systemsShown()).withContext(`${scale}%: the last page`).toBeGreaterThanOrEqual(1)
+              expect(systemsShown()).toBeLessThanOrEqual(5)
             }
             if (!next().disabled) { click(next()) }
           }
         }
       }, 60000)
 
-      it("fits at least as many lines on a page at a smaller scale", async function() {
-        await mountScale()
-        let lines = {}
-        for (let scale of [150, 100, 60]) {
-          await engraved(() => setSlider(scale))
-          lines[scale] = systemsShown()
-        }
-        expect(lines[100]).toBeGreaterThanOrEqual(lines[150])
-        expect(lines[60]).toBeGreaterThanOrEqual(lines[100])
-        expect(lines[150]).toBeGreaterThanOrEqual(2)
+      it("is taller than the window at 150%, never a smaller engraving: the page scrolls", async function() {
+        await mountLong()
+        await engraved(() => setSlider(150))
+        let plate = container.querySelector(`.${sheetStyles.plate_box}`).getBoundingClientRect()
+        expect(plate.height).toBeGreaterThan(window.innerHeight)
+        expect(widths[widths.length - 1]).toEqual(429)
+        expect(systemsShown()).toEqual(5)
       })
 
       it("applies the same page rule when the window re-engraves the score at another width", async function() {
-        await mountScale()
-        click(showBar(16))
+        await mountLong()
+        click(showBar(LONG_BARS))
 
         let svg = container.querySelector("svg")
         let column = container.querySelector('section[aria-label="The score"]')
@@ -1267,12 +1267,12 @@ describe("the score view at rest (st/components/sight_reading/score_view)", func
         await waitFor(() => container.querySelector("svg") !== svg, {message: "the re-engraving"})
         await quiet()
 
-        expect(bar(16)).toBeTruthy()
-        expect(dialog(container).getAttribute("aria-label")).toEqual("Bar 16 stats")
+        expect(bar(LONG_BARS)).toBeTruthy()
+        expect(dialog(container).getAttribute("aria-label")).toEqual(`Bar ${LONG_BARS} stats`)
       })
 
       it("shows the page holding the first bar it showed when no bar is open", async function() {
-        await mountScale()
+        await mountLong()
         await engraved(() => setSlider(150))
         click(next())
         let first = pageNow().first
@@ -1285,6 +1285,52 @@ describe("the score view at rest (st/components/sight_reading/score_view)", func
         await engraved(() => setSlider(100))
         expect(bar(first)).withContext(`bar ${first} after the step to 100%`).toBeTruthy()
       })
+
+      it("keeps the notes for the lesson's pins on their bars, on every page, at every scale", async function() {
+        let piece = await mountLong()
+        // bars on the first page, a middle one and the last of the piece
+        let noted = [2, 21, LONG_BARS]
+        for (let measure of noted) {
+          await store.putLessonNote(newLessonNote({
+            source: "bar", pieceId: piece.id, pieceTitle: piece.title, start: measure, end: measure,
+            text: `Ask about bar ${measure}`, now: Date.now() - 86400000,
+          }))
+        }
+        flushSync(() => root.unmount())
+        container.remove()
+        await drawScale()
+
+        let pin = measure => container.querySelector(`[data-pin="${measure}"]`)
+        let checkPins = scale => {
+          let seen = []
+          while (!previous().disabled) { click(previous()) }
+          for (let turns = 0; turns < 40; turns++) {
+            for (let measure of noted) {
+              let chip = pin(measure)
+              // a pin is drawn only on the page holding its bar
+              expect(!!chip).withContext(`${scale}%: pin ${measure} with its bar`).toEqual(!!bar(measure))
+              if (!chip) { continue }
+              seen.push(measure)
+
+              let box = bar(measure).getBoundingClientRect()
+              let rect = chip.getBoundingClientRect()
+              near(rect.right, box.right, 8, `${scale}%: pin ${measure} at its bar's right`)
+              expect(rect.left).toBeGreaterThanOrEqual(box.left)
+              expect(rect.top).toBeGreaterThanOrEqual(box.top - 1)
+              expect(rect.bottom).toBeLessThanOrEqual(box.bottom)
+            }
+            if (next().disabled) { break }
+            click(next())
+          }
+          expect(seen.sort((a, b) => a - b)).withContext(`${scale}%: the pins on all pages`).toEqual(noted)
+        }
+
+        checkPins(100)
+        await engraved(() => setSlider(150))
+        checkPins(150)
+        await engraved(() => setSlider(60))
+        checkPins(60)
+      }, 30000)
 
       it("starts on page 1 when nothing has been shown before", async function() {
         await mountScale({stored: {scale: 150}})

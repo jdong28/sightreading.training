@@ -23,7 +23,7 @@ import classNames from "classnames"
 
 import {enqueueDraw} from "st/components/score_card"
 import {
-  scorePages, barOverlays, engraveWidthFor, ENGRAVE_MAX_WIDTH, PAGE_CHROME_PX, MIN_PAGE_PX, MIN_PAGE_SYSTEMS, SCORE_SCALE,
+  scorePages, barOverlays, engraveWidthFor, ENGRAVE_MAX_WIDTH, SCORE_SCALE,
 } from "st/score_render/score_pages"
 
 import styles from "./score_sheet.module.css"
@@ -57,11 +57,6 @@ function naturalSize(svg) {
   }
 }
 
-function headerHeight() {
-  let value = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--header-height"))
-  return Number.isFinite(value) ? value : 0
-}
-
 export class ScoreSheet extends React.Component {
   static propTypes = {
     musicXML: types.string.isRequired,
@@ -74,9 +69,6 @@ export class ScoreSheet extends React.Component {
     // bars to a system and a page follow it
     scale: types.number,
     loadEngines: types.func.isRequired,
-    // window.innerHeight by default; specs pass it, since puppeteer's
-    // window is 800x600
-    viewportHeight: types.number,
     // the page to show, clamped to the pages found; 0 by default
     page: types.number,
     // called with the pages (ScorePage[], st/score_render/score_pages) once
@@ -140,8 +132,6 @@ export class ScoreSheet extends React.Component {
     } else if (prevProps.scale != this.props.scale && this.state.width) {
       // a new engrave width, so a draw, unless the width is as it was
       this.setWidth(this.state.width)
-    } else if (prevProps.viewportHeight != this.props.viewportHeight) {
-      this.paginate()
     }
 
     if (prevProps.page != this.props.page) {
@@ -175,12 +165,12 @@ export class ScoreSheet extends React.Component {
 
   // re-engraves only when the engrave width itself changes (floored, the
   // column's clamped at ENGRAVE_MAX_WIDTH and widened by the scale, see
-  // engraveWidthFor); otherwise only the page budget moves
+  // engraveWidthFor); otherwise the drawing is only shown at the new width
   setWidth(width) {
     let engraveWidth = engraveWidthFor(width, this.props.scale)
     let changed = engraveWidth != this.state.engraveWidth
 
-    this.setState({width, engraveWidth}, () => changed ? this.draw() : this.paginate())
+    this.setState({width, engraveWidth}, () => { if (changed) { this.draw() } })
   }
 
   draw() {
@@ -216,14 +206,7 @@ export class ScoreSheet extends React.Component {
   paginate() {
     if (!this.result || !this.state.naturalHeight) { return }
 
-    let {naturalHeight, engraveWidth, width} = this.state
-    let displayedWidth = width || engraveWidth
-    let ratio = engraveWidth ? displayedWidth / engraveWidth : 1
-    let viewportHeight = this.props.viewportHeight ?? window.innerHeight
-    let displayBudget = Math.max(MIN_PAGE_PX, viewportHeight - headerHeight() - PAGE_CHROME_PX)
-    let budget = ratio ? displayBudget / ratio : displayBudget
-
-    let pages = scorePages(this.result.measures, {height: naturalHeight, budget, minSystems: MIN_PAGE_SYSTEMS})
+    let pages = scorePages(this.result.measures, {height: this.state.naturalHeight})
     this.setState({pages}, () => {
       if (this.props.onPages) { this.props.onPages(pages) }
       this.showPage()

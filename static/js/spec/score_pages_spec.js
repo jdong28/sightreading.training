@@ -1,6 +1,6 @@
 import {
   systemsOf, systemBands, scorePages, barOverlays, pageOfBar,
-  SPACE, ENGRAVE_MAX_WIDTH, PAGE_CHROME_PX, MIN_PAGE_SYSTEMS, SCORE_SCALE, clampScale, engraveWidthFor,
+  SPACE, ENGRAVE_MAX_WIDTH, PAGE_SYSTEMS, SCORE_SCALE, clampScale, engraveWidthFor,
 } from "st/score_render/score_pages"
 import {loadScoreEngines} from "st/score_render/load"
 
@@ -68,68 +68,56 @@ describe("score pages", function() {
   })
 
   describe("scorePages", function() {
-    it("fills a page greedily within the budget, cutting at the midpoint between systems", function() {
-      let measures = systemsAt([[0, 100], [400, 100], [700, 100]])
-      let pages = scorePages(measures, {height: 900, budget: 600})
+    let numbers = pages => pages.map(p => p.measures.map(m => m.number))
+    // n systems of one bar each, 300 apart
+    let lines = n => systemsAt(Array.from({length: n}, (_, i) => [i * 300, 100]))
 
-      expect(pages.length).toEqual(2)
+    it("puts five systems on a page by default", function() {
+      expect(PAGE_SYSTEMS).toEqual(5)
+      let pages = scorePages(lines(12), {height: 3700})
+
+      expect(numbers(pages)).toEqual([[1, 2, 3, 4, 5], [6, 7, 8, 9, 10], [11, 12]])
+    })
+
+    it("cuts at the midpoint between systems, the first page from 0 and the last to the full height", function() {
+      let pages = scorePages(lines(7), {height: 2200})
+
+      // the midpoint of system 5's band bottom (1200 + 100 + 2·SPACE) and
+      // system 6's band top (1500 - 3·SPACE)
       expect(pages[0].top).toEqual(0)
-      expect(pages[0].measures.map(m => m.number)).toEqual([1, 2])
-      // the midpoint of system 2's band bottom (500 + 2·SPACE) and system
-      // 3's band top (700 - 3·SPACE)
-      expect(pages[0].bottom).toEqual((516 + 676) / 2)
+      expect(pages[0].bottom).toEqual((1316 + 1476) / 2)
       expect(pages[1].top).toEqual(pages[0].bottom)
-      expect(pages[1].bottom).toEqual(900)
-      expect(pages[1].measures.map(m => m.number)).toEqual([3])
+      expect(pages[1].bottom).toEqual(2200)
+      expect(pages.map(p => p.index)).toEqual([0, 1])
     })
 
-    it("always takes at least one system, even one taller than the budget", function() {
+    it("holds fewer than five only on the last page, or in a piece of fewer than five systems", function() {
+      expect(numbers(scorePages(lines(5), {height: 1700})).length).toEqual(1)
+      expect(numbers(scorePages(lines(6), {height: 2000}))).toEqual([[1, 2, 3, 4, 5], [6]])
+      expect(numbers(scorePages(lines(3), {height: 1000}))).toEqual([[1, 2, 3]])
+      expect(numbers(scorePages(lines(1), {height: 300}))).toEqual([[1]])
+    })
+
+    it("takes the systems a page is asked for, whole, and never fewer than one", function() {
+      expect(numbers(scorePages(lines(5), {height: 1700, perPage: 2}))).toEqual([[1, 2], [3, 4], [5]])
+      expect(numbers(scorePages(lines(3), {height: 1000, perPage: 0}))).toEqual([[1], [2], [3]])
+    })
+
+    it("takes a system however tall, with no budget to cut a page", function() {
       let measures = systemsAt([[0, 5000], [6000, 100], [6300, 100]])
-      let pages = scorePages(measures, {height: 6500, budget: 50})
-
-      expect(pages.map(p => p.measures.map(m => m.number))).toEqual([[1], [2], [3]])
-      expect(pages[0]).toEqual(jasmine.objectContaining({top: 0}))
-      expect(pages[2].bottom).toEqual(6500)
-    })
-
-    it("puts at least minSystems systems on every page but the last, past the budget if it must", function() {
-      // five systems of 100 under a budget that holds one
-      let measures = systemsAt([[0, 100], [300, 100], [600, 100], [900, 100], [1200, 100]])
-      let numbers = pages => pages.map(p => p.measures.map(m => m.number))
-
-      expect(numbers(scorePages(measures, {height: 1500, budget: 50}))).toEqual([[1], [2], [3], [4], [5]])
-      expect(numbers(scorePages(measures, {height: 1500, budget: 50, minSystems: 2}))).toEqual([[1, 2], [3, 4], [5]])
-      expect(numbers(scorePages(measures, {height: 1500, budget: 50, minSystems: 3}))).toEqual([[1, 2, 3], [4, 5]])
-      expect(MIN_PAGE_SYSTEMS).toEqual(2)
-    })
-
-    it("still fits more than minSystems where the budget allows, and cuts every page between systems", function() {
-      let measures = systemsAt([[0, 100], [300, 100], [600, 100], [900, 100], [1200, 100]])
-      let pages = scorePages(measures, {height: 1500, budget: 1000, minSystems: 2})
-
-      expect(pages.map(p => p.measures.map(m => m.number))).toEqual([[1, 2, 3], [4, 5]])
-      expect(pages[1].top).toEqual(pages[0].bottom)
-      expect(pages[1].bottom).toEqual(1500)
-    })
-
-    it("lets the last page, or a piece of one system, hold one system", function() {
-      let three = systemsAt([[0, 100], [300, 100], [600, 100]])
-      expect(scorePages(three, {height: 800, budget: 10, minSystems: 2}).map(p => p.measures.length)).toEqual([2, 1])
-
-      let one = systemsAt([[0, 100]])
-      expect(scorePages(one, {height: 300, budget: 10, minSystems: 2}).map(p => p.measures.length)).toEqual([1])
+      expect(numbers(scorePages(measures, {height: 6500}))).toEqual([[1, 2, 3]])
     })
 
     it("gives one page from 0 to the full height with a single system", function() {
       let measures = [measure(0, 1, box(0, 0, 50, 100))]
-      let pages = scorePages(measures, {height: 300, budget: 1000})
+      let pages = scorePages(measures, {height: 300})
 
       expect(pages.length).toEqual(1)
       expect(pages[0]).toEqual(jasmine.objectContaining({top: 0, bottom: 300}))
     })
 
     it("gives no pages without measures", function() {
-      expect(scorePages([], {height: 100, budget: 100})).toEqual([])
+      expect(scorePages([], {height: 100})).toEqual([])
     })
   })
 
@@ -139,7 +127,7 @@ describe("score pages", function() {
         measure(0, 1, box(0, 40, 100, 150)),
         measure(1, 2, box(100, 40, 50, 150)),
       ]
-      let [page] = scorePages(measures, {height: 400, budget: 1000})
+      let [page] = scorePages(measures, {height: 400})
       let overlays = barOverlays(page, 200)
 
       expect(overlays.length).toEqual(2)
@@ -156,7 +144,7 @@ describe("score pages", function() {
         measure(0, 5, box(0, 40, 100, 150)),
         measure(1, 5, box(100, 40, 50, 150)),
       ]
-      let [page] = scorePages(measures, {height: 400, budget: 1000})
+      let [page] = scorePages(measures, {height: 400})
       expect(barOverlays(page, 200).map(o => o.number)).toEqual([5, 5])
     })
   })
@@ -164,7 +152,7 @@ describe("score pages", function() {
   describe("pageOfBar", function() {
     it("gives the index of the page holding a bar, 0 when it isn't on any", function() {
       let measures = systemsAt([[0, 100], [400, 100], [700, 100]])
-      let pages = scorePages(measures, {height: 900, budget: 50})
+      let pages = scorePages(measures, {height: 900, perPage: 1})
 
       expect(pageOfBar(pages, 2)).toEqual(1)
       expect(pageOfBar(pages, 99)).toEqual(0)
@@ -187,15 +175,10 @@ describe("score pages", function() {
       }
       expect([...bySystem.values()]).toEqual([[1, 2, 3, 4, 5], [6, 7, 8, 9, 10], [11, 12, 13, 14, 15], [16]])
 
-      // the design's own measured budget (§A7, §D5): at 1440×1240, the
-      // page box is ~836 displayed px wide, scaled up from the 644
-      // engraved width, and 812 = 1240 (viewport) − 108 (header) −
-      // PAGE_CHROME_PX, converted to the engraving's own natural px
-      let displayedWidth = 836
-      let budget = (1240 - 108 - PAGE_CHROME_PX) / (displayedWidth / ENGRAVE_MAX_WIDTH)
-      let pages = scorePages(result.measures, {height: result.svg.height.baseVal.value, budget})
+      // four systems: one page of five
+      let pages = scorePages(result.measures, {height: result.svg.height.baseVal.value})
       expect(pages.map(page => page.measures.map(m => m.number))).toEqual([
-        [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], [16],
+        [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
       ])
     })
   })
