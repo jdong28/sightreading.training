@@ -1,5 +1,5 @@
 import {
-  ShapeGenerator, Generator, generatorDefaultSettings, currentScrollTempo, storeCurrentDrill,
+  ShapeGenerator, Generator, generatorDefaultSettings, currentScrollTempo, currentScoreScale, storeCurrentDrill,
   DRILL_STORAGE_KEY, SCORE_DRILL_STORAGE_KEY, focusPool,
 } from "st/generators"
 import {ChordGenerator, MultiKeyChordGenerator} from "st/chord_generators"
@@ -345,6 +345,38 @@ describe("octave numbering", function() {
 
       storeCurrentDrill({tempo: false})
       expect(currentScrollTempo()).toBe(false)
+    })
+  })
+
+  // the score view's scale control, kept under the score page's drill key
+  describe("the score scale setting", function() {
+    let saved
+
+    beforeEach(function() {
+      saved = window.localStorage.getItem(SCORE_DRILL_STORAGE_KEY)
+      window.localStorage.removeItem(SCORE_DRILL_STORAGE_KEY)
+    })
+
+    afterEach(function() {
+      if (saved == null) {
+        window.localStorage.removeItem(SCORE_DRILL_STORAGE_KEY)
+      } else {
+        window.localStorage.setItem(SCORE_DRILL_STORAGE_KEY, saved)
+      }
+    })
+
+    it("is 100% by default, as stored on its steps and in its range, and kept beside the other settings", function() {
+      expect(currentScoreScale()).toEqual(100)
+
+      storeCurrentDrill({mode: "scroll"}, SCORE_DRILL_STORAGE_KEY)
+      storeCurrentDrill({scale: 80}, SCORE_DRILL_STORAGE_KEY)
+      expect(currentScoreScale()).toEqual(80)
+      expect(JSON.parse(window.localStorage.getItem(SCORE_DRILL_STORAGE_KEY))).toEqual({mode: "scroll", scale: 80})
+
+      for (let [stored, scale] of [[55, 60], [155, 150], [104, 100], [105, 110], ["big", 100], [null, 100]]) {
+        storeCurrentDrill({scale: stored}, SCORE_DRILL_STORAGE_KEY)
+        expect(currentScoreScale()).withContext(`stored ${JSON.stringify(stored)}`).toEqual(scale)
+      }
     })
   })
 })

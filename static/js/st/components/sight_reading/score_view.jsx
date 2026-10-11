@@ -21,6 +21,8 @@ import {ReviewPane} from "st/components/sight_reading/review_pane"
 import {keyLabel} from "st/components/sight_reading/settings_panel"
 import {romanNumeral, barsLabel} from "st/music"
 import {measureNumberList, measureNumberRange, measureBeatRange} from "st/song_sections"
+import {SCORE_SCALE, clampScale} from "st/score_render/score_pages"
+import {currentScoreScale, storeCurrentDrill, SCORE_DRILL_STORAGE_KEY} from "st/generators"
 import {barReview} from "st/bar_review"
 import {
   newLessonNote, notePins, notesOnBars, answersOnBars, evidenceOf, noteDate,
@@ -86,7 +88,6 @@ export class ScoreView extends React.Component {
     canPlayOn: types.bool,
     sessionLog: types.array,
     idleTitle: types.object,
-    viewportHeight: types.number,
     onBegin: types.func.isRequired,
     onPlayOn: types.func.isRequired,
     onDismissEnded: types.func.isRequired,
@@ -113,6 +114,10 @@ export class ScoreView extends React.Component {
       // transition watch only catches a later Done/Play on/Begin within
       // the same mount
       shade: props.ended ? "session" : "practice",
+      // the score scale in percent, kept in storage (SCORE_DRILL_STORAGE_KEY)
+      // rather than here alone: this view is built again at every Begin and
+      // End session
+      scale: currentScoreScale(),
       page: 0,
       pages: [],
       selectedBar: null,
@@ -191,6 +196,20 @@ export class ScoreView extends React.Component {
     this.setState({page, selectedBar: null})
   }
 
+  // Engraves the score again at another scale (ScoreSheet's scale prop) and
+  // remembers it for every piece on this device. change is the scale, or a
+  // function of the scale now (so steps pressed one after another each count)
+  setScale(change) {
+    this.setState(state => {
+      let scale = clampScale(typeof change == "function" ? change(state.scale) : change)
+      return scale == state.scale ? null : {scale}
+    }, () => {
+      if (currentScoreScale() != this.state.scale) {
+        storeCurrentDrill({scale: this.state.scale}, SCORE_DRILL_STORAGE_KEY)
+      }
+    })
+  }
+
   // The bar asked for (openBar), opened where the score is drawn as a grid
   // of bars, as soon as it is known to be one: a piece with no stored score,
   // one whose score failed. An engraved score opens it from its pagination
@@ -224,12 +243,17 @@ export class ScoreView extends React.Component {
     return bar
   }
 
-  // The score's pages, as it has paginated: the page kept where it was, or
-  // turned to the one with the bar asked for (and kept turned to it while
-  // the score is paginated again)
+  // The score's pages, as it has paginated (a new scale, a window resize, a
+  // first draw): turned to the page with the bar asked for (and kept turned to
+  // it while the score is paginated again), else the page holding the bar whose
+  // pop-up is open, else the page holding the first bar of the page shown
+  // before, else the first page. A page number kept would show other bars and
+  // hide the pop-up
   onPages(pages) {
     let requested = this.pendingBar
-    let bar = requested ?? this.followBar
+    let shown = this.state.pages[this.state.page]
+    let first = shown && shown.measures[0] && shown.measures[0].number
+    let bar = requested ?? this.followBar ?? this.state.selectedBar ?? first
     let idx = bar == null ? -1 : pages.findIndex(page => page.measures.some(m => m.number == bar))
 
     if (idx < 0) {
@@ -507,6 +531,45 @@ export class ScoreView extends React.Component {
     return first == last ? `bar ${first}` : `bars ${first}–${last}`
   }
 
+  // The score's scale: − / slider / + from 60% to 150%, the % it stands at,
+  // and Reset to 100%. Each step engraves the score again (never a zoom)
+  renderScale() {
+    let {scale} = this.state
+    let {min, max, step, initial} = SCORE_SCALE
+
+    return <div className={styles.scale_group} role="group" aria-label="Score scale">
+      <span className={styles.scale_label}>Scale</span>
+      <button
+        type="button"
+        className={styles.scale_step}
+        aria-label="Smaller score"
+        disabled={scale <= min}
+        onClick={() => this.setScale(now => now - step)}>−</button>
+      <input
+        type="range"
+        className={styles.scale_slider}
+        aria-label="Score scale, percent"
+        min={min}
+        max={max}
+        step={step}
+        value={scale}
+        onChange={e => this.setScale(+e.target.value)} />
+      <button
+        type="button"
+        className={styles.scale_step}
+        aria-label="Larger score"
+        disabled={scale >= max}
+        onClick={() => this.setScale(now => now + step)}>+</button>
+      <span className={styles.scale_value}>{scale}%</span>
+      <Pill
+        variant="choice"
+        className={styles.scale_reset}
+        aria-pressed={undefined}
+        disabled={scale == initial}
+        onClick={() => this.setScale(initial)}>Reset</Pill>
+    </div>
+  }
+
   renderToolbar(pages, ready) {
     let page = pages[this.state.page]
 
@@ -514,6 +577,7 @@ export class ScoreView extends React.Component {
       <span className={styles.page_label}>
         {ready && page ? `Page ${this.state.page + 1} of ${pages.length} · ${this.pageBarsLabel(page)}` : ""}
       </span>
+      {ready && pages.length > 0 && this.renderScale()}
       <div className={styles.shade_group} role="group" aria-label="Shade bars by">
         <span className={styles.shade_label}>Shade</span>
         {this.props.ended && <Pill
@@ -683,8 +747,8 @@ export class ScoreView extends React.Component {
           toMeasure={toMeasure}
           engine={this.props.engine}
           loadEngines={this.props.loadEngines}
-          viewportHeight={this.props.viewportHeight}
           page={this.state.page}
+          scale={this.state.scale}
           onPages={pages => this.onPages(pages)}
           {...this.buildBarInfo(piece, song)}
           selected={this.state.selectedBar}

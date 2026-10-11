@@ -8,21 +8,45 @@
 
 import type {CardMeasure} from "./types"
 
-// the width the artboards' pages were engraved at: at 1440 css px wide it
-// reproduces the design (5 bars a system, scaled up to the page box); a
-// phone-width box engraves at its own width instead, so it stays readable
+// the width the artboards' pages were engraved at, at 100% (SCORE_SCALE): at
+// 1440 css px wide it reproduces the design (5 bars a system, scaled up to
+// the page box); a phone-width box engraves at its own width instead, so it
+// stays readable
 export const ENGRAVE_MAX_WIDTH = 644
+
+// the score scale the reader picks, in percent: the score is engraved
+// 100 / scale times as wide, so a smaller scale fits more bars to a system
+// and a page, a larger one fewer, each page shown at the column's width
+export const SCORE_SCALE = {min: 60, max: 150, step: 10, initial: 100}
+
+/**
+ * A scale on the steps and in the range: the nearest step, then clamped;
+ * anything that isn't a finite number reads as 100.
+ */
+export function clampScale(value: unknown): number {
+  if (typeof value != "number" || !Number.isFinite(value)) { return SCORE_SCALE.initial }
+  const stepped = Math.round(value / SCORE_SCALE.step) * SCORE_SCALE.step
+  return Math.min(SCORE_SCALE.max, Math.max(SCORE_SCALE.min, stepped))
+}
+
+/**
+ * The width to engrave the score at: the column's width (at most
+ * ENGRAVE_MAX_WIDTH) widened by 100 / scale.
+ * @param width the score column's width (CSS px)
+ * @param scale the score scale in percent, see clampScale
+ */
+export function engraveWidthFor(width: number, scale: unknown): number {
+  return Math.floor(Math.min(width, ENGRAVE_MAX_WIDTH) * 100 / clampScale(scale))
+}
 
 // OSMD's staff space in CSS px at ZOOM 0.8 (./osmd), the padding a system's
 // band keeps above (3 spaces) and below (2 spaces) its measures' own boxes
 export const SPACE = 8
 
-// the title row, plate padding, toolbar, legend and pager's own height,
-// subtracted from the viewport to budget a page
-export const PAGE_CHROME_PX = 320
-
-// the least a page's budget is ever let shrink to
-export const MIN_PAGE_PX = 280
+// the systems the score page puts on a page, a grand-staff line each (a
+// piece's last page, or a piece of fewer, holds fewer): a page is as tall as
+// they are and the window scrolls, never a smaller engraving
+export const PAGE_SYSTEMS = 5
 
 /**
  * One system number per measure (by index order): a new one whenever a
@@ -91,42 +115,29 @@ function buildPage(bands: SystemBand[], top: number, bottom: number, index: numb
 }
 
 /**
- * The whole piece's pages (score-first design §D5): whole systems, taken
- * greedily while the page's natural height (the next cut less its top) fits
- * the budget, always at least one; cut between two systems at the midpoint
- * of the first's bottom and the second's top. The first page starts at 0
- * and the last ends at the svg's natural height, whatever its last
- * system's own band says.
+ * The whole piece's pages (score-first design §D5): perPage whole systems
+ * each, the last page the rest; cut between two systems at the midpoint of
+ * the first's bottom and the second's top. The first page starts at 0 and the
+ * last ends at the svg's natural height, whatever its last system's own band
+ * says. The window's height never cuts a page.
  * @param measures the whole piece's
  * @param opts.height the drawn svg's natural height (CSS px)
- * @param opts.budget the most natural px a page may hold
+ * @param opts.perPage the systems to a page, PAGE_SYSTEMS by default
  */
 export function scorePages(
-  measures: CardMeasure[], {height, budget}: {height: number, budget: number},
+  measures: CardMeasure[], {height, perPage = PAGE_SYSTEMS}: {height: number, perPage?: number},
 ): ScorePage[] {
   const bands = systemBands(measures)
   if (!bands.length) { return [] }
 
+  const size = Math.max(1, Math.floor(perPage))
   const cutAfter = (i: number) => i == bands.length - 1 ? height : (bands[i].bottom + bands[i + 1].top) / 2
 
   const pages: ScorePage[] = []
-  let startIdx = 0
-  let pageTop = 0
-
-  for (let i = 0; i < bands.length; i++) {
-    const cut = cutAfter(i)
-    const overflow = cut - pageTop > budget && i > startIdx
-
-    if (overflow) {
-      const prevCut = cutAfter(i - 1)
-      pages.push(buildPage(bands.slice(startIdx, i), pageTop, prevCut, pages.length))
-      pageTop = prevCut
-      startIdx = i
-    }
-
-    if (i == bands.length - 1) {
-      pages.push(buildPage(bands.slice(startIdx), pageTop, height, pages.length))
-    }
+  for (let start = 0; start < bands.length; start += size) {
+    const end = Math.min(bands.length, start + size)
+    const top = start == 0 ? 0 : cutAfter(start - 1)
+    pages.push(buildPage(bands.slice(start, end), top, cutAfter(end - 1), pages.length))
   }
 
   return pages

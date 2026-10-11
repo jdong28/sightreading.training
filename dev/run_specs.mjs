@@ -16,7 +16,7 @@ import {APP_BUILD, ENGINES_BUILD, copyVerovio} from "./esbuild_options.mjs"
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..")
 process.chdir(ROOT)
 
-const TIMEOUT_MS = 120_000
+const TIMEOUT_MS = 300_000
 
 async function main() {
   buildAssets()
